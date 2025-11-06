@@ -1,0 +1,14 @@
+name: StashGifs
+description: A TikTok-like vertical scroller interface for Stash. Forked from Stash Reels.
+url: https://github.com/evolite/stashgifs
+version: 1.8.0
+ui:
+  assets:
+    /: .
+  javascript:
+    - stash-tv.umd.js
+settings:
+  hideNavButton:
+    displayName: Hide navigation button
+    description: Hide the main navigation link to StashGifs.
+    type: BOOLEAN
