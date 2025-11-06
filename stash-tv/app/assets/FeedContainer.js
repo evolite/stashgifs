@@ -109,7 +109,7 @@ export class FeedContainer {
         chips.style.display = 'flex';
         chips.style.flexWrap = 'wrap';
         chips.style.gap = '6px';
-        chips.style.marginBottom = '6px';
+        chips.style.marginTop = '6px';
         const queryInput = document.createElement('input');
         queryInput.type = 'text';
         queryInput.placeholder = 'Search tags or apply saved filters…';
@@ -139,9 +139,10 @@ export class FeedContainer {
         suggestions.style.display = 'none';
         suggestions.style.flexWrap = 'wrap';
         suggestions.style.gap = '8px';
-        searchArea.appendChild(chips);
+        // Input first, then suggestions overlay, then chips below the input
         searchArea.appendChild(queryInput);
         searchArea.appendChild(suggestions);
+        searchArea.appendChild(chips);
         this.container.appendChild(header);
         // Add top padding to scroll container so content is not hidden under header
         this.scrollContainer.style.paddingTop = '90px';
