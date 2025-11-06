@@ -68,15 +68,22 @@ export class FeedContainer {
         header.style.right = '0';
         header.style.height = '72px';
         header.style.zIndex = '220';
-        header.style.display = 'grid';
-        header.style.gridTemplateColumns = 'auto 1fr';
+        header.style.display = 'block';
         header.style.alignItems = 'center';
-        header.style.gap = '12px';
         header.style.padding = '8px 12px';
         header.style.background = 'rgba(18,18,18,0.75)';
         header.style.backdropFilter = 'blur(10px)';
         header.style.borderBottom = '1px solid rgba(255,255,255,0.06)';
         header.style.transition = 'transform .24s ease, opacity .24s ease';
+        // Inner container constrained to card width
+        const headerInner = document.createElement('div');
+        headerInner.style.display = 'grid';
+        headerInner.style.gridTemplateColumns = 'auto 1fr';
+        headerInner.style.alignItems = 'center';
+        headerInner.style.gap = '12px';
+        headerInner.style.width = '100%';
+        headerInner.style.maxWidth = `${this.settings.cardMaxWidth}px`;
+        headerInner.style.margin = '0 auto';
         const brand = document.createElement('div');
         brand.textContent = 'stashgifs';
         brand.style.fontWeight = '700';
@@ -85,15 +92,16 @@ export class FeedContainer {
         brand.style.fontSize = '16px';
         // ensure smoother animation
         header.style.willChange = 'transform, opacity';
-        header.appendChild(brand);
+        headerInner.appendChild(brand);
         // Search area
         const searchArea = document.createElement('div');
         searchArea.style.position = 'relative';
         // Constrain search width to match card width and center it
         searchArea.style.width = '100%';
-        searchArea.style.maxWidth = `${this.settings.cardMaxWidth}px`;
+        searchArea.style.maxWidth = '100%';
         searchArea.style.justifySelf = 'center';
-        header.appendChild(searchArea);
+        headerInner.appendChild(searchArea);
+        header.appendChild(headerInner);
         const queryInput = document.createElement('input');
         queryInput.type = 'text';
         queryInput.placeholder = 'Search tags or apply saved filters…';
