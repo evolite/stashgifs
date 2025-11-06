@@ -939,18 +939,18 @@ export class FeedContainer {
     // Responsive layout helpers
     const isMobile = () => window.matchMedia('(max-width: 700px)').matches;
     const setDesktopLayout = () => {
-      // half-screen bottom sheet on desktop, avoid covering scrollbar
+      // half-screen top sheet on desktop, avoid covering scrollbar
       const sbw = getScrollbarWidth();
       bar.style.left = '0';
       bar.style.right = `${sbw}px`;
-      bar.style.top = '';
-      bar.style.bottom = '0';
+      bar.style.top = '0';
+      bar.style.bottom = '';
       bar.style.width = `calc(100vw - ${sbw}px)`;
       bar.style.maxHeight = '50vh';
       bar.style.height = '50vh';
       bar.style.overflow = 'auto';
-      bar.style.borderRadius = '14px 14px 0 0';
-      bar.style.transform = 'translateY(100%)';
+      bar.style.borderRadius = '0 0 14px 14px';
+      bar.style.transform = 'translateY(-100%)';
       suggestions.style.maxHeight = '40vh';
       suggestions.style.position = 'absolute';
       // backdrop should not cover scrollbar either
@@ -960,20 +960,20 @@ export class FeedContainer {
       backdrop.style.right = `${sbw}px`;
     };
     const setMobileLayout = () => {
-      // half-screen bottom sheet on mobile as well
+      // half-screen top sheet on mobile as well
       const sbw = getScrollbarWidth();
       bar.style.left = '0';
       bar.style.right = sbw ? `${sbw}px` : '0';
-      bar.style.top = '';
-      bar.style.bottom = '0';
+      bar.style.top = '0';
+      bar.style.bottom = '';
       bar.style.width = sbw ? `calc(100vw - ${sbw}px)` : '100vw';
       bar.style.maxHeight = '50vh';
       bar.style.height = '50vh';
       bar.style.overflow = 'auto';
-      bar.style.borderRadius = '14px 14px 0 0';
-      bar.style.transform = 'translateY(100%)';
-      bar.style.paddingTop = '';
-      bar.style.paddingBottom = 'calc(12px + env(safe-area-inset-bottom, 0px))';
+      bar.style.borderRadius = '0 0 14px 14px';
+      bar.style.transform = 'translateY(-100%)';
+      bar.style.paddingTop = 'calc(12px + env(safe-area-inset-top, 0px))';
+      bar.style.paddingBottom = '';
       suggestions.style.maxHeight = '40vh';
       suggestions.style.position = 'absolute';
       // backdrop should not cover scrollbar either
@@ -1015,7 +1015,7 @@ export class FeedContainer {
     };
     const closePanel = () => {
       sheetOpen = false;
-      bar.style.transform = 'translateY(100%)';
+      bar.style.transform = 'translateY(-100%)';
       bar.style.opacity = '1';
       bar.style.pointerEvents = 'none';
       backdrop.style.opacity = '0';
