@@ -135,8 +135,9 @@ export class VideoPost {
 
   private getSceneLink(): string {
     const s = this.data.marker.scene;
-    // Always link to the local Stash scene route
-    return `${window.location.origin}/scenes/${s.id}`;
+    // Link to the local Stash scene route with timestamp set to marker start seconds
+    const t = Math.max(0, Math.floor(this.data.marker.seconds || 0));
+    return `${window.location.origin}/scenes/${s.id}?t=${t}`;
   }
 
   private getPerformerLink(performerId: string): string {
