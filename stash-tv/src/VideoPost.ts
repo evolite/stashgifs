@@ -126,6 +126,19 @@ export class VideoPost {
         chips.appendChild(chip);
       }
     }
+
+    // Tag chips (marker tags) next to performers
+    if (this.data.marker.tags && this.data.marker.tags.length > 0) {
+      for (const tag of this.data.marker.tags) {
+        const chip = document.createElement('a');
+        chip.className = 'chip chip--tag';
+        chip.href = this.getTagLink(tag.id);
+        chip.target = '_blank';
+        chip.rel = 'noopener noreferrer';
+        chip.appendChild(document.createTextNode(tag.name));
+        chips.appendChild(chip);
+      }
+    }
     row.appendChild(chips);
 
     // Icon-only button to open full scene in Stash
@@ -152,6 +165,10 @@ export class VideoPost {
 
   private getPerformerLink(performerId: string): string {
     return `${window.location.origin}/performers/${performerId}`;
+  }
+
+  private getTagLink(tagId: string): string {
+    return `${window.location.origin}/tags/${tagId}`;
   }
 
   /**
