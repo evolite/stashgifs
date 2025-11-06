@@ -254,8 +254,13 @@ export class StashAPI {
             // Calculate random page if no offset specified
             let page = filters?.offset ? Math.floor(filters.offset / (filters.limit || 20)) + 1 : 1;
             const limit = filters?.limit || 20;
+            // Randomize only when no specific filters are applied (pure discovery mode)
+            const hasSpecificFilters = Boolean((filters?.savedFilterId) ||
+                (filters?.query && filters.query.trim() !== '') ||
+                (filters?.tags && filters.tags.length > 0) ||
+                (filters?.primary_tags && filters.primary_tags.length > 0));
             // If we want random and no offset, get count first to calculate random page
-            if (!filters?.offset) {
+            if (!filters?.offset && !hasSpecificFilters) {
                 const countQuery = `query GetMarkerCount($filter: FindFilterType, $scene_marker_filter: SceneMarkerFilterType) {
           findSceneMarkers(filter: $filter, scene_marker_filter: $scene_marker_filter) {
             count
