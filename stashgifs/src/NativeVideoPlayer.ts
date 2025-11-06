@@ -57,6 +57,7 @@ export class NativeVideoPlayer {
     this.videoElement.preload = 'auto'; // Changed from 'metadata' to 'auto' for better loading
     this.videoElement.playsInline = true;
     this.videoElement.muted = options?.muted ?? true; // Default to muted for autoplay
+    this.videoElement.loop = true; // Enable looping
     this.videoElement.className = 'video-player__element';
     
     
@@ -71,11 +72,15 @@ export class NativeVideoPlayer {
     }
     
     // Handle end time if provided (only if endTime > startTime + small tolerance)
+    // Loop back to startTime when reaching endTime
     if (options?.endTime !== undefined && (options.startTime === undefined || options.endTime > options.startTime + 0.25)) {
       this.videoElement.addEventListener('timeupdate', () => {
         if (this.videoElement.currentTime >= options.endTime!) {
-          this.videoElement.pause();
           this.videoElement.currentTime = options.startTime || 0;
+          // Continue playing if it was playing
+          if (!this.videoElement.paused) {
+            this.videoElement.play().catch(() => {});
+          }
         }
       });
     }
