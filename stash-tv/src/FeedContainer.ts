@@ -281,12 +281,15 @@ export class FeedContainer {
           btn.style.fontSize = '13px';
           btn.style.cursor = 'pointer';
           btn.addEventListener('click', () => {
-            this.selectedTagIds.push(parseInt(tag.id, 10));
-            this.selectedTagNames.push(tag.name);
-            suggestions.style.display = 'none';
-            suggestions.innerHTML = '';
-            renderChips();
-            apply();
+            const tagId = parseInt(tag.id, 10);
+            if (!this.selectedTagIds.includes(tagId)) {
+              this.selectedTagIds.push(tagId);
+              this.selectedTagNames.push(tag.name);
+              renderChips();
+              apply();
+              // Refresh suggestions to reflect current selections and allow multi-pick
+              queryInput.dispatchEvent(new Event('input'));
+            }
           });
           suggestions.appendChild(btn);
         });
@@ -615,12 +618,15 @@ export class FeedContainer {
           // Selecting a tag clears any saved filter to avoid conflicts
           this.selectedSavedFilter = undefined;
           savedSelect.value = '';
-          this.selectedTagIds.push(parseInt(tag.id, 10));
-          this.selectedTagNames.push(tag.name);
-          suggestions.style.display = 'none';
-          suggestions.innerHTML = '';
-          renderChips();
-          apply();
+          const tagId = parseInt(tag.id, 10);
+          if (!this.selectedTagIds.includes(tagId)) {
+            this.selectedTagIds.push(tagId);
+            this.selectedTagNames.push(tag.name);
+            renderChips();
+            apply();
+            // Refresh suggestions to remove the newly selected tag and keep menu open
+            fetchSuggestions(suggestTerm, 1);
+          }
         });
         suggestions.appendChild(chip);
       });
@@ -703,12 +709,15 @@ export class FeedContainer {
             chip.addEventListener('click', () => {
               this.selectedSavedFilter = undefined;
               savedSelect.value = '';
-              this.selectedTagIds.push(parseInt(tag.id, 10));
-              this.selectedTagNames.push(tag.name);
-              suggestions.style.display = 'none';
-              suggestions.innerHTML = '';
-              renderChips();
-              apply();
+              const tagId = parseInt(tag.id, 10);
+              if (!this.selectedTagIds.includes(tagId)) {
+                this.selectedTagIds.push(tagId);
+                this.selectedTagNames.push(tag.name);
+                renderChips();
+                apply();
+                // Refresh suggestions for continued multi-select
+                fetchSuggestions(suggestTerm, 1);
+              }
             });
             suggestions.appendChild(chip);
           });
