@@ -91,13 +91,17 @@ export class StashAPI {
    * Search marker tags (by name) for autocomplete
    */
   async searchMarkerTags(term: string, limit: number = 10): Promise<Array<{ id: string; name: string }>> {
-    if (!term || term.trim() === '') return [];
     const query = `query FindTags($filter: FindFilterType) {
       findTags(filter: $filter) {
         tags { id name }
       }
     }`;
-    const variables = { filter: { q: term, per_page: limit, page: 1 } } as any;
+    const filter: any = { per_page: limit, page: 1 };
+    // Only add query if term is provided and not empty
+    if (term && term.trim() !== '') {
+      filter.q = term.trim();
+    }
+    const variables = { filter };
 
     try {
       if (this.pluginApi?.GQL?.client) {

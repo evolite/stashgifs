@@ -223,59 +223,42 @@ export class FeedContainer {
         // Suggestions
         let suggestTimeout;
         let suggestTerm = '';
-        queryInput.addEventListener('keydown', (e) => { if (e.key === 'Enter')
-            apply(); });
-        queryInput.addEventListener('input', () => {
-            clearTimeout(suggestTimeout);
-            const text = queryInput.value.trim();
-            suggestTimeout = setTimeout(async () => {
-                if (!text || text.length < 2) {
-                    suggestions.style.display = 'none';
+        const fetchAndShowSuggestions = async (text, forceShow = false) => {
+            const trimmedText = text.trim();
+            // Show suggestions if we have text (2+ chars) OR if forced (on focus with empty/minimal text)
+            if (!trimmedText || trimmedText.length < 2) {
+                if (forceShow) {
+                    // On focus with empty text, show some popular/default tags
+                    const pageSize = 24;
+                    const items = await this.api.searchMarkerTags('', pageSize);
                     suggestions.innerHTML = '';
-                    return;
-                }
-                if (text !== suggestTerm)
-                    suggestions.innerHTML = '';
-                suggestTerm = text;
-                const pageSize = 24;
-                const items = await this.api.searchMarkerTags(text, pageSize);
-                // Tags
-                items.forEach((tag) => {
-                    const btn = document.createElement('button');
-                    btn.textContent = tag.name;
-                    btn.className = 'suggest-chip';
-                    btn.style.padding = '6px 10px';
-                    btn.style.borderRadius = '999px';
-                    btn.style.border = '1px solid rgba(255,255,255,0.12)';
-                    btn.style.background = 'rgba(255,255,255,0.05)';
-                    btn.style.color = 'inherit';
-                    btn.style.fontSize = '13px';
-                    btn.style.cursor = 'pointer';
-                    btn.addEventListener('click', () => {
-                        const tagId = parseInt(tag.id, 10);
-                        if (!this.selectedTagIds.includes(tagId)) {
-                            this.selectedTagIds.push(tagId);
-                            this.selectedTagNames.push(tag.name);
-                            renderChips();
-                            apply();
-                            // Refresh suggestions to reflect current selections and allow multi-pick
-                            queryInput.dispatchEvent(new Event('input'));
-                        }
+                    items.forEach((tag) => {
+                        if (this.selectedTagIds.includes(parseInt(tag.id, 10)))
+                            return;
+                        const btn = document.createElement('button');
+                        btn.textContent = tag.name;
+                        btn.className = 'suggest-chip';
+                        btn.style.padding = '6px 10px';
+                        btn.style.borderRadius = '999px';
+                        btn.style.border = '1px solid rgba(255,255,255,0.12)';
+                        btn.style.background = 'rgba(255,255,255,0.05)';
+                        btn.style.color = 'inherit';
+                        btn.style.fontSize = '13px';
+                        btn.style.cursor = 'pointer';
+                        btn.addEventListener('click', () => {
+                            const tagId = parseInt(tag.id, 10);
+                            if (!this.selectedTagIds.includes(tagId)) {
+                                this.selectedTagIds.push(tagId);
+                                this.selectedTagNames.push(tag.name);
+                                renderChips();
+                                apply();
+                                queryInput.dispatchEvent(new Event('input'));
+                            }
+                        });
+                        suggestions.appendChild(btn);
                     });
-                    suggestions.appendChild(btn);
-                });
-                // Saved filters section
-                const term = text.toLowerCase();
-                const matches = savedFiltersCache.filter((f) => f.name.toLowerCase().includes(term));
-                if (matches.length) {
-                    const label = document.createElement('div');
-                    label.textContent = 'Saved Filters';
-                    label.style.width = '100%';
-                    label.style.opacity = '0.75';
-                    label.style.fontSize = '12px';
-                    label.style.marginTop = '6px';
-                    suggestions.appendChild(label);
-                    matches.forEach((f) => {
+                    // Show saved filters too
+                    savedFiltersCache.forEach((f) => {
                         const btn = document.createElement('button');
                         btn.textContent = f.name;
                         btn.className = 'suggest-chip';
@@ -287,9 +270,7 @@ export class FeedContainer {
                         btn.style.fontSize = '13px';
                         btn.style.cursor = 'pointer';
                         btn.addEventListener('click', () => {
-                            // Apply saved filter by name match
                             this.selectedSavedFilter = { id: f.id, name: f.name };
-                            // Clear tag selections when a saved filter is chosen
                             this.selectedTagIds = [];
                             this.selectedTagNames = [];
                             queryInput.value = '';
@@ -301,8 +282,93 @@ export class FeedContainer {
                         });
                         suggestions.appendChild(btn);
                     });
+                    suggestions.style.display = suggestions.children.length > 0 ? 'flex' : 'none';
                 }
-                suggestions.style.display = (items.length || matches.length) ? 'flex' : 'none';
+                else {
+                    suggestions.style.display = 'none';
+                    suggestions.innerHTML = '';
+                }
+                return;
+            }
+            if (trimmedText !== suggestTerm)
+                suggestions.innerHTML = '';
+            suggestTerm = trimmedText;
+            const pageSize = 24;
+            const items = await this.api.searchMarkerTags(trimmedText, pageSize);
+            // Tags
+            items.forEach((tag) => {
+                if (this.selectedTagIds.includes(parseInt(tag.id, 10)))
+                    return;
+                const btn = document.createElement('button');
+                btn.textContent = tag.name;
+                btn.className = 'suggest-chip';
+                btn.style.padding = '6px 10px';
+                btn.style.borderRadius = '999px';
+                btn.style.border = '1px solid rgba(255,255,255,0.12)';
+                btn.style.background = 'rgba(255,255,255,0.05)';
+                btn.style.color = 'inherit';
+                btn.style.fontSize = '13px';
+                btn.style.cursor = 'pointer';
+                btn.addEventListener('click', () => {
+                    const tagId = parseInt(tag.id, 10);
+                    if (!this.selectedTagIds.includes(tagId)) {
+                        this.selectedTagIds.push(tagId);
+                        this.selectedTagNames.push(tag.name);
+                        renderChips();
+                        apply();
+                        queryInput.dispatchEvent(new Event('input'));
+                    }
+                });
+                suggestions.appendChild(btn);
+            });
+            // Saved filters section
+            const term = trimmedText.toLowerCase();
+            const matches = savedFiltersCache.filter((f) => f.name.toLowerCase().includes(term));
+            if (matches.length) {
+                const label = document.createElement('div');
+                label.textContent = 'Saved Filters';
+                label.style.width = '100%';
+                label.style.opacity = '0.75';
+                label.style.fontSize = '12px';
+                label.style.marginTop = '6px';
+                suggestions.appendChild(label);
+                matches.forEach((f) => {
+                    const btn = document.createElement('button');
+                    btn.textContent = f.name;
+                    btn.className = 'suggest-chip';
+                    btn.style.padding = '6px 10px';
+                    btn.style.borderRadius = '999px';
+                    btn.style.border = '1px solid rgba(255,255,255,0.12)';
+                    btn.style.background = 'rgba(255,255,255,0.05)';
+                    btn.style.color = 'inherit';
+                    btn.style.fontSize = '13px';
+                    btn.style.cursor = 'pointer';
+                    btn.addEventListener('click', () => {
+                        this.selectedSavedFilter = { id: f.id, name: f.name };
+                        this.selectedTagIds = [];
+                        this.selectedTagNames = [];
+                        queryInput.value = '';
+                        this.currentFilters = { savedFilterId: f.id, limit: 20, offset: 0 };
+                        this.loadVideos(this.currentFilters, false).catch((e) => console.error('Apply saved filter failed', e));
+                        suggestions.style.display = 'none';
+                        suggestions.innerHTML = '';
+                        renderChips();
+                    });
+                    suggestions.appendChild(btn);
+                });
+            }
+            suggestions.style.display = (items.length || matches.length) ? 'flex' : 'none';
+        };
+        queryInput.addEventListener('keydown', (e) => { if (e.key === 'Enter')
+            apply(); });
+        queryInput.addEventListener('focus', () => {
+            fetchAndShowSuggestions(queryInput.value, true);
+        });
+        queryInput.addEventListener('input', () => {
+            clearTimeout(suggestTimeout);
+            const text = queryInput.value;
+            suggestTimeout = setTimeout(() => {
+                fetchAndShowSuggestions(text, false);
             }, 150);
         });
         document.addEventListener('click', (e) => {
@@ -547,20 +613,87 @@ export class FeedContainer {
                 chips.appendChild(chip);
             });
         };
-        const fetchSuggestions = async (text, page = 1) => {
-            if (!text || text.length < 2) {
-                suggestions.style.display = 'none';
-                suggestions.innerHTML = '';
+        const fetchSuggestions = async (text, page = 1, forceShow = false) => {
+            const trimmedText = text.trim();
+            // Show suggestions if we have text (2+ chars) OR if forced (on focus)
+            if (!trimmedText || trimmedText.length < 2) {
+                if (forceShow) {
+                    // On focus with empty text, show tags and saved filters
+                    suggestions.innerHTML = '';
+                    const pageSize = 24;
+                    const items = await this.api.searchMarkerTags('', pageSize);
+                    items.forEach((tag) => {
+                        if (this.selectedTagIds.includes(parseInt(tag.id, 10)))
+                            return;
+                        const chip = document.createElement('button');
+                        chip.textContent = tag.name;
+                        chip.className = 'suggest-chip';
+                        chip.style.padding = '6px 10px';
+                        chip.style.borderRadius = '999px';
+                        chip.style.border = '1px solid rgba(255,255,255,0.12)';
+                        chip.style.background = 'rgba(255,255,255,0.05)';
+                        chip.style.color = 'inherit';
+                        chip.style.fontSize = '13px';
+                        chip.style.cursor = 'pointer';
+                        chip.addEventListener('mouseenter', () => { chip.style.background = 'rgba(255,255,255,0.1)'; });
+                        chip.addEventListener('mouseleave', () => { chip.style.background = 'rgba(255,255,255,0.05)'; });
+                        chip.addEventListener('click', () => {
+                            this.selectedSavedFilter = undefined;
+                            savedSelect.value = '';
+                            const tagId = parseInt(tag.id, 10);
+                            if (!this.selectedTagIds.includes(tagId)) {
+                                this.selectedTagIds.push(tagId);
+                                this.selectedTagNames.push(tag.name);
+                                renderChips();
+                                apply();
+                                fetchSuggestions('', 1, true);
+                            }
+                        });
+                        suggestions.appendChild(chip);
+                    });
+                    // Show all saved filters
+                    savedFiltersCache.forEach((f) => {
+                        const chip = document.createElement('button');
+                        chip.textContent = f.name;
+                        chip.className = 'suggest-chip';
+                        chip.style.padding = '6px 10px';
+                        chip.style.borderRadius = '999px';
+                        chip.style.border = '1px solid rgba(255,255,255,0.12)';
+                        chip.style.background = 'rgba(255,255,255,0.05)';
+                        chip.style.color = 'inherit';
+                        chip.style.fontSize = '13px';
+                        chip.style.cursor = 'pointer';
+                        chip.addEventListener('mouseenter', () => { chip.style.background = 'rgba(255,255,255,0.1)'; });
+                        chip.addEventListener('mouseleave', () => { chip.style.background = 'rgba(255,255,255,0.05)'; });
+                        chip.addEventListener('click', () => {
+                            savedSelect.value = f.id;
+                            this.selectedSavedFilter = { id: f.id, name: f.name };
+                            this.selectedTagIds = [];
+                            this.selectedTagNames = [];
+                            queryInput.value = '';
+                            suggestions.style.display = 'none';
+                            suggestions.innerHTML = '';
+                            renderChips();
+                            apply();
+                        });
+                        suggestions.appendChild(chip);
+                    });
+                    suggestions.style.display = suggestions.children.length > 0 ? 'flex' : 'none';
+                }
+                else {
+                    suggestions.style.display = 'none';
+                    suggestions.innerHTML = '';
+                }
                 return;
             }
             // Reset grid when term changes
-            if (text !== suggestTerm) {
+            if (trimmedText !== suggestTerm) {
                 suggestPage = 1;
                 suggestions.innerHTML = '';
             }
-            suggestTerm = text;
+            suggestTerm = trimmedText;
             const pageSize = 24;
-            const items = await this.api.searchMarkerTags(text, pageSize);
+            const items = await this.api.searchMarkerTags(trimmedText, pageSize);
             // Render as chips
             items.forEach((tag) => {
                 if (this.selectedTagIds.includes(parseInt(tag.id, 10)))
@@ -588,7 +721,7 @@ export class FeedContainer {
                         renderChips();
                         apply();
                         // Refresh suggestions to remove the newly selected tag and keep menu open
-                        fetchSuggestions(suggestTerm, 1);
+                        fetchSuggestions(trimmedText, 1, false);
                     }
                 });
                 suggestions.appendChild(chip);
@@ -596,7 +729,7 @@ export class FeedContainer {
             // Simple heuristic for more results (if we filled the page)
             suggestHasMore = items.length >= pageSize;
             // Also surface matching saved filters as chips (unified UX)
-            const term = text.toLowerCase();
+            const term = trimmedText.toLowerCase();
             const matchingSaved = (savedFiltersCache || []).filter((f) => f.name.toLowerCase().includes(term));
             if (matchingSaved.length) {
                 const label = document.createElement('div');
@@ -652,7 +785,7 @@ export class FeedContainer {
                 more.addEventListener('click', async () => {
                     suggestPage += 1;
                     // Fetch next page and append
-                    const next = await this.api.searchMarkerTags(suggestTerm, pageSize);
+                    const next = await this.api.searchMarkerTags(trimmedText, pageSize);
                     next.forEach((tag) => {
                         if (this.selectedTagIds.includes(parseInt(tag.id, 10)))
                             return;
@@ -678,7 +811,7 @@ export class FeedContainer {
                                 renderChips();
                                 apply();
                                 // Refresh suggestions for continued multi-select
-                                fetchSuggestions(suggestTerm, 1);
+                                fetchSuggestions(trimmedText, 1, false);
                             }
                         });
                         suggestions.appendChild(chip);
@@ -692,10 +825,13 @@ export class FeedContainer {
             }
             suggestions.style.display = (items.length || (matchingSaved && matchingSaved.length)) ? 'flex' : 'none';
         };
+        queryInput.addEventListener('focus', () => {
+            fetchSuggestions(queryInput.value, 1, true);
+        });
         queryInput.addEventListener('input', () => {
             clearTimeout(suggestTimeout);
-            const text = queryInput.value.trim();
-            suggestTimeout = setTimeout(() => { fetchSuggestions(text, 1); }, 150);
+            const text = queryInput.value;
+            suggestTimeout = setTimeout(() => { fetchSuggestions(text, 1, false); }, 150);
         });
         document.addEventListener('click', (e) => {
             if (!searchWrapper.contains(e.target)) {
