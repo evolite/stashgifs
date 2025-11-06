@@ -89,6 +89,10 @@ export class FeedContainer {
         // Search area
         const searchArea = document.createElement('div');
         searchArea.style.position = 'relative';
+        // Constrain search width to match card width and center it
+        searchArea.style.width = '100%';
+        searchArea.style.maxWidth = `${this.settings.cardMaxWidth}px`;
+        searchArea.style.justifySelf = 'center';
         header.appendChild(searchArea);
         const queryInput = document.createElement('input');
         queryInput.type = 'text';

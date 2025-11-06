@@ -38,6 +38,7 @@ export class FeedContainer {
   private loadMoreTrigger?: HTMLElement;
   private postsContainer!: HTMLElement;
   private headerBar?: HTMLElement;
+  private selectedSavedFilter?: { id: string; name: string };
 
   constructor(container: HTMLElement, api?: StashAPI, settings?: Partial<FeedSettings>) {
     this.container = container;
@@ -113,6 +114,10 @@ export class FeedContainer {
     // Search area
     const searchArea = document.createElement('div');
     searchArea.style.position = 'relative';
+    // Constrain search width to match card width and center it
+    searchArea.style.width = '100%';
+    searchArea.style.maxWidth = `${this.settings.cardMaxWidth}px`;
+    (searchArea.style as any).justifySelf = 'center';
     header.appendChild(searchArea);
 
     const queryInput = document.createElement('input');
