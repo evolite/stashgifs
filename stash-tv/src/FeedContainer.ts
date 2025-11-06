@@ -392,7 +392,7 @@ export class FeedContainer {
 
     const apply = () => {
       const q = queryInput.value.trim();
-      const savedId = savedSelect.value || undefined;
+      const savedId = (this.selectedSavedFilter?.id) || (savedSelect.value || undefined);
       const newFilters: FilterOptions = {
         query: q || undefined,
         tags: this.selectedTagIds.length ? this.selectedTagIds.map(String) : undefined,
@@ -405,7 +405,22 @@ export class FeedContainer {
     };
 
     // Apply immediately when selecting a saved filter
-    savedSelect.addEventListener('change', apply);
+    savedSelect.addEventListener('change', () => {
+      if (savedSelect.value) {
+        const match = savedFiltersCache.find((f) => f.id === savedSelect.value);
+        if (match) {
+          this.selectedSavedFilter = { id: match.id, name: match.name };
+        }
+        // Clear tag selections when a saved filter is chosen
+        this.selectedTagIds = [];
+        this.selectedTagNames = [];
+        renderChips();
+      } else {
+        this.selectedSavedFilter = undefined;
+        renderChips();
+      }
+      apply();
+    });
     queryInput.addEventListener('keydown', (e) => { if ((e as KeyboardEvent).key === 'Enter') apply(); });
 
     // Debounced suggestions
@@ -415,6 +430,35 @@ export class FeedContainer {
     let suggestHasMore = false;
     const renderChips = () => {
       chips.innerHTML = '';
+      // Saved filter chip first (if any)
+      if (this.selectedSavedFilter) {
+        const chip = document.createElement('span');
+        chip.textContent = this.selectedSavedFilter.name;
+        chip.className = 'feed-chip';
+        chip.style.padding = '4px 10px';
+        chip.style.borderRadius = '999px';
+        chip.style.border = '1px solid rgba(255,255,255,0.12)';
+        chip.style.background = 'rgba(255,255,255,0.06)';
+        chip.style.fontSize = '12px';
+        chip.style.display = 'inline-flex';
+        chip.style.alignItems = 'center';
+        chip.style.gap = '6px';
+        const x = document.createElement('button');
+        x.textContent = '×';
+        x.style.background = 'transparent';
+        x.style.border = 'none';
+        x.style.color = 'inherit';
+        x.style.cursor = 'pointer';
+        x.style.fontSize = '14px';
+        x.addEventListener('click', () => {
+          this.selectedSavedFilter = undefined;
+          savedSelect.value = '';
+          apply();
+          renderChips();
+        });
+        chip.appendChild(x);
+        chips.appendChild(chip);
+      }
       this.selectedTagNames.forEach((name, idx) => {
         const chip = document.createElement('span');
         chip.textContent = name;
@@ -472,6 +516,9 @@ export class FeedContainer {
         chip.addEventListener('mouseenter', () => { chip.style.background = 'rgba(255,255,255,0.1)'; });
         chip.addEventListener('mouseleave', () => { chip.style.background = 'rgba(255,255,255,0.05)'; });
         chip.addEventListener('click', () => {
+          // Selecting a tag clears any saved filter to avoid conflicts
+          this.selectedSavedFilter = undefined;
+          savedSelect.value = '';
           this.selectedTagIds.push(parseInt(tag.id, 10));
           this.selectedTagNames.push(tag.name);
           suggestions.style.display = 'none';
@@ -511,9 +558,14 @@ export class FeedContainer {
           chip.addEventListener('mouseleave', () => { chip.style.background = 'rgba(255,255,255,0.05)'; });
           chip.addEventListener('click', () => {
             savedSelect.value = f.id;
+            this.selectedSavedFilter = { id: f.id, name: f.name };
+            // Clear tag selections when applying a saved filter
+            this.selectedTagIds = [];
+            this.selectedTagNames = [];
             queryInput.value = '';
             suggestions.style.display = 'none';
             suggestions.innerHTML = '';
+            renderChips();
             apply();
           });
           suggestions.appendChild(chip);
@@ -553,6 +605,8 @@ export class FeedContainer {
             chip.addEventListener('mouseenter', () => { chip.style.background = 'rgba(255,255,255,0.1)'; });
             chip.addEventListener('mouseleave', () => { chip.style.background = 'rgba(255,255,255,0.05)'; });
             chip.addEventListener('click', () => {
+              this.selectedSavedFilter = undefined;
+              savedSelect.value = '';
               this.selectedTagIds.push(parseInt(tag.id, 10));
               this.selectedTagNames.push(tag.name);
               suggestions.style.display = 'none';
@@ -588,6 +642,7 @@ export class FeedContainer {
       queryInput.value = '';
       this.selectedTagIds = [];
       this.selectedTagNames = [];
+      this.selectedSavedFilter = undefined;
       chips.innerHTML = '';
       savedSelect.value = '';
       this.currentFilters = {};
