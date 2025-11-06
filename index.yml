@@ -1,0 +1,8 @@
+- id: stashgifs
+  name: StashGifs
+  metadata:
+    description: A TikTok-like vertical scroller interface for Stash. Forked from Stash Reels.
+  version: 1.8.0-64f4d9f
+  date: 2025-11-04 06:18:30
+  path: stashgifs.zip
+  sha256: acafce2abb6a7e72bbffeb20cd2360ad2195b7b10d004c9efaecd27d9cdcc75a
