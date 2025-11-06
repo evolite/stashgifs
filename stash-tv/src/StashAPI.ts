@@ -99,20 +99,37 @@ export class StashAPI {
     try {
       // Try using PluginApi GraphQL client if available
       if (this.pluginApi?.GQL?.client) {
+        // Build filter and scene_filter same as direct fetch
+        const filter: any = {
+          per_page: filters?.limit || 20,
+          page: filters?.offset ? Math.floor(filters.offset / (filters.limit || 20)) + 1 : 1,
+        };
+        if (filters?.query) {
+          filter.q = filters.query;
+        }
+
+        const sceneFilter: any = {};
+        if (filters?.studios && filters.studios.length > 0) {
+          sceneFilter.studios = { value: filters.studios, modifier: 'INCLUDES' };
+        }
+        if (filters?.performers && filters.performers.length > 0) {
+          sceneFilter.performers = { value: filters.performers, modifier: 'INCLUDES' };
+        }
+        if (filters?.tags && filters.tags.length > 0) {
+          sceneFilter.tags = { value: filters.tags, modifier: 'INCLUDES' };
+        }
+        if (filters?.rating100 !== undefined && filters.rating100 !== null) {
+          sceneFilter.rating100 = { value: filters.rating100, modifier: 'GREATER_THAN' };
+        } else if (filters?.rating !== undefined && filters.rating !== null) {
+          const rating100 = filters.rating * 20;
+          sceneFilter.rating100 = { value: rating100, modifier: 'GREATER_THAN' };
+        }
+
         const result = await this.pluginApi.GQL.client.query({
           query: query as any,
           variables: {
-            filter: {
-              q: filters?.query,
-              per_page: filters?.limit || 20,
-              page: filters?.offset ? Math.floor(filters.offset / (filters.limit || 20)) + 1 : 1,
-            },
-            scene_filter: {
-              ...(filters?.studios && { studios: { value: filters.studios, modifier: 'INCLUDES' } }),
-              ...(filters?.performers && { performers: { value: filters.performers, modifier: 'INCLUDES' } }),
-              ...(filters?.tags && { tags: { value: filters.tags, modifier: 'INCLUDES' } }),
-              ...(filters?.rating && { rating: { value: filters.rating, modifier: 'GREATER_THAN' } }),
-            },
+            filter,
+            scene_filter: Object.keys(sceneFilter).length > 0 ? sceneFilter : {},
           },
         });
         return result.data?.findScenes?.scenes || [];
