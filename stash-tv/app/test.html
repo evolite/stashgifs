@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Stash TV Feed - Test</title>
+  <style>
+    body { background: #000; color: #fff; padding: 2rem; font-family: monospace; }
+    .error { color: #f44; }
+    .success { color: #4f4; }
+    .info { color: #ff4; }
+  </style>
+</head>
+<body>
+  <h1>Stash TV Feed UI - Test Page</h1>
+  <div id="status">Initializing...</div>
+  <div id="logs"></div>
+  
+  <script type="module">
+    const status = document.getElementById('status');
+    const logs = document.getElementById('logs');
+    
+    function log(message, type = 'info') {
+      const div = document.createElement('div');
+      div.className = type;
+      div.textContent = `[${new Date().toLocaleTimeString()}] ${message}`;
+      logs.appendChild(div);
+      console.log(message);
+    }
+    
+    log('Testing module imports...', 'info');
+    
+    try {
+      log('Importing FeedContainer...', 'info');
+      const { FeedContainer } = await import('./assets/FeedContainer.js');
+      log('✓ FeedContainer imported successfully', 'success');
+      
+      log('Importing StashAPI...', 'info');
+      const { StashAPI } = await import('./assets/StashAPI.js');
+      log('✓ StashAPI imported successfully', 'success');
+      
+      log('Checking window.PluginApi...', 'info');
+      log(`window.PluginApi: ${typeof window.PluginApi}`, window.PluginApi ? 'success' : 'error');
+      log(`window.stash: ${typeof window.stash}`, window.stash ? 'success' : 'error');
+      
+      status.innerHTML = '<span class="success">✓ All modules loaded successfully!</span>';
+      log('All tests passed!', 'success');
+    } catch (error) {
+      status.innerHTML = `<span class="error">✗ Error: ${error.message}</span>`;
+      log(`Error: ${error.message}`, 'error');
+      log(`Stack: ${error.stack}`, 'error');
+    }
+  </script>
+</body>
+</html>
+

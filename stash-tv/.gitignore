@@ -1,0 +1,20 @@
+# Dependencies
+node_modules/
+package-lock.json
+
+# Build outputs
+*.js.map
+# Keep compiled JS files, but ignore source maps in git
+# (uncomment if you want to ignore JS files too)
+# *.js
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
