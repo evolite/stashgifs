@@ -3,7 +3,7 @@
  * Individual video post card in the feed
  */
 
-import { VideoPostData, Scene } from './types.js';
+import { VideoPostData } from './types.js';
 import { NativeVideoPlayer } from './NativeVideoPlayer.js';
 import { escapeHtml, formatDuration, calculateAspectRatio, getAspectRatioClass } from './utils.js';
 
@@ -24,7 +24,7 @@ export class VideoPost {
 
   private render(): void {
     this.container.className = 'video-post';
-    this.container.dataset.postId = this.data.scene.id;
+    this.container.dataset.postId = this.data.marker.id;
     this.container.innerHTML = '';
 
     // Header
@@ -44,17 +44,27 @@ export class VideoPost {
     const header = document.createElement('div');
     header.className = 'video-post__header';
 
-    if (this.data.scene.title) {
+    // Marker title
+    if (this.data.marker.title) {
       const title = document.createElement('h3');
       title.className = 'video-post__title';
-      title.textContent = this.data.scene.title;
+      title.textContent = this.data.marker.title;
       header.appendChild(title);
     }
 
-    if (this.data.scene.date) {
+    // Scene title
+    if (this.data.marker.scene.title) {
+      const sceneTitle = document.createElement('div');
+      sceneTitle.className = 'video-post__scene-title';
+      sceneTitle.textContent = this.data.marker.scene.title;
+      header.appendChild(sceneTitle);
+    }
+
+    // Scene date
+    if (this.data.marker.scene.date) {
       const date = document.createElement('span');
       date.className = 'video-post__date';
-      date.textContent = new Date(this.data.scene.date).toLocaleDateString();
+      date.textContent = new Date(this.data.marker.scene.date).toLocaleDateString();
       header.appendChild(date);
     }
 
@@ -67,8 +77,8 @@ export class VideoPost {
 
     // Calculate aspect ratio
     let aspectRatioClass = 'aspect-16-9';
-    if (this.data.scene.files && this.data.scene.files.length > 0) {
-      const file = this.data.scene.files[0];
+    if (this.data.marker.scene.files && this.data.marker.scene.files.length > 0) {
+      const file = this.data.marker.scene.files[0];
       if (file.width && file.height) {
         const ratio = calculateAspectRatio(file.width, file.height);
         aspectRatioClass = getAspectRatioClass(ratio);
@@ -81,7 +91,7 @@ export class VideoPost {
       const thumbnail = document.createElement('img');
       thumbnail.className = 'video-post__thumbnail';
       thumbnail.src = this.thumbnailUrl;
-      thumbnail.alt = this.data.scene.title || 'Video thumbnail';
+      thumbnail.alt = this.data.marker.title || 'Video thumbnail';
       thumbnail.style.display = this.isLoaded ? 'none' : 'block';
       container.appendChild(thumbnail);
     }
@@ -104,37 +114,47 @@ export class VideoPost {
     const info = document.createElement('div');
     info.className = 'video-post__info';
 
-    // Performers
-    if (this.data.scene.performers && this.data.scene.performers.length > 0) {
+    // Primary tag (marker-specific)
+    if (this.data.marker.primary_tag) {
+      const primaryTag = document.createElement('div');
+      primaryTag.className = 'video-post__primary-tag';
+      primaryTag.innerHTML = `<strong>Category:</strong> ${escapeHtml(this.data.marker.primary_tag.name)}`;
+      info.appendChild(primaryTag);
+    }
+
+    // Marker time range
+    if (this.data.startTime !== undefined) {
+      const timeRange = document.createElement('div');
+      timeRange.className = 'video-post__time-range';
+      const startTime = formatDuration(this.data.startTime);
+      const endTime = this.data.endTime ? formatDuration(this.data.endTime) : '';
+      timeRange.textContent = `Time: ${startTime}${endTime ? ` - ${endTime}` : ''}`;
+      info.appendChild(timeRange);
+    }
+
+    // Performers (from scene)
+    if (this.data.marker.scene.performers && this.data.marker.scene.performers.length > 0) {
       const performers = document.createElement('div');
       performers.className = 'video-post__performers';
-      const performerNames = this.data.scene.performers.map(p => escapeHtml(p.name)).join(', ');
+      const performerNames = this.data.marker.scene.performers.map(p => escapeHtml(p.name)).join(', ');
       performers.innerHTML = `<strong>Performers:</strong> ${performerNames}`;
       info.appendChild(performers);
     }
 
     // Studio
-    if (this.data.scene.studio) {
+    if (this.data.marker.scene.studio) {
       const studio = document.createElement('div');
       studio.className = 'video-post__studio';
-      studio.innerHTML = `<strong>Studio:</strong> ${escapeHtml(this.data.scene.studio.name)}`;
+      studio.innerHTML = `<strong>Studio:</strong> ${escapeHtml(this.data.marker.scene.studio.name)}`;
       info.appendChild(studio);
     }
 
-    // Duration
-    if (this.data.scene.files && this.data.scene.files.length > 0 && this.data.scene.files[0].duration) {
-      const duration = document.createElement('div');
-      duration.className = 'video-post__duration';
-      duration.textContent = `Duration: ${formatDuration(this.data.scene.files[0].duration)}`;
-      info.appendChild(duration);
-    }
-
-    // Tags
-    if (this.data.scene.tags && this.data.scene.tags.length > 0) {
+    // Tags (from marker)
+    if (this.data.marker.tags && this.data.marker.tags.length > 0) {
       const tags = document.createElement('div');
       tags.className = 'video-post__tags';
-      const tagNames = this.data.scene.tags.slice(0, 5).map(t => escapeHtml(t.name)).join(', ');
-      tags.innerHTML = `<strong>Tags:</strong> ${tagNames}${this.data.scene.tags.length > 5 ? '...' : ''}`;
+      const tagNames = this.data.marker.tags.slice(0, 5).map(t => escapeHtml(t.name)).join(', ');
+      tags.innerHTML = `<strong>Tags:</strong> ${tagNames}${this.data.marker.tags.length > 5 ? '...' : ''}`;
       info.appendChild(tags);
     }
 
@@ -146,7 +166,7 @@ export class VideoPost {
   /**
    * Load the video player
    */
-  loadPlayer(videoUrl: string): void {
+  loadPlayer(videoUrl: string, startTime?: number, endTime?: number): void {
     if (this.isLoaded || !videoUrl) {
       return;
     }
@@ -159,6 +179,8 @@ export class VideoPost {
     this.player = new NativeVideoPlayer(playerContainer, videoUrl, {
       muted: false,
       autoplay: false,
+      startTime: startTime || this.data.startTime,
+      endTime: endTime || this.data.endTime,
     });
 
     // Hide thumbnail and loading
@@ -181,7 +203,7 @@ export class VideoPost {
    * Get the post ID
    */
   getPostId(): string {
-    return this.data.scene.id;
+    return this.data.marker.id;
   }
 
   /**

@@ -16,6 +16,17 @@ export interface Scene {
   paths?: ScenePaths;
 }
 
+export interface SceneMarker {
+  id: string;
+  title: string;
+  seconds: number; // Start time in seconds
+  end_seconds?: number; // End time in seconds
+  stream?: string; // Stream URL for the marker
+  primary_tag?: Tag;
+  tags?: Tag[];
+  scene: Scene; // Parent scene
+}
+
 export interface Studio {
   id: string;
   name: string;
@@ -56,6 +67,7 @@ export interface FilterOptions {
   studios?: string[];
   performers?: string[];
   tags?: string[];
+  primary_tags?: string[]; // For scene markers
   rating?: number; // User-facing, will be converted to rating100 in query
   rating100?: number; // Direct rating100 filter (0-100)
   query?: string;
@@ -75,10 +87,12 @@ export interface FeedSettings {
 }
 
 export interface VideoPostData {
-  scene: Scene;
+  marker: SceneMarker;
   videoUrl?: string;
   thumbnailUrl?: string;
   aspectRatio?: number; // width/height
+  startTime?: number; // Start time in seconds for markers
+  endTime?: number; // End time in seconds for markers
 }
 
 export interface VideoPlayerState {

@@ -21,6 +21,8 @@ export class NativeVideoPlayer {
   constructor(container: HTMLElement, videoUrl: string, options?: {
     autoplay?: boolean;
     muted?: boolean;
+    startTime?: number;
+    endTime?: number;
     onStateChange?: (state: VideoPlayerState) => void;
   }) {
     this.container = container;
@@ -35,18 +37,40 @@ export class NativeVideoPlayer {
       isFullscreen: false,
     };
 
-    this.createVideoElement(videoUrl, options);
+    this.createVideoElement(videoUrl, {
+      autoplay: options?.autoplay,
+      muted: options?.muted,
+      startTime: options?.startTime,
+      endTime: options?.endTime,
+    });
     this.createControls();
     this.attachEventListeners();
   }
 
-  private createVideoElement(videoUrl: string, options?: { autoplay?: boolean; muted?: boolean }): void {
+  private createVideoElement(videoUrl: string, options?: { autoplay?: boolean; muted?: boolean; startTime?: number; endTime?: number }): void {
     this.videoElement = document.createElement('video');
     this.videoElement.src = videoUrl;
     this.videoElement.preload = 'metadata';
     this.videoElement.playsInline = true;
     this.videoElement.muted = options?.muted ?? false;
     this.videoElement.className = 'video-player__element';
+    
+    // Set start time if provided
+    if (options?.startTime !== undefined) {
+      this.videoElement.addEventListener('loadedmetadata', () => {
+        this.videoElement.currentTime = options.startTime!;
+      }, { once: true });
+    }
+    
+    // Handle end time if provided
+    if (options?.endTime !== undefined) {
+      this.videoElement.addEventListener('timeupdate', () => {
+        if (this.videoElement.currentTime >= options.endTime!) {
+          this.videoElement.pause();
+          this.videoElement.currentTime = options.startTime || 0;
+        }
+      });
+    }
 
     const playerWrapper = document.createElement('div');
     playerWrapper.className = 'video-player';

@@ -26,51 +26,65 @@ export class StashAPI {
         });
     }
     /**
-     * Fetch scenes from Stash
+     * Fetch scene markers from Stash
      */
-    async fetchScenes(filters) {
-        // Use a query that matches Stash's expected format
-        // Based on the existing TvSceneData fragment structure
-        const query = `query FindScenes($filter: FindFilterType, $scene_filter: SceneFilterType) {
-  findScenes(filter: $filter, scene_filter: $scene_filter) {
+    async fetchSceneMarkers(filters) {
+        // Query for scene markers based on FindSceneMarkersForTv
+        const query = `query FindSceneMarkers($filter: FindFilterType, $scene_marker_filter: SceneMarkerFilterType) {
+  findSceneMarkers(filter: $filter, scene_marker_filter: $scene_marker_filter) {
     count
-    scenes {
+    scene_markers {
       id
       title
-      date
-      details
-      url
-      rating100
-      studio {
+      seconds
+      end_seconds
+      stream
+      primary_tag {
         id
         name
-      }
-      performers {
-        id
-        name
-        image_path
       }
       tags {
         id
         name
       }
-      files {
+      scene {
         id
-        path
-        size
-        duration
-        video_codec
-        audio_codec
-        width
-        height
-        bit_rate
-      }
-      paths {
-        screenshot
-        preview
-        stream
-        webp
-        vtt
+        title
+        date
+        details
+        url
+        rating100
+        studio {
+          id
+          name
+        }
+        performers {
+          id
+          name
+          image_path
+        }
+        tags {
+          id
+          name
+        }
+        files {
+          id
+          path
+          size
+          duration
+          video_codec
+          audio_codec
+          width
+          height
+          bit_rate
+        }
+        paths {
+          screenshot
+          preview
+          stream
+          webp
+          vtt
+        }
       }
     }
   }
@@ -78,7 +92,7 @@ export class StashAPI {
         try {
             // Try using PluginApi GraphQL client if available
             if (this.pluginApi?.GQL?.client) {
-                // Build filter and scene_filter same as direct fetch
+                // Build filter and scene_marker_filter
                 const filter = {
                     per_page: filters?.limit || 20,
                     page: filters?.offset ? Math.floor(filters.offset / (filters.limit || 20)) + 1 : 1,
@@ -86,31 +100,25 @@ export class StashAPI {
                 if (filters?.query) {
                     filter.q = filters.query;
                 }
-                const sceneFilter = {};
-                if (filters?.studios && filters.studios.length > 0) {
-                    sceneFilter.studios = { value: filters.studios, modifier: 'INCLUDES' };
-                }
-                if (filters?.performers && filters.performers.length > 0) {
-                    sceneFilter.performers = { value: filters.performers, modifier: 'INCLUDES' };
+                const sceneMarkerFilter = {};
+                if (filters?.primary_tags && filters.primary_tags.length > 0) {
+                    sceneMarkerFilter.tags = { value: filters.primary_tags, modifier: 'INCLUDES' };
                 }
                 if (filters?.tags && filters.tags.length > 0) {
-                    sceneFilter.tags = { value: filters.tags, modifier: 'INCLUDES' };
+                    sceneMarkerFilter.tags = { value: filters.tags, modifier: 'INCLUDES' };
                 }
-                if (filters?.rating100 !== undefined && filters.rating100 !== null) {
-                    sceneFilter.rating100 = { value: filters.rating100, modifier: 'GREATER_THAN' };
-                }
-                else if (filters?.rating !== undefined && filters.rating !== null) {
-                    const rating100 = filters.rating * 20;
-                    sceneFilter.rating100 = { value: rating100, modifier: 'GREATER_THAN' };
+                // Scene marker filters can also filter by scene properties
+                if (filters?.studios && filters.studios.length > 0) {
+                    sceneMarkerFilter.scene_tags = { value: filters.studios, modifier: 'INCLUDES' };
                 }
                 const result = await this.pluginApi.GQL.client.query({
                     query: query,
                     variables: {
                         filter,
-                        scene_filter: Object.keys(sceneFilter).length > 0 ? sceneFilter : {},
+                        scene_marker_filter: Object.keys(sceneMarkerFilter).length > 0 ? sceneMarkerFilter : {},
                     },
                 });
-                return result.data?.findScenes?.scenes || [];
+                return result.data?.findSceneMarkers?.scene_markers || [];
             }
             // Fallback to direct fetch
             // Build filter object - only include non-empty values
@@ -121,31 +129,19 @@ export class StashAPI {
             if (filters?.query) {
                 filter.q = filters.query;
             }
-            // Build scene_filter object - only include non-empty values
-            const sceneFilter = {};
-            if (filters?.studios && filters.studios.length > 0) {
-                sceneFilter.studios = { value: filters.studios, modifier: 'INCLUDES' };
-            }
-            if (filters?.performers && filters.performers.length > 0) {
-                sceneFilter.performers = { value: filters.performers, modifier: 'INCLUDES' };
+            // Build scene_marker_filter object - only include non-empty values
+            const sceneMarkerFilter = {};
+            if (filters?.primary_tags && filters.primary_tags.length > 0) {
+                sceneMarkerFilter.tags = { value: filters.primary_tags, modifier: 'INCLUDES' };
             }
             if (filters?.tags && filters.tags.length > 0) {
-                sceneFilter.tags = { value: filters.tags, modifier: 'INCLUDES' };
-            }
-            // Handle rating - Stash uses rating100 (0-100 scale)
-            if (filters?.rating100 !== undefined && filters.rating100 !== null) {
-                sceneFilter.rating100 = { value: filters.rating100, modifier: 'GREATER_THAN' };
-            }
-            else if (filters?.rating !== undefined && filters.rating !== null) {
-                // Convert 0-5 rating to 0-100 scale if needed
-                const rating100 = filters.rating * 20;
-                sceneFilter.rating100 = { value: rating100, modifier: 'GREATER_THAN' };
+                sceneMarkerFilter.tags = { value: filters.tags, modifier: 'INCLUDES' };
             }
             const variables = {
                 filter,
-                scene_filter: Object.keys(sceneFilter).length > 0 ? sceneFilter : {}
+                scene_marker_filter: Object.keys(sceneMarkerFilter).length > 0 ? sceneMarkerFilter : {}
             };
-            console.log('StashAPI: Sending GraphQL request', {
+            console.log('StashAPI: Sending GraphQL request for scene markers', {
                 baseUrl: this.baseUrl,
                 variables,
                 queryLength: query.length
@@ -175,12 +171,26 @@ export class StashAPI {
                 console.error('GraphQL errors:', data.errors);
                 throw new Error(`GraphQL errors: ${JSON.stringify(data.errors)}`);
             }
-            return data.data?.findScenes?.scenes || [];
+            return data.data?.findSceneMarkers?.scene_markers || [];
         }
         catch (error) {
-            console.error('Error fetching scenes:', error);
+            console.error('Error fetching scene markers:', error);
             return [];
         }
+    }
+    /**
+     * Get video URL for a scene marker
+     */
+    getMarkerVideoUrl(marker) {
+        // Use marker stream URL if available
+        if (marker.stream) {
+            const url = marker.stream.startsWith('http')
+                ? marker.stream
+                : `${this.baseUrl}${marker.stream}`;
+            return url;
+        }
+        // Fallback to scene stream
+        return this.getVideoUrl(marker.scene);
     }
     /**
      * Get video URL for a scene
@@ -201,6 +211,12 @@ export class StashAPI {
             return url;
         }
         return undefined;
+    }
+    /**
+     * Get thumbnail URL for a scene marker (uses parent scene)
+     */
+    getMarkerThumbnailUrl(marker) {
+        return this.getThumbnailUrl(marker.scene);
     }
     /**
      * Get thumbnail URL for a scene

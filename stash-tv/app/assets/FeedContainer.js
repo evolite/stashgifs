@@ -18,12 +18,14 @@ const DEFAULT_SETTINGS = {
 };
 export class FeedContainer {
     constructor(container, api, settings) {
+        this.markers = [];
         this.isLoading = false;
+        this.hasMore = true;
+        this.currentPage = 1;
         this.container = container;
         this.api = api || new StashAPI();
         this.settings = { ...DEFAULT_SETTINGS, ...settings };
         this.posts = new Map();
-        this.scenes = [];
         // Create scroll container
         this.scrollContainer = document.createElement('div');
         this.scrollContainer.className = 'feed-scroll-container';
@@ -36,6 +38,8 @@ export class FeedContainer {
         });
         // Setup scroll handler
         this.setupScrollHandler();
+        // Setup infinite scroll
+        this.setupInfiniteScroll();
     }
     /**
      * Initialize the feed
@@ -45,35 +49,63 @@ export class FeedContainer {
         await this.loadVideos(filters);
     }
     /**
-     * Load videos from Stash
+     * Load scene markers from Stash
      */
-    async loadVideos(filters) {
+    async loadVideos(filters, append = false) {
         if (this.isLoading) {
             return;
         }
         this.isLoading = true;
-        this.showLoading();
+        if (!append) {
+            this.showLoading();
+            this.currentPage = 1;
+            this.hasMore = true;
+        }
         try {
-            console.log('FeedContainer: Fetching scenes...', filters || this.currentFilters);
-            const scenes = await this.api.fetchScenes(filters || this.currentFilters);
-            console.log('FeedContainer: Received scenes', scenes.length);
-            this.scenes = scenes;
-            if (scenes.length === 0) {
-                this.showError('No videos found. Try adjusting your filters.');
+            const currentFilters = filters || this.currentFilters || {};
+            const page = append ? this.currentPage + 1 : 1;
+            console.log('FeedContainer: Fetching scene markers...', { ...currentFilters, page });
+            const markers = await this.api.fetchSceneMarkers({
+                ...currentFilters,
+                limit: currentFilters.limit || 20,
+                offset: append ? (page - 1) * (currentFilters.limit || 20) : 0,
+            });
+            console.log('FeedContainer: Received markers', markers.length);
+            if (!append) {
+                this.markers = markers;
+                this.clearPosts();
+            }
+            else {
+                this.markers.push(...markers);
+            }
+            if (markers.length === 0) {
+                if (!append) {
+                    this.showError('No scene markers found. Try adjusting your filters.');
+                }
+                this.hasMore = false;
                 this.hideLoading();
                 return;
             }
-            // Clear existing posts
-            this.clearPosts();
-            // Create posts for each scene
-            for (const scene of scenes) {
-                await this.createPost(scene);
+            // Check if we got fewer results than requested (means no more pages)
+            if (markers.length < (currentFilters.limit || 20)) {
+                this.hasMore = false;
+            }
+            // Create posts for each marker
+            for (const marker of markers) {
+                await this.createPost(marker);
+            }
+            if (append) {
+                this.currentPage = page;
             }
             this.hideLoading();
+            // Update infinite scroll trigger position
+            this.updateInfiniteScrollTrigger();
         }
         catch (error) {
-            console.error('Error loading videos:', error);
-            this.showError(`Failed to load videos: ${error.message || 'Unknown error'}`);
+            console.error('Error loading scene markers:', error);
+            if (!append) {
+                this.showError(`Failed to load scene markers: ${error.message || 'Unknown error'}`);
+            }
             this.hideLoading();
         }
         finally {
@@ -81,32 +113,34 @@ export class FeedContainer {
         }
     }
     /**
-     * Create a video post
+     * Create a video post from a scene marker
      */
-    async createPost(scene) {
+    async createPost(marker) {
         const postContainer = document.createElement('article');
         postContainer.className = 'video-post-wrapper';
-        const videoUrl = this.api.getVideoUrl(scene);
-        const thumbnailUrl = this.api.getThumbnailUrl(scene);
+        const videoUrl = this.api.getMarkerVideoUrl(marker);
+        const thumbnailUrl = this.api.getMarkerThumbnailUrl(marker);
         const postData = {
-            scene,
+            marker,
             videoUrl,
             thumbnailUrl,
+            startTime: marker.seconds,
+            endTime: marker.end_seconds,
         };
         const post = new VideoPost(postContainer, postData);
-        this.posts.set(scene.id, post);
+        this.posts.set(marker.id, post);
         // Add to scroll container
         this.scrollContainer.appendChild(postContainer);
         // Observe for visibility
-        this.visibilityManager.observePost(postContainer, scene.id);
+        this.visibilityManager.observePost(postContainer, marker.id);
         // Load video when it becomes visible (lazy loading)
         if (videoUrl) {
             // Use Intersection Observer to load video when near viewport
             const loadObserver = new IntersectionObserver((entries) => {
                 for (const entry of entries) {
                     if (entry.isIntersecting) {
-                        post.loadPlayer(videoUrl);
-                        this.visibilityManager.registerPlayer(scene.id, post.getPlayer());
+                        post.loadPlayer(videoUrl, marker.seconds, marker.end_seconds);
+                        this.visibilityManager.registerPlayer(marker.id, post.getPlayer());
                         loadObserver.disconnect();
                     }
                 }
@@ -123,6 +157,48 @@ export class FeedContainer {
         }
         this.posts.clear();
         this.scrollContainer.innerHTML = '';
+        // Recreate load more trigger
+        if (this.loadMoreTrigger) {
+            this.scrollContainer.appendChild(this.loadMoreTrigger);
+        }
+    }
+    /**
+     * Setup infinite scroll
+     */
+    setupInfiniteScroll() {
+        // Create a trigger element at the bottom of the feed
+        this.loadMoreTrigger = document.createElement('div');
+        this.loadMoreTrigger.className = 'load-more-trigger';
+        this.loadMoreTrigger.style.height = '100px';
+        this.loadMoreTrigger.style.width = '100%';
+        this.scrollContainer.appendChild(this.loadMoreTrigger);
+        // Use Intersection Observer to detect when trigger is visible
+        this.scrollObserver = new IntersectionObserver((entries) => {
+            entries.forEach((entry) => {
+                if (entry.isIntersecting && !this.isLoading && this.hasMore) {
+                    console.log('Load more triggered');
+                    this.loadVideos(undefined, true).catch((error) => {
+                        console.error('Error loading more markers:', error);
+                    });
+                }
+            });
+        }, {
+            root: null,
+            rootMargin: '200px', // Start loading 200px before reaching the trigger
+            threshold: 0.1,
+        });
+        if (this.loadMoreTrigger) {
+            this.scrollObserver.observe(this.loadMoreTrigger);
+        }
+    }
+    /**
+     * Update infinite scroll trigger position
+     */
+    updateInfiniteScrollTrigger() {
+        if (this.loadMoreTrigger && this.scrollContainer) {
+            // Ensure trigger is at the bottom
+            this.scrollContainer.appendChild(this.loadMoreTrigger);
+        }
     }
     /**
      * Setup scroll handler
