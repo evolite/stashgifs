@@ -649,7 +649,7 @@ export class StashAPI {
         : `${this.baseUrl}${filePath}`;
       try {
         const absolute = url.startsWith('http') ? url : `${window.location.origin}${url}`;
-        const appRoot = `${window.location.origin}/plugin/stash-tv/assets/app/`;
+        const appRoot = `${window.location.origin}/plugin/stashgifs/assets/app/`;
         if (!absolute || absolute === this.baseUrl || absolute === window.location.origin || absolute === appRoot) return undefined;
       } catch {}
       return url;
