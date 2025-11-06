@@ -1,0 +1,14 @@
+{
+  "name": "stash-tv-feed",
+  "version": "1.0.0",
+  "description": "Feed UI for Stash TV",
+  "scripts": {
+    "build": "tsc",
+    "watch": "tsc --watch",
+    "clean": "rm -rf app/assets/*.js app/assets/*.js.map"
+  },
+  "devDependencies": {
+    "typescript": "^5.0.0"
+  }
+}
+

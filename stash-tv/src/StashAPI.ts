@@ -5,24 +5,34 @@
 
 import { Scene, FilterOptions } from './types';
 
+interface StashPluginApi {
+  GQL: {
+    useFindScenesQuery?: (variables: any) => { data?: any; loading: boolean };
+    client?: {
+      query: (options: { query: any; variables?: any }) => Promise<{ data: any }>;
+    };
+  };
+  baseURL?: string;
+  apiKey?: string;
+}
+
 export class StashAPI {
   private baseUrl: string;
   private apiKey?: string;
+  private pluginApi?: StashPluginApi;
 
   constructor(baseUrl?: string, apiKey?: string) {
     // Get from window if available (Stash plugin context)
-    this.baseUrl = baseUrl || (window as any).stash?.baseURL || '';
-    this.apiKey = apiKey || (window as any).stash?.apiKey;
+    const windowAny = window as any;
+    this.pluginApi = windowAny.PluginApi || windowAny.stash;
+    this.baseUrl = baseUrl || this.pluginApi?.baseURL || '';
+    this.apiKey = apiKey || this.pluginApi?.apiKey;
   }
 
   /**
    * Fetch scenes from Stash
    */
   async fetchScenes(filters?: FilterOptions): Promise<Scene[]> {
-    // TODO: Implement GraphQL query
-    // This will need to be adapted from the existing React implementation
-    // For now, return empty array as placeholder
-    
     const query = `
       query FindScenes($filter: FindFilterType, $scene_filter: SceneFilterType) {
         findScenes(filter: $filter, scene_filter: $scene_filter) {
@@ -71,6 +81,28 @@ export class StashAPI {
     `;
 
     try {
+      // Try using PluginApi GraphQL client if available
+      if (this.pluginApi?.GQL?.client) {
+        const result = await this.pluginApi.GQL.client.query({
+          query: query as any,
+          variables: {
+            filter: {
+              q: filters?.query,
+              per_page: filters?.limit || 20,
+              page: filters?.offset ? Math.floor(filters.offset / (filters.limit || 20)) + 1 : 1,
+            },
+            scene_filter: {
+              ...(filters?.studios && { studios: { value: filters.studios, modifier: 'INCLUDES' } }),
+              ...(filters?.performers && { performers: { value: filters.performers, modifier: 'INCLUDES' } }),
+              ...(filters?.tags && { tags: { value: filters.tags, modifier: 'INCLUDES' } }),
+              ...(filters?.rating && { rating: { value: filters.rating, modifier: 'GREATER_THAN' } }),
+            },
+          },
+        });
+        return result.data?.findScenes?.scenes || [];
+      }
+
+      // Fallback to direct fetch
       const response = await fetch(`${this.baseUrl}/graphql`, {
         method: 'POST',
         headers: {
