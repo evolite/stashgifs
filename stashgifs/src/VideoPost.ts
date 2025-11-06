@@ -104,18 +104,16 @@ export class VideoPost {
       }
     }
 
-    // Tag chips (marker tags only) next to performers
-    if (this.data.marker.tags && this.data.marker.tags.length > 0) {
-      for (const tag of this.data.marker.tags) {
-        if (!tag || !tag.id || !tag.name) continue;
-        const chip = document.createElement('a');
-        chip.className = 'chip chip--tag';
-        chip.href = this.getTagLink(tag.id);
-        chip.target = '_blank';
-        chip.rel = 'noopener noreferrer';
-        chip.appendChild(document.createTextNode(tag.name));
-        chips.appendChild(chip);
-      }
+    // Tag chip: show only the primary tag if available; otherwise show nothing
+    if (this.data.marker.primary_tag && this.data.marker.primary_tag.id && this.data.marker.primary_tag.name) {
+      const tag = this.data.marker.primary_tag;
+      const chip = document.createElement('a');
+      chip.className = 'chip chip--tag';
+      chip.href = this.getTagLink(tag.id);
+      chip.target = '_blank';
+      chip.rel = 'noopener noreferrer';
+      chip.appendChild(document.createTextNode(tag.name));
+      chips.appendChild(chip);
     }
     row.appendChild(chips);
 

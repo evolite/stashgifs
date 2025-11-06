@@ -86,7 +86,7 @@ export class FeedContainer {
     const header = document.createElement('div');
     this.headerBar = header;
     header.style.position = 'fixed';
-    header.style.top = '10px';
+    header.style.top = '0';
     header.style.left = '0';
     header.style.right = '0';
     header.style.height = '72px';
