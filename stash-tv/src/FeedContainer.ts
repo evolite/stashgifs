@@ -10,7 +10,7 @@ import { VisibilityManager } from './VisibilityManager.js';
 import { throttle } from './utils.js';
 
 const DEFAULT_SETTINGS: FeedSettings = {
-  autoPlay: false,
+  autoPlay: true, // Enable autoplay for markers
   autoPlayThreshold: 0.5,
   maxConcurrentVideos: 3,
   unloadDistance: 1000,
@@ -177,7 +177,14 @@ export class FeedContainer {
           for (const entry of entries) {
             if (entry.isIntersecting) {
               post.loadPlayer(videoUrl, marker.seconds, marker.end_seconds);
-              this.visibilityManager.registerPlayer(marker.id, post.getPlayer()!);
+              const player = post.getPlayer();
+              if (player) {
+                this.visibilityManager.registerPlayer(marker.id, player);
+                // Autoplay if enabled
+                if (this.settings.autoPlay) {
+                  player.play();
+                }
+              }
               loadObserver.disconnect();
             }
           }
