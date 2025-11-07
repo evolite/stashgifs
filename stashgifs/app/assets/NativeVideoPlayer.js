@@ -29,9 +29,15 @@ export class NativeVideoPlayer {
         this.videoElement = document.createElement('video');
         this.videoElement.src = videoUrl;
         this.videoElement.preload = 'auto'; // Changed from 'metadata' to 'auto' for better loading
-        this.videoElement.playsInline = true;
+        this.videoElement.playsInline = true; // Required for iOS inline playback
         this.videoElement.muted = options?.muted ?? true; // Default to muted for autoplay
+        this.videoElement.loop = true; // Enable looping
         this.videoElement.className = 'video-player__element';
+        // Mobile-specific attributes
+        this.videoElement.setAttribute('playsinline', 'true'); // iOS Safari requires lowercase
+        this.videoElement.setAttribute('webkit-playsinline', 'true'); // Legacy iOS support
+        this.videoElement.setAttribute('x5-playsinline', 'true'); // Android X5 browser
+        this.videoElement.setAttribute('x-webkit-airplay', 'allow'); // AirPlay support
         // Set start time if provided
         if (options?.startTime !== undefined) {
             const setStartTime = () => {
@@ -42,11 +48,15 @@ export class NativeVideoPlayer {
             this.videoElement.addEventListener('canplay', setStartTime, { once: true });
         }
         // Handle end time if provided (only if endTime > startTime + small tolerance)
+        // Loop back to startTime when reaching endTime
         if (options?.endTime !== undefined && (options.startTime === undefined || options.endTime > options.startTime + 0.25)) {
             this.videoElement.addEventListener('timeupdate', () => {
                 if (this.videoElement.currentTime >= options.endTime) {
-                    this.videoElement.pause();
                     this.videoElement.currentTime = options.startTime || 0;
+                    // Continue playing if it was playing
+                    if (!this.videoElement.paused) {
+                        this.videoElement.play().catch(() => { });
+                    }
                 }
             });
         }
@@ -147,8 +157,12 @@ export class NativeVideoPlayer {
             const target = e.target;
             this.seekTo(parseFloat(target.value));
         });
-        // Click video to play/pause
+        // Click/touch video to play/pause (important for mobile when autoplay fails)
         this.videoElement.addEventListener('click', () => this.togglePlay());
+        this.videoElement.addEventListener('touchend', (e) => {
+            e.preventDefault(); // Prevent double-firing with click
+            this.togglePlay();
+        });
     }
     updatePlayButton() {
         if (this.state.isPlaying) {
@@ -180,29 +194,58 @@ export class NativeVideoPlayer {
             this.onStateChange({ ...this.state });
         }
     }
-    play() {
-        // Hint browser to allow autoplay of muted content
-        this.videoElement.autoplay = true;
-        // Ensure video is muted for autoplay policies
+    async play() {
+        // Ensure video is muted for autoplay policies (required for mobile)
         if (!this.videoElement.muted) {
             this.videoElement.muted = true;
             this.state.isMuted = true;
             this.updateMuteButton();
         }
-        const playPromise = this.videoElement.play();
-        if (playPromise !== undefined) {
-            return playPromise.catch((err) => {
-                console.error('NativeVideoPlayer: play() failed', {
-                    error: err,
-                    readyState: this.videoElement.readyState,
-                    paused: this.videoElement.paused,
-                    muted: this.videoElement.muted,
-                    src: this.videoElement.src
-                });
-                throw err;
-            });
+        const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+        const minReadyState = isMobile ? 2 : 3; // Lower threshold on mobile
+        // Wait for video to be ready if not already (shorter wait on mobile)
+        if (this.videoElement.readyState < minReadyState) {
+            try {
+                const timeout = isMobile ? 1000 : 3000;
+                await this.waitUntilCanPlay(timeout);
+            }
+            catch (e) {
+                // On mobile, try playing even if not fully ready
+                if (isMobile && this.videoElement.readyState >= 1) {
+                    console.log('NativeVideoPlayer: Playing with minimal data on mobile');
+                }
+                else {
+                    console.warn('NativeVideoPlayer: Video not fully ready, attempting play anyway', e);
+                }
+            }
         }
-        return Promise.resolve();
+        // Ensure video element is in the DOM and visible
+        if (!this.videoElement.isConnected) {
+            throw new Error('Video element not in DOM');
+        }
+        // Hint browser to allow autoplay of muted content
+        this.videoElement.autoplay = true;
+        try {
+            const playPromise = this.videoElement.play();
+            if (playPromise !== undefined) {
+                await playPromise;
+                // Update state after successful play
+                this.state.isPlaying = !this.videoElement.paused;
+                this.updatePlayButton();
+                this.notifyStateChange();
+            }
+        }
+        catch (err) {
+            console.error('NativeVideoPlayer: play() failed', {
+                error: err,
+                readyState: this.videoElement.readyState,
+                paused: this.videoElement.paused,
+                muted: this.videoElement.muted,
+                src: this.videoElement.src,
+                networkState: this.videoElement.networkState
+            });
+            throw err;
+        }
     }
     pause() {
         this.videoElement.pause();
@@ -239,14 +282,65 @@ export class NativeVideoPlayer {
         return { ...this.state };
     }
     /**
-     * Wait until the video can play (canplay fired or readyState >= 3)
+     * Wait until the video can play (readyState >= 4 for HAVE_ENOUGH_DATA)
+     * On mobile, accepts lower readyState to start playing faster
      */
-    async waitUntilCanPlay(timeoutMs = 3000) {
-        if (this.videoElement.readyState >= 3) {
+    async waitUntilCanPlay(timeoutMs = 5000) {
+        const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+        // On mobile, accept readyState >= 2 (HAVE_CURRENT_DATA) for faster start
+        const minReadyState = isMobile ? 2 : 4;
+        // Check if already ready
+        if (this.videoElement.readyState >= minReadyState) {
             return;
         }
-        const to = new Promise((resolve) => setTimeout(resolve, timeoutMs));
-        await Promise.race([this.readyPromise, to]);
+        // Wait for canplay event (faster than canplaythrough on mobile)
+        return new Promise((resolve, reject) => {
+            const timeout = setTimeout(() => {
+                cleanup();
+                // On mobile, be more lenient - accept lower readyState
+                if (this.videoElement.readyState >= minReadyState) {
+                    resolve();
+                }
+                else if (isMobile && this.videoElement.readyState >= 1) {
+                    // On mobile, even HAVE_METADATA (1) might be enough to start
+                    resolve();
+                }
+                else {
+                    reject(new Error('Video not ready within timeout'));
+                }
+            }, timeoutMs);
+            const onCanPlay = () => {
+                cleanup();
+                resolve();
+            };
+            const onLoadedData = () => {
+                // If we have enough data, resolve early
+                if (this.videoElement.readyState >= minReadyState) {
+                    cleanup();
+                    resolve();
+                }
+            };
+            const cleanup = () => {
+                clearTimeout(timeout);
+                this.videoElement.removeEventListener('canplay', onCanPlay);
+                this.videoElement.removeEventListener('loadeddata', onLoadedData);
+            };
+            // On mobile, use 'canplay' instead of 'canplaythrough' for faster start
+            const eventName = isMobile ? 'canplay' : 'canplaythrough';
+            this.videoElement.addEventListener(eventName, onCanPlay, { once: true });
+            this.videoElement.addEventListener('loadeddata', onLoadedData, { once: true });
+            // Also check if it becomes ready while we're waiting (faster polling on mobile)
+            const pollInterval = isMobile ? 50 : 100;
+            const checkInterval = setInterval(() => {
+                if (this.videoElement.readyState >= minReadyState) {
+                    clearInterval(checkInterval);
+                    cleanup();
+                    resolve();
+                }
+            }, pollInterval);
+            // Clean up interval on timeout
+            setTimeout(() => clearInterval(checkInterval), timeoutMs);
+        });
     }
     destroy() {
         this.videoElement.pause();

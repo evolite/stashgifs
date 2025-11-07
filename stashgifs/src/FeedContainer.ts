@@ -7,6 +7,7 @@ import { SceneMarker, FilterOptions, FeedSettings, VideoPostData } from './types
 import { StashAPI } from './StashAPI.js';
 import { VideoPost } from './VideoPost.js';
 import { VisibilityManager } from './VisibilityManager.js';
+import { FavoritesManager } from './FavoritesManager.js';
 import { throttle, shuffleInPlace, isValidMediaUrl } from './utils.js';
 
 const DEFAULT_SETTINGS: FeedSettings = {
@@ -25,6 +26,7 @@ export class FeedContainer {
   private scrollContainer: HTMLElement;
   private api: StashAPI;
   private visibilityManager: VisibilityManager;
+  private favoritesManager: FavoritesManager;
   private posts: Map<string, VideoPost>;
   private settings: FeedSettings;
   private markers: SceneMarker[] = [];
@@ -64,6 +66,9 @@ export class FeedContainer {
       maxConcurrent: this.settings.maxConcurrentVideos,
     });
 
+    // Initialize favorites manager
+    this.favoritesManager = new FavoritesManager(this.api);
+
     // Setup scroll handler
     this.setupScrollHandler();
     
@@ -71,6 +76,69 @@ export class FeedContainer {
     this.setupInfiniteScroll();
     // Render filter bottom sheet UI
     this.renderFilterSheet();
+    
+    // Unlock autoplay on mobile after first user interaction
+    this.unlockMobileAutoplay();
+  }
+  
+  /**
+   * Unlock autoplay on mobile by playing a dummy video on first user interaction
+   * This allows subsequent videos to autoplay
+   */
+  private unlockMobileAutoplay(): void {
+    const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+    if (!isMobile) return;
+    
+    let unlocked = false;
+    const unlock = async () => {
+      if (unlocked) return;
+      unlocked = true;
+      
+      // Create a dummy video element to unlock autoplay
+      const dummyVideo = document.createElement('video');
+      dummyVideo.muted = true;
+      dummyVideo.playsInline = true;
+      dummyVideo.setAttribute('playsinline', 'true');
+      dummyVideo.setAttribute('webkit-playsinline', 'true');
+      dummyVideo.style.display = 'none';
+      dummyVideo.style.width = '1px';
+      dummyVideo.style.height = '1px';
+      dummyVideo.style.position = 'absolute';
+      dummyVideo.style.opacity = '0';
+      dummyVideo.style.pointerEvents = 'none';
+      
+      // Use a data URL for a minimal video (1x1 transparent pixel)
+      // This is just to unlock autoplay capability
+      dummyVideo.src = 'data:video/mp4;base64,AAAAIGZ0eXBpc29tAAACAGlzb21pc28yYXZjMW1wNDEAAAAIZnJlZQAAAbxtZGF0AAACrgYF//+q3EXpvebZSLeWLNgg2SPu73gyNjQgLSBjb3JlIDE1MiByMjg1NCBlOWE1OTAzIC0gSC4yNjQvTVBFRy00IEFWQyBjb2RlYyAtIENvcHlsZWZ0IDIwMDMtMjAxNyAtIGh0dHA6Ly93d3cudmlkZW9sYW4ub3JnL3gyNjQuaHRtbCAtIG9wdGlvbnM6IGNhYmFjPTEgcmVmPTMgZGVibG9jaz0xOjA6MCBhbmFseXNlPTB4MzoweDExMyBtZT1oZXggc3VibWU9NyBwc3k9MSBwc3lfcmQ9MS4wMDowLjAwIG1peGVkX3JlZj0xIG1lX3JhbmdlPTE2IGNocm9tYV9tZT0xIHRyZWxsaXM9MSA4eDhkY3Q9MSBjcW09MCBkZWFkem9uZT0yMSwxMSBmYXN0X3Bza2lwPTEgY2hyb21hX3FwX29mZnNldD0tMiB0aHJlYWRzPTEgbG9va2FoZWFkX3RocmVhZHM9MSBzbGljZWRfdGhyZWFkcz0wIG5yPTAgZGVjaW1hdGU9MSBpbnRlcmxhY2VkPTAgYmx1cmF5X2NvbXBhdD0wIGNvbnN0cmFpbmVkX2ludHJhPTAgYmZyYW1lcz0zIGJfcHlyYW1pZD0yIGJfYWRhcHQ9MSBiX2JpYXM9MCBkaXJlY3Q9MSB3ZWlnaHRiPTEgb3Blbl9nb3A9MCB3ZWlnaHRwPTIga2V5aW50PTI1MCBrZXlpbnRfbWluPTI1IHNjZW5lY3V0PTQwIGludHJhX3JlZnJlc2g9MCByY19sb29rYWhlYWQ9NDAgcmM9Y3JmIG1idHJlZT0xIGNyZj0yMy4wIHFjb21wPTAuNjAgcXBtaW49MCBxcG1heD02OSBxcHN0ZXA9NCBpcF9yYXRpbz0xLjQwIGFxPTA6';
+      
+      document.body.appendChild(dummyVideo);
+      
+      try {
+        // Try to play the dummy video to unlock autoplay
+        await dummyVideo.play();
+        console.log('FeedContainer: Mobile autoplay unlocked');
+        
+        // Try to play all currently visible videos
+        setTimeout(() => {
+          this.visibilityManager.retryVisibleVideos();
+        }, 100);
+      } catch (e) {
+        console.log('FeedContainer: Could not unlock autoplay yet', e);
+      } finally {
+        // Clean up after a short delay
+        setTimeout(() => {
+          if (dummyVideo.parentNode) {
+            dummyVideo.parentNode.removeChild(dummyVideo);
+          }
+        }, 1000);
+      }
+    };
+    
+    // Unlock on any user interaction
+    const events = ['touchstart', 'touchend', 'click', 'scroll', 'touchmove'];
+    events.forEach(event => {
+      document.addEventListener(event, unlock, { once: true, passive: true });
+    });
   }
 
   /**
@@ -140,7 +208,8 @@ export class FeedContainer {
     chips.style.marginTop = '6px';
     chips.style.width = '100%';
     chips.style.maxWidth = '100%';
-    chips.style.overflow = 'visible';
+    chips.style.overflow = 'hidden';
+    chips.style.boxSizing = 'border-box';
 
     const queryInput = document.createElement('input');
     queryInput.type = 'text';
@@ -552,7 +621,8 @@ export class FeedContainer {
     chips.style.gap = '6px';
     chips.style.width = '100%';
     chips.style.maxWidth = '100%';
-    chips.style.overflow = 'visible';
+    chips.style.overflow = 'hidden';
+    chips.style.boxSizing = 'border-box';
     searchWrapper.style.position = 'relative';
     searchWrapper.appendChild(chips);
     searchWrapper.appendChild(queryInput);
@@ -1091,7 +1161,7 @@ export class FeedContainer {
         offset: append ? (page - 1) * (currentFilters.limit || 20) : 0,
       });
       
-      // Markers are already shuffled and separated by similarity in fetchSceneMarkers
+      // Markers are fetched with random sorting from GraphQL API
 
       
       if (!append) {
@@ -1163,7 +1233,7 @@ export class FeedContainer {
       endTime: marker.end_seconds,
     };
 
-    const post = new VideoPost(postContainer, postData);
+      const post = new VideoPost(postContainer, postData, this.favoritesManager, this.api);
     this.posts.set(marker.id, post);
 
     // Add to posts container
@@ -1173,7 +1243,11 @@ export class FeedContainer {
     this.visibilityManager.observePost(postContainer, marker.id);
 
     // Load video when it becomes visible (lazy loading)
+    // On mobile, start loading earlier (larger rootMargin)
     if (safeVideoUrl) {
+      const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+      const rootMargin = isMobile ? '300px' : '100px';
+      
       // Use Intersection Observer to load video when near viewport
       const loadObserver = new IntersectionObserver(
         (entries) => {
@@ -1191,7 +1265,7 @@ export class FeedContainer {
             }
           }
         },
-        { rootMargin: '200px' }
+        { rootMargin } // Start loading earlier on mobile
       );
       loadObserver.observe(postContainer);
     } else {
@@ -1270,6 +1344,8 @@ export class FeedContainer {
    */
   private async autoplayInitial(count: number): Promise<void> {
     const initial = this.markers.slice(0, Math.min(count, this.markers.length));
+    
+    // Load all players first
     for (const marker of initial) {
       const post = this.posts.get(marker.id);
       if (!post) continue;
@@ -1279,20 +1355,48 @@ export class FeedContainer {
       post.loadPlayer(videoUrl, marker.seconds, marker.end_seconds);
       const player = post.getPlayer();
       if (player) {
-        // Register with visibility manager and attempt play
+        // Register with visibility manager
         this.visibilityManager.registerPlayer(marker.id, player);
+      }
+    }
+    
+    // Wait a bit for players to initialize
+    await new Promise((r) => setTimeout(r, 100));
+    
+    // Now attempt to play with robust retry logic
+    for (const marker of initial) {
+      const post = this.posts.get(marker.id);
+      if (!post) continue;
+      const player = post.getPlayer();
+      if (!player) continue;
+      
+      // Robust play with multiple retries
+      const tryPlay = async (attempt: number = 1, maxAttempts: number = 5): Promise<void> => {
         try {
-          // Wait for readiness a bit longer for first paint
+          // Wait for video to be ready
           await player.waitUntilCanPlay(5000);
+          
           // Small delay to ensure layout/visibility settles
-          await new Promise((r) => setTimeout(r, 50));
+          await new Promise((r) => setTimeout(r, 100));
+          
+          // Attempt to play
           await player.play();
         } catch (e) {
-          console.warn('Autoplay initial play() failed, retrying shortly', e);
-          await new Promise((r) => setTimeout(r, 300));
-          try { await player.play(); } catch {}
+          console.warn(`Autoplay initial attempt ${attempt} failed for marker ${marker.id}`, e);
+          
+          if (attempt < maxAttempts) {
+            // Exponential backoff: 200ms, 400ms, 800ms, 1600ms
+            const delay = Math.min(200 * Math.pow(2, attempt - 1), 1600);
+            await new Promise((r) => setTimeout(r, delay));
+            await tryPlay(attempt + 1, maxAttempts);
+          } else {
+            console.error(`Autoplay initial: All attempts failed for marker ${marker.id}`);
+          }
         }
-      }
+      };
+      
+      // Start playing attempt (don't await to allow parallel attempts)
+      tryPlay().catch(() => {});
     }
   }
 

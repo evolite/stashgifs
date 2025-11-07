@@ -29,9 +29,13 @@ export class VisibilityManager {
     autoPlay?: boolean;
     maxConcurrent?: number;
   }) {
+    // On mobile, use larger rootMargin to start loading videos earlier
+    const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+    const defaultRootMargin = isMobile ? '200px' : '50px';
+    
     this.options = {
       threshold: options?.threshold ?? 0.5,
-      rootMargin: options?.rootMargin ?? '50px',
+      rootMargin: options?.rootMargin ?? defaultRootMargin,
       autoPlay: options?.autoPlay ?? false,
       maxConcurrent: options?.maxConcurrent ?? 3,
     };
@@ -122,31 +126,45 @@ export class VisibilityManager {
 
     if (entry.player) {
       if (this.options.autoPlay) {
-        // Wait for video to be ready before playing
-        const tryPlay = () => {
-          entry.player!.play().then(() => {
-            // Successfully started playing
-          }).catch((err: any) => {
-            console.error('VisibilityManager: Failed to play', { postId, error: err });
-            // Retry after a short delay if video wasn't ready
-            if (entry.player) {
+        // Robust play with multiple retries
+        const tryPlay = async (attempt: number = 1, maxAttempts: number = 5): Promise<void> => {
+          if (!entry.player) return;
+          
+          try {
+            // On mobile, use shorter timeout and less strict readiness check
+            const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+            const timeout = isMobile ? 1000 : 3000;
+            
+            // Wait for video to be ready (shorter timeout on mobile)
+            await entry.player.waitUntilCanPlay(timeout);
+            
+            // Minimal delay on mobile, slightly longer on desktop
+            const delay = isMobile ? 10 : 50;
+            await new Promise(resolve => setTimeout(resolve, delay));
+            
+            // Attempt to play
+            await entry.player.play();
+          } catch (err: any) {
+            console.warn(`VisibilityManager: Play attempt ${attempt} failed`, { postId, error: err });
+            
+            if (attempt < maxAttempts && entry.player) {
+              // Faster retries on mobile
+              const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+              const baseDelay = isMobile ? 50 : 100;
+              const delay = Math.min(baseDelay * Math.pow(2, attempt - 1), isMobile ? 800 : 1600);
               setTimeout(() => {
-                entry.player!.play().catch((e: any) => {
-                  console.error('VisibilityManager: Retry play failed', { postId, error: e });
-                });
-              }, 500);
+                if (entry.player) {
+                  tryPlay(attempt + 1, maxAttempts).catch(() => {});
+                }
+              }, delay);
+            } else {
+              console.error('VisibilityManager: All play attempts failed', { postId, attempts: attempt });
             }
-          });
+          }
         };
         
-        // If video is already loaded, play immediately
-        const state = entry.player.getState();
-        if (state.duration > 0) {
-          tryPlay();
-        } else {
-          // Wait for video to load
-          setTimeout(tryPlay, 100);
-        }
+        // Start playing attempt immediately
+        tryPlay().catch(() => {});
       }
       this.activeVideos.add(postId);
     } else {
@@ -180,6 +198,22 @@ export class VisibilityManager {
       }
       this.entries.delete(postId);
       this.activeVideos.delete(postId);
+    }
+  }
+
+  /**
+   * Retry playing all currently visible videos
+   * Useful for unlocking autoplay on mobile after user interaction
+   */
+  retryVisibleVideos(): void {
+    for (const [postId, entry] of this.entries.entries()) {
+      if (entry.isVisible && entry.player && !this.activeVideos.has(postId)) {
+        // Try to play visible videos that aren't already playing
+        entry.player.play().catch(() => {
+          // Silently fail - video will play on tap if needed
+        });
+        this.activeVideos.add(postId);
+      }
     }
   }
 

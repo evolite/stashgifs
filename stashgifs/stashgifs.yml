@@ -1,7 +1,7 @@
 name: StashGifs
-description: A TikTok-like vertical scroller interface for Stash. Forked from Stash Reels.
+description: A GIF-style vertical scroller interface for Stash.
 url: https://github.com/evolite/stashgifs
-version: 1.8.0
+version: 1.9.0
 ui:
   assets:
     /: .

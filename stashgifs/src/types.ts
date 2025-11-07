@@ -9,6 +9,7 @@ export interface Scene {
   details?: string;
   url?: string;
   rating100?: number; // Stash uses rating100 (0-100) instead of rating
+  o_counter?: number; // Orgasm count
   studio?: Studio;
   performers?: Performer[];
   tags?: Tag[];
