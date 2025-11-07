@@ -4,7 +4,7 @@
  */
 
 import { VideoPlayerState } from './types.js';
-import { formatDuration } from './utils.js';
+import { formatDuration, isValidMediaUrl } from './utils.js';
 
 export class NativeVideoPlayer {
   private container: HTMLElement;
@@ -19,6 +19,7 @@ export class NativeVideoPlayer {
   private onStateChange?: (state: VideoPlayerState) => void;
   private readyResolver?: () => void;
   private readyPromise: Promise<void>;
+  private errorHandled: boolean = false;
 
   constructor(container: HTMLElement, videoUrl: string, options?: {
     autoplay?: boolean;
@@ -27,6 +28,17 @@ export class NativeVideoPlayer {
     endTime?: number;
     onStateChange?: (state: VideoPlayerState) => void;
   }) {
+    // Validate video URL before proceeding
+    if (!videoUrl || !isValidMediaUrl(videoUrl)) {
+      const error = new Error(`Invalid video URL: ${videoUrl}`);
+      console.error('NativeVideoPlayer: Invalid video URL provided', {
+        videoUrl,
+        error,
+        container: container?.tagName,
+      });
+      throw error;
+    }
+
     this.container = container;
     this.onStateChange = options?.onStateChange;
 
@@ -52,7 +64,20 @@ export class NativeVideoPlayer {
   }
 
   private createVideoElement(videoUrl: string, options?: { autoplay?: boolean; muted?: boolean; startTime?: number; endTime?: number }): void {
+    // Defensive validation - validate URL again before setting src
+    // This is a last line of defense in case validation was bypassed
+    // If invalid, create element but don't set src - error handler will catch it
     this.videoElement = document.createElement('video');
+    
+    if (!videoUrl || !isValidMediaUrl(videoUrl)) {
+      console.warn('NativeVideoPlayer: Invalid URL detected in createVideoElement, skipping src', {
+        videoUrl,
+      });
+      // Don't set src if URL is invalid - error handler will suppress the error
+      // This prevents the MediaLoadInvalidURI error from being logged repeatedly
+      return;
+    }
+
     this.videoElement.src = videoUrl;
     this.videoElement.preload = 'auto'; // Changed from 'metadata' to 'auto' for better loading
     this.videoElement.playsInline = true; // Required for iOS inline playback
@@ -91,15 +116,37 @@ export class NativeVideoPlayer {
       });
     }
     
-    // Add error handler
+    // Add error handler (with guard to prevent loops)
     this.videoElement.addEventListener('error', (e) => {
+      // Prevent error handler from running multiple times
+      if (this.errorHandled) {
+        return;
+      }
+      
+      const errorCode = this.videoElement.error?.code;
+      const errorMessage = this.videoElement.error?.message;
+      
+      // Check if this is a known invalid URL error (MediaLoadInvalidURI)
+      // Error code 4 = MEDIA_ERR_SRC_NOT_SUPPORTED / MediaLoadInvalidURI
+      const isInvalidUriError = errorCode === 4 || 
+        (errorMessage && errorMessage.includes('MediaLoadInvalidURI'));
+      
+      if (isInvalidUriError) {
+        // Mark as handled and silently suppress - validation should have caught this
+        this.errorHandled = true;
+        // Don't clear src or do anything that could trigger more events
+        return;
+      }
+      
+      // Mark as handled and log other errors normally (only once)
+      this.errorHandled = true;
       console.error('NativeVideoPlayer: Video error', {
         error: e,
-        errorCode: this.videoElement.error?.code,
-        errorMessage: this.videoElement.error?.message,
-        src: this.videoElement.src
+        errorCode,
+        errorMessage,
+        src: this.videoElement.src,
       });
-    });
+    }, { once: true }); // Use once: true to ensure handler only runs once
     
     // Resolve ready promise when video can play
     this.videoElement.addEventListener('canplay', () => {

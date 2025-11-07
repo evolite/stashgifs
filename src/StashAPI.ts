@@ -4,6 +4,7 @@
  */
 
 import { Scene, SceneMarker, FilterOptions } from './types.js';
+import { isValidMediaUrl } from './utils.js';
 
 interface StashPluginApi {
   GQL: {
@@ -602,15 +603,23 @@ export class StashAPI {
   getMarkerVideoUrl(marker: SceneMarker): string | undefined {
     // Use marker stream URL if available
     if (marker.stream) {
-      const url = marker.stream.startsWith('http') 
-        ? marker.stream 
-        : `${this.baseUrl}${marker.stream}`;
-      // Sanity check against app root or empty
-      try {
-        const absolute = url.startsWith('http') ? url : `${window.location.origin}${url}`;
-        const appRoot = `${window.location.origin}/plugin/stashgifs/assets/app/`;
-        if (!absolute || absolute === this.baseUrl || absolute === window.location.origin || absolute === appRoot) return undefined;
-      } catch {}
+      // Check for empty or whitespace-only stream
+      const stream = marker.stream.trim();
+      if (!stream || stream.length === 0) {
+        // Fallback to scene stream
+        return this.getVideoUrl(marker.scene);
+      }
+      
+      const url = stream.startsWith('http') 
+        ? stream 
+        : `${this.baseUrl}${stream}`;
+      
+      // Validate URL before returning
+      if (!isValidMediaUrl(url)) {
+        // Fallback to scene stream
+        return this.getVideoUrl(marker.scene);
+      }
+      
       return url;
     }
     // Fallback to scene stream
@@ -624,37 +633,37 @@ export class StashAPI {
     // Prefer sceneStreams if available (often provides mp4)
     if (scene.sceneStreams && scene.sceneStreams.length > 0) {
       const streamUrl = scene.sceneStreams[0].url;
-      const url = streamUrl.startsWith('http') ? streamUrl : `${this.baseUrl}${streamUrl}`;
-      try {
-        const absolute = url.startsWith('http') ? url : `${window.location.origin}${url}`;
-        const appRoot = `${window.location.origin}/plugin/stashgifs/assets/app/`;
-        if (!absolute || absolute === this.baseUrl || absolute === window.location.origin || absolute === appRoot) return undefined;
-      } catch {}
-      return url;
+      if (!streamUrl || streamUrl.trim().length === 0) {
+        // Try next fallback
+      } else {
+        const url = streamUrl.startsWith('http') ? streamUrl : `${this.baseUrl}${streamUrl}`;
+        if (isValidMediaUrl(url)) {
+          return url;
+        }
+      }
     }
     // Use stream path if available, otherwise use file path
     if (scene.paths?.stream) {
-      const url = scene.paths.stream.startsWith('http') 
-        ? scene.paths.stream 
-        : `${this.baseUrl}${scene.paths.stream}`;
-      try {
-        const absolute = url.startsWith('http') ? url : `${window.location.origin}${url}`;
-        const appRoot = `${window.location.origin}/plugin/stashgifs/assets/app/`;
-        if (!absolute || absolute === this.baseUrl || absolute === window.location.origin || absolute === appRoot) return undefined;
-      } catch {}
-      return url;
+      const streamPath = scene.paths.stream.trim();
+      if (streamPath && streamPath.length > 0) {
+        const url = streamPath.startsWith('http') 
+          ? streamPath 
+          : `${this.baseUrl}${streamPath}`;
+        if (isValidMediaUrl(url)) {
+          return url;
+        }
+      }
     }
     if (scene.files && scene.files.length > 0) {
       const filePath = scene.files[0].path;
-      const url = filePath.startsWith('http')
-        ? filePath
-        : `${this.baseUrl}${filePath}`;
-      try {
-        const absolute = url.startsWith('http') ? url : `${window.location.origin}${url}`;
-        const appRoot = `${window.location.origin}/plugin/stashgifs/assets/app/`;
-        if (!absolute || absolute === this.baseUrl || absolute === window.location.origin || absolute === appRoot) return undefined;
-      } catch {}
-      return url;
+      if (filePath && filePath.trim().length > 0) {
+        const url = filePath.startsWith('http')
+          ? filePath
+          : `${this.baseUrl}${filePath}`;
+        if (isValidMediaUrl(url)) {
+          return url;
+        }
+      }
     }
     return undefined;
   }

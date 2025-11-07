@@ -1182,14 +1182,23 @@ export class FeedContainer {
      * Create a video post from a scene marker
      */
     async createPost(marker) {
-        const postContainer = document.createElement('article');
-        postContainer.className = 'video-post-wrapper';
         const videoUrl = this.api.getMarkerVideoUrl(marker);
         const safeVideoUrl = isValidMediaUrl(videoUrl) ? videoUrl : undefined;
+        // Skip creating post if no valid video URL is available
+        if (!safeVideoUrl) {
+            console.warn('FeedContainer: Skipping post creation - no valid video URL', {
+                markerId: marker.id,
+                markerTitle: marker.title,
+                videoUrl,
+            });
+            return;
+        }
+        const postContainer = document.createElement('article');
+        postContainer.className = 'video-post-wrapper';
         const thumbnailUrl = this.api.getMarkerThumbnailUrl(marker);
         const postData = {
             marker,
-            videoUrl,
+            videoUrl: safeVideoUrl, // Use safeVideoUrl instead of potentially invalid videoUrl
             thumbnailUrl,
             startTime: marker.seconds,
             endTime: marker.end_seconds,

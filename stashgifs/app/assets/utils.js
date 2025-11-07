@@ -81,18 +81,47 @@ export function shuffleInPlace(arr) {
  * Basic media URL sanity check to avoid assigning the app root as a video src
  */
 export function isValidMediaUrl(url) {
-    if (!url)
+    // Check for undefined, null, or empty string
+    if (!url || typeof url !== 'string')
+        return false;
+    // Check for whitespace-only strings
+    const trimmed = url.trim();
+    if (trimmed.length === 0)
         return false;
     try {
-        const absolute = url.startsWith('http') ? url : `${window.location.origin}${url}`;
+        const absolute = trimmed.startsWith('http') ? trimmed : `${window.location.origin}${trimmed}`;
         const appRoot = `${window.location.origin}/plugin/stashgifs/assets/app/`;
+        const appRootNoSlash = `${window.location.origin}/plugin/stashgifs/assets/app`;
+        // Reject if URL equals origin or app root (with or without trailing slash)
         if (absolute === window.location.origin)
             return false;
-        if (absolute === appRoot)
+        if (absolute === appRoot || absolute === appRootNoSlash)
             return false;
-        // Very short paths are suspicious
+        // Reject URLs that start with app root path (more robust check)
+        if (absolute.startsWith(appRoot) || absolute.startsWith(appRootNoSlash)) {
+            // Only allow if there's additional path content after app root
+            const remainingPath = absolute.replace(appRoot, '').replace(appRootNoSlash, '');
+            if (!remainingPath || remainingPath.length === 0 || remainingPath === '/') {
+                return false;
+            }
+        }
+        // Reject URLs that end with just a slash (directory paths, not files)
+        if (absolute.endsWith('/') && absolute !== `${window.location.origin}/`)
+            return false;
+        // Very short paths are suspicious (must have at least some path content)
         if (absolute.length < window.location.origin.length + 4)
             return false;
+        // Check if URL appears to be a file path (has extension or query params)
+        // Allow URLs with query parameters (e.g., streaming URLs with tokens)
+        const hasQueryParams = absolute.includes('?');
+        const hasFileExtension = /\.(mp4|webm|ogg|mov|avi|mkv|m3u8|ts|mpd)(\?|$|\/)/i.test(absolute);
+        // If no query params and no file extension, it's likely not a valid media URL
+        if (!hasQueryParams && !hasFileExtension) {
+            // Allow streaming paths that might not have extensions (e.g., HLS playlists)
+            const looksLikeStreamPath = /\/stream|\/video|\/media|\/play/i.test(absolute);
+            if (!looksLikeStreamPath)
+                return false;
+        }
         return true;
     }
     catch {

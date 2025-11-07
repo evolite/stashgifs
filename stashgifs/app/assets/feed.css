@@ -311,14 +311,20 @@
 .video-post__footer {
   padding: 1rem;
   border-top: 1px solid var(--feed-border);
+  min-height: 32px; /* Match chips container height for uniform look */
+  display: flex;
+  align-items: center; /* Vertically center content */
+  justify-content: flex-end; /* Right-align content */
 }
 
 .video-post__info {
   display: flex;
-  flex-direction: column;
+  flex-direction: row; /* Changed from column to row for right alignment */
   gap: 0.5rem;
   font-size: 0.875rem;
   color: var(--feed-text-secondary);
+  width: 100%; /* Take full width to allow right alignment */
+  justify-content: flex-end; /* Right-align content */
 }
 
 .rating-control {
@@ -518,6 +524,8 @@
   flex-wrap: wrap;
   gap: 8px;
   margin-top: 4px;
+  min-height: 32px; /* Match footer min-height for uniform look */
+  align-items: center; /* Vertically center chips */
 }
 
 .chip {
@@ -565,13 +573,6 @@
 }
 
 .icon-btn--primary:hover { transform: translateY(-1px); }
-
-.video-post__performers,
-.video-post__studio,
-.video-post__duration,
-.video-post__tags {
-  /* Individual info sections */
-}
 
 /* Responsive Design */
 @media (max-width: 768px) {

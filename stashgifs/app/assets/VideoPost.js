@@ -135,6 +135,7 @@ export class VideoPost {
         chips.style.flexWrap = 'wrap';
         chips.style.gap = '6px';
         chips.style.margin = '0';
+        chips.style.padding = '4px 0'; // Match footer vertical padding for uniform height
         // Add performer chips
         if (this.data.marker.scene.performers && this.data.marker.scene.performers.length > 0) {
             for (const performer of this.data.marker.scene.performers) {
@@ -198,6 +199,9 @@ export class VideoPost {
         const info = document.createElement('div');
         info.className = 'video-post__info';
         info.style.gap = '0';
+        info.style.display = 'flex';
+        info.style.flexDirection = 'row'; // Change from column to row for right alignment
+        info.style.justifyContent = 'flex-end'; // Right-align the content
         const row = document.createElement('div');
         row.className = 'video-post__row';
         row.style.display = 'flex';
@@ -862,21 +866,32 @@ export class VideoPost {
         }
         // Clear player container to prepare for new player
         playerContainer.innerHTML = '';
-        // Create new player with full scene video
-        this.player = new NativeVideoPlayer(playerContainer, sceneVideoUrl, {
-            muted: false,
-            autoplay: false,
-            startTime: this.data.startTime ?? this.data.marker.seconds,
-            endTime: this.data.endTime ?? this.data.marker.end_seconds,
-        });
-        // Hide thumbnail and loading if still visible
-        const thumbnail = playerContainer.querySelector('.video-post__thumbnail');
-        const loading = playerContainer.querySelector('.video-post__loading');
-        if (thumbnail)
-            thumbnail.style.display = 'none';
-        if (loading)
-            loading.style.display = 'none';
-        this.isLoaded = true;
+        // Create new player with full scene video (with error handling)
+        try {
+            this.player = new NativeVideoPlayer(playerContainer, sceneVideoUrl, {
+                muted: false,
+                autoplay: false,
+                startTime: this.data.startTime ?? this.data.marker.seconds,
+                endTime: this.data.endTime ?? this.data.marker.end_seconds,
+            });
+            // Hide thumbnail and loading if still visible
+            const thumbnail = playerContainer.querySelector('.video-post__thumbnail');
+            const loading = playerContainer.querySelector('.video-post__loading');
+            if (thumbnail)
+                thumbnail.style.display = 'none';
+            if (loading)
+                loading.style.display = 'none';
+            this.isLoaded = true;
+        }
+        catch (error) {
+            console.error('VideoPost: Failed to create scene video player', {
+                error,
+                sceneVideoUrl,
+                markerId: this.data.marker.id,
+                sceneId: this.data.marker.scene?.id,
+            });
+            throw error; // Re-throw since this is an async method that should fail if player creation fails
+        }
         // Register with visibility manager if available
         if (this.visibilityManager && this.data.marker.id) {
             this.visibilityManager.registerPlayer(this.data.marker.id, this.player);
@@ -936,31 +951,48 @@ export class VideoPost {
      * Load the video player
      */
     loadPlayer(videoUrl, startTime, endTime) {
-        if (this.isLoaded || !videoUrl) {
+        // Early return if already loaded
+        if (this.isLoaded) {
+            return;
+        }
+        // Validate URL early before any other checks
+        if (!videoUrl || !isValidMediaUrl(videoUrl)) {
+            console.warn('VideoPost: Invalid media URL, skipping player creation', {
+                videoUrl,
+                markerId: this.data.marker.id,
+                sceneId: this.data.marker.scene?.id,
+            });
             return;
         }
         const playerContainer = this.playerContainer || this.container.querySelector('.video-post__player');
         if (!playerContainer) {
+            console.warn('VideoPost: Player container not found', { markerId: this.data.marker.id });
             return;
         }
-        if (!isValidMediaUrl(videoUrl)) {
-            console.warn('VideoPost: Invalid media URL, skipping player creation', { videoUrl });
-            return;
+        try {
+            this.player = new NativeVideoPlayer(playerContainer, videoUrl, {
+                muted: false,
+                autoplay: false,
+                startTime: startTime ?? this.data.startTime ?? this.data.marker.seconds,
+                endTime: endTime ?? this.data.endTime ?? this.data.marker.end_seconds,
+            });
+            // Hide thumbnail and loading
+            const thumbnail = playerContainer.querySelector('.video-post__thumbnail');
+            const loading = playerContainer.querySelector('.video-post__loading');
+            if (thumbnail)
+                thumbnail.style.display = 'none';
+            if (loading)
+                loading.style.display = 'none';
+            this.isLoaded = true;
         }
-        this.player = new NativeVideoPlayer(playerContainer, videoUrl, {
-            muted: false,
-            autoplay: false,
-            startTime: startTime ?? this.data.startTime ?? this.data.marker.seconds,
-            endTime: endTime ?? this.data.endTime ?? this.data.marker.end_seconds,
-        });
-        // Hide thumbnail and loading
-        const thumbnail = playerContainer.querySelector('.video-post__thumbnail');
-        const loading = playerContainer.querySelector('.video-post__loading');
-        if (thumbnail)
-            thumbnail.style.display = 'none';
-        if (loading)
-            loading.style.display = 'none';
-        this.isLoaded = true;
+        catch (error) {
+            console.error('VideoPost: Failed to create video player', {
+                error,
+                videoUrl,
+                markerId: this.data.marker.id,
+            });
+            // Don't set isLoaded to true if player creation failed
+        }
     }
     /**
      * Get the video player instance
