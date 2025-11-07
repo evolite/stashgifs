@@ -109,15 +109,24 @@ export class StashAPI {
         tags { id name }
       }
     }`;
-    const filter: any = { per_page: limit, page: 1 };
+    
+    // When no search term, fetch a random assortment of 40 tags for faster loading
+    // When searching, fetch more tags matching the search term
+    const fetchLimit = term && term.trim() !== '' ? limit * 3 : 40;
+    const filter: any = { per_page: fetchLimit, page: 1 };
+    
     // Only add query if term is provided and not empty
     if (term && term.trim() !== '') {
       filter.q = term.trim();
+    } else {
+      // When no search term, use random sorting to get a diverse assortment
+      filter.sort = `random_${Math.floor(Math.random() * 1000000)}`;
     }
+    
     const variables = { filter };
 
-    // Helper: check if a tag has at least one scene marker
-    const hasMarkersForTag = async (tagId: number): Promise<boolean> => {
+    // Helper: get marker count for a tag
+    const getMarkerCountForTag = async (tagId: number): Promise<number> => {
       const countQuery = `query GetMarkerCount($scene_marker_filter: SceneMarkerFilterType) {
         findSceneMarkers(scene_marker_filter: $scene_marker_filter) { count }
       }`;
@@ -126,7 +135,7 @@ export class StashAPI {
       try {
         if (this.pluginApi?.GQL?.client) {
           const res = await this.pluginApi.GQL.client.query({ query: countQuery as any, variables });
-          return (res.data?.findSceneMarkers?.count || 0) > 0;
+          return res.data?.findSceneMarkers?.count || 0;
         }
         const response = await fetch(`${this.baseUrl}/graphql`, {
           method: 'POST',
@@ -136,37 +145,47 @@ export class StashAPI {
           },
           body: JSON.stringify({ query: countQuery, variables }),
         });
-        if (!response.ok) return false;
+        if (!response.ok) return 0;
         const data = await response.json();
-        return (data.data?.findSceneMarkers?.count || 0) > 0;
+        return data.data?.findSceneMarkers?.count || 0;
       } catch {
-        return false;
+        return 0;
       }
     };
 
-    // Simple concurrency limiter
-    const filterByHasMarkers = async (tags: Array<{ id: string; name: string }>): Promise<Array<{ id: string; name: string }>> => {
+    // Get marker counts and sort by count (descending)
+    const getTagsWithCounts = async (tags: Array<{ id: string; name: string }>): Promise<Array<{ id: string; name: string; count: number }>> => {
       const concurrency = 5;
-      const result: Array<{ id: string; name: string }> = [];
+      const result: Array<{ id: string; name: string; count: number }> = [];
       let index = 0;
       const workers = Array.from({ length: Math.min(concurrency, tags.length) }, async () => {
         while (index < tags.length) {
           const i = index++;
           const t = tags[i];
-          const ok = await hasMarkersForTag(parseInt(t.id, 10));
-          if (ok) result.push(t);
+          const count = await getMarkerCountForTag(parseInt(t.id, 10));
+          if (count > 0) {
+            result.push({ ...t, count });
+          }
         }
       });
       await Promise.all(workers);
-      return result;
+      // Sort by count descending, then by name ascending for ties
+      return result.sort((a, b) => {
+        if (b.count !== a.count) {
+          return b.count - a.count;
+        }
+        return a.name.localeCompare(b.name);
+      });
     };
 
     try {
       if (this.pluginApi?.GQL?.client) {
         const result = await this.pluginApi.GQL.client.query({ query: query as any, variables });
         const tags = result.data?.findTags?.tags ?? [];
-        const filtered = await filterByHasMarkers(tags.slice(0, limit * 2));
-        return filtered.slice(0, limit);
+        // Get counts for all tags and sort by count
+        const tagsWithCounts = await getTagsWithCounts(tags);
+        // Return top 'limit' tags without count property, sorted by count
+        return tagsWithCounts.slice(0, limit).map(({ count, ...tag }) => tag);
       }
       const response = await fetch(`${this.baseUrl}/graphql`, {
         method: 'POST',
@@ -179,8 +198,10 @@ export class StashAPI {
       if (!response.ok) return [];
       const data = await response.json();
       const tags = data.data?.findTags?.tags ?? [];
-      const filtered = await filterByHasMarkers(tags.slice(0, limit * 2));
-      return filtered.slice(0, limit);
+      // Get counts for all tags and sort by count
+      const tagsWithCounts = await getTagsWithCounts(tags);
+      // Return top 'limit' tags without count property, sorted by count
+      return tagsWithCounts.slice(0, limit).map(({ count, ...tag }) => tag);
     } catch (e) {
       console.warn('searchMarkerTags failed', e);
       return [];
@@ -338,8 +359,12 @@ export class StashAPI {
       let page = filters?.offset ? Math.floor(filters.offset / (filters.limit || 20)) + 1 : 1;
       const limit = filters?.limit || 20;
       
+      // Check if any filters are active (tags, saved filter, or query)
+      const hasActiveFilters = !!(filters?.primary_tags?.length || filters?.savedFilterId || (filters?.query && filters.query.trim() !== ''));
+      
       // If we want random and no offset, get count first to calculate random page
-      if (!filters?.offset) {
+      // Skip random page selection when filters are active - start from page 1 instead
+      if (!filters?.offset && !hasActiveFilters) {
         const countQuery = `query GetMarkerCount($filter: FindFilterType, $scene_marker_filter: SceneMarkerFilterType) {
           findSceneMarkers(filter: $filter, scene_marker_filter: $scene_marker_filter) {
             count

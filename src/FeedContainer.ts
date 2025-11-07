@@ -242,6 +242,13 @@ export class FeedContainer {
     chips.style.maxWidth = '100%';
     chips.style.overflow = 'hidden';
     chips.style.boxSizing = 'border-box';
+    chips.style.paddingLeft = '14px'; // Match search input left padding for alignment
+    chips.style.paddingRight = '36px'; // Match search input right padding for alignment (space for reset button)
+
+    // Create a wrapper for the input and reset button so button is positioned relative to input, not searchArea
+    const inputWrapper = document.createElement('div');
+    inputWrapper.style.position = 'relative';
+    inputWrapper.style.width = '100%';
 
     const queryInput = document.createElement('input');
     queryInput.type = 'text';
@@ -249,12 +256,62 @@ export class FeedContainer {
     queryInput.className = 'feed-filters__input';
     queryInput.style.width = '100%';
     queryInput.style.height = '40px';
-    queryInput.style.padding = '0 14px';
+    queryInput.style.padding = '0 36px 0 14px'; // Right padding for reset button, left padding for text
     queryInput.style.borderRadius = '999px';
     queryInput.style.border = '1px solid rgba(255,255,255,0.10)';
     queryInput.style.background = 'rgba(22,22,22,0.9)';
     queryInput.style.color = 'inherit';
     queryInput.style.fontSize = '14px';
+
+    // Reset filter button (right-aligned within search bar, positioned relative to inputWrapper)
+    const resetButton = document.createElement('button');
+    resetButton.type = 'button';
+    resetButton.innerHTML = '×';
+    resetButton.title = 'Reset filters';
+    resetButton.style.position = 'absolute';
+    resetButton.style.right = '8px'; // Right-aligned instead of left
+    resetButton.style.top = '50%';
+    resetButton.style.transform = 'translateY(-50%)';
+    resetButton.style.width = '24px';
+    resetButton.style.height = '24px';
+    resetButton.style.border = 'none';
+    resetButton.style.background = 'transparent';
+    resetButton.style.color = 'rgba(255,255,255,0.4)';
+    resetButton.style.fontSize = '20px';
+    resetButton.style.fontWeight = '300';
+    resetButton.style.cursor = 'pointer';
+    resetButton.style.display = 'flex';
+    resetButton.style.alignItems = 'center';
+    resetButton.style.justifyContent = 'center';
+    resetButton.style.borderRadius = '50%';
+    resetButton.style.transition = 'color 0.2s ease, background 0.2s ease';
+    resetButton.style.zIndex = '10';
+    resetButton.style.lineHeight = '1';
+    resetButton.style.padding = '0';
+    
+    // Hover effect
+    resetButton.addEventListener('mouseenter', () => {
+      resetButton.style.color = 'rgba(255,255,255,0.7)';
+      resetButton.style.background = 'rgba(255,255,255,0.05)';
+    });
+    resetButton.addEventListener('mouseleave', () => {
+      resetButton.style.color = 'rgba(255,255,255,0.4)';
+      resetButton.style.background = 'transparent';
+    });
+    
+    // Reset filters handler
+    resetButton.addEventListener('click', () => {
+      this.selectedTagIds = [];
+      this.selectedTagNames = [];
+      this.selectedSavedFilter = undefined;
+      queryInput.value = '';
+      renderChips();
+      apply();
+    });
+
+    // Append input and button to wrapper
+    inputWrapper.appendChild(queryInput);
+    inputWrapper.appendChild(resetButton);
 
     const suggestions = document.createElement('div');
     suggestions.className = 'feed-filters__suggestions hide-scrollbar';
@@ -274,8 +331,8 @@ export class FeedContainer {
     suggestions.style.flexWrap = 'wrap';
     suggestions.style.gap = '8px';
 
-    // Input first, then suggestions overlay, then chips below the input
-    searchArea.appendChild(queryInput);
+    // Input wrapper (contains input and reset button), then suggestions overlay, then chips below
+    searchArea.appendChild(inputWrapper);
     searchArea.appendChild(suggestions);
     searchArea.appendChild(chips);
 
@@ -655,6 +712,8 @@ export class FeedContainer {
     chips.style.maxWidth = '100%';
     chips.style.overflow = 'hidden';
     chips.style.boxSizing = 'border-box';
+    chips.style.paddingLeft = '14px'; // Match search input left padding for alignment
+    chips.style.paddingRight = '42px'; // Match search input right padding for alignment
     searchWrapper.style.position = 'relative';
     searchWrapper.appendChild(chips);
     searchWrapper.appendChild(queryInput);
