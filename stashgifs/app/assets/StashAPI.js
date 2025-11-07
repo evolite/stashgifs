@@ -343,7 +343,7 @@ export class StashAPI {
                 const countSceneFilterRaw = savedFilterCriteria?.object_filter || {};
                 const countSceneFilter = this.normalizeMarkerFilter(countSceneFilterRaw);
                 // If a saved filter is active, ONLY use its criteria (don't combine with manual filters)
-                // Otherwise, apply manual tag filters
+                // Otherwise, apply manual primary tag filters
                 if (!filters?.savedFilterId) {
                     if (filters?.primary_tags && filters.primary_tags.length > 0) {
                         const tagIds = filters.primary_tags
@@ -351,24 +351,6 @@ export class StashAPI {
                             .filter((n) => !Number.isNaN(n));
                         if (tagIds.length > 0) {
                             countSceneFilter.tags = { value: tagIds, modifier: 'INCLUDES' };
-                        }
-                    }
-                    if (filters?.tags && filters.tags.length > 0) {
-                        const tagIds = filters.tags
-                            .map((v) => parseInt(String(v), 10))
-                            .filter((n) => !Number.isNaN(n));
-                        if (tagIds.length > 0) {
-                            // If we already have tags from primary_tags, combine them
-                            if (countSceneFilter.tags?.value) {
-                                const existingIds = Array.isArray(countSceneFilter.tags.value) ? countSceneFilter.tags.value : [countSceneFilter.tags.value];
-                                countSceneFilter.tags = {
-                                    value: [...new Set([...existingIds, ...tagIds])],
-                                    modifier: countSceneFilter.tags.modifier || 'INCLUDES'
-                                };
-                            }
-                            else {
-                                countSceneFilter.tags = { value: tagIds, modifier: 'INCLUDES' };
-                            }
                         }
                     }
                 }
@@ -438,10 +420,7 @@ export class StashAPI {
                 const sceneMarkerFilterRaw = savedFilterCriteria?.object_filter ? { ...savedFilterCriteria.object_filter } : {};
                 const sceneMarkerFilter = this.normalizeMarkerFilter(sceneMarkerFilterRaw);
                 // If a saved filter is active, ONLY use its criteria (don't combine with manual filters)
-                // Otherwise, apply manual tag filters
-                // NOTE: Stash's SceneMarkerFilterType only supports filtering by primary_tag, not tags array.
-                // For non-primary tags, we'll filter client-side after fetching.
-                const nonPrimaryTagIds = [];
+                // Otherwise, apply manual primary tag filters
                 if (!filters?.savedFilterId) {
                     if (filters?.primary_tags && filters.primary_tags.length > 0) {
                         const tagIds = filters.primary_tags
@@ -450,19 +429,6 @@ export class StashAPI {
                         if (tagIds.length > 0) {
                             // Primary tags can be filtered server-side
                             sceneMarkerFilter.tags = { value: tagIds, modifier: 'INCLUDES' };
-                        }
-                    }
-                    if (filters?.tags && filters.tags.length > 0) {
-                        const tagIds = filters.tags
-                            .map((v) => parseInt(String(v), 10))
-                            .filter((n) => !Number.isNaN(n));
-                        if (tagIds.length > 0) {
-                            // Store non-primary tag IDs for client-side filtering
-                            nonPrimaryTagIds.push(...tagIds);
-                            console.log('[StashAPI] Will filter by non-primary marker tags client-side:', tagIds);
-                        }
-                        else {
-                            console.warn('Scene marker tags must be numeric IDs; ignoring provided values', filters.tags);
                         }
                     }
                 }
@@ -502,15 +468,6 @@ export class StashAPI {
                         console.log('[StashAPI] Retry returned', markers.length, 'markers');
                     }
                 }
-                // Filter by non-primary tags client-side (Stash doesn't support this server-side)
-                if (nonPrimaryTagIds.length > 0 && markers.length > 0) {
-                    const beforeCount = markers.length;
-                    markers = markers.filter((marker) => {
-                        const markerTagIds = (marker.tags || []).map((t) => parseInt(t.id, 10));
-                        return nonPrimaryTagIds.some(tagId => markerTagIds.includes(tagId));
-                    });
-                    console.log('[StashAPI] Client-side filtered from', beforeCount, 'to', markers.length, 'markers by non-primary tags:', nonPrimaryTagIds);
-                }
                 return markers;
             }
             // Fallback to direct fetch
@@ -536,10 +493,7 @@ export class StashAPI {
             const sceneMarkerFilterRaw = savedFilterCriteria?.object_filter ? { ...savedFilterCriteria.object_filter } : {};
             const sceneMarkerFilter = this.normalizeMarkerFilter(sceneMarkerFilterRaw);
             // If a saved filter is active, ONLY use its criteria (don't combine with manual filters)
-            // Otherwise, apply manual tag filters
-            // NOTE: Stash's SceneMarkerFilterType only supports filtering by primary_tag, not tags array.
-            // For non-primary tags, we'll filter client-side after fetching.
-            const nonPrimaryTagIds = [];
+            // Otherwise, apply manual primary tag filters
             if (!filters?.savedFilterId) {
                 if (filters?.primary_tags && filters.primary_tags.length > 0) {
                     const tagIds = filters.primary_tags
@@ -551,19 +505,6 @@ export class StashAPI {
                     }
                     else {
                         console.warn('Scene marker primary_tags must be numeric IDs; ignoring provided values');
-                    }
-                }
-                if (filters?.tags && filters.tags.length > 0) {
-                    const tagIds = filters.tags
-                        .map((v) => parseInt(String(v), 10))
-                        .filter((n) => !Number.isNaN(n));
-                    if (tagIds.length > 0) {
-                        // Store non-primary tag IDs for client-side filtering
-                        nonPrimaryTagIds.push(...tagIds);
-                        console.log('[StashAPI] Will filter by non-primary marker tags client-side:', tagIds);
-                    }
-                    else {
-                        console.warn('Scene marker tags must be numeric IDs; ignoring provided values');
                     }
                 }
             }
@@ -633,15 +574,6 @@ export class StashAPI {
                         }
                     }
                 }
-            }
-            // Filter by non-primary tags client-side (Stash doesn't support this server-side)
-            if (nonPrimaryTagIds.length > 0 && markers.length > 0) {
-                const beforeCount = markers.length;
-                markers = markers.filter((marker) => {
-                    const markerTagIds = (marker.tags || []).map((t) => parseInt(t.id, 10));
-                    return nonPrimaryTagIds.some(tagId => markerTagIds.includes(tagId));
-                });
-                console.log('[StashAPI] Client-side filtered from', beforeCount, 'to', markers.length, 'markers by non-primary tags:', nonPrimaryTagIds);
             }
             return markers;
         }

@@ -34,10 +34,13 @@ export class VideoPost {
         this.container.className = 'video-post';
         this.container.dataset.postId = this.data.marker.id;
         this.container.innerHTML = '';
+        // Header with performers and tags
+        const header = this.createHeader();
+        this.container.appendChild(header);
         // Player container
         const playerContainer = this.createPlayerContainer();
         this.container.appendChild(playerContainer);
-        // Footer
+        // Footer with buttons and rating
         const footer = this.createFooter();
         this.container.appendChild(footer);
     }
@@ -72,25 +75,19 @@ export class VideoPost {
         container.appendChild(loading);
         return container;
     }
-    createFooter() {
-        const footer = document.createElement('div');
-        footer.className = 'video-post__footer';
-        const info = document.createElement('div');
-        info.className = 'video-post__info';
-        // Row: performers chips + icon button link (inline)
-        const row = document.createElement('div');
-        row.className = 'video-post__row';
-        row.style.display = 'flex';
-        row.style.alignItems = 'center';
-        row.style.justifyContent = 'space-between'; // Push buttons to right, chips to left
-        row.style.gap = '12px'; // Spacing between chips and button group
-        // Button group container for right-aligned buttons
-        const buttonGroup = document.createElement('div');
-        buttonGroup.style.display = 'flex';
-        buttonGroup.style.alignItems = 'center';
-        buttonGroup.style.gap = '4px'; // Tight spacing between buttons
+    createHeader() {
+        const header = document.createElement('div');
+        header.className = 'video-post__header';
+        header.style.padding = '0'; // Remove all padding
+        header.style.marginBottom = '4px'; // Reduced margin
+        header.style.borderBottom = 'none'; // Remove divider line
         const chips = document.createElement('div');
         chips.className = 'chips';
+        chips.style.display = 'flex';
+        chips.style.flexWrap = 'wrap';
+        chips.style.gap = '6px';
+        chips.style.margin = '0'; // Remove any margin from chips container
+        // Add performer chips
         if (this.data.marker.scene.performers && this.data.marker.scene.performers.length > 0) {
             for (const performer of this.data.marker.scene.performers) {
                 const chip = document.createElement('a');
@@ -98,18 +95,24 @@ export class VideoPost {
                 chip.href = this.getPerformerLink(performer.id);
                 chip.target = '_blank';
                 chip.rel = 'noopener noreferrer';
+                // Reduce chip size
+                chip.style.padding = '4px 8px';
+                chip.style.fontSize = '0.75rem';
+                chip.style.gap = '4px';
                 if (performer.image_path) {
                     const avatar = document.createElement('img');
                     avatar.className = 'chip__avatar';
                     avatar.src = performer.image_path.startsWith('http') ? performer.image_path : `${window.location.origin}${performer.image_path}`;
                     avatar.alt = performer.name;
+                    avatar.style.width = '16px';
+                    avatar.style.height = '16px';
                     chip.appendChild(avatar);
                 }
                 chip.appendChild(document.createTextNode(performer.name));
                 chips.appendChild(chip);
             }
         }
-        // Tag chip: show only the primary tag if available; otherwise show nothing
+        // Add tag chip: show only the primary tag if available
         if (this.data.marker.primary_tag && this.data.marker.primary_tag.id && this.data.marker.primary_tag.name) {
             const tag = this.data.marker.primary_tag;
             const chip = document.createElement('a');
@@ -117,9 +120,34 @@ export class VideoPost {
             chip.href = this.getTagLink(tag.id);
             chip.target = '_blank';
             chip.rel = 'noopener noreferrer';
+            // Reduce chip size
+            chip.style.padding = '4px 8px';
+            chip.style.fontSize = '0.75rem';
             chip.appendChild(document.createTextNode(tag.name));
             chips.appendChild(chip);
         }
+        header.appendChild(chips);
+        return header;
+    }
+    createFooter() {
+        const footer = document.createElement('div');
+        footer.className = 'video-post__footer';
+        footer.style.padding = '4px 8px'; // Even tighter padding
+        const info = document.createElement('div');
+        info.className = 'video-post__info';
+        info.style.gap = '0'; // Remove gap
+        // Row: button group (right-aligned)
+        const row = document.createElement('div');
+        row.className = 'video-post__row';
+        row.style.display = 'flex';
+        row.style.alignItems = 'center';
+        row.style.justifyContent = 'flex-end'; // Right-align buttons
+        row.style.gap = '2px'; // Reduced gap
+        // Button group container for right-aligned buttons
+        const buttonGroup = document.createElement('div');
+        buttonGroup.style.display = 'flex';
+        buttonGroup.style.alignItems = 'center';
+        buttonGroup.style.gap = '2px'; // Tighter spacing between buttons
         // Heart button for favorites (if FavoritesManager is available) - placed before play button
         if (this.favoritesManager) {
             const heartBtn = this.createHeartButton();
@@ -149,13 +177,17 @@ export class VideoPost {
         iconBtn.style.background = 'transparent';
         iconBtn.style.border = 'none';
         iconBtn.style.cursor = 'pointer';
-        iconBtn.style.padding = '4px';
+        iconBtn.style.padding = '2px'; // Reduced padding
         iconBtn.style.display = 'flex';
         iconBtn.style.alignItems = 'center';
         iconBtn.style.justifyContent = 'center';
         iconBtn.style.color = 'rgba(255, 255, 255, 0.7)';
         iconBtn.style.transition = 'color 0.2s ease, transform 0.2s ease';
-        iconBtn.innerHTML = '<svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor" aria-hidden="true"><path d="M8 5v14l11-7z"/></svg>';
+        iconBtn.style.width = 'auto'; // Allow smaller size
+        iconBtn.style.height = 'auto'; // Allow smaller size
+        iconBtn.style.minWidth = 'auto'; // Remove min-width constraint
+        iconBtn.style.minHeight = 'auto'; // Remove min-height constraint
+        iconBtn.innerHTML = '<svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor" aria-hidden="true"><path d="M8 5v14l11-7z"/></svg>'; // Smaller SVG
         // Hover effect to match other buttons
         iconBtn.addEventListener('mouseenter', () => {
             iconBtn.style.transform = 'scale(1.1)';
@@ -164,8 +196,7 @@ export class VideoPost {
             iconBtn.style.transform = 'scale(1)';
         });
         buttonGroup.appendChild(iconBtn);
-        // Add chips first (left-aligned), then button group (right-aligned)
-        row.appendChild(chips);
+        // Add button group to row
         row.appendChild(buttonGroup);
         info.appendChild(row);
         footer.appendChild(info);
@@ -269,23 +300,16 @@ export class VideoPost {
         oCountBtn.style.display = 'flex';
         oCountBtn.style.alignItems = 'center';
         oCountBtn.style.justifyContent = 'center';
-        oCountBtn.style.gap = '4px';
+        oCountBtn.style.gap = '6px'; // Consistent with rating button
         oCountBtn.style.color = 'rgba(255, 255, 255, 0.7)';
         oCountBtn.style.transition = 'color 0.2s ease, transform 0.2s ease';
         oCountBtn.style.fontSize = '16px';
         // Splashing emoji 💦
         const emoji = '💦';
-        // Count display
-        const countSpan = document.createElement('span');
-        countSpan.style.fontSize = '14px';
-        countSpan.style.fontWeight = '500';
-        countSpan.textContent = this.oCount > 0 ? this.oCount.toString() : '';
+        // Initial content - updateOCountButton will add the span
         oCountBtn.innerHTML = emoji;
-        if (this.oCount > 0) {
-            oCountBtn.appendChild(countSpan);
-        }
         this.oCountButton = oCountBtn;
-        this.updateOCountButton();
+        this.updateOCountButton(); // This will add the count span with proper styling
         oCountBtn.addEventListener('click', async (e) => {
             e.preventDefault();
             e.stopPropagation();
@@ -324,16 +348,16 @@ export class VideoPost {
         if (!this.oCountButton)
             return;
         const emoji = '💦';
-        // Clear existing content
+        // Clear existing content but keep structure
         this.oCountButton.innerHTML = emoji;
-        // Add count if > 0
-        if (this.oCount > 0) {
-            const countSpan = document.createElement('span');
-            countSpan.style.fontSize = '14px';
-            countSpan.style.fontWeight = '500';
-            countSpan.textContent = this.oCount.toString();
-            this.oCountButton.appendChild(countSpan);
-        }
+        // Always add count span for consistent spacing (even if 0)
+        const countSpan = document.createElement('span');
+        countSpan.style.fontSize = '14px';
+        countSpan.style.fontWeight = '500';
+        countSpan.style.minWidth = '14px'; // Consistent width for alignment
+        countSpan.style.textAlign = 'left';
+        countSpan.textContent = this.oCount > 0 ? this.oCount.toString() : '';
+        this.oCountButton.appendChild(countSpan);
     }
     createHQButton() {
         const hqBtn = document.createElement('button');
@@ -417,11 +441,11 @@ export class VideoPost {
         displayButton.style.background = 'transparent';
         displayButton.style.border = 'none';
         displayButton.style.cursor = 'pointer';
-        displayButton.style.padding = '4px 10px';
+        displayButton.style.padding = '4px 8px'; // Consistent with o-count button
         displayButton.style.display = 'flex';
         displayButton.style.alignItems = 'center';
         displayButton.style.justifyContent = 'center';
-        displayButton.style.gap = '6px';
+        displayButton.style.gap = '6px'; // Consistent spacing
         displayButton.style.color = 'rgba(255, 255, 255, 0.7)';
         displayButton.style.transition = 'color 0.2s ease, transform 0.2s ease';
         displayButton.addEventListener('click', (event) => {
@@ -445,6 +469,10 @@ export class VideoPost {
         iconSpan.innerHTML = this.getDisplayStarSvg();
         const valueSpan = document.createElement('span');
         valueSpan.className = 'rating-display__value';
+        valueSpan.style.fontSize = '14px'; // Consistent with o-count
+        valueSpan.style.fontWeight = '500'; // Consistent with o-count
+        valueSpan.style.minWidth = '14px'; // Consistent width for alignment
+        valueSpan.style.textAlign = 'left';
         this.ratingDisplayValue = valueSpan;
         displayButton.appendChild(iconSpan);
         displayButton.appendChild(valueSpan);
