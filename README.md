@@ -30,6 +30,21 @@ If you want to build from source:
 2. Compile TypeScript: `.\build.ps1` (or `npx tsc`)
 3. Zip the `stashgifs/` folder for deployment
 
+## Navigation
+
+Each card in the feed has several buttons on the right side:
+
+- **❤️ Heart Button** - Click to favorite/unfavorite a marker. Favorited markers get a "StashGifs Favorite" tag added to them in Stash, making them easy to filter and find later.
+- **💦 O-Count Button** - Click to increment the o-count for the scene. The count is displayed next to the emoji and updates in real-time.
+- **HD Badge** - Click to switch from the low-res marker preview to the full high-quality scene video with audio. The video will start at the marker's timestamp.
+- **▶️ Play Button** - Opens the full scene in Stash at the exact marker timestamp in a new tab.
+
+The video player itself also has controls:
+- **Play/Pause** - Control video playback
+- **Progress Bar** - Seek through the video
+- **Mute/Unmute** - Toggle audio (marker videos don't have sound, but scene videos do)
+- **Fullscreen** - Watch in fullscreen mode
+
 ## How it works
 
 The plugin creates a vertical feed interface that fetches scene markers from your Stash instance via GraphQL. Each marker is displayed as a card with the video, tags, performers, and interactive controls. Videos autoplay as they come into view and pause when you scroll away.
