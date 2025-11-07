@@ -20,6 +20,14 @@ export class NativeVideoPlayer {
   private readyResolver?: () => void;
   private readyPromise: Promise<void>;
   private errorHandled: boolean = false;
+  
+  // Touch state tracking for scroll detection
+  private touchStartX: number = 0;
+  private touchStartY: number = 0;
+  private touchStartTime: number = 0;
+  private isScrolling: boolean = false;
+  private readonly touchMoveThreshold: number = 10; // pixels
+  private readonly touchDurationThreshold: number = 300; // milliseconds
 
   constructor(container: HTMLElement, videoUrl: string, options?: {
     autoplay?: boolean;
@@ -268,11 +276,67 @@ export class NativeVideoPlayer {
     });
 
     // Click/touch video to play/pause (important for mobile when autoplay fails)
-    this.videoElement.addEventListener('click', () => this.togglePlay());
-    this.videoElement.addEventListener('touchend', (e) => {
-      e.preventDefault(); // Prevent double-firing with click
-      this.togglePlay();
-    });
+    // On mobile, use touch events with scroll detection to prevent accidental pauses
+    const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+    
+    if (isMobile) {
+      // Touch event handlers with scroll detection
+      this.videoElement.addEventListener('touchstart', (e) => {
+        const touch = e.touches[0];
+        if (touch) {
+          this.touchStartX = touch.clientX;
+          this.touchStartY = touch.clientY;
+          this.touchStartTime = Date.now();
+          this.isScrolling = false;
+        }
+      }, { passive: true });
+      
+      this.videoElement.addEventListener('touchmove', (e) => {
+        if (e.touches.length > 0) {
+          const touch = e.touches[0];
+          const deltaX = Math.abs(touch.clientX - this.touchStartX);
+          const deltaY = Math.abs(touch.clientY - this.touchStartY);
+          
+          // If touch moved more than threshold, consider it scrolling
+          if (deltaX > this.touchMoveThreshold || deltaY > this.touchMoveThreshold) {
+            this.isScrolling = true;
+          }
+        }
+      }, { passive: true });
+      
+      this.videoElement.addEventListener('touchend', (e) => {
+        const touch = e.changedTouches[0];
+        if (!touch) return;
+        
+        const deltaX = Math.abs(touch.clientX - this.touchStartX);
+        const deltaY = Math.abs(touch.clientY - this.touchStartY);
+        const touchDuration = Date.now() - this.touchStartTime;
+        const totalDistance = Math.sqrt(deltaX * deltaX + deltaY * deltaY);
+        
+        // Only toggle play/pause if:
+        // 1. Not scrolling (movement < threshold)
+        // 2. Touch duration is reasonable (not a long press)
+        // 3. Total distance moved is within threshold
+        if (!this.isScrolling && 
+            totalDistance < this.touchMoveThreshold && 
+            touchDuration < this.touchDurationThreshold) {
+          e.preventDefault(); // Prevent double-firing with click
+          this.togglePlay();
+        }
+        
+        // Reset state
+        this.isScrolling = false;
+        this.touchStartX = 0;
+        this.touchStartY = 0;
+        this.touchStartTime = 0;
+      });
+      
+      // Disable click handler on mobile since touchend handles it
+      // This prevents double-toggling
+    } else {
+      // Desktop: use simple click handler
+      this.videoElement.addEventListener('click', () => this.togglePlay());
+    }
   }
 
   private updatePlayButton(): void {

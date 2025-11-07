@@ -27,8 +27,7 @@ Install via Stash's plugin system using the index.yml file. The plugin will be a
 If you want to build from source:
 
 1. Install dependencies: `npm install`
-2. Compile TypeScript: `.\build.ps1` (or `npx tsc`)
-3. Zip the `stashgifs/` folder for deployment
+2. Compile TypeScript: `npm run build`
 
 ## Navigation
 
