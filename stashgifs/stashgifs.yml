@@ -1,7 +1,7 @@
 name: StashGifs
 description: A GIF-style vertical scroller interface for Stash.
 url: https://github.com/evolite/stashgifs
-version: 1.9.0
+version: 3.0.0
 ui:
   assets:
     /: .

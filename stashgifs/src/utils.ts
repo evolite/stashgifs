@@ -22,16 +22,7 @@ export function throttle<T extends (...args: any[]) => any>(
 /**
  * Debounce function calls
  */
-export function debounce<T extends (...args: any[]) => any>(
-  func: T,
-  delay: number
-): (...args: Parameters<T>) => void {
-  let timeoutId: ReturnType<typeof setTimeout>;
-  return function (this: any, ...args: Parameters<T>) {
-    clearTimeout(timeoutId);
-    timeoutId = setTimeout(() => func.apply(this, args), delay);
-  };
-}
+// Removed unused debounce helper
 
 /**
  * Format duration in seconds to HH:MM:SS or MM:SS
@@ -70,25 +61,12 @@ export function getAspectRatioClass(aspectRatio: number): string {
 /**
  * Check if element is in viewport
  */
-export function isInViewport(element: HTMLElement, threshold: number = 0): boolean {
-  const rect = element.getBoundingClientRect();
-  const windowHeight = window.innerHeight || document.documentElement.clientHeight;
-  const windowWidth = window.innerWidth || document.documentElement.clientWidth;
-
-  return (
-    rect.top >= -threshold &&
-    rect.left >= -threshold &&
-    rect.bottom <= windowHeight + threshold &&
-    rect.right <= windowWidth + threshold
-  );
-}
+// Removed unused isInViewport helper
 
 /**
  * Create a unique ID
  */
-export function generateId(prefix: string = 'post'): string {
-  return `${prefix}-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
-}
+// Removed unused generateId helper
 
 /**
  * Escape HTML to prevent XSS

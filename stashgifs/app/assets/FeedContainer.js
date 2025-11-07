@@ -152,6 +152,39 @@ export class FeedContainer {
         brand.style.letterSpacing = '0.5px';
         brand.style.color = '#F5C518';
         brand.style.fontSize = '16px';
+        brand.style.cursor = 'pointer';
+        brand.style.userSelect = 'none';
+        brand.style.transition = 'opacity 0.2s ease';
+        brand.title = 'Click to refresh feed';
+        // Hover effect
+        brand.addEventListener('mouseenter', () => {
+            brand.style.opacity = '0.8';
+        });
+        brand.addEventListener('mouseleave', () => {
+            brand.style.opacity = '1';
+        });
+        // Click to scroll to top
+        brand.addEventListener('click', () => {
+            try {
+                // Prefer scrolling the window
+                window.scrollTo({ top: 0, behavior: 'smooth' });
+                // Also attempt to scroll the internal container if used
+                const sc = this.scrollContainer;
+                if (sc && typeof sc.scrollTo === 'function') {
+                    sc.scrollTo({ top: 0, behavior: 'smooth' });
+                }
+                else if (sc) {
+                    sc.scrollTop = 0;
+                }
+            }
+            catch (e) {
+                // Fallback
+                window.scrollTo(0, 0);
+                const sc = this.scrollContainer;
+                if (sc)
+                    sc.scrollTop = 0;
+            }
+        });
         // ensure smoother animation
         header.style.willChange = 'transform, opacity';
         headerInner.appendChild(brand);

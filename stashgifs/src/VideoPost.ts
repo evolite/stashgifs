@@ -7,7 +7,7 @@ import { VideoPostData } from './types.js';
 import { NativeVideoPlayer } from './NativeVideoPlayer.js';
 import { FavoritesManager } from './FavoritesManager.js';
 import { StashAPI } from './StashAPI.js';
-import { escapeHtml, formatDuration, calculateAspectRatio, getAspectRatioClass, isValidMediaUrl, showToast } from './utils.js';
+import { calculateAspectRatio, getAspectRatioClass, isValidMediaUrl } from './utils.js';
 
 export class VideoPost {
   private container: HTMLElement;
