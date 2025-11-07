@@ -518,21 +518,21 @@ export class StashAPI {
       const sceneMarkerFilterRaw: any = savedFilterCriteria?.object_filter ? { ...savedFilterCriteria.object_filter } : {};
       const sceneMarkerFilter: any = this.normalizeMarkerFilter(sceneMarkerFilterRaw);
       
-        // If a saved filter is active, ONLY use its criteria (don't combine with manual filters)
-        // Otherwise, apply manual primary tag filters
-        if (!filters?.savedFilterId) {
-          if (filters?.primary_tags && filters.primary_tags.length > 0) {
-            const tagIds = filters.primary_tags
-              .map((v) => parseInt(String(v), 10))
-              .filter((n) => !Number.isNaN(n));
-            if (tagIds.length > 0) {
-              // Primary tags can be filtered server-side
-              sceneMarkerFilter.tags = { value: tagIds, modifier: 'INCLUDES' };
-            } else {
-              console.warn('Scene marker primary_tags must be numeric IDs; ignoring provided values');
-            }
+      // If a saved filter is active, ONLY use its criteria (don't combine with manual filters)
+      // Otherwise, apply manual primary tag filters
+      if (!filters?.savedFilterId) {
+        if (filters?.primary_tags && filters.primary_tags.length > 0) {
+          const tagIds = filters.primary_tags
+            .map((v) => parseInt(String(v), 10))
+            .filter((n) => !Number.isNaN(n));
+          if (tagIds.length > 0) {
+            // Primary tags can be filtered server-side
+            sceneMarkerFilter.tags = { value: tagIds, modifier: 'INCLUDES' };
+          } else {
+            console.warn('Scene marker primary_tags must be numeric IDs; ignoring provided values');
           }
         }
+      }
 
       const variables: any = { 
         filter,
