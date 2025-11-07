@@ -138,6 +138,9 @@ export class FeedContainer {
     chips.style.flexWrap = 'wrap';
     chips.style.gap = '6px';
     chips.style.marginTop = '6px';
+    chips.style.width = '100%';
+    chips.style.maxWidth = '100%';
+    chips.style.overflow = 'visible';
 
     const queryInput = document.createElement('input');
     queryInput.type = 'text';
@@ -196,6 +199,9 @@ export class FeedContainer {
         chip.style.display = 'inline-flex';
         chip.style.alignItems = 'center';
         chip.style.gap = '6px';
+        chip.style.flexShrink = '0';
+        chip.style.whiteSpace = 'nowrap';
+        chip.style.maxWidth = '100%';
         const x = document.createElement('button');
         x.textContent = '×';
         x.style.background = 'transparent';
@@ -225,6 +231,9 @@ export class FeedContainer {
         chip.style.display = 'inline-flex';
         chip.style.alignItems = 'center';
         chip.style.gap = '6px';
+        chip.style.flexShrink = '0';
+        chip.style.whiteSpace = 'nowrap';
+        chip.style.maxWidth = '100%';
         const x = document.createElement('button');
         x.textContent = '×';
         x.style.background = 'transparent';
@@ -541,6 +550,9 @@ export class FeedContainer {
     chips.style.display = 'flex';
     chips.style.flexWrap = 'wrap';
     chips.style.gap = '6px';
+    chips.style.width = '100%';
+    chips.style.maxWidth = '100%';
+    chips.style.overflow = 'visible';
     searchWrapper.style.position = 'relative';
     searchWrapper.appendChild(chips);
     searchWrapper.appendChild(queryInput);
@@ -627,6 +639,9 @@ export class FeedContainer {
         chip.style.display = 'inline-flex';
         chip.style.alignItems = 'center';
         chip.style.gap = '6px';
+        chip.style.flexShrink = '0';
+        chip.style.whiteSpace = 'nowrap';
+        chip.style.maxWidth = '100%';
         const x = document.createElement('button');
         x.textContent = '×';
         x.style.background = 'transparent';
@@ -656,6 +671,9 @@ export class FeedContainer {
         chip.style.display = 'inline-flex';
         chip.style.alignItems = 'center';
         chip.style.gap = '6px';
+        chip.style.flexShrink = '0';
+        chip.style.whiteSpace = 'nowrap';
+        chip.style.maxWidth = '100%';
         const x = document.createElement('button');
         x.textContent = '×';
         x.style.background = 'transparent';
