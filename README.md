@@ -36,7 +36,7 @@ Each card in the feed has several buttons on the right side:
 
 - **❤️ Heart Button** - Click to favorite/unfavorite a marker. Favorited markers get a "StashGifs Favorite" tag added to them in Stash, making them easy to filter and find later.
 - **💦 O-Count Button** - Click to increment the o-count for the scene. The count is displayed next to the emoji and updates in real-time.
-- **⭐ Star Rating** - Click to set or change the star rating for the scene. Navigate through ratings from 0 to 5 stars.
+- **⭐ Star Rating** - Click to set or change the star rating for the scene. Navigate through ratings from 0 to 10 stars.
 - **HD Badge** - Click to switch from the low-res marker preview to the full high-quality scene video with audio. The video will start at the marker's timestamp.
 - **▶️ Play Button** - Opens the full scene in Stash at the exact marker timestamp in a new tab.
 
