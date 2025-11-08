@@ -12,7 +12,7 @@ import { throttle, isValidMediaUrl } from './utils.js';
 
 const DEFAULT_SETTINGS: FeedSettings = {
   autoPlay: true, // Enable autoplay for markers
-  autoPlayThreshold: 0.5,
+  autoPlayThreshold: 0.2, // Lower threshold - start playing when 20% visible instead of 50%
   maxConcurrentVideos: 3,
   unloadDistance: 1000,
   cardMaxWidth: 800,
@@ -28,6 +28,7 @@ export class FeedContainer {
   private visibilityManager: VisibilityManager;
   private favoritesManager: FavoritesManager;
   private posts: Map<string, VideoPost>;
+  private postOrder: string[];
   private settings: FeedSettings;
   private markers: SceneMarker[] = [];
   private isLoading: boolean = false;
@@ -41,12 +42,19 @@ export class FeedContainer {
   private postsContainer!: HTMLElement;
   private headerBar?: HTMLElement;
   private selectedSavedFilter?: { id: string; name: string };
+  private eagerPreloadedPosts: Set<string>;
+  private eagerPreloadScheduled: boolean = false;
+  private eagerPreloadHandle?: number;
+  private readonly eagerPreloadCount: number = 6;
+  private readonly maxSimultaneousPreloads: number = 2;
 
   constructor(container: HTMLElement, api?: StashAPI, settings?: Partial<FeedSettings>) {
     this.container = container;
     this.api = api || new StashAPI();
     this.settings = { ...DEFAULT_SETTINGS, ...settings };
     this.posts = new Map();
+    this.postOrder = [];
+    this.eagerPreloadedPosts = new Set();
 
     // Create scroll container
     this.scrollContainer = document.createElement('div');
@@ -64,6 +72,7 @@ export class FeedContainer {
       threshold: this.settings.autoPlayThreshold,
       autoPlay: this.settings.autoPlay,
       maxConcurrent: this.settings.maxConcurrentVideos,
+      debug: this.shouldEnableVisibilityDebug(),
     });
 
     // Initialize favorites manager
@@ -152,29 +161,31 @@ export class FeedContainer {
 
     const header = document.createElement('div');
     this.headerBar = header;
-    header.style.position = 'fixed';
+    header.className = 'feed-header-bar';
+    header.style.position = 'sticky';
     header.style.top = '0';
-    header.style.left = '0';
-    header.style.right = '0';
+    header.style.width = '100%';
+    header.style.maxWidth = `${this.settings.cardMaxWidth}px`;
+    header.style.marginLeft = 'auto';
+    header.style.marginRight = 'auto';
     header.style.height = '72px';
     header.style.zIndex = '220';
-    header.style.display = 'block';
+    header.style.display = 'flex';
     header.style.alignItems = 'center';
     header.style.padding = '8px 12px';
     header.style.background = 'rgba(18,18,18,0.75)';
     header.style.backdropFilter = 'blur(10px)';
     header.style.borderBottom = '1px solid rgba(255,255,255,0.06)';
     header.style.transition = 'transform .24s ease, opacity .24s ease';
+    header.style.boxSizing = 'border-box';
 
-    // Inner container constrained to card width
+    // Inner container - full width of header (already constrained)
     const headerInner = document.createElement('div');
     headerInner.style.display = 'grid';
     headerInner.style.gridTemplateColumns = 'auto 1fr';
     headerInner.style.alignItems = 'center';
     headerInner.style.gap = '12px';
     headerInner.style.width = '100%';
-    headerInner.style.maxWidth = `${this.settings.cardMaxWidth}px`;
-    headerInner.style.margin = '0 auto';
     headerInner.style.height = '100%';
 
     const brand = document.createElement('div');
@@ -220,13 +231,13 @@ export class FeedContainer {
     header.style.willChange = 'transform, opacity';
     headerInner.appendChild(brand);
 
-    // Search area
+    // Search area - constrained to grid column
     const searchArea = document.createElement('div');
     searchArea.style.position = 'relative';
-    // Constrain search width to match card width and center it
     searchArea.style.width = '100%';
+    searchArea.style.minWidth = '0'; // Allow grid to constrain width
     searchArea.style.maxWidth = '100%';
-    (searchArea.style as any).justifySelf = 'center';
+    searchArea.style.overflow = 'hidden'; // Prevent overflow
     headerInner.appendChild(searchArea);
 
     header.appendChild(headerInner);
@@ -249,12 +260,15 @@ export class FeedContainer {
     const inputWrapper = document.createElement('div');
     inputWrapper.style.position = 'relative';
     inputWrapper.style.width = '100%';
+    inputWrapper.style.minWidth = '0'; // Allow grid to constrain width
+    inputWrapper.style.boxSizing = 'border-box';
 
     const queryInput = document.createElement('input');
     queryInput.type = 'text';
     queryInput.placeholder = 'Search tags or apply saved filters…';
     queryInput.className = 'feed-filters__input';
     queryInput.style.width = '100%';
+    queryInput.style.minWidth = '0'; // Allow container to constrain width
     queryInput.style.height = '40px';
     queryInput.style.padding = '0 36px 0 14px'; // Right padding for reset button, left padding for text
     queryInput.style.borderRadius = '999px';
@@ -262,6 +276,7 @@ export class FeedContainer {
     queryInput.style.background = 'rgba(22,22,22,0.9)';
     queryInput.style.color = 'inherit';
     queryInput.style.fontSize = '14px';
+    queryInput.style.boxSizing = 'border-box'; // Include padding in width calculation
 
     // Reset filter button (right-aligned within search bar, positioned relative to inputWrapper)
     const resetButton = document.createElement('button');
@@ -336,10 +351,10 @@ export class FeedContainer {
     searchArea.appendChild(suggestions);
     searchArea.appendChild(chips);
 
-    this.container.appendChild(header);
+    // Append header to scroll container at the top (before posts)
+    this.scrollContainer.insertBefore(header, this.scrollContainer.firstChild);
 
-    // Add top padding to scroll container so content is not hidden under header
-    this.scrollContainer.style.paddingTop = '90px';
+    // No need for paddingTop since header is sticky and inside scroll container
 
     const renderChips = () => {
       chips.innerHTML = '';
@@ -1337,6 +1352,7 @@ export class FeedContainer {
 
     const post = new VideoPost(postContainer, postData, this.favoritesManager, this.api, this.visibilityManager);
     this.posts.set(marker.id, post);
+    this.postOrder.push(marker.id);
 
     // Add to posts container
     this.postsContainer.appendChild(postContainer);
@@ -1344,20 +1360,22 @@ export class FeedContainer {
     // Observe for visibility
     this.visibilityManager.observePost(postContainer, marker.id);
 
-    // Load video when it becomes visible (lazy loading)
-    // On mobile, start loading earlier (larger rootMargin)
+    // Load video when it becomes visible (aggressive preloading, especially on mobile)
+    // Load videos much earlier to prevent black screens
     if (safeVideoUrl) {
       const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
-      const rootMargin = isMobile ? '300px' : '100px';
+      // Much larger rootMargin on mobile - load videos very early to account for slower mobile networks
+      const rootMargin = isMobile ? '2000px' : '800px';
       
       // Use Intersection Observer to load video when near viewport
       const loadObserver = new IntersectionObserver(
         (entries) => {
           for (const entry of entries) {
             if (entry.isIntersecting) {
-              post.loadPlayer(safeVideoUrl!, marker.seconds, marker.end_seconds);
-              const player = post.getPlayer();
+              // Load the player
+              const player = post.preload();
               if (player) {
+                // Register player immediately - VisibilityManager will wait for ready state
                 this.visibilityManager.registerPlayer(marker.id, player);
                 // Don't play here - let VisibilityManager handle it based on visibility
               } else {
@@ -1367,12 +1385,14 @@ export class FeedContainer {
             }
           }
         },
-        { rootMargin } // Start loading earlier on mobile
+        { rootMargin, threshold: 0 } // Load as soon as any part enters the expanded viewport
       );
       loadObserver.observe(postContainer);
     } else {
       console.warn('FeedContainer: No video URL for marker', { markerId: marker.id });
     }
+
+    this.scheduleEagerPreload();
   }
 
   /**
@@ -1383,6 +1403,9 @@ export class FeedContainer {
       post.destroy();
     }
     this.posts.clear();
+    this.postOrder = [];
+    this.eagerPreloadedPosts.clear();
+    this.cancelScheduledPreload();
     if (this.postsContainer) {
       this.postsContainer.innerHTML = '';
     }
@@ -1409,6 +1432,7 @@ export class FeedContainer {
     }
 
     // Use Intersection Observer to detect when trigger is visible
+    // Use document as root to work with window scrolling
     this.scrollObserver = new IntersectionObserver(
       (entries) => {
         entries.forEach((entry) => {
@@ -1420,7 +1444,7 @@ export class FeedContainer {
         });
       },
       {
-        root: null,
+        root: null, // Use viewport (window) as root
         rootMargin: '200px', // Start loading 200px before reaching the trigger
         threshold: 0.1,
       }
@@ -1451,14 +1475,12 @@ export class FeedContainer {
     for (const marker of initial) {
       const post = this.posts.get(marker.id);
       if (!post) continue;
-      const videoUrl = this.api.getMarkerVideoUrl(marker);
-      if (!videoUrl || !isValidMediaUrl(videoUrl)) continue;
-      // Ensure player is created
-      post.loadPlayer(videoUrl, marker.seconds, marker.end_seconds);
-      const player = post.getPlayer();
+      if (!post.hasVideoSource()) continue;
+      const player = post.preload();
       if (player) {
         // Register with visibility manager
         this.visibilityManager.registerPlayer(marker.id, player);
+        this.eagerPreloadedPosts.add(marker.id);
       }
     }
     
@@ -1502,32 +1524,112 @@ export class FeedContainer {
     }
   }
 
+  private shouldEnableVisibilityDebug(): boolean {
+    try {
+      if (typeof window !== 'undefined' && typeof window.localStorage !== 'undefined') {
+        return window.localStorage.getItem('stashgifs-visibility-debug') === '1';
+      }
+    } catch {
+      // Ignore storage errors
+    }
+    return false;
+  }
+
+  private scheduleEagerPreload(): void {
+    if (this.eagerPreloadScheduled) {
+      return;
+    }
+
+    const execute = () => {
+      this.eagerPreloadScheduled = false;
+      this.eagerPreloadHandle = undefined;
+      this.runEagerPreload();
+    };
+
+    if (typeof window === 'undefined') {
+      execute();
+      return;
+    }
+
+    this.eagerPreloadScheduled = true;
+    this.eagerPreloadHandle = window.setTimeout(execute, 32);
+  }
+
+  private runEagerPreload(): void {
+    const orderedPosts = this.postOrder
+      .map((id) => this.posts.get(id))
+      .filter((post): post is VideoPost => !!post);
+
+    if (!orderedPosts.length) {
+      return;
+    }
+
+    let started = 0;
+    const budget = Math.max(1, this.maxSimultaneousPreloads);
+
+    for (let index = 0; index < orderedPosts.length && index < this.eagerPreloadCount; index++) {
+      const post = orderedPosts[index];
+      const postId = post.getPostId();
+
+      if (this.eagerPreloadedPosts.has(postId)) {
+        continue;
+      }
+
+      if (!post.hasVideoSource()) {
+        this.eagerPreloadedPosts.add(postId);
+        continue;
+      }
+
+      const player = post.preload();
+      this.eagerPreloadedPosts.add(postId);
+
+      if (player) {
+        this.visibilityManager.registerPlayer(postId, player);
+        started += 1;
+      }
+
+      if (started >= budget) {
+        break;
+      }
+    }
+
+    const hasPending = orderedPosts
+      .slice(0, this.eagerPreloadCount)
+      .some((post) => {
+        const postId = post.getPostId();
+        if (this.eagerPreloadedPosts.has(postId)) {
+          return false;
+        }
+        return post.hasVideoSource() && !post.isPlayerLoaded();
+      });
+
+    if (hasPending) {
+      this.scheduleEagerPreload();
+    }
+  }
+
+  private cancelScheduledPreload(): void {
+    if (!this.eagerPreloadHandle) {
+      return;
+    }
+
+    if (typeof window !== 'undefined') {
+      window.clearTimeout(this.eagerPreloadHandle);
+    }
+
+    this.eagerPreloadHandle = undefined;
+    this.eagerPreloadScheduled = false;
+  }
+
   /**
    * Setup scroll handler
+   * Note: Header visibility is now handled by CSS position:sticky
+   * This handler is kept for potential future use (e.g., infinite scroll)
    */
   private setupScrollHandler(): void {
-    let lastTop = 0;
-    const handleScroll = throttle(() => {
-      const top = (typeof window !== 'undefined' && typeof window.scrollY === 'number')
-        ? window.scrollY
-        : this.scrollContainer.scrollTop;
-      if (!this.headerBar) return;
-      const delta = top - lastTop;
-      const scrollingDown = delta > 2;
-      const scrollingUp = delta < -2;
-      if (scrollingDown && top > 8) {
-        this.headerBar.style.opacity = '0';
-        this.headerBar.style.transform = 'translateY(-100%)';
-      } else if (scrollingUp || top <= 8) {
-        this.headerBar.style.opacity = '1';
-        this.headerBar.style.transform = 'translateY(0)';
-      }
-      lastTop = top;
-    }, 70);
-
-    // Listen to both window and container scrolling to cover all layouts
-    window.addEventListener('scroll', handleScroll, { passive: true });
-    this.scrollContainer.addEventListener('scroll', handleScroll, { passive: true } as any);
+    // Header visibility is now handled by CSS position:sticky
+    // No scroll-based transform updates needed - eliminates Firefox warning
+    // This method is kept for potential future scroll-based features
   }
 
   /**

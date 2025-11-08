@@ -17,6 +17,7 @@ export class NativeVideoPlayer {
   private fullscreenButton!: HTMLElement;
   private state: VideoPlayerState;
   private onStateChange?: (state: VideoPlayerState) => void;
+  private externalStateListener?: (state: VideoPlayerState) => void;
   private readyResolver?: () => void;
   private readyPromise: Promise<void>;
   private errorHandled: boolean = false;
@@ -366,9 +367,17 @@ export class NativeVideoPlayer {
   }
 
   private notifyStateChange(): void {
+    const snapshot = { ...this.state };
     if (this.onStateChange) {
-      this.onStateChange({ ...this.state });
+      this.onStateChange(snapshot);
     }
+    if (this.externalStateListener) {
+      this.externalStateListener(snapshot);
+    }
+  }
+
+  setStateChangeListener(listener?: (state: VideoPlayerState) => void): void {
+    this.externalStateListener = listener;
   }
 
   async play(): Promise<void> {
@@ -427,6 +436,13 @@ export class NativeVideoPlayer {
 
   pause(): void {
     this.videoElement.pause();
+  }
+
+  /**
+   * Check if the video is currently playing
+   */
+  isPlaying(): boolean {
+    return !this.videoElement.paused && !this.videoElement.ended && this.videoElement.readyState > 0;
   }
 
   togglePlay(): void {

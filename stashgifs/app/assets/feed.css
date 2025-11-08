@@ -599,6 +599,14 @@
   }
 }
 
+/* Header bar - constrained to card width */
+.feed-header-bar {
+  max-width: var(--feed-card-max-width);
+  margin-left: auto;
+  margin-right: auto;
+  box-sizing: border-box;
+}
+
 /* Accessibility */
 @media (prefers-reduced-motion: reduce) {
   * {

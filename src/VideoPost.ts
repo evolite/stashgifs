@@ -1087,10 +1087,10 @@ export class VideoPost {
   /**
    * Load the video player
    */
-  loadPlayer(videoUrl: string, startTime?: number, endTime?: number): void {
+  loadPlayer(videoUrl: string, startTime?: number, endTime?: number): NativeVideoPlayer | undefined {
     // Early return if already loaded
     if (this.isLoaded) {
-      return;
+      return this.player;
     }
 
     // Validate URL early before any other checks
@@ -1100,13 +1100,13 @@ export class VideoPost {
         markerId: this.data.marker.id,
         sceneId: this.data.marker.scene?.id,
       });
-      return;
+      return undefined;
     }
 
     const playerContainer = this.playerContainer || this.container.querySelector('.video-post__player') as HTMLElement;
     if (!playerContainer) {
       console.warn('VideoPost: Player container not found', { markerId: this.data.marker.id });
-      return;
+      return undefined;
     }
 
     try {
@@ -1131,7 +1131,10 @@ export class VideoPost {
         markerId: this.data.marker.id,
       });
       // Don't set isLoaded to true if player creation failed
+      return undefined;
     }
+
+    return this.player;
   }
 
   /**
@@ -1139,6 +1142,35 @@ export class VideoPost {
    */
   getPlayer(): NativeVideoPlayer | undefined {
     return this.player;
+  }
+
+  /**
+   * Return true if player has been instantiated
+   */
+  isPlayerLoaded(): boolean {
+    return this.isLoaded && !!this.player;
+  }
+
+  /**
+   * Return true if there is a valid source to preload
+   */
+  hasVideoSource(): boolean {
+    return !!this.data.videoUrl && isValidMediaUrl(this.data.videoUrl);
+  }
+
+  /**
+   * Preload player using default source/range
+   */
+  preload(): NativeVideoPlayer | undefined {
+    if (!this.hasVideoSource()) {
+      return undefined;
+    }
+
+    return this.loadPlayer(
+      this.data.videoUrl!,
+      this.data.startTime ?? this.data.marker.seconds,
+      this.data.endTime ?? this.data.marker.end_seconds
+    );
   }
 
   /**

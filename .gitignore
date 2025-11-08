@@ -1,5 +1,6 @@
 # Deployment script (contains local paths)
 deploy.ps1
+package.ps1
 
 # Dependencies
 node_modules/
@@ -7,10 +8,6 @@ node_modules/
 # Compiled TypeScript output
 stashgifs/app/assets/*.js
 stashgifs/app/assets/*.js.map
-
-# Build artifacts
-stashgifs.zip
-stashgifs.zip.sha256
 
 # IDE/Editor files
 .vscode/
