@@ -10,11 +10,8 @@ Install via Stash's plugin system using the `index.yml` file.
 
 - **Vertical scrolling feed** - Browse markers like a social media feed, looping videos
 - **Auto-play videos** - Videos play automatically as you scroll
-- **Smart search** - Full-screen dropdown on mobile, large dropdown on desktop
-- **Trending searches** - See top 3 trending tags when you open search
 - **Fuzzy tag matching** - Selecting "finger" matches "fingers", "finger - pov", "finger play", etc.
 - **Saved filters** - Quick access to your saved marker filters
-- **Auto-hiding header** - Search bar hides when scrolling down, reappears when scrolling up
 - **Random content** - Fresh mix every time you load
 - **Favorites** - Heart markers to save them (adds "StashGifs Favorite" tag)
 - **O-count tracking** - Track and increment o-counts
@@ -23,6 +20,10 @@ Install via Stash's plugin system using the `index.yml` file.
 - **Fullscreen support** - Watch in fullscreen
 
 ## Controls
+
+**Navigation:**
+- **Performer chips** - Click any performer chip to filter the feed to show only markers with that performer
+- **Tag chips** - Click any tag chip to filter the feed to show only markers with that tag
 
 **Search bar:**
 - Click to open full-screen search dropdown

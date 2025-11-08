@@ -92,13 +92,26 @@ export class VideoPost {
   private playerContainer?: HTMLElement;
   private footer?: HTMLElement;
 
-  constructor(container: HTMLElement, data: VideoPostData, favoritesManager?: FavoritesManager, api?: StashAPI, visibilityManager?: VisibilityManager) {
+  private onPerformerChipClick?: (performerId: number, performerName: string) => void;
+  private onTagChipClick?: (tagId: number, tagName: string) => void;
+
+  constructor(
+    container: HTMLElement, 
+    data: VideoPostData, 
+    favoritesManager?: FavoritesManager, 
+    api?: StashAPI, 
+    visibilityManager?: VisibilityManager,
+    onPerformerChipClick?: (performerId: number, performerName: string) => void,
+    onTagChipClick?: (tagId: number, tagName: string) => void
+  ) {
     this.container = container;
     this.data = data;
     this.thumbnailUrl = data.thumbnailUrl;
     this.favoritesManager = favoritesManager;
     this.api = api;
     this.visibilityManager = visibilityManager;
+    this.onPerformerChipClick = onPerformerChipClick;
+    this.onTagChipClick = onTagChipClick;
     this.oCount = this.data.marker.scene.o_counter || 0;
     this.ratingValue = this.convertRating100ToStars(this.data.marker.scene.rating100);
     this.hasRating = typeof this.data.marker.scene.rating100 === 'number' && !Number.isNaN(this.data.marker.scene.rating100);
@@ -222,6 +235,19 @@ export class VideoPost {
     chip.style.lineHeight = '1.4';
     chip.style.gap = '6px';
     chip.style.transition = 'opacity 0.2s ease';
+    chip.style.cursor = 'pointer';
+    
+    // Add click handler to filter by performer
+    chip.addEventListener('click', (e) => {
+      if (this.onPerformerChipClick) {
+        e.preventDefault();
+        e.stopPropagation();
+        const performerId = parseInt(performer.id, 10);
+        if (!Number.isNaN(performerId)) {
+          this.onPerformerChipClick(performerId, performer.name);
+        }
+      }
+    });
     
     if (performer.image_path) {
       const avatar = document.createElement('img');
@@ -249,6 +275,20 @@ export class VideoPost {
     chip.style.fontSize = '13px';
     chip.style.lineHeight = '1.4';
     chip.style.transition = 'opacity 0.2s ease';
+    chip.style.cursor = 'pointer';
+    
+    // Add click handler to filter by tag
+    chip.addEventListener('click', (e) => {
+      if (this.onTagChipClick) {
+        e.preventDefault();
+        e.stopPropagation();
+        const tagId = parseInt(tag.id, 10);
+        if (!Number.isNaN(tagId)) {
+          this.onTagChipClick(tagId, tag.name);
+        }
+      }
+    });
+    
     chip.appendChild(document.createTextNode(tag.name));
     return chip;
   }

@@ -35,6 +35,8 @@ export class FeedContainer {
   private currentFilters?: FilterOptions;
   private selectedTagId?: number;
   private selectedTagName?: string;
+  private selectedPerformerId?: number;
+  private selectedPerformerName?: string;
   private hasMore: boolean = true;
   private currentPage: number = 1;
   private scrollObserver?: IntersectionObserver;
@@ -150,6 +152,20 @@ export class FeedContainer {
   }
 
   /**
+   * Close suggestions overlay and unlock body scroll
+   */
+  private closeSuggestions(): void {
+    // Find all suggestion overlays (there might be multiple instances)
+    const suggestions = document.querySelectorAll('.feed-filters__suggestions');
+    suggestions.forEach((suggestion) => {
+      const el = suggestion as HTMLElement;
+      el.style.display = 'none';
+      el.innerHTML = '';
+    });
+    this.unlockBodyScroll();
+  }
+
+  /**
    * Create top header bar with unified search
    */
   private createHeaderBar(): void {
@@ -170,7 +186,7 @@ export class FeedContainer {
     header.style.marginLeft = 'auto';
     header.style.marginRight = 'auto';
     header.style.height = '56px';
-    header.style.zIndex = '220';
+    header.style.zIndex = '1001'; // Higher than suggestions (1000) to stay in front
     header.style.display = 'flex';
     header.style.alignItems = 'center';
     header.style.justifyContent = 'flex-start';
@@ -272,7 +288,7 @@ export class FeedContainer {
 
     const queryInput = document.createElement('input');
     queryInput.type = 'text';
-    queryInput.placeholder = 'Search tags or apply saved filters…';
+    queryInput.placeholder = 'Search tags, performers, or apply saved filters…';
     queryInput.className = 'feed-filters__input';
     queryInput.style.width = '100%';
     queryInput.style.minWidth = '0';
@@ -293,9 +309,11 @@ export class FeedContainer {
     const suggestions = document.createElement('div');
     suggestions.className = 'feed-filters__suggestions hide-scrollbar';
     suggestions.style.position = 'fixed';
+    // Use inset to ensure it covers the full viewport
+    (suggestions.style as any).inset = '0';
+    suggestions.style.top = '0';
     suggestions.style.left = '0';
     suggestions.style.right = '0';
-    suggestions.style.top = '72px'; // Position below search bar (56px header + 16px padding)
     suggestions.style.bottom = '0';
     suggestions.style.zIndex = '1000';
     suggestions.style.display = 'none';
@@ -303,10 +321,10 @@ export class FeedContainer {
     suggestions.style.backdropFilter = 'blur(20px) saturate(180%)';
     (suggestions.style as any).webkitBackdropFilter = 'blur(20px) saturate(180%)';
     suggestions.style.overflowY = 'auto';
-    suggestions.style.paddingTop = '16px';
+    suggestions.style.paddingTop = '0';
     suggestions.style.paddingBottom = '20px';
-    suggestions.style.paddingLeft = '16px';
-    suggestions.style.paddingRight = '16px';
+    suggestions.style.paddingLeft = '0';
+    suggestions.style.paddingRight = '0';
     suggestions.style.boxSizing = 'border-box';
 
     // Input wrapper (contains input and reset button), then tag header below
@@ -324,6 +342,8 @@ export class FeedContainer {
       // Show the active search term in the search bar
       if (this.selectedTagName) {
         queryInput.value = this.selectedTagName;
+      } else if (this.selectedPerformerName) {
+        queryInput.value = this.selectedPerformerName;
       } else if (this.selectedSavedFilter) {
         queryInput.value = this.selectedSavedFilter.name;
       } else {
@@ -333,22 +353,57 @@ export class FeedContainer {
       tagHeader.style.display = 'none';
     };
 
-    const apply = () => {
+    const apply = async () => {
       const q = queryInput.value.trim();
       // Use query for text-based search (includes partial matches like "finger" matching "fingers", "finger - pov", etc.)
-      // When a tag is selected, use its name for fuzzy matching
-      // When user types manually, use that query (unless a saved filter is active)
+      // Exception: "cowgirl" should use exact tag matching to exclude "reverse cowgirl"
+      const useExactMatch = this.selectedTagName?.toLowerCase() === 'cowgirl';
+      
       let queryValue: string | undefined = undefined;
+      let primaryTags: string[] | undefined = undefined;
+      let performers: string[] | undefined = undefined;
+      
       if (this.selectedTagName) {
-        queryValue = this.selectedTagName;
+        if (useExactMatch && this.selectedTagId) {
+          // Use exact tag ID matching for "cowgirl" to exclude "reverse cowgirl"
+          primaryTags = [String(this.selectedTagId)];
+        } else {
+          // For fuzzy matching: search for tags matching the name, then use their IDs
+          // This allows "finger" to match "fingers", "finger - pov", etc.
+          try {
+            const matchingTags = await this.api.searchMarkerTags(this.selectedTagName, 50);
+            const matchingTagIds = matchingTags
+              .map(tag => parseInt(tag.id, 10))
+              .filter(id => !Number.isNaN(id))
+              .map(id => String(id));
+            
+            if (matchingTagIds.length > 0) {
+              primaryTags = matchingTagIds;
+            } else {
+              // Fallback: use the selected tag ID if no matches found
+              if (this.selectedTagId) {
+                primaryTags = [String(this.selectedTagId)];
+              }
+            }
+          } catch (error) {
+            console.error('Failed to search for matching tags', error);
+            // Fallback: use the selected tag ID
+            if (this.selectedTagId) {
+              primaryTags = [String(this.selectedTagId)];
+            }
+          }
+        }
+      } else if (this.selectedPerformerId) {
+        // Use performer ID for filtering
+        performers = [String(this.selectedPerformerId)];
       } else if (q && !this.selectedSavedFilter) {
         queryValue = q;
       }
       
       const newFilters: FilterOptions = {
         query: queryValue,
-        // Don't use primary_tags with exact ID - use query instead for fuzzy matching
-        primary_tags: undefined,
+        primary_tags: primaryTags,
+        performers: performers,
         savedFilterId: this.selectedSavedFilter?.id || undefined,
         limit: 20,
         offset: 0,
@@ -400,6 +455,31 @@ export class FeedContainer {
       }
     };
 
+    // Helper to get marker count for a performer
+    // Note: scene_performers is not supported server-side, so we fetch a sample and count client-side
+    const getMarkerCountForPerformer = async (performerId: number): Promise<number> => {
+      try {
+        // Fetch a larger sample of markers to count (we'll filter client-side)
+        // This gives an approximate count, but accurate enough for autocomplete
+        const sampleMarkers = await this.api.fetchSceneMarkers({ limit: 100, offset: 0 });
+        const performerIdStr = String(performerId);
+        const count = sampleMarkers.filter((marker) => {
+          const scenePerformers = marker.scene?.performers || [];
+          return scenePerformers.some((p) => p.id === performerIdStr);
+        }).length;
+        
+        // If we found markers in the sample, estimate total count
+        // This is approximate but good enough for autocomplete sorting
+        if (count > 0 && sampleMarkers.length === 100) {
+          // If we got a full page, there might be more - return a conservative estimate
+          return count * 2; // Estimate there are at least 2x more
+        }
+        return count;
+      } catch {
+        return 0;
+      }
+    };
+
     const fetchAndShowSuggestions = async (text: string, forceShow: boolean = false) => {
       const trimmedText = text.trim();
       // Show suggestions if we have text (2+ chars) OR if forced (on focus with empty/minimal text)
@@ -408,123 +488,27 @@ export class FeedContainer {
           suggestions.innerHTML = '';
           
           // Create container for content (max-width on desktop)
+          // Position it to align with search bar
           const contentContainer = document.createElement('div');
           contentContainer.style.maxWidth = '600px';
           contentContainer.style.margin = '0 auto';
           contentContainer.style.width = '100%';
           
-          // Trending Searches section
-          const trendingLabel = document.createElement('div');
-          trendingLabel.textContent = 'Trending Searches';
-          trendingLabel.style.fontSize = '17px';
-          trendingLabel.style.fontWeight = '600';
-          trendingLabel.style.color = '#FFFFFF';
-          trendingLabel.style.marginBottom = '16px';
-          trendingLabel.style.paddingTop = '8px';
-          contentContainer.appendChild(trendingLabel);
-          
-          // On focus with empty text, show trending tags (top 3 only)
-          const pageSize = 3;
-          const items = await this.api.searchMarkerTags('', pageSize);
-          
-          // Get counts for tags
-          const itemsWithCounts = await Promise.all(
-            items.slice(0, 3).map(async (tag) => {
-              const tagId = parseInt(tag.id, 10);
-              if (this.selectedTagId === tagId) return null;
-              const count = await getMarkerCount(tagId);
-              return { ...tag, count };
-            })
-          );
-          
-          const validItems = itemsWithCounts.filter((item): item is { id: string; name: string; count: number } => item !== null && item.count > 0);
-          
-          validItems.forEach((tag) => {
-            const item = document.createElement('button');
-            item.style.width = '100%';
-            item.style.display = 'flex';
-            item.style.alignItems = 'center';
-            item.style.gap = '12px';
-            item.style.padding = '12px';
-            item.style.borderRadius = '12px';
-            item.style.border = 'none';
-            item.style.background = 'transparent';
-            item.style.cursor = 'pointer';
-            item.style.textAlign = 'left';
-            item.style.transition = 'background 0.2s ease';
-            item.style.marginBottom = '4px';
-            
-            item.addEventListener('mouseenter', () => {
-              item.style.background = 'rgba(255, 255, 255, 0.08)';
-            });
-            item.addEventListener('mouseleave', () => {
-              item.style.background = 'transparent';
-            });
-            
-            // Hash icon
-            const hashIcon = document.createElement('div');
-            hashIcon.textContent = '#';
-            hashIcon.style.width = '32px';
-            hashIcon.style.height = '32px';
-            hashIcon.style.borderRadius = '50%';
-            hashIcon.style.background = 'rgba(255, 255, 255, 0.1)';
-            hashIcon.style.display = 'flex';
-            hashIcon.style.alignItems = 'center';
-            hashIcon.style.justifyContent = 'center';
-            hashIcon.style.fontSize = '16px';
-            hashIcon.style.fontWeight = '600';
-            hashIcon.style.color = 'rgba(255, 255, 255, 0.8)';
-            hashIcon.style.flexShrink = '0';
-            
-            // Tag name and count container
-            const textContainer = document.createElement('div');
-            textContainer.style.flex = '1';
-            textContainer.style.display = 'flex';
-            textContainer.style.flexDirection = 'column';
-            textContainer.style.gap = '4px';
-            
-            const tagName = document.createElement('div');
-            tagName.textContent = tag.name;
-            tagName.style.fontSize = '15px';
-            tagName.style.fontWeight = '500';
-            tagName.style.color = '#FFFFFF';
-            
-            const postCount = document.createElement('div');
-            postCount.textContent = formatPostCount(tag.count);
-            postCount.style.fontSize = '13px';
-            postCount.style.color = 'rgba(255, 255, 255, 0.6)';
-            
-            textContainer.appendChild(tagName);
-            textContainer.appendChild(postCount);
-            
-            item.appendChild(hashIcon);
-            item.appendChild(textContainer);
-            
-            item.addEventListener('click', () => {
-              const tagId = parseInt(tag.id, 10);
-              // Clear saved filter when selecting a tag
-              this.selectedSavedFilter = undefined;
-              this.selectedTagId = tagId;
-              this.selectedTagName = tag.name;
-              updateSearchBarDisplay();
-              apply();
-              suggestions.style.display = 'none';
-              suggestions.innerHTML = '';
-            });
-            
-            contentContainer.appendChild(item);
-          });
-          
-          if (validItems.length > 0) {
-            const divider = document.createElement('div');
-            divider.style.width = '100%';
-            divider.style.height = '1px';
-            divider.style.background = 'rgba(255,255,255,0.08)';
-            divider.style.margin = '16px 0';
-            contentContainer.appendChild(divider);
+          // Calculate search bar position and align content container
+          if (header) {
+            const headerRect = header.getBoundingClientRect();
+            contentContainer.style.paddingTop = `${headerRect.bottom + 16}px`; // Position below search bar
+            contentContainer.style.paddingLeft = '16px';
+            contentContainer.style.paddingRight = '16px';
+            contentContainer.style.boxSizing = 'border-box';
+          } else {
+            contentContainer.style.paddingTop = '80px'; // Fallback
+            contentContainer.style.paddingLeft = '16px';
+            contentContainer.style.paddingRight = '16px';
+            contentContainer.style.boxSizing = 'border-box';
           }
           
-          // Saved Filters section
+          // Saved Filters section - MOVED TO TOP
           if (savedFiltersCache.length > 0) {
             const savedLabel = document.createElement('div');
             savedLabel.textContent = 'SAVED FILTERS';
@@ -572,28 +556,255 @@ export class FeedContainer {
               
               item.appendChild(filterName);
               
-          item.addEventListener('click', () => {
-            this.selectedSavedFilter = { id: f.id, name: f.name };
-            this.selectedTagId = undefined;
-            this.selectedTagName = undefined;
-            updateSearchBarDisplay();
-            this.currentFilters = { savedFilterId: f.id, limit: 20, offset: 0 };
-            this.loadVideos(this.currentFilters, false).catch((e) => console.error('Apply saved filter failed', e));
-            suggestions.style.display = 'none';
-            suggestions.innerHTML = '';
-          });
+              item.addEventListener('click', (e) => {
+                e.stopPropagation();
+                e.preventDefault();
+                this.selectedSavedFilter = { id: f.id, name: f.name };
+                this.selectedTagId = undefined;
+                this.selectedTagName = undefined;
+                this.selectedPerformerId = undefined;
+                this.selectedPerformerName = undefined;
+                this.closeSuggestions();
+                updateSearchBarDisplay();
+                this.currentFilters = { savedFilterId: f.id, limit: 20, offset: 0 };
+                this.loadVideos(this.currentFilters, false).catch((e) => console.error('Apply saved filter failed', e));
+              });
               
               filtersContainer.appendChild(item);
             });
             
             contentContainer.appendChild(filtersContainer);
+            
+            // Add divider after saved filters
+            const divider1 = document.createElement('div');
+            divider1.style.width = '100%';
+            divider1.style.height = '1px';
+            divider1.style.background = 'rgba(255,255,255,0.08)';
+            divider1.style.margin = '16px 0';
+            contentContainer.appendChild(divider1);
           }
           
+          // Suggested Tags section
+          const suggestedTagsLabel = document.createElement('div');
+          suggestedTagsLabel.textContent = 'Suggested Tags';
+          suggestedTagsLabel.style.fontSize = '17px';
+          suggestedTagsLabel.style.fontWeight = '600';
+          suggestedTagsLabel.style.color = '#FFFFFF';
+          suggestedTagsLabel.style.marginBottom = '16px';
+          suggestedTagsLabel.style.paddingTop = '8px';
+          contentContainer.appendChild(suggestedTagsLabel);
+          
+          // Sample tags to find suggested (get 40, then pick top 3)
+          const tagSampleSize = 40;
+          const tagSample = await this.api.searchMarkerTags('', tagSampleSize);
+          
+          // Filter out already selected tag and take first 3 (no count fetching needed)
+          const validItems = tagSample
+            .filter((tag) => {
+              const tagId = parseInt(tag.id, 10);
+              return this.selectedTagId !== tagId;
+            })
+            .slice(0, 3);
+          
+          validItems.forEach((tag) => {
+            const item = document.createElement('button');
+            item.style.width = '100%';
+            item.style.display = 'flex';
+            item.style.alignItems = 'center';
+            item.style.gap = '12px';
+            item.style.padding = '12px';
+            item.style.borderRadius = '12px';
+            item.style.border = 'none';
+            item.style.background = 'transparent';
+            item.style.cursor = 'pointer';
+            item.style.textAlign = 'left';
+            item.style.transition = 'background 0.2s ease';
+            item.style.marginBottom = '4px';
+            
+            item.addEventListener('mouseenter', () => {
+              item.style.background = 'rgba(255, 255, 255, 0.08)';
+            });
+            item.addEventListener('mouseleave', () => {
+              item.style.background = 'transparent';
+            });
+            
+            // Hash icon
+            const hashIcon = document.createElement('div');
+            hashIcon.textContent = '#';
+            hashIcon.style.width = '32px';
+            hashIcon.style.height = '32px';
+            hashIcon.style.borderRadius = '50%';
+            hashIcon.style.background = 'rgba(255, 255, 255, 0.1)';
+            hashIcon.style.display = 'flex';
+            hashIcon.style.alignItems = 'center';
+            hashIcon.style.justifyContent = 'center';
+            hashIcon.style.fontSize = '16px';
+            hashIcon.style.fontWeight = '600';
+            hashIcon.style.color = 'rgba(255, 255, 255, 0.8)';
+            hashIcon.style.flexShrink = '0';
+            
+            // Tag name container
+            const textContainer = document.createElement('div');
+            textContainer.style.flex = '1';
+            textContainer.style.display = 'flex';
+            textContainer.style.alignItems = 'center';
+            
+            const tagName = document.createElement('div');
+            tagName.textContent = tag.name;
+            tagName.style.fontSize = '15px';
+            tagName.style.fontWeight = '500';
+            tagName.style.color = '#FFFFFF';
+            
+            textContainer.appendChild(tagName);
+            
+            item.appendChild(hashIcon);
+            item.appendChild(textContainer);
+            
+            item.addEventListener('click', (e) => {
+              e.stopPropagation();
+              e.preventDefault();
+              const tagId = parseInt(tag.id, 10);
+              // Clear saved filter and performer when selecting a tag
+              this.selectedSavedFilter = undefined;
+              this.selectedPerformerId = undefined;
+              this.selectedPerformerName = undefined;
+              this.selectedTagId = tagId;
+              this.selectedTagName = tag.name;
+              this.closeSuggestions();
+              updateSearchBarDisplay();
+              apply();
+            });
+            
+            contentContainer.appendChild(item);
+          });
+          
+          // Add divider after trending tags
+          if (validItems.length > 0) {
+            const divider2 = document.createElement('div');
+            divider2.style.width = '100%';
+            divider2.style.height = '1px';
+            divider2.style.background = 'rgba(255,255,255,0.08)';
+            divider2.style.margin = '16px 0';
+            contentContainer.appendChild(divider2);
+          }
+          
+          // Suggested Performers section
+          const suggestedPerformersLabel = document.createElement('div');
+          suggestedPerformersLabel.textContent = 'Suggested Performers';
+          suggestedPerformersLabel.style.fontSize = '17px';
+          suggestedPerformersLabel.style.fontWeight = '600';
+          suggestedPerformersLabel.style.color = '#FFFFFF';
+          suggestedPerformersLabel.style.marginBottom = '16px';
+          suggestedPerformersLabel.style.paddingTop = '8px';
+          contentContainer.appendChild(suggestedPerformersLabel);
+          
+          // Sample performers to find suggested (40 performers)
+          const performerSample = await this.api.searchPerformers('', 40);
+          
+          // Filter out already selected performer and take first 3 (no count fetching needed)
+          const validPerformers = performerSample
+            .filter((performer) => {
+              const performerId = parseInt(performer.id, 10);
+              return this.selectedPerformerId !== performerId;
+            })
+            .slice(0, 3);
+          
+          validPerformers.forEach((performer) => {
+            const item = document.createElement('button');
+            item.style.width = '100%';
+            item.style.display = 'flex';
+            item.style.alignItems = 'center';
+            item.style.gap = '12px';
+            item.style.padding = '12px';
+            item.style.borderRadius = '12px';
+            item.style.border = 'none';
+            item.style.background = 'transparent';
+            item.style.cursor = 'pointer';
+            item.style.textAlign = 'left';
+            item.style.transition = 'background 0.2s ease';
+            item.style.marginBottom = '4px';
+            
+            item.addEventListener('mouseenter', () => {
+              item.style.background = 'rgba(255, 255, 255, 0.08)';
+            });
+            item.addEventListener('mouseleave', () => {
+              item.style.background = 'transparent';
+            });
+            
+            // Avatar or icon
+            const avatarIcon = document.createElement('div');
+            avatarIcon.style.width = '32px';
+            avatarIcon.style.height = '32px';
+            avatarIcon.style.borderRadius = '50%';
+            avatarIcon.style.background = 'rgba(255, 255, 255, 0.1)';
+            avatarIcon.style.display = 'flex';
+            avatarIcon.style.alignItems = 'center';
+            avatarIcon.style.justifyContent = 'center';
+            avatarIcon.style.fontSize = '16px';
+            avatarIcon.style.fontWeight = '600';
+            avatarIcon.style.color = 'rgba(255, 255, 255, 0.8)';
+            avatarIcon.style.flexShrink = '0';
+            avatarIcon.style.overflow = 'hidden';
+            
+            if (performer.image_path) {
+              const img = document.createElement('img');
+              img.src = performer.image_path.startsWith('http') ? performer.image_path : `${window.location.origin}${performer.image_path}`;
+              img.alt = performer.name;
+              img.style.width = '100%';
+              img.style.height = '100%';
+              img.style.objectFit = 'cover';
+              avatarIcon.appendChild(img);
+            } else {
+              // Use first letter as fallback
+              avatarIcon.textContent = performer.name.charAt(0).toUpperCase();
+            }
+            
+            // Performer name container
+            const textContainer = document.createElement('div');
+            textContainer.style.flex = '1';
+            textContainer.style.display = 'flex';
+            textContainer.style.alignItems = 'center';
+            
+            const performerName = document.createElement('div');
+            performerName.textContent = performer.name;
+            performerName.style.fontSize = '15px';
+            performerName.style.fontWeight = '500';
+            performerName.style.color = '#FFFFFF';
+            
+            textContainer.appendChild(performerName);
+            
+            item.appendChild(avatarIcon);
+            item.appendChild(textContainer);
+            
+            item.addEventListener('click', (e) => {
+              e.stopPropagation();
+              e.preventDefault();
+              const performerId = parseInt(performer.id, 10);
+              // Clear saved filter and tag when selecting a performer
+              this.selectedSavedFilter = undefined;
+              this.selectedTagId = undefined;
+              this.selectedTagName = undefined;
+              this.selectedPerformerId = performerId;
+              this.selectedPerformerName = performer.name;
+              this.closeSuggestions();
+              updateSearchBarDisplay();
+              apply();
+            });
+            
+            contentContainer.appendChild(item);
+          });
+          
           suggestions.appendChild(contentContainer);
-          suggestions.style.display = suggestions.children.length > 0 ? 'block' : 'none';
+          const shouldShow = suggestions.children.length > 0;
+          suggestions.style.display = shouldShow ? 'block' : 'none';
+          // Lock body scroll when overlay is shown
+          if (shouldShow) {
+            this.lockBodyScroll();
+          } else {
+            this.unlockBodyScroll();
+          }
         } else {
-          suggestions.style.display = 'none';
-          suggestions.innerHTML = '';
+          this.closeSuggestions();
         }
         return;
       }
@@ -602,25 +813,143 @@ export class FeedContainer {
       suggestTerm = trimmedText;
       
       // Create container for content (max-width on desktop)
+      // Position it to align with search bar
       const contentContainer = document.createElement('div');
       contentContainer.style.maxWidth = '600px';
       contentContainer.style.margin = '0 auto';
       contentContainer.style.width = '100%';
       
+      // Calculate search bar position and align content container
+      if (header) {
+        const headerRect = header.getBoundingClientRect();
+        contentContainer.style.paddingTop = `${headerRect.bottom + 16}px`; // Position below search bar
+        contentContainer.style.paddingLeft = '16px';
+        contentContainer.style.paddingRight = '16px';
+        contentContainer.style.boxSizing = 'border-box';
+      } else {
+        contentContainer.style.paddingTop = '80px'; // Fallback
+        contentContainer.style.paddingLeft = '16px';
+        contentContainer.style.paddingRight = '16px';
+        contentContainer.style.boxSizing = 'border-box';
+      }
+      
       const pageSize = 20;
-      const items = await this.api.searchMarkerTags(trimmedText, pageSize);
+      const [tagItems, performerItems] = await Promise.all([
+        this.api.searchMarkerTags(trimmedText, pageSize),
+        this.api.searchPerformers(trimmedText, pageSize)
+      ]);
       
-      // Get counts for tags
-      const itemsWithCounts = await Promise.all(
-        items.slice(0, 20).map(async (tag) => {
-          const tagId = parseInt(tag.id, 10);
-          if (this.selectedTagId === tagId) return null;
-          const count = await getMarkerCount(tagId);
-          return { ...tag, count };
-        })
-      );
+      // Filter out already selected items (no count fetching needed)
+      const validItems = tagItems.slice(0, 20).filter((tag) => {
+        const tagId = parseInt(tag.id, 10);
+        return this.selectedTagId !== tagId;
+      });
       
-      const validItems = itemsWithCounts.filter((item): item is { id: string; name: string; count: number } => item !== null && item.count > 0);
+      const validPerformers = performerItems.slice(0, 20).filter((performer) => {
+        const performerId = parseInt(performer.id, 10);
+        return this.selectedPerformerId !== performerId;
+      });
+      
+      // Performers (show first)
+      validPerformers.forEach((performer) => {
+        const item = document.createElement('button');
+        item.style.width = '100%';
+        item.style.display = 'flex';
+        item.style.alignItems = 'center';
+        item.style.gap = '12px';
+        item.style.padding = '12px';
+        item.style.borderRadius = '12px';
+        item.style.border = 'none';
+        item.style.background = 'transparent';
+        item.style.cursor = 'pointer';
+        item.style.textAlign = 'left';
+        item.style.transition = 'background 0.2s ease';
+        item.style.marginBottom = '4px';
+        
+        item.addEventListener('mouseenter', () => {
+          item.style.background = 'rgba(255, 255, 255, 0.08)';
+        });
+        item.addEventListener('mouseleave', () => {
+          item.style.background = 'transparent';
+        });
+        
+        // Performer image or icon
+        const performerIcon = document.createElement('div');
+        performerIcon.style.width = '32px';
+        performerIcon.style.height = '32px';
+        performerIcon.style.borderRadius = '50%';
+        performerIcon.style.flexShrink = '0';
+        performerIcon.style.overflow = 'hidden';
+        performerIcon.style.background = 'rgba(255, 255, 255, 0.1)';
+        performerIcon.style.display = 'flex';
+        performerIcon.style.alignItems = 'center';
+        performerIcon.style.justifyContent = 'center';
+        
+        if (performer.image_path) {
+          const img = document.createElement('img');
+          const apiAny = this.api as any;
+          const imageUrl = performer.image_path.startsWith('http') 
+            ? performer.image_path 
+            : `${apiAny.baseUrl}${performer.image_path}`;
+          img.src = imageUrl;
+          img.style.width = '100%';
+          img.style.height = '100%';
+          img.style.objectFit = 'cover';
+          performerIcon.appendChild(img);
+        } else {
+          // Fallback to initials
+          const initials = document.createElement('div');
+          initials.textContent = performer.name.charAt(0).toUpperCase();
+          initials.style.fontSize = '14px';
+          initials.style.fontWeight = '600';
+          initials.style.color = 'rgba(255, 255, 255, 0.8)';
+          performerIcon.appendChild(initials);
+        }
+        
+        // Performer name container
+        const textContainer = document.createElement('div');
+        textContainer.style.flex = '1';
+        textContainer.style.display = 'flex';
+        textContainer.style.alignItems = 'center';
+        
+        const performerName = document.createElement('div');
+        performerName.textContent = performer.name;
+        performerName.style.fontSize = '15px';
+        performerName.style.fontWeight = '500';
+        performerName.style.color = '#FFFFFF';
+        
+        textContainer.appendChild(performerName);
+        
+        item.appendChild(performerIcon);
+        item.appendChild(textContainer);
+        
+        item.addEventListener('click', (e) => {
+          e.stopPropagation();
+          e.preventDefault();
+          const performerId = parseInt(performer.id, 10);
+          // Clear saved filter and tag when selecting a performer
+          this.selectedSavedFilter = undefined;
+          this.selectedTagId = undefined;
+          this.selectedTagName = undefined;
+          this.selectedPerformerId = performerId;
+          this.selectedPerformerName = performer.name;
+          this.closeSuggestions();
+          updateSearchBarDisplay();
+          apply();
+        });
+        
+        contentContainer.appendChild(item);
+      });
+      
+      // Add divider between performers and tags if both exist
+      if (validPerformers.length > 0 && validItems.length > 0) {
+        const divider = document.createElement('div');
+        divider.style.width = '100%';
+        divider.style.height = '1px';
+        divider.style.background = 'rgba(255,255,255,0.08)';
+        divider.style.margin = '16px 0';
+        contentContainer.appendChild(divider);
+      }
       
       // Tags
       validItems.forEach((tag) => {
@@ -660,12 +989,11 @@ export class FeedContainer {
         hashIcon.style.color = 'rgba(255, 255, 255, 0.8)';
         hashIcon.style.flexShrink = '0';
         
-        // Tag name and count container
+        // Tag name container
         const textContainer = document.createElement('div');
         textContainer.style.flex = '1';
         textContainer.style.display = 'flex';
-        textContainer.style.flexDirection = 'column';
-        textContainer.style.gap = '4px';
+        textContainer.style.alignItems = 'center';
         
         const tagName = document.createElement('div');
         tagName.textContent = tag.name;
@@ -673,27 +1001,24 @@ export class FeedContainer {
         tagName.style.fontWeight = '500';
         tagName.style.color = '#FFFFFF';
         
-        const postCount = document.createElement('div');
-        postCount.textContent = formatPostCount(tag.count);
-        postCount.style.fontSize = '13px';
-        postCount.style.color = 'rgba(255, 255, 255, 0.6)';
-        
         textContainer.appendChild(tagName);
-        textContainer.appendChild(postCount);
         
         item.appendChild(hashIcon);
         item.appendChild(textContainer);
         
-        item.addEventListener('click', () => {
+        item.addEventListener('click', (e) => {
+          e.stopPropagation();
+          e.preventDefault();
           const tagId = parseInt(tag.id, 10);
-          // Clear saved filter when selecting a tag
+          // Clear saved filter and performer when selecting a tag
           this.selectedSavedFilter = undefined;
+          this.selectedPerformerId = undefined;
+          this.selectedPerformerName = undefined;
           this.selectedTagId = tagId;
           this.selectedTagName = tag.name;
+          this.closeSuggestions();
           updateSearchBarDisplay();
           apply();
-          suggestions.style.display = 'none';
-          suggestions.innerHTML = '';
         });
         
         contentContainer.appendChild(item);
@@ -758,15 +1083,16 @@ export class FeedContainer {
           
           item.appendChild(filterName);
           
-          item.addEventListener('click', () => {
+          item.addEventListener('click', (e) => {
+            e.stopPropagation();
+            e.preventDefault();
             this.selectedSavedFilter = { id: f.id, name: f.name };
             this.selectedTagId = undefined;
             this.selectedTagName = undefined;
+            this.closeSuggestions();
             updateSearchBarDisplay();
             this.currentFilters = { savedFilterId: f.id, limit: 20, offset: 0 };
             this.loadVideos(this.currentFilters, false).catch((e) => console.error('Apply saved filter failed', e));
-            suggestions.style.display = 'none';
-            suggestions.innerHTML = '';
           });
           
           filtersContainer.appendChild(item);
@@ -776,7 +1102,14 @@ export class FeedContainer {
       }
 
       suggestions.appendChild(contentContainer);
-      suggestions.style.display = (validItems.length || matches.length) ? 'block' : 'none';
+      const shouldShow = (validItems.length || validPerformers.length || matches.length) > 0;
+      suggestions.style.display = shouldShow ? 'block' : 'none';
+      // Lock body scroll when overlay is shown
+      if (shouldShow) {
+        this.lockBodyScroll();
+      } else {
+        this.unlockBodyScroll();
+      }
     };
     
     queryInput.addEventListener('keydown', (e) => { if ((e as KeyboardEvent).key === 'Enter') apply(); });
@@ -786,13 +1119,10 @@ export class FeedContainer {
       // Clear and reset when focusing on search bar for fresh search
       this.selectedTagId = undefined;
       this.selectedTagName = undefined;
+      this.selectedPerformerId = undefined;
+      this.selectedPerformerName = undefined;
       this.selectedSavedFilter = undefined;
       queryInput.value = '';
-      // Calculate header height dynamically and position dropdown below it
-      if (header) {
-        const headerRect = header.getBoundingClientRect();
-        suggestions.style.top = `${headerRect.bottom}px`;
-      }
       fetchAndShowSuggestions('', true);
     });
     queryInput.addEventListener('blur', () => {
@@ -803,16 +1133,14 @@ export class FeedContainer {
       clearTimeout(suggestTimeout);
       const text = queryInput.value;
       // Clear selected tag/filter when user types (they're searching for something new)
-      if (text !== this.selectedTagName && text !== this.selectedSavedFilter?.name) {
+      if (text !== this.selectedTagName && text !== this.selectedPerformerName && text !== this.selectedSavedFilter?.name) {
         this.selectedTagId = undefined;
         this.selectedTagName = undefined;
+        this.selectedPerformerId = undefined;
+        this.selectedPerformerName = undefined;
         this.selectedSavedFilter = undefined;
       }
-      // Update dropdown position in case header moved
-      if (header && suggestions.style.display !== 'none') {
-        const headerRect = header.getBoundingClientRect();
-        suggestions.style.top = `${headerRect.bottom}px`;
-      }
+      // Content container positioning is handled inside fetchAndShowSuggestions
       suggestTimeout = setTimeout(() => {
         fetchAndShowSuggestions(text, false);
       }, 150);
@@ -821,21 +1149,131 @@ export class FeedContainer {
     // Close suggestions when clicking outside or on backdrop
     suggestions.addEventListener('click', (e) => {
       if (e.target === suggestions) {
-        suggestions.style.display = 'none';
-        suggestions.innerHTML = '';
+        this.closeSuggestions();
       }
     });
     
     document.addEventListener('click', (e) => {
       if (!searchArea.contains(e.target as Node) && !suggestions.contains(e.target as Node)) {
-        suggestions.style.display = 'none';
-        suggestions.innerHTML = '';
+        this.closeSuggestions();
       }
     });
 
     // Initial render of search bar display (in case defaults are provided)
     updateSearchBarDisplay();
   }
+
+  /**
+   * Handle performer chip click - clear filters and set performer filter
+   */
+  private handlePerformerChipClick(performerId: number, performerName: string): void {
+    // Clear all filters
+    this.selectedTagId = undefined;
+    this.selectedTagName = undefined;
+    this.selectedSavedFilter = undefined;
+    // Set performer filter
+    this.selectedPerformerId = performerId;
+    this.selectedPerformerName = performerName;
+    // Apply filters
+    this.applyFilters();
+    // Scroll to top
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
+
+  /**
+   * Handle tag chip click - clear filters and set tag filter
+   */
+  private handleTagChipClick(tagId: number, tagName: string): void {
+    // Clear all filters
+    this.selectedPerformerId = undefined;
+    this.selectedPerformerName = undefined;
+    this.selectedSavedFilter = undefined;
+    // Set tag filter
+    this.selectedTagId = tagId;
+    this.selectedTagName = tagName;
+    // Apply filters
+    this.applyFilters();
+    // Scroll to top
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
+
+  /**
+   * Apply current filters and update UI
+   */
+  private async applyFilters(): Promise<void> {
+    // Find the search input and update its display
+    const queryInput = this.container.querySelector('.feed-filters__input') as HTMLInputElement;
+    if (queryInput) {
+      if (this.selectedTagName) {
+        queryInput.value = this.selectedTagName;
+      } else if (this.selectedPerformerName) {
+        queryInput.value = this.selectedPerformerName;
+      } else if (this.selectedSavedFilter) {
+        queryInput.value = this.selectedSavedFilter.name;
+      } else {
+        queryInput.value = '';
+      }
+    }
+
+    // Apply the filters using the same logic as in createHeaderBar
+    // Check performer first to ensure it takes priority
+    let queryValue: string | undefined = undefined;
+    let primaryTags: string[] | undefined = undefined;
+    let performers: string[] | undefined = undefined;
+    
+    if (this.selectedPerformerId) {
+      // Use performer ID for filtering
+      performers = [String(this.selectedPerformerId)];
+    } else if (this.selectedTagId || this.selectedTagName) {
+      // Use tag filtering
+      const useExactMatch = this.selectedTagName?.toLowerCase() === 'cowgirl';
+      
+      if (useExactMatch && this.selectedTagId) {
+        // Use exact tag ID matching for "cowgirl" to exclude "reverse cowgirl"
+        primaryTags = [String(this.selectedTagId)];
+      } else if (this.selectedTagName) {
+        // For fuzzy matching: search for tags matching the name, then use their IDs
+        // This allows "finger" to match "fingers", "finger - pov", etc.
+        try {
+          const matchingTags = await this.api.searchMarkerTags(this.selectedTagName, 50);
+          const matchingTagIds = matchingTags
+            .map(tag => parseInt(tag.id, 10))
+            .filter(id => !Number.isNaN(id))
+            .map(id => String(id));
+          
+          if (matchingTagIds.length > 0) {
+            primaryTags = matchingTagIds;
+          } else {
+            // Fallback: use the selected tag ID if no matches found
+            if (this.selectedTagId) {
+              primaryTags = [String(this.selectedTagId)];
+            }
+          }
+        } catch (error) {
+          console.error('Failed to search for matching tags', error);
+          // Fallback: use the selected tag ID
+          if (this.selectedTagId) {
+            primaryTags = [String(this.selectedTagId)];
+          }
+        }
+      } else if (this.selectedTagId) {
+        // Fallback: just use the tag ID if we have it
+        primaryTags = [String(this.selectedTagId)];
+      }
+    }
+    
+    const newFilters: FilterOptions = {
+      query: queryValue,
+      primary_tags: primaryTags,
+      performers: performers,
+      savedFilterId: this.selectedSavedFilter?.id || undefined,
+      limit: 20,
+      offset: 0,
+    };
+    this.currentFilters = newFilters;
+    this.loadVideos(newFilters, false).catch((e) => console.error('Apply filters failed', e));
+  }
+
   private renderFilterSheet(): void {
     // Inject a one-time utility style to hide scrollbars while preserving scroll
     const injectHideScrollbarCSS = () => {
@@ -1006,9 +1444,11 @@ export class FeedContainer {
         if (match) {
           this.selectedSavedFilter = { id: match.id, name: match.name };
         }
-        // Clear tag selections when a saved filter is chosen
+        // Clear tag and performer selections when a saved filter is chosen
         this.selectedTagId = undefined;
         this.selectedTagName = undefined;
+        this.selectedPerformerId = undefined;
+        this.selectedPerformerName = undefined;
       } else {
         this.selectedSavedFilter = undefined;
       }
@@ -1026,6 +1466,8 @@ export class FeedContainer {
       // Show the active search term in the search bar
       if (this.selectedTagName) {
         queryInput.value = this.selectedTagName;
+      } else if (this.selectedPerformerName) {
+        queryInput.value = this.selectedPerformerName;
       } else if (this.selectedSavedFilter) {
         queryInput.value = this.selectedSavedFilter.name;
       } else {
@@ -1100,8 +1542,7 @@ export class FeedContainer {
               this.selectedTagId = undefined;
               this.selectedTagName = undefined;
               queryInput.value = '';
-              suggestions.style.display = 'none';
-              suggestions.innerHTML = '';
+              this.closeSuggestions();
               updateSearchBarDisplay();
               apply();
             });
@@ -1109,8 +1550,7 @@ export class FeedContainer {
           });
           suggestions.style.display = suggestions.children.length > 0 ? 'flex' : 'none';
         } else {
-          suggestions.style.display = 'none';
-          suggestions.innerHTML = '';
+          this.closeSuggestions();
         }
         return;
       }
@@ -1187,8 +1627,7 @@ export class FeedContainer {
             this.selectedTagId = undefined;
             this.selectedTagName = undefined;
             queryInput.value = '';
-            suggestions.style.display = 'none';
-            suggestions.innerHTML = '';
+            this.closeSuggestions();
             updateSearchBarDisplay();
             apply();
           });
@@ -1259,7 +1698,7 @@ export class FeedContainer {
     });
     document.addEventListener('click', (e) => {
       if (!searchWrapper.contains(e.target as Node)) {
-        suggestions.style.display = 'none';
+        this.closeSuggestions();
       }
     });
 
@@ -1267,6 +1706,8 @@ export class FeedContainer {
       queryInput.value = '';
       this.selectedTagId = undefined;
       this.selectedTagName = undefined;
+      this.selectedPerformerId = undefined;
+      this.selectedPerformerName = undefined;
       this.selectedSavedFilter = undefined;
       savedSelect.value = '';
       updateSearchBarDisplay();
@@ -1502,7 +1943,15 @@ export class FeedContainer {
       endTime: marker.end_seconds,
     };
 
-    const post = new VideoPost(postContainer, postData, this.favoritesManager, this.api, this.visibilityManager);
+    const post = new VideoPost(
+      postContainer, 
+      postData, 
+      this.favoritesManager, 
+      this.api, 
+      this.visibilityManager,
+      (performerId, performerName) => this.handlePerformerChipClick(performerId, performerName),
+      (tagId, tagName) => this.handleTagChipClick(tagId, tagName)
+    );
     this.posts.set(marker.id, post);
     this.postOrder.push(marker.id);
 
@@ -1782,6 +2231,12 @@ export class FeedContainer {
     let isHeaderHidden = false;
 
     const handleScroll = () => {
+      // Don't hide/show header if suggestions overlay is open
+      const suggestions = document.querySelector('.feed-filters__suggestions') as HTMLElement;
+      if (suggestions && suggestions.style.display !== 'none' && suggestions.style.display !== '') {
+        return;
+      }
+
       const currentScrollY = window.scrollY;
       const scrollDelta = currentScrollY - lastScrollY;
 
@@ -1807,6 +2262,33 @@ export class FeedContainer {
 
     // Use passive listener for better performance
     window.addEventListener('scroll', handleScroll, { passive: true });
+  }
+
+  /**
+   * Lock body scroll (prevent page scrolling)
+   */
+  private lockBodyScroll(): void {
+    document.body.style.overflow = 'hidden';
+    document.body.style.position = 'fixed';
+    document.body.style.width = '100%';
+    // Store current scroll position to restore later
+    const scrollY = window.scrollY;
+    document.body.style.top = `-${scrollY}px`;
+  }
+
+  /**
+   * Unlock body scroll (restore page scrolling)
+   */
+  private unlockBodyScroll(): void {
+    const scrollY = document.body.style.top;
+    document.body.style.overflow = '';
+    document.body.style.position = '';
+    document.body.style.width = '';
+    document.body.style.top = '';
+    // Restore scroll position
+    if (scrollY) {
+      window.scrollTo(0, parseInt(scrollY || '0') * -1);
+    }
   }
 
   /**

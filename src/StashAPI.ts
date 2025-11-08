@@ -3,7 +3,7 @@
  * This will interface with the Stash GraphQL API
  */
 
-import { Scene, SceneMarker, FilterOptions } from './types.js';
+import { Scene, SceneMarker, FilterOptions, Performer } from './types.js';
 import { isValidMediaUrl } from './utils.js';
 
 interface StashPluginApi {
@@ -94,6 +94,23 @@ export class StashAPI {
         const ids = normalizeIdArray(raw);
         if (ids) out.scene_tags = { value: ids, modifier: out.scene_tags.modifier ?? 'INCLUDES' };
         else delete out.scene_tags;
+      }
+    }
+
+    // Handle scene_performers similarly
+    if (out.scene_performers) {
+      if (Array.isArray(out.scene_performers)) {
+        const ids = normalizeIdArray(out.scene_performers);
+        if (ids) out.scene_performers = { value: ids, modifier: 'INCLUDES' };
+        else delete out.scene_performers;
+      } else if (typeof out.scene_performers === 'object') {
+        let raw = out.scene_performers.value;
+        if (raw && typeof raw === 'object' && Array.isArray(raw.items)) {
+          raw = raw.items;
+        }
+        const ids = normalizeIdArray(raw);
+        if (ids) out.scene_performers = { value: ids, modifier: out.scene_performers.modifier ?? 'INCLUDES' };
+        else delete out.scene_performers;
       }
     }
 
@@ -205,6 +222,265 @@ export class StashAPI {
     } catch (e) {
       console.warn('searchMarkerTags failed', e);
       return [];
+    }
+  }
+
+  /**
+   * Search performers (by name) for autocomplete
+   */
+  async searchPerformers(term: string, limit: number = 10): Promise<Array<{ id: string; name: string; image_path?: string }>> {
+    const query = `query FindPerformers($filter: FindFilterType) {
+      findPerformers(filter: $filter) {
+        performers { id name image_path }
+      }
+    }`;
+    
+    // When no search term, fetch up to the requested limit (or 40 for backward compatibility)
+    // When searching, fetch more performers matching the search term
+    const fetchLimit = term && term.trim() !== '' ? limit * 3 : Math.max(limit, 40);
+    const filter: any = { per_page: fetchLimit, page: 1 };
+    
+    // Only add query if term is provided and not empty
+    if (term && term.trim() !== '') {
+      filter.q = term.trim();
+    } else {
+      // When no search term, use random sorting to get a diverse assortment
+      filter.sort = `random_${Math.floor(Math.random() * 1000000)}`;
+    }
+    
+    const variables = { filter };
+
+    // Helper: get marker count for a performer
+    // Use server-side filtering with the correct field name
+    const getMarkerCountForPerformer = async (performerId: number): Promise<number> => {
+      try {
+        const countQuery = `query GetMarkerCountForPerformer($filter: FindFilterType, $scene_marker_filter: SceneMarkerFilterType) {
+          findSceneMarkers(filter: $filter, scene_marker_filter: $scene_marker_filter) {
+            count
+          }
+        }`;
+        
+        const countFilter: any = { per_page: 1, page: 1 };
+        const countSceneFilter: any = {
+          performers: { value: [performerId], modifier: 'INCLUDES_ALL' }
+        };
+        
+        if (this.pluginApi?.GQL?.client) {
+          const countResult = await this.pluginApi.GQL.client.query({
+            query: countQuery as any,
+            variables: {
+              filter: countFilter,
+              scene_marker_filter: countSceneFilter,
+            },
+          });
+          const serverCount = countResult.data?.findSceneMarkers?.count;
+          if (serverCount !== undefined && serverCount !== null) {
+            return serverCount;
+          }
+        } else {
+          const countResponse = await fetch(`${this.baseUrl}/graphql`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              ...(this.apiKey && { 'ApiKey': this.apiKey }),
+            },
+            body: JSON.stringify({
+              query: countQuery,
+              variables: {
+                filter: countFilter,
+                scene_marker_filter: countSceneFilter,
+              },
+            }),
+          });
+          
+          if (countResponse.ok) {
+            const countData = await countResponse.json();
+            const serverCount = countData.data?.findSceneMarkers?.count;
+            if (serverCount !== undefined && serverCount !== null) {
+              return serverCount;
+            }
+          }
+        }
+        
+        return 0;
+      } catch (error) {
+        console.warn('Failed to get marker count for performer', performerId, error);
+        return 0;
+      }
+    };
+
+    // Get marker counts and sort by count (descending)
+    const getPerformersWithCounts = async (performers: Array<{ id: string; name: string; image_path?: string }>): Promise<Array<{ id: string; name: string; image_path?: string; count: number }>> => {
+      const concurrency = 5;
+      const result: Array<{ id: string; name: string; image_path?: string; count: number }> = [];
+      let index = 0;
+      const workers = Array.from({ length: Math.min(concurrency, performers.length) }, async () => {
+        while (index < performers.length) {
+          const i = index++;
+          const p = performers[i];
+          const count = await getMarkerCountForPerformer(parseInt(p.id, 10));
+          if (count > 0) {
+            result.push({ ...p, count });
+          }
+        }
+      });
+      await Promise.all(workers);
+      // Sort by count descending, then by name ascending for ties
+      return result.sort((a, b) => {
+        if (b.count !== a.count) {
+          return b.count - a.count;
+        }
+        return a.name.localeCompare(b.name);
+      });
+    };
+
+    try {
+      if (this.pluginApi?.GQL?.client) {
+        const result = await this.pluginApi.GQL.client.query({ query: query as any, variables });
+        const performers = result.data?.findPerformers?.performers ?? [];
+        // Get counts for all performers and sort by count
+        const performersWithCounts = await getPerformersWithCounts(performers);
+        // Return top 'limit' performers without count property, sorted by count
+        return performersWithCounts.slice(0, limit).map(({ count, ...performer }) => performer);
+      }
+      const response = await fetch(`${this.baseUrl}/graphql`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(this.apiKey && { 'ApiKey': this.apiKey }),
+        },
+        body: JSON.stringify({ query, variables }),
+      });
+      if (!response.ok) return [];
+      const data = await response.json();
+      const performers = data.data?.findPerformers?.performers ?? [];
+      // Get counts for all performers and sort by count
+      const performersWithCounts = await getPerformersWithCounts(performers);
+      // Return top 'limit' performers without count property, sorted by count
+      return performersWithCounts.slice(0, limit).map(({ count, ...performer }) => performer);
+    } catch (e) {
+      console.warn('searchPerformers failed', e);
+      return [];
+    }
+  }
+
+  /**
+   * Get accurate marker count for a performer using server-side filtering
+   */
+  async getAccurateMarkerCountForPerformer(performerId: number): Promise<number> {
+    try {
+      const countQuery = `query GetMarkerCountForPerformer($filter: FindFilterType, $scene_marker_filter: SceneMarkerFilterType) {
+        findSceneMarkers(filter: $filter, scene_marker_filter: $scene_marker_filter) {
+          count
+        }
+      }`;
+      
+      const countFilter: any = { per_page: 1, page: 1 };
+      const countSceneFilter: any = {
+        performers: { value: [performerId], modifier: 'INCLUDES_ALL' }
+      };
+      
+      if (this.pluginApi?.GQL?.client) {
+        const countResult = await this.pluginApi.GQL.client.query({
+          query: countQuery as any,
+          variables: {
+            filter: countFilter,
+            scene_marker_filter: countSceneFilter,
+          },
+        });
+        const serverCount = countResult.data?.findSceneMarkers?.count;
+        if (serverCount !== undefined && serverCount !== null) {
+          return serverCount;
+        }
+      } else {
+        const countResponse = await fetch(`${this.baseUrl}/graphql`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            ...(this.apiKey && { 'ApiKey': this.apiKey }),
+          },
+          body: JSON.stringify({
+            query: countQuery,
+            variables: {
+              filter: countFilter,
+              scene_marker_filter: countSceneFilter,
+            },
+          }),
+        });
+        
+        if (countResponse.ok) {
+          const countData = await countResponse.json();
+          const serverCount = countData.data?.findSceneMarkers?.count;
+          if (serverCount !== undefined && serverCount !== null) {
+            return serverCount;
+          }
+        }
+      }
+      
+      return 0;
+    } catch (error) {
+      console.warn('Failed to get accurate marker count for performer', performerId, error);
+      return 0;
+    }
+  }
+
+  /**
+   * Get accurate marker count for a tag using server-side filtering
+   */
+  async getAccurateMarkerCountForTag(tagId: number): Promise<number> {
+    try {
+      const countQuery = `query GetMarkerCountForTag($filter: FindFilterType, $scene_marker_filter: SceneMarkerFilterType) {
+        findSceneMarkers(filter: $filter, scene_marker_filter: $scene_marker_filter) {
+          count
+        }
+      }`;
+      
+      const countFilter: any = { per_page: 1, page: 1 };
+      const countSceneFilter: any = {
+        tags: { value: [tagId], modifier: 'INCLUDES' }
+      };
+      
+      if (this.pluginApi?.GQL?.client) {
+        const countResult = await this.pluginApi.GQL.client.query({
+          query: countQuery as any,
+          variables: {
+            filter: countFilter,
+            scene_marker_filter: countSceneFilter,
+          },
+        });
+        const serverCount = countResult.data?.findSceneMarkers?.count;
+        if (serverCount !== undefined && serverCount !== null) {
+          return serverCount;
+        }
+      } else {
+        const countResponse = await fetch(`${this.baseUrl}/graphql`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            ...(this.apiKey && { 'ApiKey': this.apiKey }),
+          },
+          body: JSON.stringify({
+            query: countQuery,
+            variables: {
+              filter: countFilter,
+              scene_marker_filter: countSceneFilter,
+            },
+          }),
+        });
+        
+        if (countResponse.ok) {
+          const countData = await countResponse.json();
+          const serverCount = countData.data?.findSceneMarkers?.count;
+          if (serverCount !== undefined && serverCount !== null) {
+            return serverCount;
+          }
+        }
+      }
+      
+      return 0;
+    } catch (error) {
+      console.warn('Failed to get accurate marker count for tag', tagId, error);
+      return 0;
     }
   }
 
@@ -480,6 +756,15 @@ export class StashAPI {
         if (filters?.studios && filters.studios.length > 0) {
           sceneMarkerFilter.scene_tags = { value: filters.studios, modifier: 'INCLUDES' };
         }
+        // Filter by performers using the correct field name
+        if (filters?.performers && filters.performers.length > 0 && !filters?.savedFilterId) {
+          const performerIds = filters.performers
+            .map((v) => parseInt(String(v), 10))
+            .filter((n) => !Number.isNaN(n));
+          if (performerIds.length > 0) {
+            sceneMarkerFilter.performers = { value: performerIds, modifier: 'INCLUDES_ALL' };
+          }
+        }
 
         const result = await this.pluginApi.GQL.client.query({
           query: query as any,
@@ -546,6 +831,15 @@ export class StashAPI {
             sceneMarkerFilter.tags = { value: tagIds, modifier: 'INCLUDES' };
           } else {
             console.warn('Scene marker primary_tags must be numeric IDs; ignoring provided values');
+          }
+        }
+        // Filter by performers using the correct field name
+        if (filters?.performers && filters.performers.length > 0 && !filters?.savedFilterId) {
+          const performerIds = filters.performers
+            .map((v) => parseInt(String(v), 10))
+            .filter((n) => !Number.isNaN(n));
+          if (performerIds.length > 0) {
+            sceneMarkerFilter.performers = { value: performerIds, modifier: 'INCLUDES_ALL' };
           }
         }
       }

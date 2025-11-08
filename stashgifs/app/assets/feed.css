@@ -780,7 +780,8 @@
 /* Suggestions Dropdown - Full Screen Overlay */
 .feed-filters__suggestions {
   position: fixed !important;
-  top: 72px !important; /* Position below search bar */
+  inset: 0 !important; /* Cover full viewport */
+  top: 0 !important; /* Start from top of screen */
   left: 0 !important;
   right: 0 !important;
   bottom: 0 !important;
@@ -789,10 +790,10 @@
   backdrop-filter: blur(20px) saturate(180%) !important;
   -webkit-backdrop-filter: blur(20px) saturate(180%) !important;
   overflow-y: auto !important;
-  padding-top: 16px !important;
+  padding-top: 0 !important; /* No padding - content container handles positioning */
   padding-bottom: 20px !important;
-  padding-left: 16px !important;
-  padding-right: 16px !important;
+  padding-left: 0 !important;
+  padding-right: 0 !important;
   box-sizing: border-box !important;
 }
 
