@@ -165,17 +165,19 @@ export class FeedContainer {
     header.style.position = 'sticky';
     header.style.top = '0';
     header.style.width = '100%';
-    header.style.maxWidth = `${this.settings.cardMaxWidth}px`;
+    // Account for padding (12px left + 12px right = 24px) so inner content matches card width
+    header.style.maxWidth = `${this.settings.cardMaxWidth + 24}px`;
     header.style.marginLeft = 'auto';
     header.style.marginRight = 'auto';
     header.style.height = '72px';
     header.style.zIndex = '220';
     header.style.display = 'flex';
     header.style.alignItems = 'center';
+    header.style.justifyContent = 'flex-start'; // Ensure content starts at left edge
     header.style.padding = '8px 12px';
-    header.style.background = 'rgba(18,18,18,0.75)';
-    header.style.backdropFilter = 'blur(10px)';
-    header.style.borderBottom = '1px solid rgba(255,255,255,0.06)';
+    header.style.background = 'transparent';
+    header.style.backdropFilter = 'none';
+    header.style.borderBottom = 'none';
     header.style.transition = 'transform .24s ease, opacity .24s ease';
     header.style.boxSizing = 'border-box';
 
@@ -187,6 +189,11 @@ export class FeedContainer {
     headerInner.style.gap = '12px';
     headerInner.style.width = '100%';
     headerInner.style.height = '100%';
+    headerInner.style.maxWidth = `${this.settings.cardMaxWidth}px`; // Match card width exactly
+    headerInner.style.marginLeft = '0'; // Ensure no left margin
+    headerInner.style.marginRight = '0'; // Ensure no right margin
+    headerInner.style.boxSizing = 'border-box'; // Ensure consistent box model
+    headerInner.style.flex = '1 1 auto'; // Ensure it fills available space in flex container
 
     const brand = document.createElement('div');
     brand.textContent = 'stashgifs';
@@ -238,6 +245,8 @@ export class FeedContainer {
     searchArea.style.minWidth = '0'; // Allow grid to constrain width
     searchArea.style.maxWidth = '100%';
     searchArea.style.overflow = 'hidden'; // Prevent overflow
+    searchArea.style.boxSizing = 'border-box'; // Ensure padding/border included in width
+    searchArea.style.marginRight = '0'; // Ensure no right margin that could create gap
     headerInner.appendChild(searchArea);
 
     header.appendChild(headerInner);
@@ -262,6 +271,7 @@ export class FeedContainer {
     inputWrapper.style.width = '100%';
     inputWrapper.style.minWidth = '0'; // Allow grid to constrain width
     inputWrapper.style.boxSizing = 'border-box';
+    inputWrapper.style.marginRight = '0'; // Ensure no right margin that could create gap
 
     const queryInput = document.createElement('input');
     queryInput.type = 'text';
