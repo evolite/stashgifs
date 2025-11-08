@@ -179,7 +179,7 @@ export class VideoPost {
     const header = document.createElement('div');
     header.className = 'video-post__header';
     header.style.padding = '0';
-    header.style.marginBottom = '4px';
+    header.style.marginBottom = '0';
     header.style.borderBottom = 'none';
 
     const chips = document.createElement('div');
@@ -188,7 +188,7 @@ export class VideoPost {
     chips.style.flexWrap = 'wrap';
     chips.style.gap = '6px';
     chips.style.margin = '0';
-    chips.style.padding = '4px 0'; // Match footer vertical padding for uniform height
+    chips.style.padding = '8px 0';
     
     // Add performer chips
     if (this.data.marker.scene.performers && this.data.marker.scene.performers.length > 0) {
@@ -217,9 +217,11 @@ export class VideoPost {
     chip.href = this.getPerformerLink(performer.id);
     chip.target = '_blank';
     chip.rel = 'noopener noreferrer';
-    chip.style.padding = '4px 8px';
-    chip.style.fontSize = '0.75rem';
-    chip.style.gap = '4px';
+    chip.style.padding = '4px 10px';
+    chip.style.fontSize = '13px';
+    chip.style.lineHeight = '1.4';
+    chip.style.gap = '6px';
+    chip.style.transition = 'opacity 0.2s ease';
     
     if (performer.image_path) {
       const avatar = document.createElement('img');
@@ -243,8 +245,10 @@ export class VideoPost {
     chip.href = this.getTagLink(tag.id);
     chip.target = '_blank';
     chip.rel = 'noopener noreferrer';
-    chip.style.padding = '4px 8px';
-    chip.style.fontSize = '0.75rem';
+    chip.style.padding = '4px 10px';
+    chip.style.fontSize = '13px';
+    chip.style.lineHeight = '1.4';
+    chip.style.transition = 'opacity 0.2s ease';
     chip.appendChild(document.createTextNode(tag.name));
     return chip;
   }
@@ -255,7 +259,7 @@ export class VideoPost {
   private createFooter(): HTMLElement {
     const footer = document.createElement('div');
     footer.className = 'video-post__footer';
-    footer.style.padding = '4px 8px';
+    footer.style.padding = '8px 16px';
 
     const info = document.createElement('div');
     info.className = 'video-post__info';
@@ -269,12 +273,12 @@ export class VideoPost {
     row.style.display = 'flex';
     row.style.alignItems = 'center';
     row.style.justifyContent = 'flex-end';
-    row.style.gap = '2px';
+    row.style.gap = '4px';
 
     const buttonGroup = document.createElement('div');
     buttonGroup.style.display = 'flex';
     buttonGroup.style.alignItems = 'center';
-    buttonGroup.style.gap = '2px';
+    buttonGroup.style.gap = '4px';
 
     // Add buttons in order
     if (this.favoritesManager) {
@@ -316,11 +320,12 @@ export class VideoPost {
     iconBtn.rel = 'noopener noreferrer';
     iconBtn.setAttribute('aria-label', 'View full scene');
     this.applyIconButtonStyles(iconBtn);
-    iconBtn.style.padding = '2px';
-    iconBtn.style.width = 'auto';
-    iconBtn.style.height = 'auto';
-    iconBtn.style.minWidth = 'auto';
-    iconBtn.style.minHeight = 'auto';
+    iconBtn.style.padding = '0';
+    // Keep 44x44px for touch target
+    iconBtn.style.width = '44px';
+    iconBtn.style.height = '44px';
+    iconBtn.style.minWidth = '44px';
+    iconBtn.style.minHeight = '44px';
     iconBtn.innerHTML = PLAY_SVG;
     
     this.addHoverEffect(iconBtn);
@@ -339,20 +344,43 @@ export class VideoPost {
     button.style.alignItems = 'center';
     button.style.justifyContent = 'center';
     button.style.color = 'rgba(255, 255, 255, 0.7)';
-    button.style.transition = 'color 0.2s ease, transform 0.2s ease';
+    // No transition on button container - only icons will have transitions
+    button.style.transition = 'none';
+    // Ensure button is 44x44px for touch targets
+    button.style.width = '44px';
+    button.style.height = '44px';
+    button.style.minWidth = '44px';
+    button.style.minHeight = '44px';
   }
 
   /**
-   * Add hover effect to a button element
+   * Add hover effect to a button element - CRITICAL: Only affects icon, not container
    */
   private addHoverEffect(button: HTMLElement): void {
+    // Find the icon element (SVG or first child)
+    const getIconElement = (): HTMLElement | SVGElement | null => {
+      const svg = button.querySelector('svg');
+      if (svg) return svg as SVGElement;
+      // If no SVG, use first child element
+      const firstChild = button.firstElementChild as HTMLElement;
+      if (firstChild) return firstChild;
+      return null;
+    };
+
     const mouseenter = () => {
       if (!(button instanceof HTMLButtonElement) || !button.disabled) {
-        button.style.transform = 'scale(1.1)';
+        const icon = getIconElement();
+        if (icon) {
+          icon.style.transform = 'scale(1.1)';
+          icon.style.transition = 'transform 0.2s cubic-bezier(0.2, 0, 0, 1)';
+        }
       }
     };
     const mouseleave = () => {
-      button.style.transform = 'scale(1)';
+      const icon = getIconElement();
+      if (icon) {
+        icon.style.transform = 'scale(1)';
+      }
     };
     
     button.addEventListener('mouseenter', mouseenter);
@@ -382,7 +410,7 @@ export class VideoPost {
     heartBtn.type = 'button';
     heartBtn.setAttribute('aria-label', 'Toggle favorite');
     this.applyIconButtonStyles(heartBtn);
-    heartBtn.style.padding = '4px';
+    heartBtn.style.padding = '0';
 
     this.updateHeartButton(heartBtn);
 
@@ -457,11 +485,12 @@ export class VideoPost {
     oCountBtn.type = 'button';
     oCountBtn.setAttribute('aria-label', 'Increment o count');
     this.applyIconButtonStyles(oCountBtn);
-    oCountBtn.style.padding = '4px 8px';
+    oCountBtn.style.padding = '0 8px';
     oCountBtn.style.gap = '6px';
     oCountBtn.style.fontSize = '16px';
+    // Keep 44px height but allow width to be auto for text content
     oCountBtn.style.width = 'auto';
-    oCountBtn.style.minWidth = 'auto';
+    oCountBtn.style.minWidth = '44px';
     
     oCountBtn.innerHTML = '💦';
     
@@ -533,7 +562,7 @@ export class VideoPost {
     hqBtn.type = 'button';
     hqBtn.setAttribute('aria-label', 'Load high-quality scene video with audio');
     this.applyIconButtonStyles(hqBtn);
-    hqBtn.style.padding = '4px';
+    hqBtn.style.padding = '0';
 
     this.updateHQButton(hqBtn);
     this.hqButton = hqBtn;
@@ -609,8 +638,11 @@ export class VideoPost {
     displayButton.setAttribute('aria-haspopup', 'dialog');
     displayButton.setAttribute('aria-expanded', 'false');
     this.applyIconButtonStyles(displayButton);
-    displayButton.style.padding = '4px 8px';
+    displayButton.style.padding = '0 8px';
     displayButton.style.gap = '6px';
+    // Keep 44px height but allow width to be auto for text content
+    displayButton.style.width = 'auto';
+    displayButton.style.minWidth = '44px';
     
     displayButton.addEventListener('click', (event) => {
       event.preventDefault();

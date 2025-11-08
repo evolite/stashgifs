@@ -33,8 +33,8 @@ export class FeedContainer {
   private markers: SceneMarker[] = [];
   private isLoading: boolean = false;
   private currentFilters?: FilterOptions;
-  private selectedTagIds: number[] = [];
-  private selectedTagNames: string[] = [];
+  private selectedTagId?: number;
+  private selectedTagName?: string;
   private hasMore: boolean = true;
   private currentPage: number = 1;
   private scrollObserver?: IntersectionObserver;
@@ -169,17 +169,15 @@ export class FeedContainer {
     header.style.maxWidth = `${this.settings.cardMaxWidth + 24}px`;
     header.style.marginLeft = 'auto';
     header.style.marginRight = 'auto';
-    header.style.height = '72px';
+    header.style.height = '56px';
     header.style.zIndex = '220';
     header.style.display = 'flex';
     header.style.alignItems = 'center';
-    header.style.justifyContent = 'flex-start'; // Ensure content starts at left edge
+    header.style.justifyContent = 'flex-start';
     header.style.padding = '8px 12px';
-    header.style.background = 'transparent';
-    header.style.backdropFilter = 'none';
-    header.style.borderBottom = 'none';
-    header.style.transition = 'transform .24s ease, opacity .24s ease';
+    header.style.transition = 'transform 0.24s var(--ease-spring, ease), opacity 0.24s var(--ease-spring, ease)';
     header.style.boxSizing = 'border-box';
+    header.style.transform = 'translateY(0)';
 
     // Inner container - full width of header (already constrained)
     const headerInner = document.createElement('div');
@@ -200,7 +198,8 @@ export class FeedContainer {
     brand.style.fontWeight = '700';
     brand.style.letterSpacing = '0.5px';
     brand.style.color = '#F5C518';
-    brand.style.fontSize = '16px';
+    brand.style.fontSize = '17px';
+    brand.style.lineHeight = '1.2';
     brand.style.cursor = 'pointer';
     brand.style.userSelect = 'none';
     brand.style.transition = 'opacity 0.2s ease';
@@ -251,21 +250,19 @@ export class FeedContainer {
 
     header.appendChild(headerInner);
 
-    // Chips container to visualize active filters
-    const chips = document.createElement('div');
-    chips.className = 'feed-filters__chips';
-    chips.style.display = 'flex';
-    chips.style.flexWrap = 'wrap';
-    chips.style.gap = '6px';
-    chips.style.marginTop = '6px';
-    chips.style.width = '100%';
-    chips.style.maxWidth = '100%';
-    chips.style.overflow = 'hidden';
-    chips.style.boxSizing = 'border-box';
-    chips.style.paddingLeft = '14px'; // Match search input left padding for alignment
-    chips.style.paddingRight = '36px'; // Match search input right padding for alignment (space for reset button)
+    // Tag header to show selected tag
+    const tagHeader = document.createElement('div');
+    tagHeader.className = 'feed-filters__tag-header';
+    tagHeader.style.display = 'none';
+    tagHeader.style.padding = '12px 14px';
+    tagHeader.style.marginTop = '8px';
+    tagHeader.style.width = '100%';
+    tagHeader.style.boxSizing = 'border-box';
+    tagHeader.style.fontSize = '17px';
+    tagHeader.style.fontWeight = '600';
+    tagHeader.style.color = '#FFFFFF';
 
-    // Create a wrapper for the input and reset button so button is positioned relative to input, not searchArea
+    // Create a wrapper for the input
     const inputWrapper = document.createElement('div');
     inputWrapper.style.position = 'relative';
     inputWrapper.style.width = '100%';
@@ -278,168 +275,80 @@ export class FeedContainer {
     queryInput.placeholder = 'Search tags or apply saved filters…';
     queryInput.className = 'feed-filters__input';
     queryInput.style.width = '100%';
-    queryInput.style.minWidth = '0'; // Allow container to constrain width
-    queryInput.style.height = '40px';
-    queryInput.style.padding = '0 36px 0 14px'; // Right padding for reset button, left padding for text
-    queryInput.style.borderRadius = '999px';
-    queryInput.style.border = '1px solid rgba(255,255,255,0.10)';
-    queryInput.style.background = 'rgba(22,22,22,0.9)';
+    queryInput.style.minWidth = '0';
+    queryInput.style.height = '36px';
+    queryInput.style.padding = '0 14px';
+    queryInput.style.borderRadius = '10px';
+    queryInput.style.border = '1px solid rgba(255,255,255,0.12)';
+    queryInput.style.background = 'rgba(28, 28, 30, 0.6)';
     queryInput.style.color = 'inherit';
-    queryInput.style.fontSize = '14px';
-    queryInput.style.boxSizing = 'border-box'; // Include padding in width calculation
+    queryInput.style.fontSize = '15px';
+    queryInput.style.lineHeight = '1.4';
+    queryInput.style.boxSizing = 'border-box';
+    queryInput.style.transition = 'background 0.2s ease, border-color 0.2s ease';
 
-    // Reset filter button (right-aligned within search bar, positioned relative to inputWrapper)
-    const resetButton = document.createElement('button');
-    resetButton.type = 'button';
-    resetButton.innerHTML = '×';
-    resetButton.title = 'Reset filters';
-    resetButton.style.position = 'absolute';
-    resetButton.style.right = '8px'; // Right-aligned instead of left
-    resetButton.style.top = '50%';
-    resetButton.style.transform = 'translateY(-50%)';
-    resetButton.style.width = '24px';
-    resetButton.style.height = '24px';
-    resetButton.style.border = 'none';
-    resetButton.style.background = 'transparent';
-    resetButton.style.color = 'rgba(255,255,255,0.4)';
-    resetButton.style.fontSize = '20px';
-    resetButton.style.fontWeight = '300';
-    resetButton.style.cursor = 'pointer';
-    resetButton.style.display = 'flex';
-    resetButton.style.alignItems = 'center';
-    resetButton.style.justifyContent = 'center';
-    resetButton.style.borderRadius = '50%';
-    resetButton.style.transition = 'color 0.2s ease, background 0.2s ease';
-    resetButton.style.zIndex = '10';
-    resetButton.style.lineHeight = '1';
-    resetButton.style.padding = '0';
-    
-    // Hover effect
-    resetButton.addEventListener('mouseenter', () => {
-      resetButton.style.color = 'rgba(255,255,255,0.7)';
-      resetButton.style.background = 'rgba(255,255,255,0.05)';
-    });
-    resetButton.addEventListener('mouseleave', () => {
-      resetButton.style.color = 'rgba(255,255,255,0.4)';
-      resetButton.style.background = 'transparent';
-    });
-    
-    // Reset filters handler
-    resetButton.addEventListener('click', () => {
-      this.selectedTagIds = [];
-      this.selectedTagNames = [];
-      this.selectedSavedFilter = undefined;
-      queryInput.value = '';
-      renderChips();
-      apply();
-    });
-
-    // Append input and button to wrapper
+    // Append input to wrapper
     inputWrapper.appendChild(queryInput);
-    inputWrapper.appendChild(resetButton);
 
     const suggestions = document.createElement('div');
     suggestions.className = 'feed-filters__suggestions hide-scrollbar';
-    suggestions.style.position = 'absolute';
+    suggestions.style.position = 'fixed';
     suggestions.style.left = '0';
     suggestions.style.right = '0';
-    suggestions.style.top = '46px';
-    suggestions.style.zIndex = '221';
+    suggestions.style.top = '72px'; // Position below search bar (56px header + 16px padding)
+    suggestions.style.bottom = '0';
+    suggestions.style.zIndex = '1000';
     suggestions.style.display = 'none';
-    suggestions.style.background = 'rgba(22,22,22,0.98)';
-    suggestions.style.border = '1px solid rgba(255,255,255,0.10)';
-    suggestions.style.borderRadius = '12px';
-    suggestions.style.padding = '10px';
-    suggestions.style.maxHeight = '60vh';
+    suggestions.style.background = 'rgba(0, 0, 0, 0.85)';
+    suggestions.style.backdropFilter = 'blur(20px) saturate(180%)';
+    (suggestions.style as any).webkitBackdropFilter = 'blur(20px) saturate(180%)';
     suggestions.style.overflowY = 'auto';
-    suggestions.style.display = 'none';
-    suggestions.style.flexWrap = 'wrap';
-    suggestions.style.gap = '8px';
+    suggestions.style.paddingTop = '16px';
+    suggestions.style.paddingBottom = '20px';
+    suggestions.style.paddingLeft = '16px';
+    suggestions.style.paddingRight = '16px';
+    suggestions.style.boxSizing = 'border-box';
 
-    // Input wrapper (contains input and reset button), then suggestions overlay, then chips below
+    // Input wrapper (contains input and reset button), then tag header below
     searchArea.appendChild(inputWrapper);
-    searchArea.appendChild(suggestions);
-    searchArea.appendChild(chips);
+    searchArea.appendChild(tagHeader);
+    // Append suggestions to body for full-screen overlay
+    document.body.appendChild(suggestions);
 
     // Append header to scroll container at the top (before posts)
     this.scrollContainer.insertBefore(header, this.scrollContainer.firstChild);
 
     // No need for paddingTop since header is sticky and inside scroll container
 
-    const renderChips = () => {
-      chips.innerHTML = '';
-      // Saved filter chip first (if any)
-      if (this.selectedSavedFilter) {
-        const chip = document.createElement('button');
-        chip.type = 'button';
-        chip.textContent = this.selectedSavedFilter.name;
-        chip.className = 'feed-chip';
-        chip.style.padding = '4px 10px';
-        chip.style.borderRadius = '999px';
-        chip.style.border = '1px solid rgba(255,255,255,0.12)';
-        chip.style.background = 'rgba(255,255,255,0.06)';
-        chip.style.fontSize = '12px';
-        chip.style.display = 'inline-flex';
-        chip.style.alignItems = 'center';
-        chip.style.gap = '6px';
-        chip.style.flexShrink = '0';
-        chip.style.whiteSpace = 'nowrap';
-        chip.style.maxWidth = '100%';
-        const x = document.createElement('button');
-        x.textContent = '×';
-        x.style.background = 'transparent';
-        x.style.border = 'none';
-        x.style.color = 'inherit';
-        x.style.cursor = 'pointer';
-        x.style.fontSize = '14px';
-        x.addEventListener('click', () => {
-          this.selectedSavedFilter = undefined;
-          // ensure dropdown (if any) is cleared via shared state; header has no select
-          renderChips();
-          apply();
-        });
-        chip.appendChild(x);
-        chips.appendChild(chip);
+    const updateSearchBarDisplay = () => {
+      // Show the active search term in the search bar
+      if (this.selectedTagName) {
+        queryInput.value = this.selectedTagName;
+      } else if (this.selectedSavedFilter) {
+        queryInput.value = this.selectedSavedFilter.name;
+      } else {
+        queryInput.value = '';
       }
-      this.selectedTagNames.forEach((name, idx) => {
-        const chip = document.createElement('button');
-        chip.type = 'button';
-        chip.textContent = name;
-        chip.className = 'feed-chip';
-        chip.style.padding = '4px 10px';
-        chip.style.borderRadius = '999px';
-        chip.style.border = '1px solid rgba(255,255,255,0.12)';
-        chip.style.background = 'rgba(255,255,255,0.06)';
-        chip.style.fontSize = '12px';
-        chip.style.display = 'inline-flex';
-        chip.style.alignItems = 'center';
-        chip.style.gap = '6px';
-        chip.style.flexShrink = '0';
-        chip.style.whiteSpace = 'nowrap';
-        chip.style.maxWidth = '100%';
-        const x = document.createElement('button');
-        x.textContent = '×';
-        x.style.background = 'transparent';
-        x.style.border = 'none';
-        x.style.color = 'inherit';
-        x.style.cursor = 'pointer';
-        x.style.fontSize = '14px';
-        x.addEventListener('click', () => {
-          this.selectedTagIds.splice(idx, 1);
-          this.selectedTagNames.splice(idx, 1);
-          renderChips();
-          apply();
-        });
-        chip.appendChild(x);
-        chips.appendChild(chip);
-      });
+      // Hide tag header since we're showing it in the search bar
+      tagHeader.style.display = 'none';
     };
 
     const apply = () => {
       const q = queryInput.value.trim();
+      // Use query for text-based search (includes partial matches like "finger" matching "fingers", "finger - pov", etc.)
+      // When a tag is selected, use its name for fuzzy matching
+      // When user types manually, use that query (unless a saved filter is active)
+      let queryValue: string | undefined = undefined;
+      if (this.selectedTagName) {
+        queryValue = this.selectedTagName;
+      } else if (q && !this.selectedSavedFilter) {
+        queryValue = q;
+      }
+      
       const newFilters: FilterOptions = {
-        query: q || undefined,
-        primary_tags: this.selectedTagIds.length ? this.selectedTagIds.map(String) : undefined,
+        query: queryValue,
+        // Don't use primary_tags with exact ID - use query instead for fuzzy matching
+        primary_tags: undefined,
         savedFilterId: this.selectedSavedFilter?.id || undefined,
         limit: 20,
         offset: 0,
@@ -452,80 +361,236 @@ export class FeedContainer {
     let suggestTimeout: any;
     let suggestTerm = '';
     
+    // Helper to format post count
+    const formatPostCount = (count: number): string => {
+      if (count >= 1000) {
+        const k = Math.floor(count / 1000);
+        return `${k}K POSTS`;
+      }
+      return `${count} POSTS`;
+    };
+
+    // Helper to get marker count for a tag
+    const getMarkerCount = async (tagId: number): Promise<number> => {
+      try {
+        const query = `query GetMarkerCount($scene_marker_filter: SceneMarkerFilterType) {
+          findSceneMarkers(scene_marker_filter: $scene_marker_filter) { count }
+        }`;
+        const sceneMarkerFilter: any = { tags: { value: [tagId], modifier: 'INCLUDES' } };
+        const variables: any = { scene_marker_filter: sceneMarkerFilter };
+        
+        const apiAny = this.api as any;
+        if (apiAny.pluginApi?.GQL?.client) {
+          const res = await apiAny.pluginApi.GQL.client.query({ query: query as any, variables });
+          return res.data?.findSceneMarkers?.count || 0;
+        }
+        const response = await fetch(`${apiAny.baseUrl}/graphql`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            ...(apiAny.apiKey && { 'ApiKey': apiAny.apiKey }),
+          },
+          body: JSON.stringify({ query, variables }),
+        });
+        if (!response.ok) return 0;
+        const data = await response.json();
+        return data.data?.findSceneMarkers?.count || 0;
+      } catch {
+        return 0;
+      }
+    };
+
     const fetchAndShowSuggestions = async (text: string, forceShow: boolean = false) => {
       const trimmedText = text.trim();
       // Show suggestions if we have text (2+ chars) OR if forced (on focus with empty/minimal text)
       if (!trimmedText || trimmedText.length < 2) {
         if (forceShow) {
           suggestions.innerHTML = '';
-          // On focus with empty text, show some tags first
-          const pageSize = 24;
+          
+          // Create container for content (max-width on desktop)
+          const contentContainer = document.createElement('div');
+          contentContainer.style.maxWidth = '600px';
+          contentContainer.style.margin = '0 auto';
+          contentContainer.style.width = '100%';
+          
+          // Trending Searches section
+          const trendingLabel = document.createElement('div');
+          trendingLabel.textContent = 'Trending Searches';
+          trendingLabel.style.fontSize = '17px';
+          trendingLabel.style.fontWeight = '600';
+          trendingLabel.style.color = '#FFFFFF';
+          trendingLabel.style.marginBottom = '16px';
+          trendingLabel.style.paddingTop = '8px';
+          contentContainer.appendChild(trendingLabel);
+          
+          // On focus with empty text, show trending tags (top 3 only)
+          const pageSize = 3;
           const items = await this.api.searchMarkerTags('', pageSize);
-          items.forEach((tag) => {
-            if (this.selectedTagIds.includes(parseInt(tag.id, 10))) return;
-            const btn = document.createElement('button');
-            btn.textContent = tag.name;
-            btn.className = 'suggest-chip';
-            btn.style.padding = '6px 10px';
-            btn.style.borderRadius = '999px';
-            btn.style.border = '1px solid rgba(255,255,255,0.12)';
-            btn.style.background = 'rgba(255,255,255,0.05)';
-            btn.style.color = 'inherit';
-            btn.style.fontSize = '13px';
-            btn.style.cursor = 'pointer';
-            btn.addEventListener('click', () => {
+          
+          // Get counts for tags
+          const itemsWithCounts = await Promise.all(
+            items.slice(0, 3).map(async (tag) => {
               const tagId = parseInt(tag.id, 10);
-              if (!this.selectedTagIds.includes(tagId)) {
-                this.selectedTagIds.push(tagId);
-                this.selectedTagNames.push(tag.name);
-                renderChips();
-                apply();
-                fetchAndShowSuggestions('', true);
-              }
+              if (this.selectedTagId === tagId) return null;
+              const count = await getMarkerCount(tagId);
+              return { ...tag, count };
+            })
+          );
+          
+          const validItems = itemsWithCounts.filter((item): item is { id: string; name: string; count: number } => item !== null && item.count > 0);
+          
+          validItems.forEach((tag) => {
+            const item = document.createElement('button');
+            item.style.width = '100%';
+            item.style.display = 'flex';
+            item.style.alignItems = 'center';
+            item.style.gap = '12px';
+            item.style.padding = '12px';
+            item.style.borderRadius = '12px';
+            item.style.border = 'none';
+            item.style.background = 'transparent';
+            item.style.cursor = 'pointer';
+            item.style.textAlign = 'left';
+            item.style.transition = 'background 0.2s ease';
+            item.style.marginBottom = '4px';
+            
+            item.addEventListener('mouseenter', () => {
+              item.style.background = 'rgba(255, 255, 255, 0.08)';
             });
-            suggestions.appendChild(btn);
+            item.addEventListener('mouseleave', () => {
+              item.style.background = 'transparent';
+            });
+            
+            // Hash icon
+            const hashIcon = document.createElement('div');
+            hashIcon.textContent = '#';
+            hashIcon.style.width = '32px';
+            hashIcon.style.height = '32px';
+            hashIcon.style.borderRadius = '50%';
+            hashIcon.style.background = 'rgba(255, 255, 255, 0.1)';
+            hashIcon.style.display = 'flex';
+            hashIcon.style.alignItems = 'center';
+            hashIcon.style.justifyContent = 'center';
+            hashIcon.style.fontSize = '16px';
+            hashIcon.style.fontWeight = '600';
+            hashIcon.style.color = 'rgba(255, 255, 255, 0.8)';
+            hashIcon.style.flexShrink = '0';
+            
+            // Tag name and count container
+            const textContainer = document.createElement('div');
+            textContainer.style.flex = '1';
+            textContainer.style.display = 'flex';
+            textContainer.style.flexDirection = 'column';
+            textContainer.style.gap = '4px';
+            
+            const tagName = document.createElement('div');
+            tagName.textContent = tag.name;
+            tagName.style.fontSize = '15px';
+            tagName.style.fontWeight = '500';
+            tagName.style.color = '#FFFFFF';
+            
+            const postCount = document.createElement('div');
+            postCount.textContent = formatPostCount(tag.count);
+            postCount.style.fontSize = '13px';
+            postCount.style.color = 'rgba(255, 255, 255, 0.6)';
+            
+            textContainer.appendChild(tagName);
+            textContainer.appendChild(postCount);
+            
+            item.appendChild(hashIcon);
+            item.appendChild(textContainer);
+            
+            item.addEventListener('click', () => {
+              const tagId = parseInt(tag.id, 10);
+              // Clear saved filter when selecting a tag
+              this.selectedSavedFilter = undefined;
+              this.selectedTagId = tagId;
+              this.selectedTagName = tag.name;
+              updateSearchBarDisplay();
+              apply();
+              suggestions.style.display = 'none';
+              suggestions.innerHTML = '';
+            });
+            
+            contentContainer.appendChild(item);
           });
-          if (items.length) {
+          
+          if (validItems.length > 0) {
             const divider = document.createElement('div');
             divider.style.width = '100%';
             divider.style.height = '1px';
             divider.style.background = 'rgba(255,255,255,0.08)';
-            divider.style.margin = '6px 0';
-            suggestions.appendChild(divider);
+            divider.style.margin = '16px 0';
+            contentContainer.appendChild(divider);
           }
-          // Then show ALL saved filters
-          const label = document.createElement('div');
-          label.textContent = 'Saved Filters';
-          label.style.width = '100%';
-          label.style.opacity = '0.75';
-          label.style.fontSize = '12px';
-          label.style.marginBottom = '6px';
-          suggestions.appendChild(label);
-          savedFiltersCache.forEach((f) => {
-            const btn = document.createElement('button');
-            btn.textContent = f.name;
-            btn.className = 'suggest-chip';
-            btn.style.padding = '6px 10px';
-            btn.style.borderRadius = '999px';
-            btn.style.border = '1px solid rgba(255,255,255,0.12)';
-            btn.style.background = 'rgba(255,255,255,0.05)';
-            btn.style.color = 'inherit';
-            btn.style.fontSize = '13px';
-            btn.style.cursor = 'pointer';
-            btn.addEventListener('click', () => {
-              this.selectedSavedFilter = { id: f.id, name: f.name };
-              this.selectedTagIds = [];
-              this.selectedTagNames = [];
-              queryInput.value = '';
-              this.currentFilters = { savedFilterId: f.id, limit: 20, offset: 0 };
-              this.loadVideos(this.currentFilters, false).catch((e) => console.error('Apply saved filter failed', e));
-              suggestions.style.display = 'none';
-              suggestions.innerHTML = '';
-              renderChips();
-            });
-            suggestions.appendChild(btn);
+          
+          // Saved Filters section
+          if (savedFiltersCache.length > 0) {
+            const savedLabel = document.createElement('div');
+            savedLabel.textContent = 'SAVED FILTERS';
+            savedLabel.style.width = '100%';
+            savedLabel.style.fontSize = '11px';
+            savedLabel.style.fontWeight = '600';
+            savedLabel.style.textTransform = 'uppercase';
+            savedLabel.style.letterSpacing = '0.5px';
+            savedLabel.style.marginBottom = '12px';
+            savedLabel.style.marginTop = '8px';
+            savedLabel.style.color = 'rgba(255,255,255,0.6)';
+            contentContainer.appendChild(savedLabel);
+            
+            // Container for horizontal layout
+            const filtersContainer = document.createElement('div');
+            filtersContainer.style.display = 'flex';
+            filtersContainer.style.flexWrap = 'wrap';
+            filtersContainer.style.gap = '8px';
+            filtersContainer.style.width = '100%';
+            
+            savedFiltersCache.forEach((f) => {
+              const item = document.createElement('button');
+              item.style.display = 'inline-flex';
+              item.style.alignItems = 'center';
+              item.style.padding = '8px 16px';
+              item.style.borderRadius = '12px';
+              item.style.border = 'none';
+              item.style.background = 'transparent';
+              item.style.cursor = 'pointer';
+              item.style.transition = 'background 0.2s ease';
+              item.style.whiteSpace = 'nowrap';
+              
+              item.addEventListener('mouseenter', () => {
+                item.style.background = 'rgba(255, 255, 255, 0.08)';
+              });
+              item.addEventListener('mouseleave', () => {
+                item.style.background = 'transparent';
+              });
+              
+              const filterName = document.createElement('div');
+              filterName.textContent = f.name;
+              filterName.style.fontSize = '15px';
+              filterName.style.fontWeight = '500';
+              filterName.style.color = '#FFFFFF';
+              
+              item.appendChild(filterName);
+              
+          item.addEventListener('click', () => {
+            this.selectedSavedFilter = { id: f.id, name: f.name };
+            this.selectedTagId = undefined;
+            this.selectedTagName = undefined;
+            updateSearchBarDisplay();
+            this.currentFilters = { savedFilterId: f.id, limit: 20, offset: 0 };
+            this.loadVideos(this.currentFilters, false).catch((e) => console.error('Apply saved filter failed', e));
+            suggestions.style.display = 'none';
+            suggestions.innerHTML = '';
           });
-          suggestions.style.display = suggestions.children.length > 0 ? 'flex' : 'none';
+              
+              filtersContainer.appendChild(item);
+            });
+            
+            contentContainer.appendChild(filtersContainer);
+          }
+          
+          suggestions.appendChild(contentContainer);
+          suggestions.style.display = suggestions.children.length > 0 ? 'block' : 'none';
         } else {
           suggestions.style.display = 'none';
           suggestions.innerHTML = '';
@@ -535,91 +600,241 @@ export class FeedContainer {
       
       if (trimmedText !== suggestTerm) suggestions.innerHTML = '';
       suggestTerm = trimmedText;
-      const pageSize = 24;
+      
+      // Create container for content (max-width on desktop)
+      const contentContainer = document.createElement('div');
+      contentContainer.style.maxWidth = '600px';
+      contentContainer.style.margin = '0 auto';
+      contentContainer.style.width = '100%';
+      
+      const pageSize = 20;
       const items = await this.api.searchMarkerTags(trimmedText, pageSize);
-      // Tags
-      items.forEach((tag) => {
-        if (this.selectedTagIds.includes(parseInt(tag.id, 10))) return;
-        const btn = document.createElement('button');
-        btn.textContent = tag.name;
-        btn.className = 'suggest-chip';
-        btn.style.padding = '6px 10px';
-        btn.style.borderRadius = '999px';
-        btn.style.border = '1px solid rgba(255,255,255,0.12)';
-        btn.style.background = 'rgba(255,255,255,0.05)';
-        btn.style.color = 'inherit';
-        btn.style.fontSize = '13px';
-        btn.style.cursor = 'pointer';
-        btn.addEventListener('click', () => {
+      
+      // Get counts for tags
+      const itemsWithCounts = await Promise.all(
+        items.slice(0, 20).map(async (tag) => {
           const tagId = parseInt(tag.id, 10);
-          if (!this.selectedTagIds.includes(tagId)) {
-            this.selectedTagIds.push(tagId);
-            this.selectedTagNames.push(tag.name);
-            renderChips();
-            apply();
-            queryInput.dispatchEvent(new Event('input'));
-          }
+          if (this.selectedTagId === tagId) return null;
+          const count = await getMarkerCount(tagId);
+          return { ...tag, count };
+        })
+      );
+      
+      const validItems = itemsWithCounts.filter((item): item is { id: string; name: string; count: number } => item !== null && item.count > 0);
+      
+      // Tags
+      validItems.forEach((tag) => {
+        const item = document.createElement('button');
+        item.style.width = '100%';
+        item.style.display = 'flex';
+        item.style.alignItems = 'center';
+        item.style.gap = '12px';
+        item.style.padding = '12px';
+        item.style.borderRadius = '12px';
+        item.style.border = 'none';
+        item.style.background = 'transparent';
+        item.style.cursor = 'pointer';
+        item.style.textAlign = 'left';
+        item.style.transition = 'background 0.2s ease';
+        item.style.marginBottom = '4px';
+        
+        item.addEventListener('mouseenter', () => {
+          item.style.background = 'rgba(255, 255, 255, 0.08)';
         });
-        suggestions.appendChild(btn);
+        item.addEventListener('mouseleave', () => {
+          item.style.background = 'transparent';
+        });
+        
+        // Hash icon
+        const hashIcon = document.createElement('div');
+        hashIcon.textContent = '#';
+        hashIcon.style.width = '32px';
+        hashIcon.style.height = '32px';
+        hashIcon.style.borderRadius = '50%';
+        hashIcon.style.background = 'rgba(255, 255, 255, 0.1)';
+        hashIcon.style.display = 'flex';
+        hashIcon.style.alignItems = 'center';
+        hashIcon.style.justifyContent = 'center';
+        hashIcon.style.fontSize = '16px';
+        hashIcon.style.fontWeight = '600';
+        hashIcon.style.color = 'rgba(255, 255, 255, 0.8)';
+        hashIcon.style.flexShrink = '0';
+        
+        // Tag name and count container
+        const textContainer = document.createElement('div');
+        textContainer.style.flex = '1';
+        textContainer.style.display = 'flex';
+        textContainer.style.flexDirection = 'column';
+        textContainer.style.gap = '4px';
+        
+        const tagName = document.createElement('div');
+        tagName.textContent = tag.name;
+        tagName.style.fontSize = '15px';
+        tagName.style.fontWeight = '500';
+        tagName.style.color = '#FFFFFF';
+        
+        const postCount = document.createElement('div');
+        postCount.textContent = formatPostCount(tag.count);
+        postCount.style.fontSize = '13px';
+        postCount.style.color = 'rgba(255, 255, 255, 0.6)';
+        
+        textContainer.appendChild(tagName);
+        textContainer.appendChild(postCount);
+        
+        item.appendChild(hashIcon);
+        item.appendChild(textContainer);
+        
+        item.addEventListener('click', () => {
+          const tagId = parseInt(tag.id, 10);
+          // Clear saved filter when selecting a tag
+          this.selectedSavedFilter = undefined;
+          this.selectedTagId = tagId;
+          this.selectedTagName = tag.name;
+          updateSearchBarDisplay();
+          apply();
+          suggestions.style.display = 'none';
+          suggestions.innerHTML = '';
+        });
+        
+        contentContainer.appendChild(item);
       });
+      
       // Saved filters section
       const term = trimmedText.toLowerCase();
       const matches = savedFiltersCache.filter((f) => f.name.toLowerCase().includes(term));
       if (matches.length) {
+        if (validItems.length > 0) {
+          const divider = document.createElement('div');
+          divider.style.width = '100%';
+          divider.style.height = '1px';
+          divider.style.background = 'rgba(255,255,255,0.08)';
+          divider.style.margin = '16px 0';
+          contentContainer.appendChild(divider);
+        }
+        
         const label = document.createElement('div');
-        label.textContent = 'Saved Filters';
+        label.textContent = 'SAVED FILTERS';
         label.style.width = '100%';
-        label.style.opacity = '0.75';
-        label.style.fontSize = '12px';
-        label.style.marginTop = '6px';
-        suggestions.appendChild(label);
+        label.style.fontSize = '11px';
+        label.style.fontWeight = '600';
+        label.style.textTransform = 'uppercase';
+        label.style.letterSpacing = '0.5px';
+        label.style.marginBottom = '12px';
+        label.style.marginTop = '8px';
+        label.style.color = 'rgba(255,255,255,0.6)';
+        contentContainer.appendChild(label);
+        
+        // Container for horizontal layout
+        const filtersContainer = document.createElement('div');
+        filtersContainer.style.display = 'flex';
+        filtersContainer.style.flexWrap = 'wrap';
+        filtersContainer.style.gap = '8px';
+        filtersContainer.style.width = '100%';
+        
         matches.forEach((f) => {
-          const btn = document.createElement('button');
-          btn.textContent = f.name;
-          btn.className = 'suggest-chip';
-          btn.style.padding = '6px 10px';
-          btn.style.borderRadius = '999px';
-          btn.style.border = '1px solid rgba(255,255,255,0.12)';
-          btn.style.background = 'rgba(255,255,255,0.05)';
-          btn.style.color = 'inherit';
-          btn.style.fontSize = '13px';
-          btn.style.cursor = 'pointer';
-          btn.addEventListener('click', () => {
+          const item = document.createElement('button');
+          item.style.display = 'inline-flex';
+          item.style.alignItems = 'center';
+          item.style.padding = '8px 16px';
+          item.style.borderRadius = '12px';
+          item.style.border = 'none';
+          item.style.background = 'transparent';
+          item.style.cursor = 'pointer';
+          item.style.transition = 'background 0.2s ease';
+          item.style.whiteSpace = 'nowrap';
+          
+          item.addEventListener('mouseenter', () => {
+            item.style.background = 'rgba(255, 255, 255, 0.08)';
+          });
+          item.addEventListener('mouseleave', () => {
+            item.style.background = 'transparent';
+          });
+          
+          const filterName = document.createElement('div');
+          filterName.textContent = f.name;
+          filterName.style.fontSize = '15px';
+          filterName.style.fontWeight = '500';
+          filterName.style.color = '#FFFFFF';
+          
+          item.appendChild(filterName);
+          
+          item.addEventListener('click', () => {
             this.selectedSavedFilter = { id: f.id, name: f.name };
-            this.selectedTagIds = [];
-            this.selectedTagNames = [];
-            queryInput.value = '';
+            this.selectedTagId = undefined;
+            this.selectedTagName = undefined;
+            updateSearchBarDisplay();
             this.currentFilters = { savedFilterId: f.id, limit: 20, offset: 0 };
             this.loadVideos(this.currentFilters, false).catch((e) => console.error('Apply saved filter failed', e));
             suggestions.style.display = 'none';
             suggestions.innerHTML = '';
-            renderChips();
           });
-          suggestions.appendChild(btn);
+          
+          filtersContainer.appendChild(item);
         });
+        
+        contentContainer.appendChild(filtersContainer);
       }
 
-      suggestions.style.display = (items.length || matches.length) ? 'flex' : 'none';
+      suggestions.appendChild(contentContainer);
+      suggestions.style.display = (validItems.length || matches.length) ? 'block' : 'none';
     };
     
     queryInput.addEventListener('keydown', (e) => { if ((e as KeyboardEvent).key === 'Enter') apply(); });
     queryInput.addEventListener('focus', () => {
-      fetchAndShowSuggestions(queryInput.value, true);
+      queryInput.style.background = 'rgba(28, 28, 30, 0.8)';
+      queryInput.style.borderColor = 'rgba(255,255,255,0.16)';
+      // Clear and reset when focusing on search bar for fresh search
+      this.selectedTagId = undefined;
+      this.selectedTagName = undefined;
+      this.selectedSavedFilter = undefined;
+      queryInput.value = '';
+      // Calculate header height dynamically and position dropdown below it
+      if (header) {
+        const headerRect = header.getBoundingClientRect();
+        suggestions.style.top = `${headerRect.bottom}px`;
+      }
+      fetchAndShowSuggestions('', true);
+    });
+    queryInput.addEventListener('blur', () => {
+      queryInput.style.background = 'rgba(28, 28, 30, 0.6)';
+      queryInput.style.borderColor = 'rgba(255,255,255,0.12)';
     });
     queryInput.addEventListener('input', () => {
       clearTimeout(suggestTimeout);
       const text = queryInput.value;
+      // Clear selected tag/filter when user types (they're searching for something new)
+      if (text !== this.selectedTagName && text !== this.selectedSavedFilter?.name) {
+        this.selectedTagId = undefined;
+        this.selectedTagName = undefined;
+        this.selectedSavedFilter = undefined;
+      }
+      // Update dropdown position in case header moved
+      if (header && suggestions.style.display !== 'none') {
+        const headerRect = header.getBoundingClientRect();
+        suggestions.style.top = `${headerRect.bottom}px`;
+      }
       suggestTimeout = setTimeout(() => {
         fetchAndShowSuggestions(text, false);
       }, 150);
     });
 
+    // Close suggestions when clicking outside or on backdrop
+    suggestions.addEventListener('click', (e) => {
+      if (e.target === suggestions) {
+        suggestions.style.display = 'none';
+        suggestions.innerHTML = '';
+      }
+    });
+    
     document.addEventListener('click', (e) => {
-      if (!searchArea.contains(e.target as Node)) suggestions.style.display = 'none';
+      if (!searchArea.contains(e.target as Node) && !suggestions.contains(e.target as Node)) {
+        suggestions.style.display = 'none';
+        suggestions.innerHTML = '';
+      }
     });
 
-    // Initial render of chips (in case defaults are provided)
-    renderChips();
+    // Initial render of search bar display (in case defaults are provided)
+    updateSearchBarDisplay();
   }
   private renderFilterSheet(): void {
     // Inject a one-time utility style to hide scrollbars while preserving scroll
@@ -728,20 +943,20 @@ export class FeedContainer {
     suggestions.style.gap = '8px';
     suggestions.style.maxHeight = '50vh';
     suggestions.style.overflowY = 'auto';
-    const chips = document.createElement('div');
-    chips.className = 'feed-filters__chips';
-    chips.style.display = 'flex';
-    chips.style.flexWrap = 'wrap';
-    chips.style.gap = '6px';
-    chips.style.width = '100%';
-    chips.style.maxWidth = '100%';
-    chips.style.overflow = 'hidden';
-    chips.style.boxSizing = 'border-box';
-    chips.style.paddingLeft = '14px'; // Match search input left padding for alignment
-    chips.style.paddingRight = '42px'; // Match search input right padding for alignment
+    // Tag header to show selected tag
+    const tagHeader = document.createElement('div');
+    tagHeader.className = 'feed-filters__tag-header';
+    tagHeader.style.display = 'none';
+    tagHeader.style.padding = '12px 14px';
+    tagHeader.style.marginTop = '8px';
+    tagHeader.style.width = '100%';
+    tagHeader.style.boxSizing = 'border-box';
+    tagHeader.style.fontSize = '17px';
+    tagHeader.style.fontWeight = '600';
+    tagHeader.style.color = '#FFFFFF';
     searchWrapper.style.position = 'relative';
-    searchWrapper.appendChild(chips);
     searchWrapper.appendChild(queryInput);
+    searchWrapper.appendChild(tagHeader);
     searchWrapper.appendChild(suggestions);
 
     // Apply button (icon)
@@ -775,7 +990,7 @@ export class FeedContainer {
       const savedId = (this.selectedSavedFilter?.id) || (savedSelect.value || undefined);
       const newFilters: FilterOptions = {
         query: q || undefined,
-        primary_tags: this.selectedTagIds.length ? this.selectedTagIds.map(String) : undefined,
+        primary_tags: this.selectedTagId ? [String(this.selectedTagId)] : undefined,
         savedFilterId: savedId,
         limit: 20,
         offset: 0,
@@ -792,14 +1007,12 @@ export class FeedContainer {
           this.selectedSavedFilter = { id: match.id, name: match.name };
         }
         // Clear tag selections when a saved filter is chosen
-        this.selectedTagIds = [];
-        this.selectedTagNames = [];
-        (queryInput as HTMLInputElement).value = '';
-        renderChips();
+        this.selectedTagId = undefined;
+        this.selectedTagName = undefined;
       } else {
         this.selectedSavedFilter = undefined;
-        renderChips();
       }
+      updateSearchBarDisplay();
       apply();
     });
     queryInput.addEventListener('keydown', (e) => { if ((e as KeyboardEvent).key === 'Enter') apply(); });
@@ -809,73 +1022,17 @@ export class FeedContainer {
     let suggestPage = 1;
     let suggestTerm = '';
     let suggestHasMore = false;
-    const renderChips = () => {
-      chips.innerHTML = '';
-      // Saved filter chip first (if any)
-      if (this.selectedSavedFilter) {
-        const chip = document.createElement('button');
-        chip.type = 'button';
-        chip.textContent = this.selectedSavedFilter.name;
-        chip.className = 'feed-chip';
-        chip.style.padding = '4px 10px';
-        chip.style.borderRadius = '999px';
-        chip.style.border = '1px solid rgba(255,255,255,0.12)';
-        chip.style.background = 'rgba(255,255,255,0.06)';
-        chip.style.fontSize = '12px';
-        chip.style.display = 'inline-flex';
-        chip.style.alignItems = 'center';
-        chip.style.gap = '6px';
-        chip.style.flexShrink = '0';
-        chip.style.whiteSpace = 'nowrap';
-        chip.style.maxWidth = '100%';
-        const x = document.createElement('button');
-        x.textContent = '×';
-        x.style.background = 'transparent';
-        x.style.border = 'none';
-        x.style.color = 'inherit';
-        x.style.cursor = 'pointer';
-        x.style.fontSize = '14px';
-        x.addEventListener('click', () => {
-          this.selectedSavedFilter = undefined;
-          savedSelect.value = '';
-          apply();
-          renderChips();
-        });
-        chip.appendChild(x);
-        chips.appendChild(chip);
+    const updateSearchBarDisplay = () => {
+      // Show the active search term in the search bar
+      if (this.selectedTagName) {
+        queryInput.value = this.selectedTagName;
+      } else if (this.selectedSavedFilter) {
+        queryInput.value = this.selectedSavedFilter.name;
+      } else {
+        queryInput.value = '';
       }
-      this.selectedTagNames.forEach((name, idx) => {
-        const chip = document.createElement('button');
-        chip.type = 'button';
-        chip.textContent = name;
-        chip.className = 'feed-chip';
-        chip.style.padding = '4px 10px';
-        chip.style.borderRadius = '999px';
-        chip.style.border = '1px solid rgba(255,255,255,0.12)';
-        chip.style.background = 'rgba(255,255,255,0.06)';
-        chip.style.fontSize = '12px';
-        chip.style.display = 'inline-flex';
-        chip.style.alignItems = 'center';
-        chip.style.gap = '6px';
-        chip.style.flexShrink = '0';
-        chip.style.whiteSpace = 'nowrap';
-        chip.style.maxWidth = '100%';
-        const x = document.createElement('button');
-        x.textContent = '×';
-        x.style.background = 'transparent';
-        x.style.border = 'none';
-        x.style.color = 'inherit';
-        x.style.cursor = 'pointer';
-        x.style.fontSize = '14px';
-        x.addEventListener('click', () => {
-          this.selectedTagIds.splice(idx, 1);
-          this.selectedTagNames.splice(idx, 1);
-          renderChips();
-          apply();
-        });
-        chip.appendChild(x);
-        chips.appendChild(chip);
-      });
+      // Hide tag header since we're showing it in the search bar
+      tagHeader.style.display = 'none';
     };
 
     const fetchSuggestions = async (text: string, page: number = 1, forceShow: boolean = false) => {
@@ -888,30 +1045,25 @@ export class FeedContainer {
           const pageSize = 24;
           const tags = await this.api.searchMarkerTags('', pageSize);
           tags.forEach((tag) => {
-            if (this.selectedTagIds.includes(parseInt(tag.id, 10))) return;
+            if (this.selectedTagId === parseInt(tag.id, 10)) return;
             const chip = document.createElement('button');
             chip.textContent = tag.name;
             chip.className = 'suggest-chip';
             chip.style.padding = '6px 10px';
             chip.style.borderRadius = '999px';
             chip.style.border = '1px solid rgba(255,255,255,0.12)';
-            chip.style.background = 'rgba(255,255,255,0.05)';
             chip.style.color = 'inherit';
             chip.style.fontSize = '13px';
             chip.style.cursor = 'pointer';
-            chip.addEventListener('mouseenter', () => { chip.style.background = 'rgba(255,255,255,0.1)'; });
-            chip.addEventListener('mouseleave', () => { chip.style.background = 'rgba(255,255,255,0.05)'; });
             chip.addEventListener('click', () => {
               this.selectedSavedFilter = undefined;
               savedSelect.value = '';
               const tagId = parseInt(tag.id, 10);
-              if (!this.selectedTagIds.includes(tagId)) {
-                this.selectedTagIds.push(tagId);
-                this.selectedTagNames.push(tag.name);
-                renderChips();
-                apply();
-                fetchSuggestions('', 1, true);
-              }
+              this.selectedTagId = tagId;
+              this.selectedTagName = tag.name;
+              updateSearchBarDisplay();
+              apply();
+              fetchSuggestions('', 1, true);
             });
             suggestions.appendChild(chip);
           });
@@ -938,22 +1090,19 @@ export class FeedContainer {
             chip.style.padding = '6px 10px';
             chip.style.borderRadius = '999px';
             chip.style.border = '1px solid rgba(255,255,255,0.12)';
-            chip.style.background = 'rgba(255,255,255,0.05)';
             chip.style.color = 'inherit';
             chip.style.fontSize = '13px';
             chip.style.cursor = 'pointer';
-            chip.addEventListener('mouseenter', () => { chip.style.background = 'rgba(255,255,255,0.1)'; });
-            chip.addEventListener('mouseleave', () => { chip.style.background = 'rgba(255,255,255,0.05)'; });
             chip.addEventListener('click', () => {
               savedSelect.value = f.id;
               this.selectedSavedFilter = { id: f.id, name: f.name };
               // Clear tag selections when applying a saved filter
-              this.selectedTagIds = [];
-              this.selectedTagNames = [];
+              this.selectedTagId = undefined;
+              this.selectedTagName = undefined;
               queryInput.value = '';
               suggestions.style.display = 'none';
               suggestions.innerHTML = '';
-              renderChips();
+              updateSearchBarDisplay();
               apply();
             });
             suggestions.appendChild(chip);
@@ -976,7 +1125,7 @@ export class FeedContainer {
 
       // Render as chips
       items.forEach((tag) => {
-        if (this.selectedTagIds.includes(parseInt(tag.id, 10))) return;
+        if (this.selectedTagId === parseInt(tag.id, 10)) return;
         const chip = document.createElement('button');
         chip.textContent = tag.name;
         chip.className = 'suggest-chip';
@@ -994,14 +1143,12 @@ export class FeedContainer {
           this.selectedSavedFilter = undefined;
           savedSelect.value = '';
           const tagId = parseInt(tag.id, 10);
-          if (!this.selectedTagIds.includes(tagId)) {
-            this.selectedTagIds.push(tagId);
-            this.selectedTagNames.push(tag.name);
-            renderChips();
-            apply();
-            // Refresh suggestions to remove the newly selected tag and keep menu open
-            fetchSuggestions(trimmedText, 1, false);
-          }
+          this.selectedTagId = tagId;
+          this.selectedTagName = tag.name;
+          updateSearchBarDisplay();
+          apply();
+          // Refresh suggestions to remove the newly selected tag and keep menu open
+          fetchSuggestions(trimmedText, 1, false);
         });
         suggestions.appendChild(chip);
       });
@@ -1037,12 +1184,12 @@ export class FeedContainer {
             savedSelect.value = f.id;
             this.selectedSavedFilter = { id: f.id, name: f.name };
             // Clear tag selections when applying a saved filter
-            this.selectedTagIds = [];
-            this.selectedTagNames = [];
+            this.selectedTagId = undefined;
+            this.selectedTagName = undefined;
             queryInput.value = '';
             suggestions.style.display = 'none';
             suggestions.innerHTML = '';
-            renderChips();
+            updateSearchBarDisplay();
             apply();
           });
           suggestions.appendChild(chip);
@@ -1068,31 +1215,26 @@ export class FeedContainer {
           // Fetch next page and append
           const next = await this.api.searchMarkerTags(trimmedText, pageSize);
           next.forEach((tag) => {
-            if (this.selectedTagIds.includes(parseInt(tag.id, 10))) return;
+            if (this.selectedTagId === parseInt(tag.id, 10)) return;
             const chip = document.createElement('button');
             chip.textContent = tag.name;
             chip.className = 'suggest-chip';
             chip.style.padding = '6px 10px';
             chip.style.borderRadius = '999px';
             chip.style.border = '1px solid rgba(255,255,255,0.12)';
-            chip.style.background = 'rgba(255,255,255,0.05)';
             chip.style.color = 'inherit';
             chip.style.fontSize = '13px';
             chip.style.cursor = 'pointer';
-            chip.addEventListener('mouseenter', () => { chip.style.background = 'rgba(255,255,255,0.1)'; });
-            chip.addEventListener('mouseleave', () => { chip.style.background = 'rgba(255,255,255,0.05)'; });
             chip.addEventListener('click', () => {
               this.selectedSavedFilter = undefined;
               savedSelect.value = '';
               const tagId = parseInt(tag.id, 10);
-              if (!this.selectedTagIds.includes(tagId)) {
-                this.selectedTagIds.push(tagId);
-                this.selectedTagNames.push(tag.name);
-                renderChips();
-                apply();
-                // Refresh suggestions for continued multi-select
-                fetchSuggestions(trimmedText, 1, false);
-              }
+              this.selectedTagId = tagId;
+              this.selectedTagName = tag.name;
+              updateSearchBarDisplay();
+              apply();
+              // Refresh suggestions to remove the newly selected tag
+              fetchSuggestions(trimmedText, 1, false);
             });
             suggestions.appendChild(chip);
           });
@@ -1123,11 +1265,11 @@ export class FeedContainer {
 
     clearBtn.addEventListener('click', () => {
       queryInput.value = '';
-      this.selectedTagIds = [];
-      this.selectedTagNames = [];
+      this.selectedTagId = undefined;
+      this.selectedTagName = undefined;
       this.selectedSavedFilter = undefined;
-      chips.innerHTML = '';
       savedSelect.value = '';
+      updateSearchBarDisplay();
       this.currentFilters = {};
       this.loadVideos({}, false).catch((e) => console.error('Clear filters failed', e));
     });
@@ -1633,13 +1775,38 @@ export class FeedContainer {
 
   /**
    * Setup scroll handler
-   * Note: Header visibility is now handled by CSS position:sticky
-   * This handler is kept for potential future use (e.g., infinite scroll)
+   * Handles header hide/show based on scroll direction
    */
   private setupScrollHandler(): void {
-    // Header visibility is now handled by CSS position:sticky
-    // No scroll-based transform updates needed - eliminates Firefox warning
-    // This method is kept for potential future scroll-based features
+    let lastScrollY = window.scrollY;
+    let isHeaderHidden = false;
+
+    const handleScroll = () => {
+      const currentScrollY = window.scrollY;
+      const scrollDelta = currentScrollY - lastScrollY;
+
+      // Only hide/show header if scroll delta is significant enough
+      if (Math.abs(scrollDelta) > 5) {
+        if (scrollDelta > 0 && !isHeaderHidden && currentScrollY > 100) {
+          // Scrolling down - hide header
+          if (this.headerBar) {
+            this.headerBar.style.transform = 'translateY(-100%)';
+            isHeaderHidden = true;
+          }
+        } else if (scrollDelta < 0 && isHeaderHidden) {
+          // Scrolling up - show header
+          if (this.headerBar) {
+            this.headerBar.style.transform = 'translateY(0)';
+            isHeaderHidden = false;
+          }
+        }
+      }
+
+      lastScrollY = currentScrollY;
+    };
+
+    // Use passive listener for better performance
+    window.addEventListener('scroll', handleScroll, { passive: true });
   }
 
   /**
