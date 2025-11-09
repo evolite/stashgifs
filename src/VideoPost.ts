@@ -15,9 +15,7 @@ const FAVORITE_TAG_NAME = 'StashGifs Favorite';
 const RATING_MAX_STARS = 10;
 const RATING_MIN_STARS = 0;
 const RATING_DIALOG_MAX_WIDTH = 900;
-const RATING_DIALOG_MIN_WIDTH = 200;
-const RATING_DIALOG_DEFAULT_PADDING = 32;
-const RATING_DIALOG_MIN_PADDING = 16;
+const RATING_DIALOG_MIN_WIDTH = 160;
 const OCOUNT_DIGIT_WIDTH_PX = 8; // Approximate pixels per digit for 14px font
 const OCOUNT_MIN_WIDTH_PX = 14;
 const OCOUNT_THREE_DIGIT_PADDING = 10;
@@ -199,9 +197,9 @@ export class VideoPost {
     chips.className = 'chips';
     chips.style.display = 'flex';
     chips.style.flexWrap = 'wrap';
-    chips.style.gap = '6px';
+    chips.style.gap = '4px';
     chips.style.margin = '0';
-    chips.style.padding = '8px 0';
+    chips.style.padding = '8px 16px';
     
     // Add performer chips
     if (this.data.marker.scene.performers && this.data.marker.scene.performers.length > 0) {
@@ -211,8 +209,48 @@ export class VideoPost {
       }
     }
 
-    // Add tag chip: show only the primary tag if available
-    if (this.data.marker.primary_tag && this.data.marker.primary_tag.id && this.data.marker.primary_tag.name) {
+    // Add tag chips: show all tags from the tags array
+    if (this.data.marker.tags && this.data.marker.tags.length > 0) {
+      // Create a set to track displayed tags and ensure no duplicates
+      const displayedTagIds = new Set<string>();
+      
+      // First, add primary tag if it exists and is valid (but skip if it's the Favorite tag)
+      if (this.data.marker.primary_tag && 
+          this.data.marker.primary_tag.id && 
+          this.data.marker.primary_tag.name &&
+          this.data.marker.primary_tag.name !== FAVORITE_TAG_NAME) {
+        const chip = this.createTagChip(this.data.marker.primary_tag);
+        chips.appendChild(chip);
+        displayedTagIds.add(this.data.marker.primary_tag.id);
+      }
+      
+      // Then, add all other tags from the tags array
+      for (const tag of this.data.marker.tags) {
+        // Skip if tag is invalid or already displayed
+        if (!tag || !tag.id || !tag.name || displayedTagIds.has(tag.id)) {
+          continue;
+        }
+        
+        // Skip if this tag is the same as the primary tag
+        if (this.data.marker.primary_tag && 
+            this.data.marker.primary_tag.id === tag.id) {
+          continue;
+        }
+        
+        // Skip the StashGifs Favorite tag (already represented by heart button)
+        if (tag.name === FAVORITE_TAG_NAME) {
+          continue;
+        }
+        
+        const chip = this.createTagChip(tag);
+        chips.appendChild(chip);
+        displayedTagIds.add(tag.id);
+      }
+    } else if (this.data.marker.primary_tag && 
+               this.data.marker.primary_tag.id && 
+               this.data.marker.primary_tag.name &&
+               this.data.marker.primary_tag.name !== FAVORITE_TAG_NAME) {
+      // Fallback: if tags array is empty but primary tag exists, show it (unless it's Favorite tag)
       const chip = this.createTagChip(this.data.marker.primary_tag);
       chips.appendChild(chip);
     }
@@ -230,32 +268,66 @@ export class VideoPost {
     chip.href = this.getPerformerLink(performer.id);
     chip.target = '_blank';
     chip.rel = 'noopener noreferrer';
-    chip.style.padding = '4px 10px';
-    chip.style.fontSize = '13px';
+    chip.style.padding = '2px 8px';
+    chip.style.fontSize = '12px';
     chip.style.lineHeight = '1.4';
-    chip.style.gap = '6px';
+    chip.style.gap = '4px';
     chip.style.transition = 'opacity 0.2s ease';
     chip.style.cursor = 'pointer';
     
-    // Add click handler to filter by performer
-    chip.addEventListener('click', (e) => {
+    // Handler function to filter by performer
+    const handleClick = () => {
       if (this.onPerformerChipClick) {
-        e.preventDefault();
-        e.stopPropagation();
         const performerId = parseInt(performer.id, 10);
         if (!Number.isNaN(performerId)) {
           this.onPerformerChipClick(performerId, performer.name);
         }
       }
-    });
+    };
+    
+    // Detect mobile device
+    const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+    
+    if (isMobile) {
+      // Mobile: use touchend for immediate response, prevent click from firing
+      let touchHandled = false;
+      
+      chip.addEventListener('touchend', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        touchHandled = true;
+        handleClick();
+        // Reset flag after a short delay to allow for potential click event
+        setTimeout(() => { touchHandled = false; }, 300);
+      }, { passive: false });
+      
+      // Click handler as fallback (shouldn't fire if touchend worked, but keep for compatibility)
+      chip.addEventListener('click', (e) => {
+        if (touchHandled) {
+          e.preventDefault();
+          e.stopPropagation();
+          return;
+        }
+        e.preventDefault();
+        e.stopPropagation();
+        handleClick();
+      });
+    } else {
+      // Desktop: use simple click handler
+      chip.addEventListener('click', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        handleClick();
+      });
+    }
     
     if (performer.image_path) {
       const avatar = document.createElement('img');
       avatar.className = 'chip__avatar';
       avatar.src = performer.image_path.startsWith('http') ? performer.image_path : `${window.location.origin}${performer.image_path}`;
       avatar.alt = performer.name;
-      avatar.style.width = '16px';
-      avatar.style.height = '16px';
+      avatar.style.width = '14px';
+      avatar.style.height = '14px';
       chip.appendChild(avatar);
     }
     chip.appendChild(document.createTextNode(performer.name));
@@ -271,23 +343,57 @@ export class VideoPost {
     chip.href = this.getTagLink(tag.id);
     chip.target = '_blank';
     chip.rel = 'noopener noreferrer';
-    chip.style.padding = '4px 10px';
-    chip.style.fontSize = '13px';
+    chip.style.padding = '2px 8px';
+    chip.style.fontSize = '12px';
     chip.style.lineHeight = '1.4';
     chip.style.transition = 'opacity 0.2s ease';
     chip.style.cursor = 'pointer';
     
-    // Add click handler to filter by tag
-    chip.addEventListener('click', (e) => {
+    // Handler function to filter by tag
+    const handleClick = () => {
       if (this.onTagChipClick) {
-        e.preventDefault();
-        e.stopPropagation();
         const tagId = parseInt(tag.id, 10);
         if (!Number.isNaN(tagId)) {
           this.onTagChipClick(tagId, tag.name);
         }
       }
-    });
+    };
+    
+    // Detect mobile device
+    const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+    
+    if (isMobile) {
+      // Mobile: use touchend for immediate response, prevent click from firing
+      let touchHandled = false;
+      
+      chip.addEventListener('touchend', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        touchHandled = true;
+        handleClick();
+        // Reset flag after a short delay to allow for potential click event
+        setTimeout(() => { touchHandled = false; }, 300);
+      }, { passive: false });
+      
+      // Click handler as fallback (shouldn't fire if touchend worked, but keep for compatibility)
+      chip.addEventListener('click', (e) => {
+        if (touchHandled) {
+          e.preventDefault();
+          e.stopPropagation();
+          return;
+        }
+        e.preventDefault();
+        e.stopPropagation();
+        handleClick();
+      });
+    } else {
+      // Desktop: use simple click handler
+      chip.addEventListener('click', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        handleClick();
+      });
+    }
     
     chip.appendChild(document.createTextNode(tag.name));
     return chip;
@@ -822,7 +928,10 @@ export class VideoPost {
     this.ratingDialog.classList.add('rating-dialog--open');
     this.ratingDisplayButton?.setAttribute('aria-expanded', 'true');
     this.ratingWrapper?.classList.add('rating-control--open');
-    this.syncRatingDialogLayout();
+    // Use requestAnimationFrame to ensure DOM is ready before measuring
+    requestAnimationFrame(() => {
+      this.syncRatingDialogLayout();
+    });
     document.addEventListener('mousedown', this.ratingOutsideClickHandler);
     document.addEventListener('touchstart', this.ratingOutsideClickHandler);
     document.addEventListener('keydown', this.ratingKeydownHandler);
@@ -999,21 +1108,51 @@ export class VideoPost {
     const wrapperRect = this.ratingWrapper.getBoundingClientRect();
     if (!cardRect.width || !wrapperRect.width) return;
 
-    const footer = this.footer || this.container.querySelector('.video-post__footer') as HTMLElement;
-    let horizontalPadding = RATING_DIALOG_DEFAULT_PADDING;
-    if (footer) {
-      const footerStyles = window.getComputedStyle(footer);
-      const paddingLeft = parseFloat(footerStyles.paddingLeft || '0');
-      const paddingRight = parseFloat(footerStyles.paddingRight || '0');
-      horizontalPadding = Math.max(RATING_DIALOG_MIN_PADDING, Math.round(paddingLeft + paddingRight));
+    // Calculate exact width needed for stars dynamically
+    let starsWidth = 0;
+    if (this.ratingStarButtons.length > 0) {
+      // Measure actual width of all star buttons combined
+      this.ratingStarButtons.forEach((starBtn) => {
+        const rect = starBtn.getBoundingClientRect();
+        starsWidth += rect.width;
+      });
+    } else {
+      // Fallback: use container scrollWidth if buttons aren't available yet
+      const starsContainer = dialog.querySelector('.rating-dialog__stars') as HTMLElement;
+      if (starsContainer) {
+        starsWidth = starsContainer.scrollWidth;
+      } else {
+        // Final fallback: estimate based on star count
+        starsWidth = 10 * 24; // 10 stars * ~24px each
+      }
     }
+    
+    // No padding or border - just stars
+    const dialogWidth = starsWidth;
+    
+    // Ensure dialog fits within card bounds (with small margin)
+    const margin = 8; // Small margin from card edges
+    const maxWidth = cardRect.width - (margin * 2);
+    const finalWidth = Math.min(dialogWidth, maxWidth);
+    
+    this.ratingWrapper.style.setProperty('--rating-dialog-width', `${finalWidth}px`);
 
-    const availableWidth = Math.max(RATING_DIALOG_MIN_WIDTH, Math.floor(cardRect.width - horizontalPadding));
-    const clampedWidth = Math.min(availableWidth, RATING_DIALOG_MAX_WIDTH);
-    this.ratingWrapper.style.setProperty('--rating-dialog-width', `${clampedWidth}px`);
-
-    const diffRight = cardRect.right - wrapperRect.right;
-    this.ratingWrapper.style.setProperty('--rating-dialog-right', `${-diffRight}px`);
+    // Center the dialog above the button, but keep it within card bounds
+    const wrapperCenter = wrapperRect.left + (wrapperRect.width / 2);
+    const dialogCenter = finalWidth / 2;
+    let leftPosition = wrapperCenter - dialogCenter;
+    
+    // Ensure dialog stays within card bounds
+    const minLeft = cardRect.left + margin;
+    const maxLeft = cardRect.right - finalWidth - margin;
+    
+    leftPosition = Math.max(minLeft, Math.min(maxLeft, leftPosition));
+    
+    // Convert to relative position from rating wrapper
+    const relativeLeft = leftPosition - wrapperRect.left;
+    
+    this.ratingWrapper.style.setProperty('--rating-dialog-left', `${relativeLeft}px`);
+    this.ratingWrapper.style.setProperty('--rating-dialog-right', 'auto');
   }
 
   /**

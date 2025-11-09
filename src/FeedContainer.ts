@@ -209,6 +209,31 @@ export class FeedContainer {
     headerInner.style.boxSizing = 'border-box'; // Ensure consistent box model
     headerInner.style.flex = '1 1 auto'; // Ensure it fills available space in flex container
 
+    // Logo container with transparent box
+    const brandContainer = document.createElement('div');
+    brandContainer.style.display = 'inline-flex';
+    brandContainer.style.alignItems = 'center';
+    brandContainer.style.height = '36px';
+    brandContainer.style.padding = '0 14px';
+    brandContainer.style.borderRadius = '10px';
+    brandContainer.style.border = '1px solid rgba(255,255,255,0.12)';
+    brandContainer.style.background = 'rgba(28, 28, 30, 0.6)';
+    brandContainer.style.cursor = 'pointer';
+    brandContainer.style.transition = 'background 0.2s ease, border-color 0.2s ease, opacity 0.2s ease';
+    brandContainer.title = 'Click to refresh feed';
+    
+    // Hover effect on container
+    brandContainer.addEventListener('mouseenter', () => {
+      brandContainer.style.background = 'rgba(28, 28, 30, 0.8)';
+      brandContainer.style.borderColor = 'rgba(255,255,255,0.16)';
+      brand.style.opacity = '0.9';
+    });
+    brandContainer.addEventListener('mouseleave', () => {
+      brandContainer.style.background = 'rgba(28, 28, 30, 0.6)';
+      brandContainer.style.borderColor = 'rgba(255,255,255,0.12)';
+      brand.style.opacity = '1';
+    });
+    
     const brand = document.createElement('div');
     brand.textContent = 'stashgifs';
     brand.style.fontWeight = '700';
@@ -216,21 +241,13 @@ export class FeedContainer {
     brand.style.color = '#F5C518';
     brand.style.fontSize = '17px';
     brand.style.lineHeight = '1.2';
-    brand.style.cursor = 'pointer';
     brand.style.userSelect = 'none';
     brand.style.transition = 'opacity 0.2s ease';
-    brand.title = 'Click to refresh feed';
     
-    // Hover effect
-    brand.addEventListener('mouseenter', () => {
-      brand.style.opacity = '0.8';
-    });
-    brand.addEventListener('mouseleave', () => {
-      brand.style.opacity = '1';
-    });
+    brandContainer.appendChild(brand);
     
     // Click to scroll to top
-    brand.addEventListener('click', () => {
+    brandContainer.addEventListener('click', () => {
       try {
         // Prefer scrolling the window
         window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -251,7 +268,7 @@ export class FeedContainer {
     
     // ensure smoother animation
     header.style.willChange = 'transform, opacity';
-    headerInner.appendChild(brand);
+    headerInner.appendChild(brandContainer);
 
     // Search area - constrained to grid column
     const searchArea = document.createElement('div');
@@ -286,9 +303,35 @@ export class FeedContainer {
     inputWrapper.style.boxSizing = 'border-box';
     inputWrapper.style.marginRight = '0'; // Ensure no right margin that could create gap
 
+    // Random placeholder selection
+    const placeholders = [
+      'Discover your stash',
+      'Explore your collection',
+      'Browse your stash',
+      'Find your favorites',
+      'Search your stash',
+      'Explore content',
+      'Find what you want',
+      'Browse content',
+      'What are you looking for?',
+      'Start exploring...',
+      'Find your next favorite',
+      'What catches your eye?',
+      'Dive into your collection',
+      'Uncover hidden gems',
+      'What\'s on your mind?',
+      'Go on an adventure',
+      'Find something amazing',
+      'What sparks your interest?',
+      'Discover something new',
+      'Let\'s explore together',
+      'Find your perfect match',
+    ];
+    const randomPlaceholder = placeholders[Math.floor(Math.random() * placeholders.length)];
+
     const queryInput = document.createElement('input');
     queryInput.type = 'text';
-    queryInput.placeholder = 'Search tags, performers, or apply saved filters…';
+    queryInput.placeholder = randomPlaceholder;
     queryInput.className = 'feed-filters__input';
     queryInput.style.width = '100%';
     queryInput.style.minWidth = '0';
@@ -509,26 +552,86 @@ export class FeedContainer {
           }
           
           // Saved Filters section - MOVED TO TOP
+          // Always show Favorites first, then saved filters
+          const savedLabel = document.createElement('div');
+          savedLabel.textContent = 'SAVED FILTERS';
+          savedLabel.style.width = '100%';
+          savedLabel.style.fontSize = '11px';
+          savedLabel.style.fontWeight = '600';
+          savedLabel.style.textTransform = 'uppercase';
+          savedLabel.style.letterSpacing = '0.5px';
+          savedLabel.style.marginBottom = '12px';
+          savedLabel.style.marginTop = '8px';
+          savedLabel.style.color = 'rgba(255,255,255,0.6)';
+          contentContainer.appendChild(savedLabel);
+          
+          // Container for horizontal layout
+          const filtersContainer = document.createElement('div');
+          filtersContainer.style.display = 'flex';
+          filtersContainer.style.flexWrap = 'wrap';
+          filtersContainer.style.gap = '8px';
+          filtersContainer.style.width = '100%';
+          
+          // Add Favorites button first
+          const favoritesItem = document.createElement('button');
+          favoritesItem.style.display = 'inline-flex';
+          favoritesItem.style.alignItems = 'center';
+          favoritesItem.style.padding = '8px 16px';
+          favoritesItem.style.borderRadius = '12px';
+          favoritesItem.style.border = 'none';
+          favoritesItem.style.background = 'transparent';
+          favoritesItem.style.cursor = 'pointer';
+          favoritesItem.style.transition = 'background 0.2s ease';
+          favoritesItem.style.whiteSpace = 'nowrap';
+          
+          favoritesItem.addEventListener('mouseenter', () => {
+            favoritesItem.style.background = 'rgba(255, 255, 255, 0.08)';
+          });
+          favoritesItem.addEventListener('mouseleave', () => {
+            favoritesItem.style.background = 'transparent';
+          });
+          
+          const favoritesName = document.createElement('div');
+          favoritesName.textContent = 'Favorites';
+          favoritesName.style.fontSize = '15px';
+          favoritesName.style.fontWeight = '500';
+          favoritesName.style.color = '#FFFFFF';
+          
+          favoritesItem.appendChild(favoritesName);
+          
+          favoritesItem.addEventListener('click', async (e) => {
+            e.stopPropagation();
+            e.preventDefault();
+            // Clear saved filter and other selections
+            this.selectedSavedFilter = undefined;
+            this.selectedPerformerId = undefined;
+            this.selectedPerformerName = undefined;
+            
+            // Find the favorite tag and set it as the selected tag
+            try {
+              const favoriteTag = await this.api.findTagByName('StashGifs Favorite');
+              if (favoriteTag) {
+                this.selectedTagId = parseInt(favoriteTag.id, 10);
+                this.selectedTagName = 'Favorites';
+              } else {
+                console.error('Favorite tag not found');
+                this.selectedTagId = undefined;
+                this.selectedTagName = undefined;
+              }
+            } catch (error) {
+              console.error('Failed to load favorite tag', error);
+              this.selectedTagId = undefined;
+              this.selectedTagName = undefined;
+            }
+            this.closeSuggestions();
+            updateSearchBarDisplay();
+            apply();
+          });
+          
+          filtersContainer.appendChild(favoritesItem);
+          
+          // Then add saved filters
           if (savedFiltersCache.length > 0) {
-            const savedLabel = document.createElement('div');
-            savedLabel.textContent = 'SAVED FILTERS';
-            savedLabel.style.width = '100%';
-            savedLabel.style.fontSize = '11px';
-            savedLabel.style.fontWeight = '600';
-            savedLabel.style.textTransform = 'uppercase';
-            savedLabel.style.letterSpacing = '0.5px';
-            savedLabel.style.marginBottom = '12px';
-            savedLabel.style.marginTop = '8px';
-            savedLabel.style.color = 'rgba(255,255,255,0.6)';
-            contentContainer.appendChild(savedLabel);
-            
-            // Container for horizontal layout
-            const filtersContainer = document.createElement('div');
-            filtersContainer.style.display = 'flex';
-            filtersContainer.style.flexWrap = 'wrap';
-            filtersContainer.style.gap = '8px';
-            filtersContainer.style.width = '100%';
-            
             savedFiltersCache.forEach((f) => {
               const item = document.createElement('button');
               item.style.display = 'inline-flex';
@@ -572,17 +675,18 @@ export class FeedContainer {
               
               filtersContainer.appendChild(item);
             });
-            
-            contentContainer.appendChild(filtersContainer);
-            
-            // Add divider after saved filters
-            const divider1 = document.createElement('div');
-            divider1.style.width = '100%';
-            divider1.style.height = '1px';
-            divider1.style.background = 'rgba(255,255,255,0.08)';
-            divider1.style.margin = '16px 0';
-            contentContainer.appendChild(divider1);
           }
+          
+          // Always append filters container (contains Favorites at minimum)
+          contentContainer.appendChild(filtersContainer);
+          
+          // Add divider after saved filters
+          const divider1 = document.createElement('div');
+          divider1.style.width = '100%';
+          divider1.style.height = '1px';
+          divider1.style.background = 'rgba(255,255,255,0.08)';
+          divider1.style.margin = '16px 0';
+          contentContainer.appendChild(divider1);
           
           // Suggested Tags section
           const suggestedTagsLabel = document.createElement('div');
@@ -1027,7 +1131,8 @@ export class FeedContainer {
       // Saved filters section
       const term = trimmedText.toLowerCase();
       const matches = savedFiltersCache.filter((f) => f.name.toLowerCase().includes(term));
-      if (matches.length) {
+      const shouldShowFavorites = term === '' || term.includes('favor');
+      if (matches.length || shouldShowFavorites) {
         if (validItems.length > 0) {
           const divider = document.createElement('div');
           divider.style.width = '100%';
@@ -1055,6 +1160,67 @@ export class FeedContainer {
         filtersContainer.style.flexWrap = 'wrap';
         filtersContainer.style.gap = '8px';
         filtersContainer.style.width = '100%';
+        
+        // Add Favorites if search term matches
+        const searchTermLower = term.toLowerCase();
+        if (searchTermLower === '' || searchTermLower.includes('favor')) {
+          const favoritesItem = document.createElement('button');
+          favoritesItem.style.display = 'inline-flex';
+          favoritesItem.style.alignItems = 'center';
+          favoritesItem.style.padding = '8px 16px';
+          favoritesItem.style.borderRadius = '12px';
+          favoritesItem.style.border = 'none';
+          favoritesItem.style.background = 'transparent';
+          favoritesItem.style.cursor = 'pointer';
+          favoritesItem.style.transition = 'background 0.2s ease';
+          favoritesItem.style.whiteSpace = 'nowrap';
+          
+          favoritesItem.addEventListener('mouseenter', () => {
+            favoritesItem.style.background = 'rgba(255, 255, 255, 0.08)';
+          });
+          favoritesItem.addEventListener('mouseleave', () => {
+            favoritesItem.style.background = 'transparent';
+          });
+          
+          const favoritesName = document.createElement('div');
+          favoritesName.textContent = 'Favorites';
+          favoritesName.style.fontSize = '15px';
+          favoritesName.style.fontWeight = '500';
+          favoritesName.style.color = '#FFFFFF';
+          
+          favoritesItem.appendChild(favoritesName);
+          
+          favoritesItem.addEventListener('click', async (e) => {
+            e.stopPropagation();
+            e.preventDefault();
+            // Clear saved filter and other selections
+            this.selectedSavedFilter = undefined;
+            this.selectedPerformerId = undefined;
+            this.selectedPerformerName = undefined;
+            
+            // Find the favorite tag and set it as the selected tag
+            try {
+              const favoriteTag = await this.api.findTagByName('StashGifs Favorite');
+              if (favoriteTag) {
+                this.selectedTagId = parseInt(favoriteTag.id, 10);
+                this.selectedTagName = 'Favorites';
+              } else {
+                console.error('Favorite tag not found');
+                this.selectedTagId = undefined;
+                this.selectedTagName = undefined;
+              }
+            } catch (error) {
+              console.error('Failed to load favorite tag', error);
+              this.selectedTagId = undefined;
+              this.selectedTagName = undefined;
+            }
+            this.closeSuggestions();
+            updateSearchBarDisplay();
+            apply();
+          });
+          
+          filtersContainer.appendChild(favoritesItem);
+        }
         
         matches.forEach((f) => {
           const item = document.createElement('button');
@@ -1337,6 +1503,12 @@ export class FeedContainer {
     defaultOpt.textContent = 'Saved marker filters…';
     savedSelect.appendChild(defaultOpt);
 
+    // Add Favorites preset option at the beginning
+    const favoritesOpt = document.createElement('option');
+    favoritesOpt.value = '__favorites__';
+    favoritesOpt.textContent = 'Favorites';
+    savedSelect.appendChild(favoritesOpt);
+
     // Cache saved filters and populate select
     let savedFiltersCache: Array<{ id: string; name: string }> = [];
     this.api.fetchSavedMarkerFilters().then((items) => {
@@ -1438,17 +1610,43 @@ export class FeedContainer {
     };
 
     // Apply immediately when selecting a saved filter
-    savedSelect.addEventListener('change', () => {
+    savedSelect.addEventListener('change', async () => {
       if (savedSelect.value) {
-        const match = savedFiltersCache.find((f) => f.id === savedSelect.value);
-        if (match) {
-          this.selectedSavedFilter = { id: match.id, name: match.name };
+        // Handle Favorites preset
+        if (savedSelect.value === '__favorites__') {
+          // Clear saved filter and other selections
+          this.selectedSavedFilter = undefined;
+          this.selectedPerformerId = undefined;
+          this.selectedPerformerName = undefined;
+          
+          // Find the favorite tag and set it as the selected tag
+          try {
+            const favoriteTag = await this.api.findTagByName('StashGifs Favorite');
+            if (favoriteTag) {
+              this.selectedTagId = parseInt(favoriteTag.id, 10);
+              this.selectedTagName = 'Favorites';
+            } else {
+              console.error('Favorite tag not found');
+              this.selectedTagId = undefined;
+              this.selectedTagName = undefined;
+            }
+          } catch (error) {
+            console.error('Failed to load favorite tag', error);
+            this.selectedTagId = undefined;
+            this.selectedTagName = undefined;
+          }
+        } else {
+          // Handle regular saved filter
+          const match = savedFiltersCache.find((f) => f.id === savedSelect.value);
+          if (match) {
+            this.selectedSavedFilter = { id: match.id, name: match.name };
+          }
+          // Clear tag and performer selections when a saved filter is chosen
+          this.selectedTagId = undefined;
+          this.selectedTagName = undefined;
+          this.selectedPerformerId = undefined;
+          this.selectedPerformerName = undefined;
         }
-        // Clear tag and performer selections when a saved filter is chosen
-        this.selectedTagId = undefined;
-        this.selectedTagName = undefined;
-        this.selectedPerformerId = undefined;
-        this.selectedPerformerName = undefined;
       } else {
         this.selectedSavedFilter = undefined;
       }
@@ -1466,12 +1664,21 @@ export class FeedContainer {
       // Show the active search term in the search bar
       if (this.selectedTagName) {
         queryInput.value = this.selectedTagName;
+        // If it's Favorites, select the Favorites option in the dropdown
+        if (this.selectedTagName === 'Favorites') {
+          savedSelect.value = '__favorites__';
+        } else {
+          savedSelect.value = '';
+        }
       } else if (this.selectedPerformerName) {
         queryInput.value = this.selectedPerformerName;
+        savedSelect.value = '';
       } else if (this.selectedSavedFilter) {
         queryInput.value = this.selectedSavedFilter.name;
+        savedSelect.value = this.selectedSavedFilter.id;
       } else {
         queryInput.value = '';
+        savedSelect.value = '';
       }
       // Hide tag header since we're showing it in the search bar
       tagHeader.style.display = 'none';

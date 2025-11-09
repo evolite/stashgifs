@@ -402,8 +402,8 @@
 .rating-control {
   position: relative;
   display: inline-flex;
-  --rating-dialog-width: 240px;
-  --rating-dialog-right: 0px;
+  --rating-dialog-width: 256px;
+  --rating-dialog-left: 50%;
 }
 
 .rating-control--open .icon-btn--rating {
@@ -463,23 +463,23 @@
 
 .rating-dialog {
   position: absolute;
-  bottom: calc(100% + 8px);
-  right: var(--rating-dialog-right, 0);
-  min-width: var(--rating-dialog-width, 220px);
-  width: var(--rating-dialog-width, 220px);
-  background: var(--color-surface);
-  backdrop-filter: blur(20px) saturate(180%);
-  -webkit-backdrop-filter: blur(20px) saturate(180%);
-  border: 1px solid var(--color-separator);
-  border-radius: 16px;
-  box-shadow: var(--shadow-prominent);
-  padding: 12px 16px;
+  bottom: calc(100% + 6px);
+  left: var(--rating-dialog-left, 0);
+  right: auto;
+  width: var(--rating-dialog-width, 256px);
+  max-width: 100%;
+  background: transparent;
+  border: none;
+  border-radius: 0;
+  box-shadow: none;
+  padding: 0;
   z-index: 200;
   opacity: 0;
   transform: translateY(4px) scale(0.96);
   pointer-events: none;
   transition: opacity 0.2s cubic-bezier(0.2, 0, 0, 1), 
               transform 0.2s cubic-bezier(0.2, 0, 0, 1);
+  box-sizing: border-box;
 }
 
 .rating-dialog--open {
@@ -497,24 +497,27 @@
   display: flex;
   flex-wrap: nowrap;
   align-items: center;
-  justify-content: space-between;
-  gap: 2px;
-  padding: 4px 0;
+  justify-content: flex-start;
+  gap: 0;
+  padding: 0;
+  width: fit-content;
 }
 
 .rating-dialog__star {
   width: auto;
-  height: 36px;
-  flex: 1;
+  height: 24px;
+  min-width: 20px;
+  flex: 0 0 auto;
   border: none;
   background: transparent;
   color: rgba(255, 255, 255, 0.4);
-  font-size: 1.4rem;
+  font-size: 1rem;
   line-height: 1;
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
+  padding: 0 2px;
   transition: transform 0.2s cubic-bezier(0.2, 0, 0, 1), 
               color 0.2s ease;
   border-radius: 6px;
@@ -621,17 +624,33 @@
   gap: var(--spacing-sm);
   padding: var(--spacing-sm) var(--spacing-md);
   border-radius: 999px;
-  background: var(--color-accent-weaker);
-  border: 1px solid var(--color-accent-weak);
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.12);
   color: var(--color-text-primary);
   font-size: var(--font-footnote);
+  font-weight: 500;
   line-height: var(--line-height-tight);
   text-decoration: none;
-  transition: opacity 0.2s ease;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+  min-height: 32px;
+  min-width: 32px;
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
 }
 
 .chip:hover {
-  opacity: 0.8;
+  background: rgba(255, 255, 255, 0.12);
+  border-color: rgba(255, 255, 255, 0.18);
+  transform: translateY(-1px);
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.15);
+}
+
+.chip:active {
+  transform: translateY(0);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
 }
 
 .chip__avatar {
@@ -639,6 +658,8 @@
   height: var(--spacing-lg);
   border-radius: 50%;
   object-fit: cover;
+  border: 1.5px solid rgba(255, 255, 255, 0.2);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
 }
 
 /* Icon button */
@@ -734,6 +755,20 @@
   .chip {
     font-size: var(--font-caption);
     padding: var(--spacing-xs) var(--spacing-sm);
+  }
+  
+  /* Rating dialog mobile optimizations */
+  .rating-dialog {
+    padding: 3px 6px;
+    max-width: calc(100vw - 24px);
+    bottom: calc(100% + 4px);
+  }
+  
+  .rating-dialog__star {
+    height: 20px;
+    font-size: 0.85rem;
+    min-width: 18px;
+    padding: 0 1px;
   }
 }
 
