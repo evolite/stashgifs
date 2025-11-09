@@ -21,14 +21,6 @@ export class NativeVideoPlayer {
   private readyResolver?: () => void;
   private readyPromise: Promise<void>;
   private errorHandled: boolean = false;
-  
-  // Touch state tracking for scroll detection
-  private touchStartX: number = 0;
-  private touchStartY: number = 0;
-  private touchStartTime: number = 0;
-  private isScrolling: boolean = false;
-  private readonly touchMoveThreshold: number = 10; // pixels
-  private readonly touchDurationThreshold: number = 300; // milliseconds
 
   constructor(container: HTMLElement, videoUrl: string, options?: {
     autoplay?: boolean;
@@ -62,6 +54,7 @@ export class NativeVideoPlayer {
 
     this.readyPromise = new Promise<void>((resolve) => { this.readyResolver = resolve; });
 
+    // Note: startTime is intentionally ignored so videos resume from their natural buffered position.
     this.createVideoElement(videoUrl, {
       autoplay: options?.autoplay,
       muted: options?.muted,
@@ -100,23 +93,12 @@ export class NativeVideoPlayer {
     this.videoElement.setAttribute('x5-playsinline', 'true'); // Android X5 browser
     this.videoElement.setAttribute('x-webkit-airplay', 'allow'); // AirPlay support
     
-    
-    // Set start time if provided
-    if (options?.startTime !== undefined) {
-      const setStartTime = () => {
-        this.videoElement.currentTime = options.startTime!;
-      };
-      this.videoElement.addEventListener('loadedmetadata', setStartTime, { once: true });
-      // Also try when canplay is ready
-      this.videoElement.addEventListener('canplay', setStartTime, { once: true });
-    }
-    
-    // Handle end time if provided (only if endTime > startTime + small tolerance)
-    // Loop back to startTime when reaching endTime
-    if (options?.endTime !== undefined && (options.startTime === undefined || options.endTime > options.startTime + 0.25)) {
+    // Handle end time if provided (only if endTime is greater than a small tolerance)
+    // Loop back to 0 when reaching endTime
+    if (options?.endTime !== undefined && options.endTime > 0.25) {
       this.videoElement.addEventListener('timeupdate', () => {
         if (this.videoElement.currentTime >= options.endTime!) {
-          this.videoElement.currentTime = options.startTime || 0;
+          this.videoElement.currentTime = 0;
           // Continue playing if it was playing
           if (!this.videoElement.paused) {
             this.videoElement.play().catch(() => {});
@@ -276,68 +258,9 @@ export class NativeVideoPlayer {
       this.seekTo(parseFloat(target.value));
     });
 
-    // Click/touch video to play/pause (important for mobile when autoplay fails)
-    // On mobile, use touch events with scroll detection to prevent accidental pauses
-    const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
-    
-    if (isMobile) {
-      // Touch event handlers with scroll detection
-      this.videoElement.addEventListener('touchstart', (e) => {
-        const touch = e.touches[0];
-        if (touch) {
-          this.touchStartX = touch.clientX;
-          this.touchStartY = touch.clientY;
-          this.touchStartTime = Date.now();
-          this.isScrolling = false;
-        }
-      }, { passive: true });
-      
-      this.videoElement.addEventListener('touchmove', (e) => {
-        if (e.touches.length > 0) {
-          const touch = e.touches[0];
-          const deltaX = Math.abs(touch.clientX - this.touchStartX);
-          const deltaY = Math.abs(touch.clientY - this.touchStartY);
-          
-          // If touch moved more than threshold, consider it scrolling
-          if (deltaX > this.touchMoveThreshold || deltaY > this.touchMoveThreshold) {
-            this.isScrolling = true;
-          }
-        }
-      }, { passive: true });
-      
-      this.videoElement.addEventListener('touchend', (e) => {
-        const touch = e.changedTouches[0];
-        if (!touch) return;
-        
-        const deltaX = Math.abs(touch.clientX - this.touchStartX);
-        const deltaY = Math.abs(touch.clientY - this.touchStartY);
-        const touchDuration = Date.now() - this.touchStartTime;
-        const totalDistance = Math.sqrt(deltaX * deltaX + deltaY * deltaY);
-        
-        // Only toggle play/pause if:
-        // 1. Not scrolling (movement < threshold)
-        // 2. Touch duration is reasonable (not a long press)
-        // 3. Total distance moved is within threshold
-        if (!this.isScrolling && 
-            totalDistance < this.touchMoveThreshold && 
-            touchDuration < this.touchDurationThreshold) {
-          e.preventDefault(); // Prevent double-firing with click
-          this.togglePlay();
-        }
-        
-        // Reset state
-        this.isScrolling = false;
-        this.touchStartX = 0;
-        this.touchStartY = 0;
-        this.touchStartTime = 0;
-      });
-      
-      // Disable click handler on mobile since touchend handles it
-      // This prevents double-toggling
-    } else {
-      // Desktop: use simple click handler
-      this.videoElement.addEventListener('click', () => this.togglePlay());
-    }
+    // Video element click/touch handlers removed
+    // Play/pause is now only controlled via the play button in the controls
+    // Videos will still pause automatically when removed from viewport (handled by VisibilityManager)
   }
 
   private updatePlayButton(): void {

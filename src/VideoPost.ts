@@ -289,27 +289,71 @@ export class VideoPost {
     const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
     
     if (isMobile) {
-      // Mobile: use touchend for immediate response, prevent click from firing
-      let touchHandled = false;
+      // Touch state tracking for scroll detection (same as player)
+      let touchStartX: number = 0;
+      let touchStartY: number = 0;
+      let touchStartTime: number = 0;
+      let isScrolling: boolean = false;
+      const touchMoveThreshold: number = 10; // pixels
+      const touchDurationThreshold: number = 300; // milliseconds
+      
+      chip.addEventListener('touchstart', (e) => {
+        const touch = e.touches[0];
+        if (touch) {
+          touchStartX = touch.clientX;
+          touchStartY = touch.clientY;
+          touchStartTime = Date.now();
+          isScrolling = false;
+        }
+      }, { passive: true });
+      
+      chip.addEventListener('touchmove', (e) => {
+        if (e.touches.length > 0) {
+          const touch = e.touches[0];
+          const deltaX = Math.abs(touch.clientX - touchStartX);
+          const deltaY = Math.abs(touch.clientY - touchStartY);
+          
+          // If touch moved more than threshold, consider it scrolling
+          if (deltaX > touchMoveThreshold || deltaY > touchMoveThreshold) {
+            isScrolling = true;
+          }
+        }
+      }, { passive: true });
       
       chip.addEventListener('touchend', (e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        touchHandled = true;
-        handleClick();
-        // Reset flag after a short delay to allow for potential click event
-        setTimeout(() => { touchHandled = false; }, 300);
+        const touch = e.changedTouches[0];
+        if (!touch) return;
+        
+        const deltaX = Math.abs(touch.clientX - touchStartX);
+        const deltaY = Math.abs(touch.clientY - touchStartY);
+        const touchDuration = Date.now() - touchStartTime;
+        const totalDistance = Math.sqrt(deltaX * deltaX + deltaY * deltaY);
+        
+        // Only trigger click if:
+        // 1. Not scrolling (movement < threshold)
+        // 2. Touch duration is reasonable (not a long press)
+        // 3. Total distance moved is within threshold
+        if (!isScrolling && 
+            totalDistance < touchMoveThreshold && 
+            touchDuration < touchDurationThreshold) {
+          e.preventDefault();
+          e.stopPropagation();
+          handleClick();
+        }
+        
+        // Reset state
+        isScrolling = false;
+        touchStartX = 0;
+        touchStartY = 0;
+        touchStartTime = 0;
       }, { passive: false });
       
       // Click handler as fallback (shouldn't fire if touchend worked, but keep for compatibility)
       chip.addEventListener('click', (e) => {
-        if (touchHandled) {
-          e.preventDefault();
-          e.stopPropagation();
-          return;
-        }
         e.preventDefault();
         e.stopPropagation();
+        // Only handle click if it wasn't already handled by touchend
+        // (touchend will have prevented default if it handled it)
         handleClick();
       });
     } else {
@@ -363,27 +407,71 @@ export class VideoPost {
     const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
     
     if (isMobile) {
-      // Mobile: use touchend for immediate response, prevent click from firing
-      let touchHandled = false;
+      // Touch state tracking for scroll detection (same as player)
+      let touchStartX: number = 0;
+      let touchStartY: number = 0;
+      let touchStartTime: number = 0;
+      let isScrolling: boolean = false;
+      const touchMoveThreshold: number = 10; // pixels
+      const touchDurationThreshold: number = 300; // milliseconds
+      
+      chip.addEventListener('touchstart', (e) => {
+        const touch = e.touches[0];
+        if (touch) {
+          touchStartX = touch.clientX;
+          touchStartY = touch.clientY;
+          touchStartTime = Date.now();
+          isScrolling = false;
+        }
+      }, { passive: true });
+      
+      chip.addEventListener('touchmove', (e) => {
+        if (e.touches.length > 0) {
+          const touch = e.touches[0];
+          const deltaX = Math.abs(touch.clientX - touchStartX);
+          const deltaY = Math.abs(touch.clientY - touchStartY);
+          
+          // If touch moved more than threshold, consider it scrolling
+          if (deltaX > touchMoveThreshold || deltaY > touchMoveThreshold) {
+            isScrolling = true;
+          }
+        }
+      }, { passive: true });
       
       chip.addEventListener('touchend', (e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        touchHandled = true;
-        handleClick();
-        // Reset flag after a short delay to allow for potential click event
-        setTimeout(() => { touchHandled = false; }, 300);
+        const touch = e.changedTouches[0];
+        if (!touch) return;
+        
+        const deltaX = Math.abs(touch.clientX - touchStartX);
+        const deltaY = Math.abs(touch.clientY - touchStartY);
+        const touchDuration = Date.now() - touchStartTime;
+        const totalDistance = Math.sqrt(deltaX * deltaX + deltaY * deltaY);
+        
+        // Only trigger click if:
+        // 1. Not scrolling (movement < threshold)
+        // 2. Touch duration is reasonable (not a long press)
+        // 3. Total distance moved is within threshold
+        if (!isScrolling && 
+            totalDistance < touchMoveThreshold && 
+            touchDuration < touchDurationThreshold) {
+          e.preventDefault();
+          e.stopPropagation();
+          handleClick();
+        }
+        
+        // Reset state
+        isScrolling = false;
+        touchStartX = 0;
+        touchStartY = 0;
+        touchStartTime = 0;
       }, { passive: false });
       
       // Click handler as fallback (shouldn't fire if touchend worked, but keep for compatibility)
       chip.addEventListener('click', (e) => {
-        if (touchHandled) {
-          e.preventDefault();
-          e.stopPropagation();
-          return;
-        }
         e.preventDefault();
         e.stopPropagation();
+        // Only handle click if it wasn't already handled by touchend
+        // (touchend will have prevented default if it handled it)
         handleClick();
       });
     } else {
@@ -1211,7 +1299,6 @@ export class VideoPost {
       this.player = new NativeVideoPlayer(playerContainer, sceneVideoUrl, {
         muted: false,
         autoplay: false,
-        startTime: this.data.startTime ?? this.data.marker.seconds,
         endTime: this.data.endTime ?? this.data.marker.end_seconds,
       });
 
@@ -1322,9 +1409,8 @@ export class VideoPost {
 
     try {
       this.player = new NativeVideoPlayer(playerContainer, videoUrl, {
-        muted: false,
+        muted: true,
         autoplay: false,
-        startTime: startTime ?? this.data.startTime ?? this.data.marker.seconds,
         endTime: endTime ?? this.data.endTime ?? this.data.marker.end_seconds,
       });
 
@@ -1335,6 +1421,10 @@ export class VideoPost {
       if (loading) loading.style.display = 'none';
 
       this.isLoaded = true;
+
+      if (this.visibilityManager && this.data.marker.id) {
+        this.visibilityManager.registerPlayer(this.data.marker.id, this.player);
+      }
     } catch (error) {
       console.error('VideoPost: Failed to create video player', {
         error,
