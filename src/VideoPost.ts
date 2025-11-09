@@ -129,7 +129,10 @@ export class VideoPost {
   private render(): void {
     this.container.className = 'video-post';
     this.container.dataset.postId = this.data.marker.id;
-    this.container.innerHTML = '';
+    // Clear container efficiently
+    while (this.container.firstChild) {
+      this.container.removeChild(this.container.firstChild);
+    }
 
     // Header with performers and tags
     const header = this.createHeader();
@@ -230,7 +233,9 @@ export class VideoPost {
     // Loading indicator for video
     const loading = document.createElement('div');
     loading.className = 'video-post__loading';
-    loading.innerHTML = '<div class="spinner"></div>';
+    const spinner = document.createElement('div');
+    spinner.className = 'spinner';
+    loading.appendChild(spinner);
     loading.style.display = this.isLoaded ? 'none' : 'flex';
     container.appendChild(loading);
     this.videoLoadingIndicator = loading;

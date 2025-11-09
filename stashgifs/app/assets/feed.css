@@ -225,9 +225,39 @@
   }
 }
 
+@keyframes suggestions-spin {
+  0% {
+    transform: rotate(0deg);
+  }
+  100% {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes suggestions-pulse {
+  0% {
+    opacity: 0.4;
+    transform: scaleX(0.3);
+    transform-origin: left;
+  }
+  50% {
+    opacity: 0.8;
+    transform: scaleX(0.7);
+    transform-origin: center;
+  }
+  100% {
+    opacity: 0.4;
+    transform: scaleX(0.3);
+    transform-origin: right;
+  }
+}
+
 /* Video Post */
 .video-post-wrapper {
   width: 100%;
+  /* Performance optimization: enable content-visibility for off-screen posts */
+  content-visibility: auto;
+  contain-intrinsic-size: auto 500px; /* Estimated height for layout stability */
 }
 
 .video-post {
@@ -239,6 +269,9 @@
   display: flex;
   flex-direction: column;
   /* No border - using shadow for depth instead */
+  /* Performance optimization: contain layout and paint */
+  contain: layout style paint;
+  will-change: scroll-position;
 }
 
 /* Post Header */
@@ -272,6 +305,10 @@
   overflow: hidden;
   border-top-left-radius: var(--feed-border-radius);
   border-top-right-radius: var(--feed-border-radius);
+  /* Performance optimization: contain layout and paint for video player */
+  contain: layout style paint;
+  /* Use transform for better GPU acceleration */
+  transform: translateZ(0);
 }
 
 /* Aspect Ratio Classes */
@@ -293,6 +330,9 @@
   height: 100%;
   object-fit: cover;
   display: block;
+  /* Performance optimization: use transform for better rendering */
+  transform: translateZ(0);
+  will-change: opacity;
 }
 
 .video-post__loading {

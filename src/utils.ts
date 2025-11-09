@@ -22,7 +22,21 @@ export function throttle<T extends (...args: any[]) => any>(
 /**
  * Debounce function calls
  */
-// Removed unused debounce helper
+export function debounce<T extends (...args: any[]) => any>(
+  func: T,
+  delay: number
+): (...args: Parameters<T>) => void {
+  let timeoutId: number | null = null;
+  return function (this: any, ...args: Parameters<T>) {
+    if (timeoutId !== null) {
+      clearTimeout(timeoutId);
+    }
+    timeoutId = window.setTimeout(() => {
+      func.apply(this, args);
+      timeoutId = null;
+    }, delay);
+  };
+}
 
 /**
  * Format duration in seconds to HH:MM:SS or MM:SS

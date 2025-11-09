@@ -2,8 +2,8 @@ id: stashgifs
 name: StashGifs
 metadata:
   description: A GIF-style vertical scroller interface for Stash.
-version: 1.4.0
-date: "2025-11-09 11:32:05"
+version: 2.0.0
+date: "2025-11-10 00:06:28"
 requires: []
 source_repository: https://anonymous.4open.science/api/repo/stashgifs-D783/file/index.yml
 files:

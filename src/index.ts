@@ -18,8 +18,18 @@ function init(): void {
   // Create feed container
   appContainer.className = 'feed-container';
 
-  // Clear any existing content
-  appContainer.innerHTML = '';
+  // Check if skeleton loaders already exist in the HTML (from initial page load)
+  const existingSkeletons = appContainer.querySelectorAll('.video-post-skeleton');
+  const hasExistingSkeletons = existingSkeletons.length > 0;
+  
+  // Only clear content if there are no existing skeletons or if structure doesn't match
+  // This preserves the skeleton loaders that were added to the HTML for immediate display
+  if (!hasExistingSkeletons) {
+    // Clear any existing content efficiently
+    while (appContainer.firstChild) {
+      appContainer.removeChild(appContainer.firstChild);
+    }
+  }
 
   try {
     // Initialize API (will use window.stash if available)

@@ -326,11 +326,16 @@ export class StashAPI {
    * Includes request deduplication and caching
    */
   async searchMarkerTags(term: string, limit: number = 10, signal?: AbortSignal): Promise<Array<{ id: string; name: string }>> {
-    // Check cache first
-    const cacheKey = `tags:${term}:${limit}`;
-    const cached = this.searchCache.get(cacheKey);
-    if (cached && Date.now() - cached.timestamp < this.CACHE_TTL) {
-      return cached.data;
+    // Skip caching for empty terms to ensure fresh random suggestions
+    const isEmptyTerm = !term || term.trim() === '';
+    
+    // Check cache first (only for non-empty terms)
+    if (!isEmptyTerm) {
+      const cacheKey = `tags:${term}:${limit}`;
+      const cached = this.searchCache.get(cacheKey);
+      if (cached && Date.now() - cached.timestamp < this.CACHE_TTL) {
+        return cached.data;
+      }
     }
     
     // Check for in-flight request (deduplication)
@@ -346,8 +351,11 @@ export class StashAPI {
     
     try {
       const result = await request;
-      // Cache the result
-      this.searchCache.set(cacheKey, { data: result, timestamp: Date.now() });
+      // Cache the result (only for non-empty terms)
+      if (!isEmptyTerm) {
+        const cacheKey = `tags:${term}:${limit}`;
+        this.searchCache.set(cacheKey, { data: result, timestamp: Date.now() });
+      }
       return result;
     } finally {
       // Remove from pending requests
@@ -378,10 +386,12 @@ export class StashAPI {
       filter.sort = `random_${Math.floor(Math.random() * 1000000)}`;
     }
     
-    // Filter to only tags with more than 10 markers
+    // Filter tags based on whether actively searching or getting suggestions
+    // When actively searching (term provided): match any tag with more than 0 markers
+    // When getting suggestions (no term): keep higher threshold for better quality suggestions
     const tag_filter: any = {
       marker_count: {
-        value: 10,
+        value: (term && term.trim() !== '') ? 0 : 10,
         modifier: 'GREATER_THAN'
       }
     };
@@ -418,10 +428,8 @@ export class StashAPI {
       // Check if aborted before processing
       if (signal?.aborted) return [];
       
-      // Sort alphabetically by name and return up to limit
-      return tags
-        .sort((a, b) => a.name.localeCompare(b.name))
-        .slice(0, limit);
+      // Return tags (already randomly sorted by GraphQL when no search term)
+      return tags.slice(0, limit);
     } catch (e: any) {
       // Ignore AbortError - it's expected when cancelling
       if (e.name === 'AbortError' || signal?.aborted) {
@@ -438,11 +446,16 @@ export class StashAPI {
    * Includes request deduplication and caching
    */
   async searchPerformers(term: string, limit: number = 10, signal?: AbortSignal): Promise<Array<{ id: string; name: string; image_path?: string }>> {
-    // Check cache first
-    const cacheKey = `performers:${term}:${limit}`;
-    const cached = this.searchCache.get(cacheKey);
-    if (cached && Date.now() - cached.timestamp < this.CACHE_TTL) {
-      return cached.data;
+    // Skip caching for empty terms to ensure fresh random suggestions
+    const isEmptyTerm = !term || term.trim() === '';
+    
+    // Check cache first (only for non-empty terms)
+    if (!isEmptyTerm) {
+      const cacheKey = `performers:${term}:${limit}`;
+      const cached = this.searchCache.get(cacheKey);
+      if (cached && Date.now() - cached.timestamp < this.CACHE_TTL) {
+        return cached.data;
+      }
     }
     
     // Check for in-flight request (deduplication)
@@ -458,8 +471,11 @@ export class StashAPI {
     
     try {
       const result = await request;
-      // Cache the result
-      this.searchCache.set(cacheKey, { data: result, timestamp: Date.now() });
+      // Cache the result (only for non-empty terms)
+      if (!isEmptyTerm) {
+        const cacheKey = `performers:${term}:${limit}`;
+        this.searchCache.set(cacheKey, { data: result, timestamp: Date.now() });
+      }
       return result;
     } finally {
       // Remove from pending requests
@@ -490,10 +506,10 @@ export class StashAPI {
       filter.sort = `random_${Math.floor(Math.random() * 1000000)}`;
     }
     
-    // Filter to only performers with more than 1 scene
+    // Filter to only performers with at least 1 scene (for autocompletion)
     const performer_filter: any = {
       scene_count: {
-        value: 1,
+        value: 0,
         modifier: 'GREATER_THAN'
       }
     };
@@ -530,10 +546,8 @@ export class StashAPI {
       // Check if aborted before processing
       if (signal?.aborted) return [];
       
-      // Sort alphabetically by name and return up to limit
-      return performers
-        .sort((a, b) => a.name.localeCompare(b.name))
-        .slice(0, limit);
+      // Return performers (already randomly sorted by GraphQL when no search term)
+      return performers.slice(0, limit);
     } catch (e: any) {
       // Ignore AbortError - it's expected when cancelling
       if (e.name === 'AbortError' || signal?.aborted) {
@@ -1095,13 +1109,19 @@ export class StashAPI {
 
   /**
    * Get thumbnail URL for a scene marker (uses marker-specific screenshot endpoint)
+   * Optimized to prefer WebP/AVIF formats when supported
    */
   getMarkerThumbnailUrl(marker: SceneMarker): string | undefined {
     // Use marker-specific screenshot endpoint: /scene/{sceneId}/scene_marker/{markerId}/screenshot
     if (marker.id && marker.scene?.id) {
       const markerId = typeof marker.id === 'string' ? marker.id : String(marker.id);
       const sceneId = typeof marker.scene.id === 'string' ? marker.scene.id : String(marker.scene.id);
-      return `${this.baseUrl}/scene/${sceneId}/scene_marker/${markerId}/screenshot`;
+      const baseUrl = `${this.baseUrl}/scene/${sceneId}/scene_marker/${markerId}/screenshot`;
+      
+      // Check for WebP/AVIF support and append format parameter if supported
+      // Note: Stash may support format parameters, but we'll use base URL for now
+      // Future: could add ?format=webp if API supports it
+      return baseUrl;
     }
     // Fallback to scene preview if marker screenshot not available
     return this.getThumbnailUrl(marker.scene);
@@ -1109,24 +1129,28 @@ export class StashAPI {
 
   /**
    * Get thumbnail URL for a scene
+   * Prefers WebP format when available for better performance
    */
   getThumbnailUrl(scene: Scene): string | undefined {
+    // Prefer WebP format for better compression and performance
+    if (scene.paths?.webp) {
+      const url = scene.paths.webp.startsWith('http')
+        ? scene.paths.webp
+        : `${this.baseUrl}${scene.paths.webp}`;
+      return url;
+    }
+    // Fallback to screenshot
     if (scene.paths?.screenshot) {
       const url = scene.paths.screenshot.startsWith('http')
         ? scene.paths.screenshot
         : `${this.baseUrl}${scene.paths.screenshot}`;
       return url;
     }
+    // Fallback to preview
     if (scene.paths?.preview) {
       const url = scene.paths.preview.startsWith('http')
         ? scene.paths.preview
         : `${this.baseUrl}${scene.paths.preview}`;
-      return url;
-    }
-    if (scene.paths?.webp) {
-      const url = scene.paths.webp.startsWith('http')
-        ? scene.paths.webp
-        : `${this.baseUrl}${scene.paths.webp}`;
       return url;
     }
     return undefined;

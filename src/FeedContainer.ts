@@ -9,7 +9,7 @@ import { VideoPost } from './VideoPost.js';
 import { NativeVideoPlayer } from './NativeVideoPlayer.js';
 import { VisibilityManager } from './VisibilityManager.js';
 import { FavoritesManager } from './FavoritesManager.js';
-import { throttle, isValidMediaUrl } from './utils.js';
+import { throttle, debounce, isValidMediaUrl } from './utils.js';
 
 const DEFAULT_SETTINGS: FeedSettings = {
   autoPlay: true, // Enable autoplay for markers
@@ -71,8 +71,8 @@ export class FeedContainer {
   private thumbnailQueue: Array<{ postId: string; thumbnail: HTMLImageElement; url: string; container: HTMLElement; distance: number }> = [];
   private thumbnailBatchActive: boolean = false;
   private thumbnailObserver?: IntersectionObserver;
-  private readonly thumbnailBatchSize: number = 3; // Load 3 thumbnails at a time
-  private readonly thumbnailBatchDelay: number = 200; // 200ms delay between batches
+  private readonly thumbnailBatchSize: number = 5; // Load 5 thumbnails at a time (increased from 3)
+  private readonly thumbnailBatchDelay: number = 100; // 100ms delay between batches (reduced from 200ms)
   private thumbnailLoadStarted: boolean = false;
   private readonly initialLoadLimit: number; // Set in constructor based on device
   private readonly subsequentLoadLimit: number = 20; // Load 20 items on subsequent loads
@@ -107,16 +107,30 @@ export class FeedContainer {
     this.postOrder = [];
     this.eagerPreloadedPosts = new Set();
 
-    // Create scroll container
-    this.scrollContainer = document.createElement('div');
-    this.scrollContainer.className = 'feed-scroll-container';
-    this.container.appendChild(this.scrollContainer);
+    // Check if container structure already exists (from initial HTML skeleton)
+    let existingScrollContainer = this.container.querySelector('.feed-scroll-container') as HTMLElement;
+    if (existingScrollContainer) {
+      this.scrollContainer = existingScrollContainer;
+    } else {
+      // Create scroll container
+      this.scrollContainer = document.createElement('div');
+      this.scrollContainer.className = 'feed-scroll-container';
+      this.container.appendChild(this.scrollContainer);
+    }
+    
     // Create header bar with unified search
     this.createHeaderBar();
-    // Create posts container (separate from filter bar so we don't wipe it)
-    this.postsContainer = document.createElement('div');
-    this.postsContainer.className = 'feed-posts';
-    this.scrollContainer.appendChild(this.postsContainer);
+    
+    // Check if posts container already exists
+    let existingPostsContainer = this.scrollContainer.querySelector('.feed-posts') as HTMLElement;
+    if (existingPostsContainer) {
+      this.postsContainer = existingPostsContainer;
+    } else {
+      // Create posts container (separate from filter bar so we don't wipe it)
+      this.postsContainer = document.createElement('div');
+      this.postsContainer.className = 'feed-posts';
+      this.scrollContainer.appendChild(this.postsContainer);
+    }
 
     // Initialize visibility manager
     this.visibilityManager = new VisibilityManager({
@@ -211,8 +225,13 @@ export class FeedContainer {
     const suggestions = document.querySelectorAll('.feed-filters__suggestions');
     suggestions.forEach((suggestion) => {
       const el = suggestion as HTMLElement;
-        el.style.display = 'none';
-        el.innerHTML = '';
+      // Hide panel first to prevent any flash of old content
+      el.style.display = 'none';
+      // Clear all content while hidden to ensure panel is empty when it opens next time
+      // Use removeChild for better performance than innerHTML
+      while (el.firstChild) {
+        el.removeChild(el.firstChild);
+      }
     });
     
     this.unlockBodyScroll();
@@ -432,6 +451,7 @@ export class FeedContainer {
     suggestions.style.bottom = '0';
     suggestions.style.zIndex = '1000';
     suggestions.style.display = 'none';
+    suggestions.style.flexDirection = 'column';
     suggestions.style.background = 'rgba(0, 0, 0, 0.85)';
     suggestions.style.backdropFilter = 'blur(20px) saturate(180%)';
     (suggestions.style as any).webkitBackdropFilter = 'blur(20px) saturate(180%)';
@@ -445,7 +465,15 @@ export class FeedContainer {
     document.body.appendChild(suggestions);
 
     // Append header to scroll container at the top (before posts)
-    this.scrollContainer.insertBefore(header, this.scrollContainer.firstChild);
+    // Check if header skeleton already exists (from initial HTML)
+    const existingHeader = this.scrollContainer.querySelector('.feed-header-bar');
+    if (existingHeader) {
+      // Replace existing header skeleton with real header
+      this.scrollContainer.replaceChild(header, existingHeader);
+    } else {
+      // Insert header before first child (posts container)
+      this.scrollContainer.insertBefore(header, this.scrollContainer.firstChild);
+    }
 
     // No need for paddingTop since header is sticky and inside scroll container
 
@@ -548,10 +576,14 @@ export class FeedContainer {
       }
     };
 
-    // Suggestions
-    let suggestTimeout: number | null = null;
+    // Suggestions with proper debouncing
     let suggestionsRequestId = 0;
     let suggestTerm = '';
+    
+    // Debounced suggestion fetcher (150ms delay)
+    const debouncedFetchSuggestions = debounce((text: string, forceShow: boolean) => {
+      fetchAndShowSuggestions(text, forceShow);
+    }, 150);
     
     const fetchAndShowSuggestions = async (text: string, forceShow: boolean = false) => {
       const trimmedText = text.trim();
@@ -564,10 +596,14 @@ export class FeedContainer {
 
       const ensureLatest = () => requestId === suggestionsRequestId;
 
+      // Early bailout check: if another request started, abort immediately
+      if (!ensureLatest()) {
+        return;
+      }
+
       const ensurePanelVisible = () => {
-        if (suggestions.style.display !== 'block') {
-          suggestions.style.display = 'block';
-        }
+        // Always show the panel when fetching suggestions
+        suggestions.style.display = 'flex';
         this.lockBodyScroll();
       };
 
@@ -712,10 +748,26 @@ export class FeedContainer {
         target.appendChild(emptyState);
       };
 
+      // Clear any existing containers BEFORE showing panel to prevent flash of old content
+      // Hide panel first, clear while hidden, then show with new content
+      // Check again after clearing to ensure we're still the latest request
+      suggestions.style.display = 'none';
+      while (suggestions.firstChild) {
+        suggestions.removeChild(suggestions.firstChild);
+      }
+      
+      // Critical check: if another request started during clearing, abort now
+      if (!ensureLatest()) {
+        return;
+      }
+      
+      // Now show the panel after clearing is complete
       ensurePanelVisible();
-
-      // Clear any existing containers to prevent duplicates
-      suggestions.innerHTML = '';
+      
+      // Final check before proceeding with DOM manipulation
+      if (!ensureLatest()) {
+        return;
+      }
 
       const container = document.createElement('div');
       container.style.display = 'flex';
@@ -735,32 +787,16 @@ export class FeedContainer {
       suggestions.scrollTop = 0;
 
       if (showDefault) {
-        // If preload isn't ready, fetch fresh data immediately for first load
-        if (this.preloadedTags.length === 0 || this.preloadedPerformers.length === 0) {
-          // Fetch fresh data immediately for instant display (reduced from 40 to 20)
-          try {
-            const [freshTags, freshPerformers] = await Promise.all([
-              this.api.searchMarkerTags('', 20),
-              this.api.searchPerformers('', 20)
-            ]);
-            if (!ensureLatest()) {
-              return;
-            }
-            this.preloadedTags = freshTags;
-            this.preloadedPerformers = freshPerformers;
-          } catch (error) {
-            console.warn('Failed to fetch initial suggestions', error);
-            if (!ensureLatest()) {
-              return;
-            }
-          }
-        } else {
-          if (!ensureLatest()) {
-            return;
-          }
+        // Clear container efficiently
+        while (container.firstChild) {
+          container.removeChild(container.firstChild);
         }
 
-        container.innerHTML = '';
+        // Show saved filters from cache immediately (no loading needed)
+        await this.loadSavedFiltersIfNeeded();
+        if (!ensureLatest()) {
+          return;
+        }
 
         const filtersSection = document.createElement('div');
         filtersSection.style.display = 'flex';
@@ -796,8 +832,7 @@ export class FeedContainer {
             apply();
         }));
 
-        // Load saved filters if needed
-        await this.loadSavedFiltersIfNeeded();
+        // Show saved filters from cache
         this.savedFiltersCache.forEach((filter) => {
           pillRow.appendChild(createPillButton(filter.name, () => {
             this.selectedSavedFilter = { id: filter.id, name: filter.name };
@@ -815,7 +850,108 @@ export class FeedContainer {
         filtersSection.appendChild(pillRow);
         container.appendChild(filtersSection);
 
-        const availableTags = this.preloadedTags
+        // Prepare loading animation section (only show if fetch takes > 200ms)
+        let loadingSection: HTMLElement | null = null;
+        let loadingTimeout: ReturnType<typeof setTimeout> | null = null;
+        let loadingSectionCreated = false;
+        
+        const showLoadingSkeletons = () => {
+          if (loadingSectionCreated) return; // Already shown
+          loadingSectionCreated = true;
+          
+          loadingSection = document.createElement('div');
+          loadingSection.style.display = 'flex';
+          loadingSection.style.flexDirection = 'column';
+          loadingSection.style.gap = '8px';
+          loadingSection.appendChild(createSectionLabel('Suggested Tags'));
+          
+          // Create 6 skeleton placeholders that match the list button style
+          for (let i = 0; i < 6; i++) {
+            const skeletonButton = document.createElement('div');
+            skeletonButton.style.width = '100%';
+            skeletonButton.style.display = 'flex';
+            skeletonButton.style.alignItems = 'center';
+            skeletonButton.style.gap = '12px';
+            skeletonButton.style.padding = '12px';
+            skeletonButton.style.borderRadius = '12px';
+            skeletonButton.style.background = 'transparent';
+            
+            // Leading circle skeleton
+            const leadingSkeleton = document.createElement('div');
+            leadingSkeleton.className = 'chip-skeleton';
+            leadingSkeleton.setAttribute('data-suggestion-skeleton', 'true');
+            leadingSkeleton.style.width = '36px';
+            leadingSkeleton.style.height = '36px';
+            leadingSkeleton.style.borderRadius = '50%';
+            leadingSkeleton.style.flexShrink = '0';
+            
+            // Text skeleton
+            const textSkeleton = document.createElement('div');
+            textSkeleton.className = 'chip-skeleton';
+            textSkeleton.setAttribute('data-suggestion-skeleton', 'true');
+            textSkeleton.style.height = '16px';
+            textSkeleton.style.borderRadius = '4px';
+            textSkeleton.style.flex = '1';
+            // Vary width for more natural look
+            const widths = [120, 140, 100, 130, 110, 150];
+            textSkeleton.style.width = `${widths[i % widths.length]}px`;
+            
+            skeletonButton.appendChild(leadingSkeleton);
+            skeletonButton.appendChild(textSkeleton);
+            loadingSection.appendChild(skeletonButton);
+          }
+          
+          container.appendChild(loadingSection);
+        };
+        
+        // Ensure panel is visible with saved filters
+        ensurePanelVisible();
+
+        // Start timeout to show loading skeletons after 200ms
+        loadingTimeout = setTimeout(() => {
+          if (!ensureLatest()) return;
+          showLoadingSkeletons();
+        }, 200);
+
+        // Fetch fresh tags and performers (always fetch, no cache for empty terms)
+        let freshTags: Array<{ id: string; name: string }> = [];
+        let freshPerformers: Array<{ id: string; name: string; image_path?: string }> = [];
+        
+        try {
+          [freshTags, freshPerformers] = await Promise.all([
+            this.api.searchMarkerTags('', 3),
+            this.api.searchPerformers('', 3)
+          ]);
+          if (!ensureLatest()) {
+            return;
+          }
+          // Update cache for preload feature, but use fresh data for display
+          this.preloadedTags = freshTags;
+          this.preloadedPerformers = freshPerformers;
+        } catch (error) {
+          console.warn('Failed to fetch suggestions', error);
+          if (!ensureLatest()) {
+            return;
+          }
+        }
+
+        // Clear timeout if fetch completed quickly
+        if (loadingTimeout) {
+          clearTimeout(loadingTimeout);
+          loadingTimeout = null;
+        }
+
+        // Remove loading section if it was shown
+        if (loadingSectionCreated && loadingSection) {
+          const section: HTMLElement = loadingSection;
+          const parent = section.parentNode;
+          if (parent) {
+            parent.removeChild(section);
+          }
+        }
+
+        // Use freshly fetched tags instead of cached data
+        const availableTags = freshTags
               .filter((tag) => {
                 const tagId = parseInt(tag.id, 10);
             return !Number.isNaN(tagId) && this.selectedTagId !== tagId;
@@ -845,7 +981,8 @@ export class FeedContainer {
           container.appendChild(tagsSection);
         }
 
-        const availablePerformers = this.preloadedPerformers
+        // Use freshly fetched performers instead of cached data
+        const availablePerformers = freshPerformers
           .filter((performer) => {
             const performerId = parseInt(performer.id, 10);
             return !Number.isNaN(performerId) && this.selectedPerformerId !== performerId;
@@ -1019,7 +1156,13 @@ export class FeedContainer {
     
     // Handle focus and show suggestions
     let focusHandled = false;
+    let clickHandled = false;
     const handleFocus = () => {
+      // If click handler already processed this, skip to prevent duplicate calls
+      if (clickHandled) {
+        clickHandled = false; // Reset for next interaction
+        return;
+      }
       if (focusHandled) return;
       focusHandled = true;
       
@@ -1070,20 +1213,40 @@ export class FeedContainer {
           }
         }
         if (!focusHandled) {
-          fetchAndShowSuggestions(queryInput.value, true);
+          clickHandled = true; // Mark that click handled it to prevent focus handler from duplicating
+          // Clear and reset when clicking on search bar for fresh search (same as focus handler)
+          this.selectedTagId = undefined;
+          this.selectedTagName = undefined;
+          this.selectedPerformerId = undefined;
+          this.selectedPerformerName = undefined;
+          this.selectedSavedFilter = undefined;
+          queryInput.value = '';
+          fetchAndShowSuggestions('', true);
         }
       });
     } else {
       // Desktop: use click and focus handlers
       queryInput.addEventListener('click', (e) => {
         e.stopPropagation();
+        // Mark that click is handling this to prevent focus handler from duplicating
+        // Set this synchronously IMMEDIATELY to prevent race condition
+        clickHandled = true;
         // Ensure focus without scrolling jump
         try {
           queryInput.focus({ preventScroll: true } as FocusOptions);
         } catch {
           queryInput.focus();
         }
-        fetchAndShowSuggestions(queryInput.value, true);
+        // Clear and reset when clicking on search bar for fresh search (same as focus handler)
+        this.selectedTagId = undefined;
+        this.selectedTagName = undefined;
+        this.selectedPerformerId = undefined;
+        this.selectedPerformerName = undefined;
+        this.selectedSavedFilter = undefined;
+        queryInput.value = '';
+        fetchAndShowSuggestions('', true);
+        // Reset flag after a delay to allow focus handler to work on next interaction
+        setTimeout(() => { clickHandled = false; }, 100);
       });
     }
     
@@ -1095,10 +1258,6 @@ export class FeedContainer {
     });
     
     queryInput.addEventListener('input', () => {
-      if (suggestTimeout !== null) {
-      clearTimeout(suggestTimeout);
-        suggestTimeout = null;
-      }
       const text = queryInput.value;
       // Clear selected tag/filter when user types (they're searching for something new)
       if (text !== this.selectedTagName && text !== this.selectedPerformerName && text !== this.selectedSavedFilter?.name) {
@@ -1108,10 +1267,8 @@ export class FeedContainer {
         this.selectedPerformerName = undefined;
         this.selectedSavedFilter = undefined;
       }
-      // Content container positioning is handled inside fetchAndShowSuggestions
-      suggestTimeout = window.setTimeout(() => {
-        fetchAndShowSuggestions(text, false);
-      }, 150);
+      // Use debounced function for better performance
+      debouncedFetchSuggestions(text, false);
     });
 
     suggestions.addEventListener('click', (e) => {
@@ -1414,9 +1571,25 @@ export class FeedContainer {
     clearBtn.style.opacity = '0.8';
     clearBtn.onmouseenter = () => { clearBtn.style.opacity = '1'; };
     clearBtn.onmouseleave = () => { clearBtn.style.opacity = '0.8'; };
-    clearBtn.innerHTML = '<svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor" aria-hidden="true"><path d="M18 6L6 18M6 6l12 12"/></svg>';
+    // Use createElement instead of innerHTML for better performance
+    const clearSvg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    clearSvg.setAttribute('viewBox', '0 0 24 24');
+    clearSvg.setAttribute('width', '16');
+    clearSvg.setAttribute('height', '16');
+    clearSvg.setAttribute('fill', 'currentColor');
+    clearSvg.setAttribute('aria-hidden', 'true');
+    const path1 = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+    path1.setAttribute('d', 'M18 6L6 18M6 6l12 12');
+    clearSvg.appendChild(path1);
+    clearBtn.appendChild(clearSvg);
 
     const apply = () => {
+      // Clear suggestions when applying a search
+      while (suggestions.firstChild) {
+        suggestions.removeChild(suggestions.firstChild);
+      }
+      suggestions.style.display = 'none';
+      
       // Cancel previous loadVideos queries
       if (this.activeLoadVideosAbortController) {
         this.activeLoadVideosAbortController.abort();
@@ -1488,11 +1661,15 @@ export class FeedContainer {
     });
     queryInput.addEventListener('keydown', (e) => { if ((e as KeyboardEvent).key === 'Enter') apply(); });
 
-    // Debounced suggestions
-    let suggestTimeout: any;
+    // Debounced suggestions with proper debouncing
     let suggestPage = 1;
     let suggestTerm = '';
     let suggestHasMore = false;
+    
+    // Debounced suggestion fetcher (150ms delay)
+    const debouncedFetchSuggestions2 = debounce((text: string, page: number, forceShow: boolean) => {
+      fetchSuggestions(text, page, forceShow);
+    }, 150);
     const updateSearchBarDisplay = () => {
       // Show the active search term in the search bar
       if (this.selectedTagName) {
@@ -1527,14 +1704,126 @@ export class FeedContainer {
       const signal = this.activeSearchAbortController.signal;
       
       const trimmedText = text.trim();
+      
+      // Clear suggestions immediately to prevent showing old content
+      while (suggestions.firstChild) {
+        suggestions.removeChild(suggestions.firstChild);
+      }
       // Show suggestions if we have text (2+ chars) OR if forced (on focus)
       if (!trimmedText || trimmedText.length < 2) {
         if (forceShow) {
-          // On focus with empty text, show some tags and all saved filters
-          suggestions.innerHTML = '';
-          const pageSize = 24;
-          const tags = await this.api.searchMarkerTags('', pageSize, signal);
+          // On focus with empty text, show saved filters from cache immediately, then fetch fresh tags/performers
+          // (Suggestions already cleared at function start)
+          
+          // Show saved filters from cache immediately (no loading needed)
+          await this.loadSavedFiltersIfNeeded();
           if (signal.aborted) return;
+          
+          if (this.savedFiltersCache.length > 0) {
+            // Saved filters label
+            const label = document.createElement('div');
+            label.textContent = 'Saved Filters';
+            label.style.opacity = '0.75';
+            label.style.fontSize = '12px';
+            label.style.width = '100%';
+            label.style.marginBottom = '6px';
+            suggestions.appendChild(label);
+            
+            this.savedFiltersCache.forEach((f) => {
+              const chip = document.createElement('button');
+              chip.textContent = f.name;
+              chip.className = 'suggest-chip';
+              chip.style.padding = '6px 10px';
+              chip.style.borderRadius = '999px';
+              chip.style.border = '1px solid rgba(255,255,255,0.12)';
+              chip.style.color = 'inherit';
+              chip.style.fontSize = '13px';
+              chip.style.cursor = 'pointer';
+              chip.addEventListener('click', () => {
+                savedSelect.value = f.id;
+                this.selectedSavedFilter = { id: f.id, name: f.name };
+                // Clear tag selections when applying a saved filter
+                this.selectedTagId = undefined;
+                this.selectedTagName = undefined;
+                queryInput.value = '';
+                this.closeSuggestions();
+                updateSearchBarDisplay();
+                apply();
+              });
+              suggestions.appendChild(chip);
+            });
+            
+            // Add divider before tags/performers
+            const divider = document.createElement('div');
+            divider.style.width = '100%';
+            divider.style.height = '1px';
+            divider.style.background = 'rgba(255,255,255,0.08)';
+            divider.style.margin = '6px 0';
+            suggestions.appendChild(divider);
+          }
+          
+          // Prepare loading animation (only show if fetch takes > 200ms)
+          let loadingContainer: HTMLElement | null = null;
+          let loadingTimeout: ReturnType<typeof setTimeout> | null = null;
+          let loadingContainerCreated = false;
+          
+          const showLoadingSkeletons = () => {
+            if (loadingContainerCreated) return; // Already shown
+            loadingContainerCreated = true;
+            
+            // Create 6 skeleton chip placeholders that match the chip style
+            for (let i = 0; i < 6; i++) {
+              const skeletonChip = document.createElement('div');
+              skeletonChip.className = 'chip-skeleton';
+              skeletonChip.setAttribute('data-suggestion-skeleton', 'true');
+              skeletonChip.style.display = 'inline-block';
+              skeletonChip.style.padding = '6px 10px';
+              skeletonChip.style.borderRadius = '999px';
+              skeletonChip.style.height = '28px';
+              skeletonChip.style.marginRight = '8px';
+              skeletonChip.style.marginBottom = '8px';
+              // Vary width for more natural look
+              const widths = [70, 85, 65, 90, 75, 80];
+              skeletonChip.style.width = `${widths[i % widths.length]}px`;
+              
+              suggestions.appendChild(skeletonChip);
+            }
+          };
+          
+          suggestions.style.display = 'flex';
+          
+          // Start timeout to show loading skeletons after 200ms
+          loadingTimeout = setTimeout(() => {
+            if (signal.aborted) return;
+            showLoadingSkeletons();
+          }, 200);
+          
+          // Fetch fresh tags and performers (always fetch, no cache for empty terms)
+          const [tags, performers] = await Promise.all([
+            this.api.searchMarkerTags('', 3, signal),
+            this.api.searchPerformers('', 3, signal)
+          ]);
+          if (signal.aborted) return;
+          
+          // Clear timeout if fetch completed quickly
+          if (loadingTimeout) {
+            clearTimeout(loadingTimeout);
+            loadingTimeout = null;
+          }
+          
+          // Remove loading skeletons if they were shown
+          if (loadingContainerCreated) {
+            // Remove all skeleton chips we created (identified by data attribute)
+            const skeletonChips = Array.from(suggestions.querySelectorAll('[data-suggestion-skeleton="true"]'));
+            skeletonChips.forEach((chip) => {
+              const parent = chip.parentNode;
+              if (parent) {
+                parent.removeChild(chip);
+              }
+            });
+          }
+          
+          // Display tags
           tags.forEach((tag) => {
             if (this.selectedTagId === parseInt(tag.id, 10)) return;
             const chip = document.createElement('button');
@@ -1558,48 +1847,42 @@ export class FeedContainer {
             });
             suggestions.appendChild(chip);
           });
-          if (tags.length) {
-            const divider = document.createElement('div');
-            divider.style.width = '100%';
-            divider.style.height = '1px';
-            divider.style.background = 'rgba(255,255,255,0.08)';
-            divider.style.margin = '6px 0';
-            suggestions.appendChild(divider);
-          }
-          // Saved filters label
-          const label = document.createElement('div');
-          label.textContent = 'Saved Filters';
-          label.style.opacity = '0.75';
-          label.style.fontSize = '12px';
-          label.style.width = '100%';
-          label.style.marginBottom = '6px';
-          suggestions.appendChild(label);
-          // Load saved filters if needed
-          await this.loadSavedFiltersIfNeeded();
-          if (signal.aborted) return;
-          this.savedFiltersCache.forEach((f) => {
-            const chip = document.createElement('button');
-            chip.textContent = f.name;
-            chip.className = 'suggest-chip';
-            chip.style.padding = '6px 10px';
-            chip.style.borderRadius = '999px';
-            chip.style.border = '1px solid rgba(255,255,255,0.12)';
-            chip.style.color = 'inherit';
-            chip.style.fontSize = '13px';
-            chip.style.cursor = 'pointer';
-            chip.addEventListener('click', () => {
-              savedSelect.value = f.id;
-              this.selectedSavedFilter = { id: f.id, name: f.name };
-              // Clear tag selections when applying a saved filter
-              this.selectedTagId = undefined;
-              this.selectedTagName = undefined;
-              queryInput.value = '';
-              this.closeSuggestions();
-              updateSearchBarDisplay();
-              apply();
+          
+          // Display performers if any
+          if (performers.length > 0) {
+            if (tags.length) {
+              const divider = document.createElement('div');
+              divider.style.width = '100%';
+              divider.style.height = '1px';
+              divider.style.background = 'rgba(255,255,255,0.08)';
+              divider.style.margin = '6px 0';
+              suggestions.appendChild(divider);
+            }
+            performers.forEach((performer) => {
+              if (this.selectedPerformerId === parseInt(performer.id, 10)) return;
+              const chip = document.createElement('button');
+              chip.textContent = performer.name;
+              chip.className = 'suggest-chip';
+              chip.style.padding = '6px 10px';
+              chip.style.borderRadius = '999px';
+              chip.style.border = '1px solid rgba(255,255,255,0.12)';
+              chip.style.color = 'inherit';
+              chip.style.fontSize = '13px';
+              chip.style.cursor = 'pointer';
+              chip.addEventListener('click', () => {
+                this.selectedSavedFilter = undefined;
+                savedSelect.value = '';
+                const performerId = parseInt(performer.id, 10);
+                this.selectedPerformerId = performerId;
+                this.selectedPerformerName = performer.name;
+                updateSearchBarDisplay();
+                apply();
+                fetchSuggestions('', 1, true);
+              });
+              suggestions.appendChild(chip);
             });
-            suggestions.appendChild(chip);
-          });
+          }
+          
           suggestions.style.display = suggestions.children.length > 0 ? 'flex' : 'none';
         } else {
           this.closeSuggestions();
@@ -1609,7 +1892,6 @@ export class FeedContainer {
       // Reset grid when term changes
       if (trimmedText !== suggestTerm) {
         suggestPage = 1;
-        suggestions.innerHTML = '';
       }
       suggestTerm = trimmedText;
       const pageSize = 24;
@@ -1747,18 +2029,17 @@ export class FeedContainer {
     };
 
     // Prevent clicks on input from bubbling to document click handler
+    // Also fetch fresh suggestions on every click, even if already focused
     queryInput.addEventListener('click', (e) => {
       e.stopPropagation();
+      // Always fetch fresh suggestions when clicking the search input
+      fetchSuggestions(queryInput.value, 1, true);
     });
     
     queryInput.addEventListener('focus', () => {
       fetchSuggestions(queryInput.value, 1, true);
     });
     queryInput.addEventListener('input', () => {
-      if (suggestTimeout !== null) {
-      clearTimeout(suggestTimeout);
-        suggestTimeout = null;
-      }
       const text = queryInput.value;
       // Clear selected tag/filter when user types (they're searching for something new)
       if (text !== this.selectedTagName && text !== this.selectedPerformerName && text !== this.selectedSavedFilter?.name) {
@@ -1768,10 +2049,8 @@ export class FeedContainer {
         this.selectedPerformerName = undefined;
         this.selectedSavedFilter = undefined;
       }
-      // Content container positioning is handled inside fetchSuggestions
-      suggestTimeout = window.setTimeout(() => {
-        fetchSuggestions(text, 1, false);
-      }, 150);
+      // Use debounced function for better performance
+      debouncedFetchSuggestions2(text, 1, false);
     });
     document.addEventListener('click', (e) => {
       // Only close if suggestions are currently visible
@@ -2042,8 +2321,8 @@ export class FeedContainer {
       // Create posts progressively - render immediately as each post is ready
       // This provides instant visual feedback instead of waiting for all posts
       // Use DocumentFragment for batch DOM insertions to reduce layout thrashing
-      const renderChunkSize = 3; // Render 3 posts at a time
-      const renderDelay = 16; // ~1 frame delay between chunks for smooth rendering
+      const renderChunkSize = 6; // Render 6 posts at a time (increased from 3 for better performance)
+      const renderDelay = 8; // Reduced delay for faster rendering (8ms instead of 16ms)
       
       let fragment: DocumentFragment | null = null;
       let fragmentPostCount = 0;
@@ -2366,6 +2645,8 @@ export class FeedContainer {
     this.activePreloadPosts.clear();
     this.backgroundPreloadPriorityQueue = [];
     this.currentlyPreloadingCount = 0;
+    this.mobilePreloadQueue = [];
+    this.mobilePreloadActive = false;
     this.cancelScheduledPreload();
     this.thumbnailQueue = [];
     this.thumbnailBatchActive = false;
@@ -2375,7 +2656,10 @@ export class FeedContainer {
       this.thumbnailObserver = undefined;
     }
     if (this.postsContainer) {
-      this.postsContainer.innerHTML = '';
+      // Clear posts efficiently
+      while (this.postsContainer.firstChild) {
+        this.postsContainer.removeChild(this.postsContainer.firstChild);
+      }
     }
     // Recreate load more trigger at bottom of posts
     if (this.loadMoreTrigger && this.postsContainer) {
@@ -2913,6 +3197,50 @@ export class FeedContainer {
   }
 
   /**
+   * Clean up posts that are far from viewport to free memory
+   * Called periodically during scrolling
+   */
+  private cleanupDistantPosts(): void {
+    if (this.posts.size <= 20) {
+      // Keep at least 20 posts in memory
+      return;
+    }
+    
+    const viewportTop = window.scrollY || window.pageYOffset;
+    const viewportBottom = viewportTop + window.innerHeight;
+    const cleanupDistance = 3000; // Clean up posts more than 3000px away
+    
+    const postsToRemove: string[] = [];
+    
+    for (const [postId, post] of this.posts.entries()) {
+      const container = post.getContainer();
+      const rect = container.getBoundingClientRect();
+      const elementTop = viewportTop + rect.top;
+      const elementBottom = elementTop + rect.height;
+      
+      // Remove if post is far above or below viewport
+      if (elementBottom < viewportTop - cleanupDistance || elementTop > viewportBottom + cleanupDistance) {
+        postsToRemove.push(postId);
+      }
+    }
+    
+    // Remove distant posts (keep at least 10 posts around viewport)
+    if (postsToRemove.length > 0 && this.posts.size - postsToRemove.length >= 10) {
+      for (const postId of postsToRemove) {
+        const post = this.posts.get(postId);
+        if (post) {
+          post.destroy();
+          this.posts.delete(postId);
+          const index = this.postOrder.indexOf(postId);
+          if (index !== -1) {
+            this.postOrder.splice(index, 1);
+          }
+        }
+      }
+    }
+  }
+
+  /**
    * Setup scroll handler
    * Handles header hide/show based on scroll direction and tracks scroll velocity
    */
@@ -2937,6 +3265,11 @@ export class FeedContainer {
       
       this.lastScrollTop = currentScrollY;
       this.lastScrollTime = now;
+      
+      // Periodically cleanup distant posts to free memory (every 2 seconds of scrolling)
+      if (timeDelta > 2000) {
+        this.cleanupDistantPosts();
+      }
 
       // Don't hide/show header if suggestions overlay is open
       const suggestions = document.querySelector('.feed-filters__suggestions') as HTMLElement;
@@ -3041,17 +3374,45 @@ export class FeedContainer {
    * Show skeleton loaders for better perceived performance
    */
   private showSkeletonLoaders(): void {
-    // Clear any existing skeletons
-    this.hideSkeletonLoaders();
+    // Check for existing skeleton loaders in the HTML (from initial page load)
+    const existingSkeletons = Array.from(this.postsContainer.querySelectorAll('.video-post-skeleton')) as HTMLElement[];
     
-    // Create skeleton loaders matching expected initial load count
-    const skeletonCount = this.initialLoadLimit;
-    this.skeletonLoaders = [];
-    
-    for (let i = 0; i < skeletonCount; i++) {
-      const skeleton = this.createSkeletonLoader();
-      this.postsContainer.appendChild(skeleton);
-      this.skeletonLoaders.push(skeleton);
+    if (existingSkeletons.length > 0) {
+      // Reuse existing skeletons from HTML
+      this.skeletonLoaders = existingSkeletons;
+      
+      // If we need more skeletons than exist, create additional ones
+      const skeletonCount = this.initialLoadLimit;
+      const needed = skeletonCount - existingSkeletons.length;
+      if (needed > 0) {
+        for (let i = 0; i < needed; i++) {
+          const skeleton = this.createSkeletonLoader();
+          this.postsContainer.appendChild(skeleton);
+          this.skeletonLoaders.push(skeleton);
+        }
+      } else if (needed < 0) {
+        // If we have too many, remove the excess
+        const excess = existingSkeletons.slice(skeletonCount);
+        for (const skeleton of excess) {
+          if (skeleton.parentNode) {
+            skeleton.parentNode.removeChild(skeleton);
+          }
+        }
+        this.skeletonLoaders = existingSkeletons.slice(0, skeletonCount);
+      }
+    } else {
+      // No existing skeletons, create new ones
+      this.hideSkeletonLoaders();
+      
+      // Create skeleton loaders matching expected initial load count
+      const skeletonCount = this.initialLoadLimit;
+      this.skeletonLoaders = [];
+      
+      for (let i = 0; i < skeletonCount; i++) {
+        const skeleton = this.createSkeletonLoader();
+        this.postsContainer.appendChild(skeleton);
+        this.skeletonLoaders.push(skeleton);
+      }
     }
   }
 
