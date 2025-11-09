@@ -825,26 +825,39 @@
   backdrop-filter: blur(20px) saturate(180%) !important;
   -webkit-backdrop-filter: blur(20px) saturate(180%) !important;
   overflow-y: auto !important;
-  padding-top: 0 !important; /* No padding - content container handles positioning */
+  padding-top: 80px !important; /* Account for header bar */
   padding-bottom: 20px !important;
   padding-left: 0 !important;
   padding-right: 0 !important;
   box-sizing: border-box !important;
 }
 
-/* Desktop: Constrain content width */
+/* Desktop: Constrain content width and add padding */
 @media (min-width: 768px) {
+  .feed-filters__suggestions {
+    padding-top: 80px !important; /* Account for header bar */
+    padding-left: 16px !important;
+    padding-right: 16px !important;
+  }
+  
   .feed-filters__suggestions > div {
     max-width: 600px;
     margin: 0 auto;
+    padding: 16px;
   }
 }
 
-/* Mobile: Full width */
+/* Mobile: Full width with safe area support */
 @media (max-width: 767px) {
   .feed-filters__suggestions {
-    padding-left: 16px !important;
-    padding-right: 16px !important;
+    padding-top: max(80px, calc(80px + env(safe-area-inset-top, 0px))) !important;
+    padding-left: max(16px, env(safe-area-inset-left, 0px)) !important;
+    padding-right: max(16px, env(safe-area-inset-right, 0px)) !important;
+    padding-bottom: max(20px, calc(20px + env(safe-area-inset-bottom, 0px))) !important;
+  }
+  
+  .feed-filters__suggestions > div {
+    padding: 16px;
   }
 }
 

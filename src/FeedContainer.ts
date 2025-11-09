@@ -49,6 +49,9 @@ export class FeedContainer {
   private eagerPreloadHandle?: number;
   private readonly eagerPreloadCount: number = 6;
   private readonly maxSimultaneousPreloads: number = 2;
+  private preloadedTags: Array<{ id: string; name: string }> = [];
+  private preloadedPerformers: Array<{ id: string; name: string; image_path?: string }> = [];
+  private isPreloading: boolean = false;
 
   constructor(container: HTMLElement, api?: StashAPI, settings?: Partial<FeedSettings>) {
     this.container = container;
@@ -90,6 +93,9 @@ export class FeedContainer {
     
     // Unlock autoplay on mobile after first user interaction
     this.unlockMobileAutoplay();
+
+    // Kick off background suggestion preload early for faster search suggestions
+    this.preloadSuggestions().catch((e) => console.warn('Initial suggestion preload failed', e));
   }
   
   /**
@@ -159,10 +165,17 @@ export class FeedContainer {
     const suggestions = document.querySelectorAll('.feed-filters__suggestions');
     suggestions.forEach((suggestion) => {
       const el = suggestion as HTMLElement;
-      el.style.display = 'none';
-      el.innerHTML = '';
+        el.style.display = 'none';
+        el.innerHTML = '';
     });
+    
     this.unlockBodyScroll();
+    
+    // Refresh cache in the background for next time the overlay opens
+    // Don't await - let it run asynchronously
+    if (!this.isPreloading) {
+      this.preloadSuggestions().catch((e) => console.warn('Failed to refresh suggestions cache', e));
+    }
   }
 
   /**
@@ -276,7 +289,7 @@ export class FeedContainer {
     searchArea.style.width = '100%';
     searchArea.style.minWidth = '0'; // Allow grid to constrain width
     searchArea.style.maxWidth = '100%';
-    searchArea.style.overflow = 'hidden'; // Prevent overflow
+    searchArea.style.overflow = 'hidden'; // Prevent overflow beyond layout tracks
     searchArea.style.boxSizing = 'border-box'; // Ensure padding/border included in width
     searchArea.style.marginRight = '0'; // Ensure no right margin that could create gap
     headerInner.appendChild(searchArea);
@@ -352,7 +365,6 @@ export class FeedContainer {
     const suggestions = document.createElement('div');
     suggestions.className = 'feed-filters__suggestions hide-scrollbar';
     suggestions.style.position = 'fixed';
-    // Use inset to ensure it covers the full viewport
     (suggestions.style as any).inset = '0';
     suggestions.style.top = '0';
     suggestions.style.left = '0';
@@ -364,16 +376,12 @@ export class FeedContainer {
     suggestions.style.backdropFilter = 'blur(20px) saturate(180%)';
     (suggestions.style as any).webkitBackdropFilter = 'blur(20px) saturate(180%)';
     suggestions.style.overflowY = 'auto';
-    suggestions.style.paddingTop = '0';
-    suggestions.style.paddingBottom = '20px';
-    suggestions.style.paddingLeft = '0';
-    suggestions.style.paddingRight = '0';
+    suggestions.style.padding = '0';
     suggestions.style.boxSizing = 'border-box';
 
     // Input wrapper (contains input and reset button), then tag header below
     searchArea.appendChild(inputWrapper);
     searchArea.appendChild(tagHeader);
-    // Append suggestions to body for full-screen overlay
     document.body.appendChild(suggestions);
 
     // Append header to scroll container at the top (before posts)
@@ -456,165 +464,240 @@ export class FeedContainer {
     };
 
     // Suggestions
-    let suggestTimeout: any;
+    let suggestTimeout: number | null = null;
+    let suggestionsRequestId = 0;
     let suggestTerm = '';
     
-    // Helper to format post count
-    const formatPostCount = (count: number): string => {
-      if (count >= 1000) {
-        const k = Math.floor(count / 1000);
-        return `${k}K POSTS`;
-      }
-      return `${count} POSTS`;
-    };
-
-    // Helper to get marker count for a tag
-    const getMarkerCount = async (tagId: number): Promise<number> => {
-      try {
-        const query = `query GetMarkerCount($scene_marker_filter: SceneMarkerFilterType) {
-          findSceneMarkers(scene_marker_filter: $scene_marker_filter) { count }
-        }`;
-        const sceneMarkerFilter: any = { tags: { value: [tagId], modifier: 'INCLUDES' } };
-        const variables: any = { scene_marker_filter: sceneMarkerFilter };
-        
-        const apiAny = this.api as any;
-        if (apiAny.pluginApi?.GQL?.client) {
-          const res = await apiAny.pluginApi.GQL.client.query({ query: query as any, variables });
-          return res.data?.findSceneMarkers?.count || 0;
-        }
-        const response = await fetch(`${apiAny.baseUrl}/graphql`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            ...(apiAny.apiKey && { 'ApiKey': apiAny.apiKey }),
-          },
-          body: JSON.stringify({ query, variables }),
-        });
-        if (!response.ok) return 0;
-        const data = await response.json();
-        return data.data?.findSceneMarkers?.count || 0;
-      } catch {
-        return 0;
-      }
-    };
-
-    // Helper to get marker count for a performer
-    // Note: scene_performers is not supported server-side, so we fetch a sample and count client-side
-    const getMarkerCountForPerformer = async (performerId: number): Promise<number> => {
-      try {
-        // Fetch a larger sample of markers to count (we'll filter client-side)
-        // This gives an approximate count, but accurate enough for autocomplete
-        const sampleMarkers = await this.api.fetchSceneMarkers({ limit: 100, offset: 0 });
-        const performerIdStr = String(performerId);
-        const count = sampleMarkers.filter((marker) => {
-          const scenePerformers = marker.scene?.performers || [];
-          return scenePerformers.some((p) => p.id === performerIdStr);
-        }).length;
-        
-        // If we found markers in the sample, estimate total count
-        // This is approximate but good enough for autocomplete sorting
-        if (count > 0 && sampleMarkers.length === 100) {
-          // If we got a full page, there might be more - return a conservative estimate
-          return count * 2; // Estimate there are at least 2x more
-        }
-        return count;
-      } catch {
-        return 0;
-      }
-    };
-
     const fetchAndShowSuggestions = async (text: string, forceShow: boolean = false) => {
       const trimmedText = text.trim();
-      // Show suggestions if we have text (2+ chars) OR if forced (on focus with empty/minimal text)
-      if (!trimmedText || trimmedText.length < 2) {
-        if (forceShow) {
-          suggestions.innerHTML = '';
-          
-          // Create container for content (max-width on desktop)
-          // Position it to align with search bar
-          const contentContainer = document.createElement('div');
-          contentContainer.style.maxWidth = '600px';
-          contentContainer.style.margin = '0 auto';
-          contentContainer.style.width = '100%';
-          
-          // Calculate search bar position and align content container
-          if (header) {
-            const headerRect = header.getBoundingClientRect();
-            contentContainer.style.paddingTop = `${headerRect.bottom + 16}px`; // Position below search bar
-            contentContainer.style.paddingLeft = '16px';
-            contentContainer.style.paddingRight = '16px';
-            contentContainer.style.boxSizing = 'border-box';
-          } else {
-            contentContainer.style.paddingTop = '80px'; // Fallback
-            contentContainer.style.paddingLeft = '16px';
-            contentContainer.style.paddingRight = '16px';
-            contentContainer.style.boxSizing = 'border-box';
+      const requestId = ++suggestionsRequestId;
+      const showDefault = forceShow || trimmedText.length === 0 || trimmedText.length < 2;
+      const isMobileViewport = window.innerWidth <= 768;
+      const maxContentWidth = isMobileViewport ? '100%' : '640px';
+      const horizontalPadding = isMobileViewport ? 16 : 24;
+      const topPadding = 0;
+
+      const ensureLatest = () => requestId === suggestionsRequestId;
+
+      const ensurePanelVisible = () => {
+        if (suggestions.style.display !== 'block') {
+          suggestions.style.display = 'block';
+        }
+        this.lockBodyScroll();
+      };
+
+      const createSectionLabel = (label: string, uppercase: boolean = false) => {
+        const el = document.createElement('div');
+        el.textContent = uppercase ? label.toUpperCase() : label;
+        el.style.width = '100%';
+        el.style.fontSize = uppercase ? '11px' : '15px';
+        el.style.fontWeight = uppercase ? '600' : '500';
+        el.style.letterSpacing = uppercase ? '0.5px' : 'normal';
+        el.style.textTransform = uppercase ? 'uppercase' : 'none';
+        el.style.color = uppercase ? 'rgba(255,255,255,0.6)' : '#FFFFFF';
+        return el;
+      };
+
+      const createPillButton = (label: string, onSelect: () => void | Promise<void>) => {
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.textContent = label;
+        button.style.display = 'inline-flex';
+        button.style.alignItems = 'center';
+        button.style.justifyContent = 'center';
+        button.style.padding = '8px 14px';
+        button.style.borderRadius = '999px';
+        button.style.border = '1px solid rgba(255,255,255,0.12)';
+        button.style.background = 'rgba(255,255,255,0.08)';
+        button.style.color = '#FFFFFF';
+        button.style.cursor = 'pointer';
+        button.style.fontSize = '14px';
+        button.style.fontWeight = '500';
+        button.style.transition = 'background 0.2s ease';
+        button.addEventListener('mouseenter', () => {
+          button.style.background = 'rgba(255,255,255,0.12)';
+        });
+        button.addEventListener('mouseleave', () => {
+          button.style.background = 'rgba(255,255,255,0.08)';
+        });
+        button.addEventListener('click', (event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          Promise.resolve(onSelect()).catch((error) => console.error('Suggestion selection failed', error));
+        });
+        return button;
+      };
+
+      const createListButton = (
+        label: string,
+        onSelect: () => void | Promise<void>,
+        options: { subtitle?: string; leadingText?: string; leadingImage?: string } = {}
+      ) => {
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.style.width = '100%';
+        button.style.display = 'flex';
+        button.style.alignItems = 'center';
+        button.style.gap = '12px';
+        button.style.padding = '12px';
+        button.style.borderRadius = '12px';
+        button.style.border = 'none';
+        button.style.background = 'transparent';
+        button.style.cursor = 'pointer';
+        button.style.textAlign = 'left';
+        button.style.transition = 'background 0.2s ease';
+        button.addEventListener('mouseenter', () => {
+          button.style.background = 'rgba(255,255,255,0.08)';
+        });
+        button.addEventListener('mouseleave', () => {
+          button.style.background = 'transparent';
+        });
+
+        if (options.leadingText || options.leadingImage) {
+          const leading = document.createElement('div');
+          leading.style.width = '36px';
+          leading.style.height = '36px';
+          leading.style.borderRadius = '50%';
+          leading.style.background = 'rgba(255,255,255,0.1)';
+          leading.style.display = 'flex';
+          leading.style.alignItems = 'center';
+          leading.style.justifyContent = 'center';
+          leading.style.fontSize = '16px';
+          leading.style.fontWeight = '600';
+          leading.style.color = 'rgba(255,255,255,0.85)';
+          leading.style.flexShrink = '0';
+          leading.style.overflow = 'hidden';
+
+          if (options.leadingImage) {
+            const img = document.createElement('img');
+            img.src = options.leadingImage;
+            img.alt = label;
+            img.style.width = '100%';
+            img.style.height = '100%';
+            img.style.objectFit = 'cover';
+            leading.appendChild(img);
+          } else if (options.leadingText) {
+            leading.textContent = options.leadingText;
           }
+
+          button.appendChild(leading);
+        }
+
+        const textContainer = document.createElement('div');
+        textContainer.style.display = 'flex';
+        textContainer.style.flexDirection = 'column';
+        textContainer.style.gap = options.subtitle ? '2px' : '0';
+        textContainer.style.flex = '1';
+
+        const title = document.createElement('div');
+        title.textContent = label;
+        title.style.fontSize = '15px';
+        title.style.fontWeight = '500';
+        title.style.color = '#FFFFFF';
+        textContainer.appendChild(title);
+
+        if (options.subtitle) {
+          const subtitle = document.createElement('div');
+          subtitle.textContent = options.subtitle;
+          subtitle.style.fontSize = '12px';
+          subtitle.style.color = 'rgba(255,255,255,0.6)';
+          textContainer.appendChild(subtitle);
+        }
+
+        button.appendChild(textContainer);
+
+        button.addEventListener('click', (event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          Promise.resolve(onSelect()).catch((error) => console.error('Suggestion selection failed', error));
+        });
+
+        return button;
+      };
+
+      const appendEmptyState = (target: HTMLElement, message: string) => {
+        const emptyState = document.createElement('div');
+        emptyState.style.padding = '12px';
+        emptyState.style.borderRadius = '10px';
+        emptyState.style.background = 'rgba(255,255,255,0.04)';
+        emptyState.style.color = 'rgba(255,255,255,0.7)';
+        emptyState.style.fontSize = '14px';
+        emptyState.style.textAlign = 'center';
+        emptyState.textContent = message;
+        target.appendChild(emptyState);
+      };
+
+      ensurePanelVisible();
+
+      const container = document.createElement('div');
+      container.style.display = 'flex';
+      container.style.flexDirection = 'column';
+      container.style.gap = '24px';
+      container.style.width = '100%';
+      container.style.maxWidth = maxContentWidth;
+      container.style.margin = '0 auto';
+      container.style.boxSizing = 'border-box';
+      container.style.paddingTop = `${topPadding}px`;
+      container.style.paddingLeft = `${horizontalPadding}px`;
+      container.style.paddingRight = `${horizontalPadding}px`;
+      container.style.paddingBottom = isMobileViewport ? '32px' : '48px';
+      container.style.minHeight = '100%';
+
+      suggestions.appendChild(container);
+      suggestions.scrollTop = 0;
+
+      if (showDefault) {
+        // If preload isn't ready, fetch fresh data immediately for first load
+        if (this.preloadedTags.length === 0 || this.preloadedPerformers.length === 0) {
+          // Start background preload but don't wait
+          this.preloadSuggestions().catch((e) => console.warn('Preload suggestions (default) failed', e));
           
-          // Saved Filters section - MOVED TO TOP
-          // Always show Favorites first, then saved filters
-          const savedLabel = document.createElement('div');
-          savedLabel.textContent = 'SAVED FILTERS';
-          savedLabel.style.width = '100%';
-          savedLabel.style.fontSize = '11px';
-          savedLabel.style.fontWeight = '600';
-          savedLabel.style.textTransform = 'uppercase';
-          savedLabel.style.letterSpacing = '0.5px';
-          savedLabel.style.marginBottom = '12px';
-          savedLabel.style.marginTop = '8px';
-          savedLabel.style.color = 'rgba(255,255,255,0.6)';
-          contentContainer.appendChild(savedLabel);
-          
-          // Container for horizontal layout
-          const filtersContainer = document.createElement('div');
-          filtersContainer.style.display = 'flex';
-          filtersContainer.style.flexWrap = 'wrap';
-          filtersContainer.style.gap = '8px';
-          filtersContainer.style.width = '100%';
-          
-          // Add Favorites button first
-          const favoritesItem = document.createElement('button');
-          favoritesItem.style.display = 'inline-flex';
-          favoritesItem.style.alignItems = 'center';
-          favoritesItem.style.padding = '8px 16px';
-          favoritesItem.style.borderRadius = '12px';
-          favoritesItem.style.border = 'none';
-          favoritesItem.style.background = 'transparent';
-          favoritesItem.style.cursor = 'pointer';
-          favoritesItem.style.transition = 'background 0.2s ease';
-          favoritesItem.style.whiteSpace = 'nowrap';
-          
-          favoritesItem.addEventListener('mouseenter', () => {
-            favoritesItem.style.background = 'rgba(255, 255, 255, 0.08)';
-          });
-          favoritesItem.addEventListener('mouseleave', () => {
-            favoritesItem.style.background = 'transparent';
-          });
-          
-          const favoritesName = document.createElement('div');
-          favoritesName.textContent = 'Favorites';
-          favoritesName.style.fontSize = '15px';
-          favoritesName.style.fontWeight = '500';
-          favoritesName.style.color = '#FFFFFF';
-          
-          favoritesItem.appendChild(favoritesName);
-          
-          favoritesItem.addEventListener('click', async (e) => {
-            e.stopPropagation();
-            e.preventDefault();
-            // Clear saved filter and other selections
+          // Fetch fresh data immediately for instant display
+          try {
+            const [freshTags, freshPerformers] = await Promise.all([
+              this.api.searchMarkerTags('', 40),
+              this.api.searchPerformers('', 40)
+            ]);
+            if (!ensureLatest()) {
+              return;
+            }
+            this.preloadedTags = freshTags;
+            this.preloadedPerformers = freshPerformers;
+          } catch (error) {
+            console.warn('Failed to fetch initial suggestions', error);
+            if (!ensureLatest()) {
+              return;
+            }
+          }
+        } else {
+          if (!ensureLatest()) {
+            return;
+          }
+        }
+
+        container.innerHTML = '';
+
+        const filtersSection = document.createElement('div');
+        filtersSection.style.display = 'flex';
+        filtersSection.style.flexDirection = 'column';
+        filtersSection.style.gap = '12px';
+        filtersSection.appendChild(createSectionLabel('Saved Filters', true));
+
+        const pillRow = document.createElement('div');
+        pillRow.style.display = 'flex';
+        pillRow.style.flexWrap = 'wrap';
+        pillRow.style.gap = '8px';
+
+        pillRow.appendChild(createPillButton('Favorites', async () => {
             this.selectedSavedFilter = undefined;
             this.selectedPerformerId = undefined;
             this.selectedPerformerName = undefined;
-            
-            // Find the favorite tag and set it as the selected tag
             try {
               const favoriteTag = await this.api.findTagByName('StashGifs Favorite');
               if (favoriteTag) {
                 this.selectedTagId = parseInt(favoriteTag.id, 10);
                 this.selectedTagName = 'Favorites';
               } else {
-                console.error('Favorite tag not found');
                 this.selectedTagId = undefined;
                 this.selectedTagName = undefined;
               }
@@ -626,660 +709,241 @@ export class FeedContainer {
             this.closeSuggestions();
             updateSearchBarDisplay();
             apply();
-          });
-          
-          filtersContainer.appendChild(favoritesItem);
-          
-          // Then add saved filters
-          if (savedFiltersCache.length > 0) {
-            savedFiltersCache.forEach((f) => {
-              const item = document.createElement('button');
-              item.style.display = 'inline-flex';
-              item.style.alignItems = 'center';
-              item.style.padding = '8px 16px';
-              item.style.borderRadius = '12px';
-              item.style.border = 'none';
-              item.style.background = 'transparent';
-              item.style.cursor = 'pointer';
-              item.style.transition = 'background 0.2s ease';
-              item.style.whiteSpace = 'nowrap';
-              
-              item.addEventListener('mouseenter', () => {
-                item.style.background = 'rgba(255, 255, 255, 0.08)';
-              });
-              item.addEventListener('mouseleave', () => {
-                item.style.background = 'transparent';
-              });
-              
-              const filterName = document.createElement('div');
-              filterName.textContent = f.name;
-              filterName.style.fontSize = '15px';
-              filterName.style.fontWeight = '500';
-              filterName.style.color = '#FFFFFF';
-              
-              item.appendChild(filterName);
-              
-              item.addEventListener('click', (e) => {
-                e.stopPropagation();
-                e.preventDefault();
-                this.selectedSavedFilter = { id: f.id, name: f.name };
+        }));
+
+        savedFiltersCache.forEach((filter) => {
+          pillRow.appendChild(createPillButton(filter.name, () => {
+            this.selectedSavedFilter = { id: filter.id, name: filter.name };
                 this.selectedTagId = undefined;
                 this.selectedTagName = undefined;
                 this.selectedPerformerId = undefined;
                 this.selectedPerformerName = undefined;
                 this.closeSuggestions();
                 updateSearchBarDisplay();
-                this.currentFilters = { savedFilterId: f.id, limit: 20, offset: 0 };
+            this.currentFilters = { savedFilterId: filter.id, limit: 20, offset: 0 };
                 this.loadVideos(this.currentFilters, false).catch((e) => console.error('Apply saved filter failed', e));
-              });
-              
-              filtersContainer.appendChild(item);
-            });
-          }
-          
-          // Always append filters container (contains Favorites at minimum)
-          contentContainer.appendChild(filtersContainer);
-          
-          // Add divider after saved filters
-          const divider1 = document.createElement('div');
-          divider1.style.width = '100%';
-          divider1.style.height = '1px';
-          divider1.style.background = 'rgba(255,255,255,0.08)';
-          divider1.style.margin = '16px 0';
-          contentContainer.appendChild(divider1);
-          
-          // Suggested Tags section
-          const suggestedTagsLabel = document.createElement('div');
-          suggestedTagsLabel.textContent = 'Suggested Tags';
-          suggestedTagsLabel.style.fontSize = '17px';
-          suggestedTagsLabel.style.fontWeight = '600';
-          suggestedTagsLabel.style.color = '#FFFFFF';
-          suggestedTagsLabel.style.marginBottom = '16px';
-          suggestedTagsLabel.style.paddingTop = '8px';
-          contentContainer.appendChild(suggestedTagsLabel);
-          
-          // Sample tags to find suggested (get 40, then pick top 3)
-          const tagSampleSize = 40;
-          const tagSample = await this.api.searchMarkerTags('', tagSampleSize);
-          
-          // Filter out already selected tag and take first 3 (no count fetching needed)
-          const validItems = tagSample
-            .filter((tag) => {
-              const tagId = parseInt(tag.id, 10);
-              return this.selectedTagId !== tagId;
-            })
-            .slice(0, 3);
-          
-          validItems.forEach((tag) => {
-            const item = document.createElement('button');
-            item.style.width = '100%';
-            item.style.display = 'flex';
-            item.style.alignItems = 'center';
-            item.style.gap = '12px';
-            item.style.padding = '12px';
-            item.style.borderRadius = '12px';
-            item.style.border = 'none';
-            item.style.background = 'transparent';
-            item.style.cursor = 'pointer';
-            item.style.textAlign = 'left';
-            item.style.transition = 'background 0.2s ease';
-            item.style.marginBottom = '4px';
+          }));
+        });
+
+        filtersSection.appendChild(pillRow);
+        container.appendChild(filtersSection);
+
+        const availableTags = this.preloadedTags
+              .filter((tag) => {
+                const tagId = parseInt(tag.id, 10);
+            return !Number.isNaN(tagId) && this.selectedTagId !== tagId;
+              })
+              .slice(0, 3);
             
-            item.addEventListener('mouseenter', () => {
-              item.style.background = 'rgba(255, 255, 255, 0.08)';
-            });
-            item.addEventListener('mouseleave', () => {
-              item.style.background = 'transparent';
-            });
-            
-            // Hash icon
-            const hashIcon = document.createElement('div');
-            hashIcon.textContent = '#';
-            hashIcon.style.width = '32px';
-            hashIcon.style.height = '32px';
-            hashIcon.style.borderRadius = '50%';
-            hashIcon.style.background = 'rgba(255, 255, 255, 0.1)';
-            hashIcon.style.display = 'flex';
-            hashIcon.style.alignItems = 'center';
-            hashIcon.style.justifyContent = 'center';
-            hashIcon.style.fontSize = '16px';
-            hashIcon.style.fontWeight = '600';
-            hashIcon.style.color = 'rgba(255, 255, 255, 0.8)';
-            hashIcon.style.flexShrink = '0';
-            
-            // Tag name container
-            const textContainer = document.createElement('div');
-            textContainer.style.flex = '1';
-            textContainer.style.display = 'flex';
-            textContainer.style.alignItems = 'center';
-            
-            const tagName = document.createElement('div');
-            tagName.textContent = tag.name;
-            tagName.style.fontSize = '15px';
-            tagName.style.fontWeight = '500';
-            tagName.style.color = '#FFFFFF';
-            
-            textContainer.appendChild(tagName);
-            
-            item.appendChild(hashIcon);
-            item.appendChild(textContainer);
-            
-            item.addEventListener('click', (e) => {
-              e.stopPropagation();
-              e.preventDefault();
-              const tagId = parseInt(tag.id, 10);
-              // Clear saved filter and performer when selecting a tag
-              this.selectedSavedFilter = undefined;
-              this.selectedPerformerId = undefined;
-              this.selectedPerformerName = undefined;
-              this.selectedTagId = tagId;
-              this.selectedTagName = tag.name;
-              this.closeSuggestions();
-              updateSearchBarDisplay();
-              apply();
-            });
-            
-            contentContainer.appendChild(item);
+        if (availableTags.length > 0) {
+          const tagsSection = document.createElement('div');
+          tagsSection.style.display = 'flex';
+          tagsSection.style.flexDirection = 'column';
+          tagsSection.style.gap = '8px';
+          tagsSection.appendChild(createSectionLabel('Suggested Tags'));
+          availableTags.forEach((tag) => {
+            tagsSection.appendChild(
+              createListButton(tag.name, () => {
+                this.selectedSavedFilter = undefined;
+                this.selectedPerformerId = undefined;
+                this.selectedPerformerName = undefined;
+                this.selectedTagId = parseInt(tag.id, 10);
+                this.selectedTagName = tag.name;
+                this.closeSuggestions();
+                updateSearchBarDisplay();
+                apply();
+              }, { leadingText: '#' })
+            );
           });
-          
-          // Add divider after trending tags
-          if (validItems.length > 0) {
-            const divider2 = document.createElement('div');
-            divider2.style.width = '100%';
-            divider2.style.height = '1px';
-            divider2.style.background = 'rgba(255,255,255,0.08)';
-            divider2.style.margin = '16px 0';
-            contentContainer.appendChild(divider2);
-          }
-          
-          // Suggested Performers section
-          const suggestedPerformersLabel = document.createElement('div');
-          suggestedPerformersLabel.textContent = 'Suggested Performers';
-          suggestedPerformersLabel.style.fontSize = '17px';
-          suggestedPerformersLabel.style.fontWeight = '600';
-          suggestedPerformersLabel.style.color = '#FFFFFF';
-          suggestedPerformersLabel.style.marginBottom = '16px';
-          suggestedPerformersLabel.style.paddingTop = '8px';
-          contentContainer.appendChild(suggestedPerformersLabel);
-          
-          // Sample performers to find suggested (40 performers)
-          const performerSample = await this.api.searchPerformers('', 40);
-          
-          // Filter out already selected performer and take first 3 (no count fetching needed)
-          const validPerformers = performerSample
-            .filter((performer) => {
-              const performerId = parseInt(performer.id, 10);
-              return this.selectedPerformerId !== performerId;
-            })
-            .slice(0, 3);
-          
-          validPerformers.forEach((performer) => {
-            const item = document.createElement('button');
-            item.style.width = '100%';
-            item.style.display = 'flex';
-            item.style.alignItems = 'center';
-            item.style.gap = '12px';
-            item.style.padding = '12px';
-            item.style.borderRadius = '12px';
-            item.style.border = 'none';
-            item.style.background = 'transparent';
-            item.style.cursor = 'pointer';
-            item.style.textAlign = 'left';
-            item.style.transition = 'background 0.2s ease';
-            item.style.marginBottom = '4px';
-            
-            item.addEventListener('mouseenter', () => {
-              item.style.background = 'rgba(255, 255, 255, 0.08)';
-            });
-            item.addEventListener('mouseleave', () => {
-              item.style.background = 'transparent';
-            });
-            
-            // Avatar or icon
-            const avatarIcon = document.createElement('div');
-            avatarIcon.style.width = '32px';
-            avatarIcon.style.height = '32px';
-            avatarIcon.style.borderRadius = '50%';
-            avatarIcon.style.background = 'rgba(255, 255, 255, 0.1)';
-            avatarIcon.style.display = 'flex';
-            avatarIcon.style.alignItems = 'center';
-            avatarIcon.style.justifyContent = 'center';
-            avatarIcon.style.fontSize = '16px';
-            avatarIcon.style.fontWeight = '600';
-            avatarIcon.style.color = 'rgba(255, 255, 255, 0.8)';
-            avatarIcon.style.flexShrink = '0';
-            avatarIcon.style.overflow = 'hidden';
-            
-            if (performer.image_path) {
-              const img = document.createElement('img');
-              img.src = performer.image_path.startsWith('http') ? performer.image_path : `${window.location.origin}${performer.image_path}`;
-              img.alt = performer.name;
-              img.style.width = '100%';
-              img.style.height = '100%';
-              img.style.objectFit = 'cover';
-              avatarIcon.appendChild(img);
-            } else {
-              // Use first letter as fallback
-              avatarIcon.textContent = performer.name.charAt(0).toUpperCase();
-            }
-            
-            // Performer name container
-            const textContainer = document.createElement('div');
-            textContainer.style.flex = '1';
-            textContainer.style.display = 'flex';
-            textContainer.style.alignItems = 'center';
-            
-            const performerName = document.createElement('div');
-            performerName.textContent = performer.name;
-            performerName.style.fontSize = '15px';
-            performerName.style.fontWeight = '500';
-            performerName.style.color = '#FFFFFF';
-            
-            textContainer.appendChild(performerName);
-            
-            item.appendChild(avatarIcon);
-            item.appendChild(textContainer);
-            
-            item.addEventListener('click', (e) => {
-              e.stopPropagation();
-              e.preventDefault();
-              const performerId = parseInt(performer.id, 10);
-              // Clear saved filter and tag when selecting a performer
-              this.selectedSavedFilter = undefined;
-              this.selectedTagId = undefined;
-              this.selectedTagName = undefined;
-              this.selectedPerformerId = performerId;
-              this.selectedPerformerName = performer.name;
-              this.closeSuggestions();
-              updateSearchBarDisplay();
-              apply();
-            });
-            
-            contentContainer.appendChild(item);
-          });
-          
-          suggestions.appendChild(contentContainer);
-          const shouldShow = suggestions.children.length > 0;
-          suggestions.style.display = shouldShow ? 'block' : 'none';
-          // Lock body scroll when overlay is shown
-          if (shouldShow) {
-            this.lockBodyScroll();
-          } else {
-            this.unlockBodyScroll();
-          }
-        } else {
-          this.closeSuggestions();
+          container.appendChild(tagsSection);
         }
+
+        const availablePerformers = this.preloadedPerformers
+          .filter((performer) => {
+            const performerId = parseInt(performer.id, 10);
+            return !Number.isNaN(performerId) && this.selectedPerformerId !== performerId;
+          })
+          .slice(0, 3);
+
+        if (availablePerformers.length > 0) {
+          const performersSection = document.createElement('div');
+          performersSection.style.display = 'flex';
+          performersSection.style.flexDirection = 'column';
+          performersSection.style.gap = '8px';
+          performersSection.appendChild(createSectionLabel('Suggested Performers'));
+          availablePerformers.forEach((performer) => {
+                const performerId = parseInt(performer.id, 10);
+            const imageSrc = performer.image_path
+              ? (performer.image_path.startsWith('http') ? performer.image_path : `${window.location.origin}${performer.image_path}`)
+              : undefined;
+            performersSection.appendChild(
+              createListButton(
+                performer.name,
+                () => {
+                this.selectedSavedFilter = undefined;
+                this.selectedTagId = undefined;
+                this.selectedTagName = undefined;
+                this.selectedPerformerId = performerId;
+                this.selectedPerformerName = performer.name;
+                this.closeSuggestions();
+                updateSearchBarDisplay();
+                apply();
+                },
+                { leadingImage: imageSrc, leadingText: imageSrc ? undefined : performer.name.charAt(0).toUpperCase() }
+              )
+            );
+          });
+          container.appendChild(performersSection);
+        }
+
+        if (container.children.length === 0) {
+          appendEmptyState(container, 'No suggestions available yet.');
+        }
+
+        suggestions.scrollTop = 0;
         return;
       }
       
-      if (trimmedText !== suggestTerm) suggestions.innerHTML = '';
-      suggestTerm = trimmedText;
-      
-      // Create container for content (max-width on desktop)
-      // Position it to align with search bar
-      const contentContainer = document.createElement('div');
-      contentContainer.style.maxWidth = '600px';
-      contentContainer.style.margin = '0 auto';
-      contentContainer.style.width = '100%';
-      
-      // Calculate search bar position and align content container
-      if (header) {
-        const headerRect = header.getBoundingClientRect();
-        contentContainer.style.paddingTop = `${headerRect.bottom + 16}px`; // Position below search bar
-        contentContainer.style.paddingLeft = '16px';
-        contentContainer.style.paddingRight = '16px';
-        contentContainer.style.boxSizing = 'border-box';
-      } else {
-        contentContainer.style.paddingTop = '80px'; // Fallback
-        contentContainer.style.paddingLeft = '16px';
-        contentContainer.style.paddingRight = '16px';
-        contentContainer.style.boxSizing = 'border-box';
-      }
-      
-      const pageSize = 20;
-      const [tagItems, performerItems] = await Promise.all([
-        this.api.searchMarkerTags(trimmedText, pageSize),
-        this.api.searchPerformers(trimmedText, pageSize)
-      ]);
-      
-      // Filter out already selected items (no count fetching needed)
-      const validItems = tagItems.slice(0, 20).filter((tag) => {
-        const tagId = parseInt(tag.id, 10);
-        return this.selectedTagId !== tagId;
-      });
-      
-      const validPerformers = performerItems.slice(0, 20).filter((performer) => {
-        const performerId = parseInt(performer.id, 10);
-        return this.selectedPerformerId !== performerId;
-      });
-      
-      // Performers (show first)
-      validPerformers.forEach((performer) => {
-        const item = document.createElement('button');
-        item.style.width = '100%';
-        item.style.display = 'flex';
-        item.style.alignItems = 'center';
-        item.style.gap = '12px';
-        item.style.padding = '12px';
-        item.style.borderRadius = '12px';
-        item.style.border = 'none';
-        item.style.background = 'transparent';
-        item.style.cursor = 'pointer';
-        item.style.textAlign = 'left';
-        item.style.transition = 'background 0.2s ease';
-        item.style.marginBottom = '4px';
-        
-        item.addEventListener('mouseenter', () => {
-          item.style.background = 'rgba(255, 255, 255, 0.08)';
-        });
-        item.addEventListener('mouseleave', () => {
-          item.style.background = 'transparent';
-        });
-        
-        // Performer image or icon
-        const performerIcon = document.createElement('div');
-        performerIcon.style.width = '32px';
-        performerIcon.style.height = '32px';
-        performerIcon.style.borderRadius = '50%';
-        performerIcon.style.flexShrink = '0';
-        performerIcon.style.overflow = 'hidden';
-        performerIcon.style.background = 'rgba(255, 255, 255, 0.1)';
-        performerIcon.style.display = 'flex';
-        performerIcon.style.alignItems = 'center';
-        performerIcon.style.justifyContent = 'center';
-        
-        if (performer.image_path) {
-          const img = document.createElement('img');
-          const apiAny = this.api as any;
-          const imageUrl = performer.image_path.startsWith('http') 
-            ? performer.image_path 
-            : `${apiAny.baseUrl}${performer.image_path}`;
-          img.src = imageUrl;
-          img.style.width = '100%';
-          img.style.height = '100%';
-          img.style.objectFit = 'cover';
-          performerIcon.appendChild(img);
-        } else {
-          // Fallback to initials
-          const initials = document.createElement('div');
-          initials.textContent = performer.name.charAt(0).toUpperCase();
-          initials.style.fontSize = '14px';
-          initials.style.fontWeight = '600';
-          initials.style.color = 'rgba(255, 255, 255, 0.8)';
-          performerIcon.appendChild(initials);
-        }
-        
-        // Performer name container
-        const textContainer = document.createElement('div');
-        textContainer.style.flex = '1';
-        textContainer.style.display = 'flex';
-        textContainer.style.alignItems = 'center';
-        
-        const performerName = document.createElement('div');
-        performerName.textContent = performer.name;
-        performerName.style.fontSize = '15px';
-        performerName.style.fontWeight = '500';
-        performerName.style.color = '#FFFFFF';
-        
-        textContainer.appendChild(performerName);
-        
-        item.appendChild(performerIcon);
-        item.appendChild(textContainer);
-        
-        item.addEventListener('click', (e) => {
-          e.stopPropagation();
-          e.preventDefault();
-          const performerId = parseInt(performer.id, 10);
-          // Clear saved filter and tag when selecting a performer
-          this.selectedSavedFilter = undefined;
+      container.innerHTML = '';
+
+      const matchingSavedFilters = savedFiltersCache
+        .filter((filter) => filter.name.toLowerCase().includes(trimmedText.toLowerCase()))
+        .slice(0, 6);
+
+      if (matchingSavedFilters.length > 0) {
+        const savedSection = document.createElement('div');
+        savedSection.style.display = 'flex';
+        savedSection.style.flexDirection = 'column';
+        savedSection.style.gap = '8px';
+        savedSection.appendChild(createSectionLabel('Matching Saved Filters'));
+        matchingSavedFilters.forEach((filter) => {
+          savedSection.appendChild(
+            createListButton(filter.name, () => {
+              this.selectedSavedFilter = { id: filter.id, name: filter.name };
           this.selectedTagId = undefined;
           this.selectedTagName = undefined;
-          this.selectedPerformerId = performerId;
-          this.selectedPerformerName = performer.name;
+              this.selectedPerformerId = undefined;
+              this.selectedPerformerName = undefined;
           this.closeSuggestions();
           updateSearchBarDisplay();
-          apply();
+              this.currentFilters = { savedFilterId: filter.id, limit: 20, offset: 0 };
+              this.loadVideos(this.currentFilters, false).catch((e) => console.error('Apply saved filter failed', e));
+            })
+          );
         });
-        
-        contentContainer.appendChild(item);
-      });
-      
-      // Add divider between performers and tags if both exist
-      if (validPerformers.length > 0 && validItems.length > 0) {
-        const divider = document.createElement('div');
-        divider.style.width = '100%';
-        divider.style.height = '1px';
-        divider.style.background = 'rgba(255,255,255,0.08)';
-        divider.style.margin = '16px 0';
-        contentContainer.appendChild(divider);
+        container.appendChild(savedSection);
       }
-      
-      // Tags
-      validItems.forEach((tag) => {
-        const item = document.createElement('button');
-        item.style.width = '100%';
-        item.style.display = 'flex';
-        item.style.alignItems = 'center';
-        item.style.gap = '12px';
-        item.style.padding = '12px';
-        item.style.borderRadius = '12px';
-        item.style.border = 'none';
-        item.style.background = 'transparent';
-        item.style.cursor = 'pointer';
-        item.style.textAlign = 'left';
-        item.style.transition = 'background 0.2s ease';
-        item.style.marginBottom = '4px';
-        
-        item.addEventListener('mouseenter', () => {
-          item.style.background = 'rgba(255, 255, 255, 0.08)';
-        });
-        item.addEventListener('mouseleave', () => {
-          item.style.background = 'transparent';
-        });
-        
-        // Hash icon
-        const hashIcon = document.createElement('div');
-        hashIcon.textContent = '#';
-        hashIcon.style.width = '32px';
-        hashIcon.style.height = '32px';
-        hashIcon.style.borderRadius = '50%';
-        hashIcon.style.background = 'rgba(255, 255, 255, 0.1)';
-        hashIcon.style.display = 'flex';
-        hashIcon.style.alignItems = 'center';
-        hashIcon.style.justifyContent = 'center';
-        hashIcon.style.fontSize = '16px';
-        hashIcon.style.fontWeight = '600';
-        hashIcon.style.color = 'rgba(255, 255, 255, 0.8)';
-        hashIcon.style.flexShrink = '0';
-        
-        // Tag name container
-        const textContainer = document.createElement('div');
-        textContainer.style.flex = '1';
-        textContainer.style.display = 'flex';
-        textContainer.style.alignItems = 'center';
-        
-        const tagName = document.createElement('div');
-        tagName.textContent = tag.name;
-        tagName.style.fontSize = '15px';
-        tagName.style.fontWeight = '500';
-        tagName.style.color = '#FFFFFF';
-        
-        textContainer.appendChild(tagName);
-        
-        item.appendChild(hashIcon);
-        item.appendChild(textContainer);
-        
-        item.addEventListener('click', (e) => {
-          e.stopPropagation();
-          e.preventDefault();
+
+      let tagItems: Array<{ id: string; name: string }> = [];
+      let performerItems: Array<{ id: string; name: string; image_path?: string }> = [];
+
+      try {
+        [tagItems, performerItems] = await Promise.all([
+          this.api.searchMarkerTags(trimmedText, 20),
+          this.api.searchPerformers(trimmedText, 20)
+        ]);
+      } catch (error) {
+        console.warn('Failed to fetch search suggestions', error);
+      }
+
+      if (!ensureLatest()) {
+        return;
+      }
+
+      const filteredTags = tagItems
+        .filter((tag) => {
           const tagId = parseInt(tag.id, 10);
-          // Clear saved filter and performer when selecting a tag
+          return !Number.isNaN(tagId) && this.selectedTagId !== tagId;
+        })
+        .slice(0, 20);
+
+      if (filteredTags.length > 0) {
+        const tagsSection = document.createElement('div');
+        tagsSection.style.display = 'flex';
+        tagsSection.style.flexDirection = 'column';
+        tagsSection.style.gap = '8px';
+        tagsSection.appendChild(createSectionLabel('Tags'));
+        filteredTags.forEach((tag) => {
+          tagsSection.appendChild(
+            createListButton(tag.name, () => {
           this.selectedSavedFilter = undefined;
           this.selectedPerformerId = undefined;
           this.selectedPerformerName = undefined;
-          this.selectedTagId = tagId;
+              this.selectedTagId = parseInt(tag.id, 10);
           this.selectedTagName = tag.name;
           this.closeSuggestions();
           updateSearchBarDisplay();
           apply();
+            }, { leadingText: '#' })
+          );
         });
-        
-        contentContainer.appendChild(item);
-      });
-      
-      // Saved filters section
-      const term = trimmedText.toLowerCase();
-      const matches = savedFiltersCache.filter((f) => f.name.toLowerCase().includes(term));
-      const shouldShowFavorites = term === '' || term.includes('favor');
-      if (matches.length || shouldShowFavorites) {
-        if (validItems.length > 0) {
-          const divider = document.createElement('div');
-          divider.style.width = '100%';
-          divider.style.height = '1px';
-          divider.style.background = 'rgba(255,255,255,0.08)';
-          divider.style.margin = '16px 0';
-          contentContainer.appendChild(divider);
-        }
-        
-        const label = document.createElement('div');
-        label.textContent = 'SAVED FILTERS';
-        label.style.width = '100%';
-        label.style.fontSize = '11px';
-        label.style.fontWeight = '600';
-        label.style.textTransform = 'uppercase';
-        label.style.letterSpacing = '0.5px';
-        label.style.marginBottom = '12px';
-        label.style.marginTop = '8px';
-        label.style.color = 'rgba(255,255,255,0.6)';
-        contentContainer.appendChild(label);
-        
-        // Container for horizontal layout
-        const filtersContainer = document.createElement('div');
-        filtersContainer.style.display = 'flex';
-        filtersContainer.style.flexWrap = 'wrap';
-        filtersContainer.style.gap = '8px';
-        filtersContainer.style.width = '100%';
-        
-        // Add Favorites if search term matches
-        const searchTermLower = term.toLowerCase();
-        if (searchTermLower === '' || searchTermLower.includes('favor')) {
-          const favoritesItem = document.createElement('button');
-          favoritesItem.style.display = 'inline-flex';
-          favoritesItem.style.alignItems = 'center';
-          favoritesItem.style.padding = '8px 16px';
-          favoritesItem.style.borderRadius = '12px';
-          favoritesItem.style.border = 'none';
-          favoritesItem.style.background = 'transparent';
-          favoritesItem.style.cursor = 'pointer';
-          favoritesItem.style.transition = 'background 0.2s ease';
-          favoritesItem.style.whiteSpace = 'nowrap';
-          
-          favoritesItem.addEventListener('mouseenter', () => {
-            favoritesItem.style.background = 'rgba(255, 255, 255, 0.08)';
-          });
-          favoritesItem.addEventListener('mouseleave', () => {
-            favoritesItem.style.background = 'transparent';
-          });
-          
-          const favoritesName = document.createElement('div');
-          favoritesName.textContent = 'Favorites';
-          favoritesName.style.fontSize = '15px';
-          favoritesName.style.fontWeight = '500';
-          favoritesName.style.color = '#FFFFFF';
-          
-          favoritesItem.appendChild(favoritesName);
-          
-          favoritesItem.addEventListener('click', async (e) => {
-            e.stopPropagation();
-            e.preventDefault();
-            // Clear saved filter and other selections
+        container.appendChild(tagsSection);
+      }
+
+      const filteredPerformers = performerItems
+        .filter((performer) => {
+          const performerId = parseInt(performer.id, 10);
+          return !Number.isNaN(performerId) && this.selectedPerformerId !== performerId;
+        })
+        .slice(0, 20);
+
+      if (filteredPerformers.length > 0) {
+        const performersSection = document.createElement('div');
+        performersSection.style.display = 'flex';
+        performersSection.style.flexDirection = 'column';
+        performersSection.style.gap = '8px';
+        performersSection.appendChild(createSectionLabel('Performers'));
+        filteredPerformers.forEach((performer) => {
+          const performerId = parseInt(performer.id, 10);
+          const imageSrc = performer.image_path
+            ? (performer.image_path.startsWith('http') ? performer.image_path : `${window.location.origin}${performer.image_path}`)
+            : undefined;
+          performersSection.appendChild(
+            createListButton(
+              performer.name,
+              () => {
             this.selectedSavedFilter = undefined;
-            this.selectedPerformerId = undefined;
-            this.selectedPerformerName = undefined;
-            
-            // Find the favorite tag and set it as the selected tag
-            try {
-              const favoriteTag = await this.api.findTagByName('StashGifs Favorite');
-              if (favoriteTag) {
-                this.selectedTagId = parseInt(favoriteTag.id, 10);
-                this.selectedTagName = 'Favorites';
-              } else {
-                console.error('Favorite tag not found');
                 this.selectedTagId = undefined;
                 this.selectedTagName = undefined;
-              }
-            } catch (error) {
-              console.error('Failed to load favorite tag', error);
-              this.selectedTagId = undefined;
-              this.selectedTagName = undefined;
-            }
+                this.selectedPerformerId = performerId;
+                this.selectedPerformerName = performer.name;
             this.closeSuggestions();
             updateSearchBarDisplay();
             apply();
-          });
-          
-          filtersContainer.appendChild(favoritesItem);
-        }
-        
-        matches.forEach((f) => {
-          const item = document.createElement('button');
-          item.style.display = 'inline-flex';
-          item.style.alignItems = 'center';
-          item.style.padding = '8px 16px';
-          item.style.borderRadius = '12px';
-          item.style.border = 'none';
-          item.style.background = 'transparent';
-          item.style.cursor = 'pointer';
-          item.style.transition = 'background 0.2s ease';
-          item.style.whiteSpace = 'nowrap';
-          
-          item.addEventListener('mouseenter', () => {
-            item.style.background = 'rgba(255, 255, 255, 0.08)';
-          });
-          item.addEventListener('mouseleave', () => {
-            item.style.background = 'transparent';
-          });
-          
-          const filterName = document.createElement('div');
-          filterName.textContent = f.name;
-          filterName.style.fontSize = '15px';
-          filterName.style.fontWeight = '500';
-          filterName.style.color = '#FFFFFF';
-          
-          item.appendChild(filterName);
-          
-          item.addEventListener('click', (e) => {
-            e.stopPropagation();
-            e.preventDefault();
-            this.selectedSavedFilter = { id: f.id, name: f.name };
-            this.selectedTagId = undefined;
-            this.selectedTagName = undefined;
-            this.closeSuggestions();
-            updateSearchBarDisplay();
-            this.currentFilters = { savedFilterId: f.id, limit: 20, offset: 0 };
-            this.loadVideos(this.currentFilters, false).catch((e) => console.error('Apply saved filter failed', e));
-          });
-          
-          filtersContainer.appendChild(item);
+              },
+              { leadingImage: imageSrc, leadingText: imageSrc ? undefined : performer.name.charAt(0).toUpperCase() }
+            )
+          );
         });
-        
-        contentContainer.appendChild(filtersContainer);
+        container.appendChild(performersSection);
       }
 
-      suggestions.appendChild(contentContainer);
-      const shouldShow = (validItems.length || validPerformers.length || matches.length) > 0;
-      suggestions.style.display = shouldShow ? 'block' : 'none';
-      // Lock body scroll when overlay is shown
-      if (shouldShow) {
-        this.lockBodyScroll();
-      } else {
-        this.unlockBodyScroll();
+      if (container.children.length === 0) {
+        appendEmptyState(container, `No matches found for "${trimmedText}".`);
       }
+
+      suggestions.scrollTop = 0;
+      return;
     };
     
     queryInput.addEventListener('keydown', (e) => { if ((e as KeyboardEvent).key === 'Enter') apply(); });
+    
+    // Prevent clicks on input from bubbling to document click handler
+    queryInput.addEventListener('click', (e) => {
+      e.stopPropagation();
+      // Ensure focus without scrolling jump
+      try {
+        queryInput.focus({ preventScroll: true } as FocusOptions);
+      } catch {
+          queryInput.focus();
+        }
+      fetchAndShowSuggestions(queryInput.value, true);
+    });
+    
     queryInput.addEventListener('focus', () => {
+      // Ensure background suggestions stay fresh
+      this.preloadSuggestions().catch((e) => console.warn('Suggestion preload refresh failed', e));
+      
       queryInput.style.background = 'rgba(28, 28, 30, 0.8)';
       queryInput.style.borderColor = 'rgba(255,255,255,0.16)';
       // Clear and reset when focusing on search bar for fresh search
@@ -1289,14 +953,20 @@ export class FeedContainer {
       this.selectedPerformerName = undefined;
       this.selectedSavedFilter = undefined;
       queryInput.value = '';
+      
       fetchAndShowSuggestions('', true);
     });
+    
     queryInput.addEventListener('blur', () => {
       queryInput.style.background = 'rgba(28, 28, 30, 0.6)';
       queryInput.style.borderColor = 'rgba(255,255,255,0.12)';
     });
+    
     queryInput.addEventListener('input', () => {
+      if (suggestTimeout !== null) {
       clearTimeout(suggestTimeout);
+        suggestTimeout = null;
+      }
       const text = queryInput.value;
       // Clear selected tag/filter when user types (they're searching for something new)
       if (text !== this.selectedTagName && text !== this.selectedPerformerName && text !== this.selectedSavedFilter?.name) {
@@ -1307,22 +977,38 @@ export class FeedContainer {
         this.selectedSavedFilter = undefined;
       }
       // Content container positioning is handled inside fetchAndShowSuggestions
-      suggestTimeout = setTimeout(() => {
+      suggestTimeout = window.setTimeout(() => {
         fetchAndShowSuggestions(text, false);
       }, 150);
     });
 
-    // Close suggestions when clicking outside or on backdrop
     suggestions.addEventListener('click', (e) => {
       if (e.target === suggestions) {
         this.closeSuggestions();
       }
     });
     
+    // Use a single, debounced document click handler
+    let clickHandlerTimeout: number | null = null;
     document.addEventListener('click', (e) => {
-      if (!searchArea.contains(e.target as Node) && !suggestions.contains(e.target as Node)) {
-        this.closeSuggestions();
+      // Clear any pending handler
+      if (clickHandlerTimeout !== null) {
+        clearTimeout(clickHandlerTimeout);
       }
+      
+      // Defer the check to next tick to ensure overlay state is updated
+      clickHandlerTimeout = window.setTimeout(() => {
+        // Check if suggestions are visible
+        const isSuggestionsVisible = suggestions.style.display !== 'none';
+        
+        // Don't close if clicking inside searchArea or suggestions overlay
+        const clickedInsideSearch = searchArea.contains(e.target as Node);
+        const clickedInsideSuggestions = suggestions.contains(e.target as Node);
+        
+        if (isSuggestionsVisible && !clickedInsideSearch && !clickedInsideSuggestions) {
+          this.closeSuggestions();
+        }
+      }, 0);
     });
 
     // Initial render of search bar display (in case defaults are provided)
@@ -1537,22 +1223,21 @@ export class FeedContainer {
     queryInput.style.fontSize = '14px';
     const suggestions = document.createElement('div');
     suggestions.className = 'feed-filters__suggestions';
-    // Hide scrollbars in suggestions grid/list
-    suggestions.classList.add('hide-scrollbar');
-    suggestions.style.position = 'absolute';
-    suggestions.style.zIndex = '1000';
-    suggestions.style.display = 'none';
-    suggestions.style.background = 'var(--bg, #161616)';
-    suggestions.style.border = '1px solid rgba(255,255,255,0.1)';
+    suggestions.style.position = 'fixed';
+    (suggestions.style as any).inset = '0';
+    suggestions.style.top = '0';
     suggestions.style.left = '0';
     suggestions.style.right = '0';
-    suggestions.style.borderRadius = '12px';
-    suggestions.style.marginTop = '8px';
-    suggestions.style.padding = '10px';
-    suggestions.style.flexWrap = 'wrap';
-    suggestions.style.gap = '8px';
-    suggestions.style.maxHeight = '50vh';
+    suggestions.style.bottom = '0';
+    suggestions.style.zIndex = '1000';
+    suggestions.style.display = 'none';
+    suggestions.style.background = 'rgba(0, 0, 0, 0.85)';
+    suggestions.style.backdropFilter = 'blur(20px) saturate(180%)';
+    (suggestions.style as any).webkitBackdropFilter = 'blur(20px) saturate(180%)';
     suggestions.style.overflowY = 'auto';
+    suggestions.style.padding = '0';
+    suggestions.style.boxSizing = 'border-box';
+
     // Tag header to show selected tag
     const tagHeader = document.createElement('div');
     tagHeader.className = 'feed-filters__tag-header';
@@ -1895,16 +1580,39 @@ export class FeedContainer {
       suggestions.style.display = (items.length || (matchingSaved && matchingSaved.length)) ? 'flex' : 'none';
     };
 
+    // Prevent clicks on input from bubbling to document click handler
+    queryInput.addEventListener('click', (e) => {
+      e.stopPropagation();
+    });
+    
     queryInput.addEventListener('focus', () => {
       fetchSuggestions(queryInput.value, 1, true);
     });
     queryInput.addEventListener('input', () => {
+      if (suggestTimeout !== null) {
       clearTimeout(suggestTimeout);
+        suggestTimeout = null;
+      }
       const text = queryInput.value;
-      suggestTimeout = setTimeout(() => { fetchSuggestions(text, 1, false); }, 150);
+      // Clear selected tag/filter when user types (they're searching for something new)
+      if (text !== this.selectedTagName && text !== this.selectedPerformerName && text !== this.selectedSavedFilter?.name) {
+        this.selectedTagId = undefined;
+        this.selectedTagName = undefined;
+        this.selectedPerformerId = undefined;
+        this.selectedPerformerName = undefined;
+        this.selectedSavedFilter = undefined;
+      }
+      // Content container positioning is handled inside fetchSuggestions
+      suggestTimeout = window.setTimeout(() => {
+        fetchSuggestions(text, 1, false);
+      }, 150);
     });
     document.addEventListener('click', (e) => {
-      if (!searchWrapper.contains(e.target as Node)) {
+      // Only close if suggestions are currently visible
+      const isSuggestionsVisible = suggestions.style.display !== 'none' && suggestions.style.display !== '';
+      
+      // Don't close if clicking inside searchWrapper or suggestions overlay
+      if (isSuggestionsVisible && !searchWrapper.contains(e.target as Node) && !suggestions.contains(e.target as Node)) {
         this.closeSuggestions();
       }
     });
@@ -2039,6 +1747,38 @@ export class FeedContainer {
   async init(filters?: FilterOptions): Promise<void> {
     this.currentFilters = filters;
     await this.loadVideos(filters);
+    
+    // Preload suggestions in the background after initialization
+    // Don't await - let it run asynchronously so it doesn't block initialization
+    this.preloadSuggestions().catch((e) => console.warn('Preload suggestions failed', e));
+  }
+
+  /**
+   * Preload suggestions in the background for instant search overlay opening
+   */
+  private async preloadSuggestions(): Promise<void> {
+    // Prevent multiple simultaneous preloads
+    if (this.isPreloading) {
+      return;
+    }
+
+    this.isPreloading = true;
+    try {
+      // Fetch tags and performers in parallel (40 to match what's used in suggestions)
+      const [tags, performers] = await Promise.all([
+        this.api.searchMarkerTags('', 40),
+        this.api.searchPerformers('', 40)
+      ]);
+
+      // Store in cache
+      this.preloadedTags = tags;
+      this.preloadedPerformers = performers;
+    } catch (error) {
+      console.warn('Failed to preload suggestions:', error);
+      // Don't throw - preload failure shouldn't break the app
+    } finally {
+      this.isPreloading = false;
+    }
   }
 
   /**
@@ -2475,27 +2215,32 @@ export class FeedContainer {
    * Lock body scroll (prevent page scrolling)
    */
   private lockBodyScroll(): void {
-    document.body.style.overflow = 'hidden';
-    document.body.style.position = 'fixed';
-    document.body.style.width = '100%';
-    // Store current scroll position to restore later
-    const scrollY = window.scrollY;
-    document.body.style.top = `-${scrollY}px`;
+    const body = document.body;
+    // Only lock if not already locked
+    if (body.dataset.scrollLock === 'true') {
+      return;
+    }
+    body.dataset.scrollLock = 'true';
+    // Preserve layout when scrollbar disappears
+    const scrollbarWidth = window.innerWidth - document.documentElement.clientWidth;
+    if (scrollbarWidth > 0) {
+      body.style.paddingRight = `${scrollbarWidth}px`;
+    }
+    body.style.overflow = 'hidden';
   }
 
   /**
    * Unlock body scroll (restore page scrolling)
    */
   private unlockBodyScroll(): void {
-    const scrollY = document.body.style.top;
-    document.body.style.overflow = '';
-    document.body.style.position = '';
-    document.body.style.width = '';
-    document.body.style.top = '';
-    // Restore scroll position
-    if (scrollY) {
-      window.scrollTo(0, parseInt(scrollY || '0') * -1);
+    const body = document.body;
+    // Only unlock if currently locked
+    if (body.dataset.scrollLock !== 'true') {
+      return;
     }
+    body.style.overflow = '';
+    body.style.paddingRight = '';
+    delete body.dataset.scrollLock;
   }
 
   /**
