@@ -3032,27 +3032,47 @@ export class FeedContainer {
       return;
     }
     
+    // Preserve scroll position on mobile to prevent auto-scroll to bottom
+    const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+    let scrollPosition: number | undefined;
+    if (isMobile) {
+      scrollPosition = window.scrollY || document.documentElement.scrollTop;
+    }
+    
     // Ensure trigger is in the correct container
     if (this.postsContainer) {
-      // Remove from current parent if it exists elsewhere
-      if (this.loadMoreTrigger.parentNode && this.loadMoreTrigger.parentNode !== this.postsContainer) {
-        this.loadMoreTrigger.parentNode.removeChild(this.loadMoreTrigger);
-      }
-      // Append to posts container (will move to end if already there)
-      if (!this.loadMoreTrigger.parentNode) {
+      // Only move if not already in the correct container and position
+      const isInCorrectContainer = this.loadMoreTrigger.parentNode === this.postsContainer;
+      const isLastChild = isInCorrectContainer && 
+        this.loadMoreTrigger === this.postsContainer.lastChild;
+      
+      if (!isInCorrectContainer) {
+        // Remove from current parent if it exists elsewhere
+        if (this.loadMoreTrigger.parentNode) {
+          this.loadMoreTrigger.parentNode.removeChild(this.loadMoreTrigger);
+        }
         this.postsContainer.appendChild(this.loadMoreTrigger);
-      } else {
-        // Move to end if already in container but not at the end
+      } else if (!isLastChild) {
+        // Only move to end if not already at the end (to avoid unnecessary DOM manipulation)
         this.postsContainer.appendChild(this.loadMoreTrigger);
       }
     } else if (this.scrollContainer) {
       // Fallback to scroll container
-      if (this.loadMoreTrigger.parentNode && this.loadMoreTrigger.parentNode !== this.scrollContainer) {
-        this.loadMoreTrigger.parentNode.removeChild(this.loadMoreTrigger);
-      }
-      if (!this.loadMoreTrigger.parentNode) {
+      const isInCorrectContainer = this.loadMoreTrigger.parentNode === this.scrollContainer;
+      if (!isInCorrectContainer) {
+        if (this.loadMoreTrigger.parentNode) {
+          this.loadMoreTrigger.parentNode.removeChild(this.loadMoreTrigger);
+        }
         this.scrollContainer.appendChild(this.loadMoreTrigger);
       }
+    }
+    
+    // Restore scroll position on mobile after DOM manipulation
+    if (isMobile && scrollPosition !== undefined) {
+      // Use requestAnimationFrame to ensure DOM has updated
+      requestAnimationFrame(() => {
+        window.scrollTo(0, scrollPosition!);
+      });
     }
     
     // Re-observe if observer exists and trigger is not being observed
