@@ -76,6 +76,7 @@ export class FeedContainer {
   private thumbnailLoadStarted: boolean = false;
   private readonly initialLoadLimit: number; // Set in constructor based on device
   private readonly subsequentLoadLimit: number = 20; // Load 20 items on subsequent loads
+  private placeholderAnimationInterval?: ReturnType<typeof setInterval>; // For scrolling placeholder animation
   private savedFiltersCache: Array<{ id: string; name: string }> = [];
   private savedFiltersLoaded: boolean = false;
   private activeSearchAbortController?: AbortController;
@@ -279,18 +280,43 @@ export class FeedContainer {
     this.headerBar = header;
     header.className = 'feed-header-bar';
     header.style.position = 'sticky';
-    header.style.top = '0';
+    
+    // Detect if we're in mobile Safari standalone/app mode
+    const isStandalone = (window.navigator as any).standalone || 
+                         window.matchMedia('(display-mode: standalone)').matches;
+    const isIOS = /iPhone|iPad|iPod/i.test(navigator.userAgent);
+    
+    // On mobile Safari app mode, position header right below the notch
+    if (isStandalone && isIOS) {
+      // Position sticky header a bit more down when visible
+      header.style.top = 'calc(env(safe-area-inset-top, 0px) * 0.7)';
+      // Add a small padding for spacing below the notch
+      header.style.paddingTop = '8px';
+      header.style.paddingBottom = '8px';
+      header.style.paddingLeft = '12px';
+      header.style.paddingRight = '12px';
+    } else {
+      // Normal positioning for non-standalone
+      header.style.top = '0';
+      header.style.padding = '8px 12px';
+    }
+    
     header.style.width = '100%';
     // Account for padding (12px left + 12px right = 24px) so inner content matches card width
     header.style.maxWidth = `${this.settings.cardMaxWidth + 24}px`;
     header.style.marginLeft = 'auto';
     header.style.marginRight = 'auto';
-    header.style.height = '56px';
+    // Height should be auto to accommodate safe area padding, or fixed if not standalone
+    if (isStandalone && isIOS) {
+      header.style.minHeight = '72px'; // Minimum height, can grow with safe area padding
+      header.style.height = 'auto';
+    } else {
+      header.style.height = '72px';
+    }
     header.style.zIndex = '1001'; // Higher than suggestions (1000) to stay in front
     header.style.display = 'flex';
     header.style.alignItems = 'center';
     header.style.justifyContent = 'flex-start';
-    header.style.padding = '8px 12px';
     header.style.transition = 'transform 0.24s var(--ease-spring, ease), opacity 0.24s var(--ease-spring, ease)';
     header.style.boxSizing = 'border-box';
     header.style.transform = 'translateY(0)';
@@ -313,7 +339,7 @@ export class FeedContainer {
     const brandContainer = document.createElement('div');
     brandContainer.style.display = 'inline-flex';
     brandContainer.style.alignItems = 'center';
-    brandContainer.style.height = '36px';
+    brandContainer.style.height = '44px';
     brandContainer.style.padding = '0 14px';
     brandContainer.style.borderRadius = '10px';
     brandContainer.style.border = '1px solid rgba(255,255,255,0.12)';
@@ -392,45 +418,178 @@ export class FeedContainer {
 
     // Create a wrapper for the input
     const inputWrapper = document.createElement('div');
-    inputWrapper.style.position = 'relative';
+    inputWrapper.style.position = 'relative'; // Needed for absolute positioned placeholder
     inputWrapper.style.width = '100%';
     inputWrapper.style.minWidth = '0'; // Allow grid to constrain width
     inputWrapper.style.boxSizing = 'border-box';
     inputWrapper.style.marginRight = '0'; // Ensure no right margin that could create gap
 
-    // Random placeholder selection
-    const placeholders = [
-      'Discover your stash',
-      'Explore your collection',
-      'Browse your stash',
-      'Find your favorites',
-      'Search your stash',
-      'Explore content',
-      'Find what you want',
-      'Browse content',
-      'What are you looking for?',
-      'Start exploring...',
-      'Find your next favorite',
-      'What catches your eye?',
-      'Dive into your collection',
-      'Uncover hidden gems',
-      'What\'s on your mind?',
-      'Go on an adventure',
-      'Find something amazing',
-      'What sparks your interest?',
-      'Discover something new',
-      'Let\'s explore together',
-      'Find your perfect match',
+    // Scrolling placeholder animation (like redgifs.com)
+    // Only the dynamic part animates, "Search" stays constant
+    const dynamicPlaceholders = [
+      'performers',
+      'tags',
+      'filters',
+      'favorites',
     ];
-    const randomPlaceholder = placeholders[Math.floor(Math.random() * placeholders.length)];
-
+    
+    // Create input element first
     const queryInput = document.createElement('input');
     queryInput.type = 'text';
-    queryInput.placeholder = randomPlaceholder;
+    queryInput.placeholder = ''; // No native placeholder, we use custom
     queryInput.className = 'feed-filters__input';
+    queryInput.style.transition = 'background 0.2s ease, border-color 0.2s ease';
+    
+    // Create a wrapper for the animated placeholder
+    const placeholderWrapper = document.createElement('div');
+    placeholderWrapper.style.position = 'absolute';
+    placeholderWrapper.style.left = '14px';
+    placeholderWrapper.style.top = '50%';
+    placeholderWrapper.style.transform = 'translateY(-50%)';
+    placeholderWrapper.style.pointerEvents = 'none';
+    placeholderWrapper.style.overflow = 'visible'; // Allow overflow for sliding animation
+    placeholderWrapper.style.width = 'calc(100% - 28px)';
+    placeholderWrapper.style.height = '20px';
+    placeholderWrapper.style.color = 'rgba(255, 255, 255, 0.5)';
+    placeholderWrapper.style.fontSize = '15px';
+    placeholderWrapper.style.lineHeight = '20px';
+    placeholderWrapper.style.whiteSpace = 'nowrap';
+    
+    // Static "Search " text
+    const staticText = document.createElement('span');
+    staticText.textContent = 'Search ';
+    staticText.style.display = 'inline-block';
+    staticText.style.marginRight = '4px'; // Add spacing between "Search" and dynamic text
+    
+    // Container for dynamic text with overflow hidden for sliding effect
+    const dynamicContainer = document.createElement('span');
+    dynamicContainer.style.display = 'inline-block';
+    dynamicContainer.style.position = 'relative';
+    dynamicContainer.style.overflow = 'hidden';
+    dynamicContainer.style.verticalAlign = 'top';
+    dynamicContainer.style.minWidth = '80px'; // Reserve space for longest word
+    
+    let currentPlaceholderIndex = 0;
+    let placeholderText: HTMLElement | null = null;
+    
+    const createPlaceholderText = (text: string, isEntering: boolean = false) => {
+      const textEl = document.createElement('span');
+      textEl.textContent = text;
+      textEl.style.display = 'inline-block';
+      textEl.style.transition = 'transform 0.5s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.5s ease';
+      textEl.style.transform = isEntering ? 'translateX(100%)' : 'translateX(0)';
+      textEl.style.opacity = isEntering ? '0' : '1';
+      textEl.style.whiteSpace = 'nowrap';
+      textEl.style.fontWeight = 'bold'; // Make dynamic text bold
+      return textEl;
+    };
+    
+    // Initialize with first placeholder
+    placeholderText = createPlaceholderText(dynamicPlaceholders[0]);
+    dynamicContainer.appendChild(placeholderText);
+    
+    // Assemble placeholder: "Search " + [dynamic part]
+    placeholderWrapper.appendChild(staticText);
+    placeholderWrapper.appendChild(dynamicContainer);
+    
+    // Hide native placeholder when we have custom animated one
+    queryInput.style.color = 'transparent';
+    queryInput.style.caretColor = '#FFFFFF'; // Show caret
+    
+    // Show custom placeholder only when input is empty and not focused
+    const updatePlaceholderVisibility = () => {
+      if (queryInput.value || document.activeElement === queryInput) {
+        placeholderWrapper.style.display = 'none';
+      } else {
+        placeholderWrapper.style.display = 'block';
+      }
+    };
+    
+    const updatePlaceholder = () => {
+      if (!placeholderText || !dynamicContainer) return;
+      
+      // Slide current text out to the left
+      placeholderText.style.transform = 'translateX(-100%)';
+      placeholderText.style.opacity = '0';
+      
+      setTimeout(() => {
+        // Remove old text
+        if (placeholderText && placeholderText.parentNode) {
+          placeholderText.parentNode.removeChild(placeholderText);
+        }
+        
+        // Move to next placeholder
+        currentPlaceholderIndex = (currentPlaceholderIndex + 1) % dynamicPlaceholders.length;
+        
+        // Create new text sliding in from right
+        placeholderText = createPlaceholderText(dynamicPlaceholders[currentPlaceholderIndex], true);
+        dynamicContainer.appendChild(placeholderText);
+        
+        // Trigger reflow
+        void dynamicContainer.offsetHeight;
+        
+        // Slide in
+        setTimeout(() => {
+          if (placeholderText) {
+            placeholderText.style.transform = 'translateX(0)';
+            placeholderText.style.opacity = '1';
+          }
+        }, 10);
+      }, 250); // Half of transition duration
+    };
+    
+    // Start animation when input is not focused and empty
+    const startPlaceholderAnimation = () => {
+      if (this.placeholderAnimationInterval) return;
+      this.placeholderAnimationInterval = setInterval(() => {
+        if (document.activeElement !== queryInput && !queryInput.value) {
+          updatePlaceholder();
+        }
+      }, 3000); // Change every 3 seconds
+    };
+    
+    const stopPlaceholderAnimation = () => {
+      if (this.placeholderAnimationInterval) {
+        clearInterval(this.placeholderAnimationInterval);
+        this.placeholderAnimationInterval = undefined;
+      }
+    };
+    
+    // Start animation after a short delay
+    setTimeout(() => {
+      if (document.activeElement !== queryInput && !queryInput.value) {
+        startPlaceholderAnimation();
+      }
+    }, 1000);
+    
+    // Add placeholder wrapper to input wrapper
+    inputWrapper.appendChild(placeholderWrapper);
+    
+    // Stop animation on focus, restart on blur if empty
+    queryInput.addEventListener('focus', () => {
+      stopPlaceholderAnimation();
+      updatePlaceholderVisibility();
+    });
+    
+    queryInput.addEventListener('blur', () => {
+      updatePlaceholderVisibility();
+      if (!queryInput.value) {
+        setTimeout(() => startPlaceholderAnimation(), 500);
+      }
+    });
+    
+    // Stop animation when user types, restart when cleared
+    queryInput.addEventListener('input', () => {
+      updatePlaceholderVisibility();
+      if (queryInput.value) {
+        stopPlaceholderAnimation();
+      } else {
+        setTimeout(() => startPlaceholderAnimation(), 500);
+      }
+    });
     queryInput.style.width = '100%';
     queryInput.style.minWidth = '0';
-    queryInput.style.height = '36px';
+    queryInput.style.height = '44px';
     // Normal padding now that buttons are outside
     queryInput.style.padding = '0 14px';
     queryInput.style.borderRadius = '10px';
@@ -471,7 +630,7 @@ export class FeedContainer {
     hdToggle.type = 'button';
     hdToggle.title = 'Load HD scene videos';
     hdToggle.setAttribute('aria-label', 'Toggle HD videos');
-    hdToggle.style.height = '36px';
+    hdToggle.style.height = '44px';
     hdToggle.style.minWidth = '44px';
     hdToggle.style.padding = '0 14px';
     hdToggle.style.borderRadius = '10px';
@@ -539,7 +698,7 @@ export class FeedContainer {
     volToggle.type = 'button';
     volToggle.title = 'Play audio for focused video only';
     volToggle.setAttribute('aria-label', 'Toggle volume mode');
-    volToggle.style.height = '36px';
+    volToggle.style.height = '44px';
     volToggle.style.minWidth = '44px';
     volToggle.style.padding = '0 14px';
     volToggle.style.borderRadius = '10px';
@@ -3862,8 +4021,14 @@ export class FeedContainer {
       if (Math.abs(scrollDelta) > 5) {
         if (scrollDelta > 0 && !isHeaderHidden && currentScrollY > 100) {
           // Scrolling down - hide header
+          // Move up by full header height to completely hide it
           if (this.headerBar) {
-            this.headerBar.style.transform = 'translateY(-100%)';
+            // Get the actual rendered height including all padding and safe area
+            const headerHeight = this.headerBar.getBoundingClientRect().height;
+            // Calculate the total distance needed: full height + extra buffer
+            // Use a larger buffer (30px) to absolutely guarantee it's completely hidden
+            const hideDistance = headerHeight + 30;
+            this.headerBar.style.transform = `translateY(-${hideDistance}px)`;
             isHeaderHidden = true;
           }
         } else if (scrollDelta < 0 && isHeaderHidden) {
@@ -4206,6 +4371,12 @@ export class FeedContainer {
     }
     if (this.loadMoreTrigger) {
       this.loadMoreTrigger = undefined;
+    }
+    
+    // Clean up placeholder animation
+    if (this.placeholderAnimationInterval) {
+      clearInterval(this.placeholderAnimationInterval);
+      this.placeholderAnimationInterval = undefined;
     }
   }
 }
