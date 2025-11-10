@@ -8,6 +8,19 @@ import { FeedSettings } from './types.js';
 
 // Initialize when DOM is ready
 function init(): void {
+  // Check if we should scroll to top after reload
+  if (sessionStorage.getItem('stashgifs-scroll-to-top') === 'true') {
+    sessionStorage.removeItem('stashgifs-scroll-to-top');
+    // Scroll to top immediately
+    window.scrollTo(0, 0);
+    // Also ensure document is at top
+    if (document.documentElement) {
+      document.documentElement.scrollTop = 0;
+    }
+    if (document.body) {
+      document.body.scrollTop = 0;
+    }
+  }
   
   const appContainer = document.getElementById('app');
   if (!appContainer) {

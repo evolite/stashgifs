@@ -346,24 +346,19 @@ export class FeedContainer {
     
     brandContainer.appendChild(brand);
     
-    // Click to scroll to top
+    // Click to refresh page and ensure it starts at top
     brandContainer.addEventListener('click', () => {
-      try {
-        // Prefer scrolling the window
-        window.scrollTo({ top: 0, behavior: 'smooth' });
-        // Also attempt to scroll the internal container if used
-        const sc: any = (this as any).scrollContainer;
-        if (sc && typeof sc.scrollTo === 'function') {
-          sc.scrollTo({ top: 0, behavior: 'smooth' });
-        } else if (sc) {
-          sc.scrollTop = 0;
-        }
-      } catch (e) {
-        // Fallback
-        window.scrollTo(0, 0);
-        const sc: any = (this as any).scrollContainer;
-        if (sc) sc.scrollTop = 0;
+      // Set flag in sessionStorage to scroll to top on reload
+      sessionStorage.setItem('stashgifs-scroll-to-top', 'true');
+      // Scroll to top immediately (no smooth behavior)
+      window.scrollTo(0, 0);
+      // Also scroll any internal container
+      const sc: any = (this as any).scrollContainer;
+      if (sc) {
+        sc.scrollTop = 0;
       }
+      // Reload the page
+      window.location.reload();
     });
     
     // ensure smoother animation
