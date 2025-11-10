@@ -1486,21 +1486,9 @@ export class VideoPost {
    * Load the video player
    */
   loadPlayer(videoUrl: string, startTime?: number, endTime?: number): NativeVideoPlayer | undefined {
-    // Early return if already loaded (unless we're retrying)
-    if (this.isLoaded && !this.retryTimeoutId) {
+    // Early return if already loaded
+    if (this.isLoaded) {
       return this.player;
-    }
-
-    // Reset error state when starting new load (unless this is a retry)
-    if (!this.retryTimeoutId) {
-      this.loadErrorCount = 0;
-      this.hasFailedPermanently = false;
-    }
-    
-    // Clear any pending retry
-    if (this.retryTimeoutId) {
-      clearTimeout(this.retryTimeoutId);
-      this.retryTimeoutId = undefined;
     }
 
     // Validate URL early before any other checks
@@ -1510,20 +1498,23 @@ export class VideoPost {
         markerId: this.data.marker.id,
         sceneId: this.data.marker.scene?.id,
       });
-      this.handleLoadError(new Error('Invalid media URL'));
       return undefined;
     }
 
     const playerContainer = this.playerContainer || this.container.querySelector('.video-post__player') as HTMLElement;
     if (!playerContainer) {
       console.warn('VideoPost: Player container not found', { markerId: this.data.marker.id });
-      this.handleLoadError(new Error('Player container not found'));
       return undefined;
     }
 
     try {
-      // Get startTime - use provided startTime, fallback to data.startTime, then marker.seconds
-      const finalStartTime = startTime ?? this.data.startTime ?? this.data.marker.seconds;
+      // For non-HD videos, don't pass startTime (intentionally ignored like old version)
+      // This allows browser to show first frame naturally
+      // Only pass startTime for HD videos (when in HQ mode or explicitly upgrading)
+      // For regular marker videos, pass undefined to use simple loading path
+      const finalStartTime = this.isHQMode 
+        ? (startTime ?? this.data.startTime ?? this.data.marker.seconds)
+        : undefined;
       
       this.player = new NativeVideoPlayer(playerContainer, videoUrl, {
         muted: true,
@@ -1538,11 +1529,6 @@ export class VideoPost {
       if (this.visibilityManager && this.data.marker.id) {
         this.visibilityManager.registerPlayer(this.data.marker.id, this.player);
       }
-
-      // Check for load errors after a short delay to catch timeout/network errors
-      setTimeout(() => {
-        this.checkForLoadError();
-      }, 5000); // Check after 5 seconds
     } catch (error) {
       console.error('VideoPost: Failed to create video player', {
         error,
@@ -1550,7 +1536,6 @@ export class VideoPost {
         markerId: this.data.marker.id,
       });
       // Don't set isLoaded to true if player creation failed
-      this.handleLoadError(error instanceof Error ? error : new Error('Failed to create video player'));
       return undefined;
     }
 
@@ -1595,12 +1580,6 @@ export class VideoPost {
   preload(): NativeVideoPlayer | undefined {
     if (!this.hasVideoSource()) {
       return undefined;
-    }
-
-    // If player exists but is unloaded, reload it
-    if (this.player && this.player.getIsUnloaded()) {
-      this.player.reload();
-      return this.player;
     }
 
     // Show loading indicator when video starts loading
