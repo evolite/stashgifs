@@ -760,6 +760,11 @@ export class StashAPI {
     // Check if already aborted
     if (signal?.aborted) return [];
     
+    // In shuffle mode, query scenes directly to include scenes with 0 markers
+    if (filters?.shuffleMode) {
+      return this.fetchScenesForShuffle(filters, signal);
+    }
+    
     // If a saved filter is specified, fetch its criteria first
     let savedFilterCriteria: any = null;
     if (filters?.savedFilterId) {
@@ -1012,6 +1017,12 @@ export class StashAPI {
         }
         
         if (signal?.aborted) return [];
+        
+        // Filter to scenes with less than 5 markers when shuffle mode is enabled
+        if (filters?.shuffleMode && markers.length > 0) {
+          markers = this.filterScenesByMarkerCount(markers, 5);
+        }
+        
         return markers;
       }
 
@@ -1137,6 +1148,12 @@ export class StashAPI {
       }
       
       if (signal?.aborted) return [];
+      
+      // Filter to scenes with less than 5 markers when shuffle mode is enabled
+      if (filters?.shuffleMode && markers.length > 0) {
+        markers = this.filterScenesByMarkerCount(markers, 5);
+      }
+      
       return markers;
     } catch (e: any) {
       // Ignore AbortError - it's expected when cancelling
@@ -1146,6 +1163,242 @@ export class StashAPI {
       console.error('Error fetching scene markers:', e);
       return [];
     }
+  }
+
+  /**
+   * Fetch scenes directly for shuffle mode (includes scenes with 0 markers)
+   * @param filters Filter options
+   * @param signal Abort signal
+   * @returns Array of synthetic scene markers (one per scene)
+   */
+  private async fetchScenesForShuffle(filters?: FilterOptions, signal?: AbortSignal): Promise<SceneMarker[]> {
+    const query = `query FindScenes($filter: FindFilterType, $scene_filter: SceneFilterType) {
+      findScenes(filter: $filter, scene_filter: $scene_filter) {
+        count
+        scenes {
+          id
+          title
+          date
+          details
+          url
+          rating100
+          o_counter
+          studio {
+            id
+            name
+          }
+          performers {
+            id
+            name
+            image_path
+          }
+          tags {
+            id
+            name
+          }
+          files {
+            id
+            path
+            size
+            duration
+            video_codec
+            audio_codec
+            width
+            height
+            bit_rate
+          }
+          paths {
+            screenshot
+            preview
+            stream
+            webp
+            vtt
+          }
+          sceneStreams {
+            url
+            mime_type
+            label
+          }
+          scene_markers {
+            id
+          }
+        }
+      }
+    }`;
+
+    try {
+      const limit = filters?.limit || 20;
+      let page = filters?.offset ? Math.floor(filters?.offset / limit) + 1 : 1;
+
+      // Calculate random page if no offset
+      if (!filters?.offset) {
+        const countQuery = `query GetSceneCount($filter: FindFilterType, $scene_filter: SceneFilterType) {
+          findScenes(filter: $filter, scene_filter: $scene_filter) {
+            count
+          }
+        }`;
+
+        const countFilter: any = { per_page: 1, page: 1 };
+        const sceneFilter: any = {};
+        
+        // Use has_markers filter based on includeScenesWithoutMarkers preference
+        if (filters?.includeScenesWithoutMarkers) {
+          // Include all scenes (both with and without markers)
+          // Don't filter by has_markers when including scenes without markers
+        } else {
+          // Only scenes with markers - use boolean directly, not object
+          sceneFilter.has_markers = true;
+        }
+
+        try {
+          if (signal?.aborted) return [];
+          if (this.pluginApi?.GQL?.client) {
+            const countResult = await this.pluginApi.GQL.client.query({
+              query: countQuery as any,
+              variables: { filter: countFilter, scene_filter: sceneFilter },
+            });
+            if (signal?.aborted) return [];
+            const totalCount = countResult.data?.findScenes?.count || 0;
+            if (totalCount > 0) {
+              const totalPages = Math.ceil(totalCount / limit);
+              page = Math.floor(Math.random() * totalPages) + 1;
+            }
+          } else {
+            const countResponse = await fetch(`${this.baseUrl}/graphql`, {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                ...(this.apiKey && { 'ApiKey': this.apiKey }),
+              },
+              body: JSON.stringify({ query: countQuery, variables: { filter: countFilter, scene_filter: sceneFilter } }),
+              signal,
+            });
+            if (signal?.aborted) return [];
+            if (!countResponse.ok) return [];
+            const countData = await countResponse.json();
+            if (signal?.aborted) return [];
+            const totalCount = countData.data?.findScenes?.count || 0;
+            if (totalCount > 0) {
+              const totalPages = Math.ceil(totalCount / limit);
+              page = Math.floor(Math.random() * totalPages) + 1;
+            }
+          }
+        } catch (e: any) {
+          if (e.name === 'AbortError' || signal?.aborted) {
+            return [];
+          }
+          console.warn('Failed to get scene count for shuffle, using page 1', e);
+        }
+      }
+
+      if (signal?.aborted) return [];
+
+      const filter: any = {
+        per_page: limit,
+        page: page,
+        sort: `random_${Math.floor(Math.random() * 1000000)}`,
+      };
+
+      const sceneFilter: any = {};
+      
+      // Use has_markers filter based on includeScenesWithoutMarkers preference
+      if (filters?.includeScenesWithoutMarkers) {
+        // Include all scenes (both with and without markers)
+        // Don't filter by has_markers when including scenes without markers
+      } else {
+        // Only scenes with markers - use boolean directly, not object
+        sceneFilter.has_markers = true;
+      }
+
+      let scenes: any[] = [];
+
+      if (this.pluginApi?.GQL?.client) {
+        const result = await this.pluginApi.GQL.client.query({
+          query: query as any,
+          variables: { filter, scene_filter: sceneFilter },
+        });
+        if (signal?.aborted) return [];
+        scenes = result.data?.findScenes?.scenes || [];
+      } else {
+        const response = await fetch(`${this.baseUrl}/graphql`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            ...(this.apiKey && { 'ApiKey': this.apiKey }),
+          },
+          body: JSON.stringify({ query, variables: { filter, scene_filter: sceneFilter } }),
+          signal,
+        });
+
+        if (signal?.aborted) return [];
+        if (!response.ok) return [];
+
+        const data = await response.json();
+        if (signal?.aborted) return [];
+        if (data.errors) {
+          throw new Error(`GraphQL errors: ${JSON.stringify(data.errors)}`);
+        }
+
+        scenes = data.data?.findScenes?.scenes || [];
+      }
+
+      // Create synthetic markers for each scene (one per scene, starting at 0 seconds)
+      // This allows us to display scenes with 0 markers
+      const syntheticMarkers: SceneMarker[] = scenes.map((scene) => ({
+        id: `synthetic-${scene.id}-${Date.now()}-${Math.random()}`,
+        title: scene.title || 'Untitled',
+        seconds: 0, // Will be randomized in createPost when shuffle mode is active
+        scene: scene,
+        primary_tag: undefined,
+        tags: [],
+      }));
+
+      return syntheticMarkers;
+    } catch (e: any) {
+      if (e.name === 'AbortError' || signal?.aborted) {
+        return [];
+      }
+      console.error('Error fetching scenes for shuffle', e);
+      return [];
+    }
+  }
+
+  /**
+   * Filter markers to only include those from scenes with less than maxMarkers
+   * @param markers Array of scene markers
+   * @param maxMarkers Maximum number of markers per scene (exclusive)
+   * @returns Filtered array of markers
+   */
+  private filterScenesByMarkerCount(markers: SceneMarker[], maxMarkers: number): SceneMarker[] {
+    // Group markers by scene ID
+    const sceneMarkerCounts = new Map<string, number>();
+    const sceneMarkers = new Map<string, SceneMarker[]>();
+
+    for (const marker of markers) {
+      const sceneId = marker.scene?.id;
+      if (!sceneId) continue;
+
+      const count = sceneMarkerCounts.get(sceneId) || 0;
+      sceneMarkerCounts.set(sceneId, count + 1);
+
+      if (!sceneMarkers.has(sceneId)) {
+        sceneMarkers.set(sceneId, []);
+      }
+      sceneMarkers.get(sceneId)!.push(marker);
+    }
+
+    // Filter to only scenes with less than maxMarkers
+    const filteredMarkers: SceneMarker[] = [];
+    for (const [sceneId, count] of sceneMarkerCounts.entries()) {
+      if (count < maxMarkers) {
+        const sceneMarkersList = sceneMarkers.get(sceneId);
+        if (sceneMarkersList) {
+          filteredMarkers.push(...sceneMarkersList);
+        }
+      }
+    }
+
+    return filteredMarkers;
   }
 
   /**
@@ -1227,9 +1480,14 @@ export class StashAPI {
    * @param maxHeight - Optional max height for optimized thumbnail
    */
   getMarkerThumbnailUrl(marker: SceneMarker, maxWidth?: number, maxHeight?: number): string | undefined {
+    // Skip marker screenshot for synthetic markers (created in random/shuffle mode)
+    // Synthetic markers have IDs like "synthetic-{sceneId}-{timestamp}-{random}"
+    const markerId = typeof marker.id === 'string' ? marker.id : String(marker.id);
+    const isSyntheticMarker = markerId.startsWith('synthetic-');
+    
     // Use marker-specific screenshot endpoint: /scene/{sceneId}/scene_marker/{markerId}/screenshot
-    if (marker.id && marker.scene?.id) {
-      const markerId = typeof marker.id === 'string' ? marker.id : String(marker.id);
+    // Only if it's a real marker (not synthetic)
+    if (!isSyntheticMarker && marker.id && marker.scene?.id) {
       const sceneId = typeof marker.scene.id === 'string' ? marker.scene.id : String(marker.scene.id);
       let baseUrl = `${this.baseUrl}/scene/${sceneId}/scene_marker/${markerId}/screenshot`;
       
@@ -1240,7 +1498,7 @@ export class StashAPI {
       
       return baseUrl;
     }
-    // Fallback to scene preview if marker screenshot not available
+    // Fallback to scene preview if marker screenshot not available (or synthetic marker)
     return this.getThumbnailUrl(marker.scene, maxWidth, maxHeight);
   }
 
@@ -2035,6 +2293,311 @@ export class StashAPI {
     } catch (error) {
       console.error('StashAPI: Failed to save scene rating', error);
       throw error;
+    }
+  }
+
+  /**
+   * Find tags for selection (used in marker creation autocomplete)
+   * @param searchTerm Search term for tag name
+   * @param limit Maximum number of results
+   * @param signal Optional abort signal
+   * @returns Array of tags with id, name, and other fields
+   */
+  async findTagsForSelect(searchTerm: string = '', limit: number = 200, signal?: AbortSignal): Promise<Array<{ id: string; name: string; sort_name?: string; favorite?: boolean; description?: string; aliases?: string[]; image_path?: string; parents?: Array<{ id: string; name: string }> }>> {
+    const query = `query FindTagsForSelect($filter: FindFilterType, $tag_filter: TagFilterType, $ids: [ID!]) {
+      findTags(filter: $filter, tag_filter: $tag_filter, ids: $ids) {
+        count
+        tags {
+          id
+          name
+          sort_name
+          favorite
+          description
+          aliases
+          image_path
+          parents {
+            id
+            name
+            sort_name
+          }
+        }
+      }
+    }`;
+
+    const variables = {
+      filter: {
+        q: searchTerm,
+        sort: 'name',
+        direction: 'ASC',
+        page: 1,
+        per_page: limit,
+      },
+      tag_filter: {},
+      ids: null as string[] | null,
+    };
+
+    try {
+      if (this.pluginApi?.GQL?.client) {
+        const client = this.pluginApi.GQL.client;
+        try {
+          // Note: Plugin API client may not support abort signal in query options
+          // If signal is aborted, we'll catch it in the error handler
+          const result = await client.query({ query: query as any, variables });
+          if (signal?.aborted) {
+            return [];
+          }
+          return result.data?.findTags?.tags || [];
+        } catch (err: any) {
+          if (err.name === 'AbortError' || signal?.aborted) {
+            return [];
+          }
+          console.error('StashAPI: Failed to find tags for select', {
+            error: err,
+            message: err?.message,
+            graphQLErrors: err?.graphQLErrors,
+            networkError: err?.networkError,
+            searchTerm,
+          });
+          throw err;
+        }
+      }
+
+      const response = await fetch(`${this.baseUrl}/graphql`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(this.apiKey && { ApiKey: this.apiKey }),
+        },
+        body: JSON.stringify({ query, variables }),
+        signal,
+      });
+
+      if (!response.ok) {
+        throw new Error(`GraphQL request failed: ${response.status}`);
+      }
+
+      const data = await response.json();
+      if (data.errors) {
+        throw new Error(`GraphQL errors: ${JSON.stringify(data.errors)}`);
+      }
+
+      return data.data?.findTags?.tags || [];
+    } catch (error: any) {
+      if (error.name === 'AbortError' || signal?.aborted) {
+        return [];
+      }
+      console.error('StashAPI: Failed to find tags for select', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Create a new scene marker
+   * @param sceneId Scene ID
+   * @param seconds Start time in seconds
+   * @param primaryTagId Primary tag ID (required)
+   * @param title Optional title (defaults to empty string)
+   * @param endSeconds Optional end time in seconds
+   * @param tagIds Optional array of additional tag IDs
+   * @returns Created marker data
+   */
+  async createSceneMarker(
+    sceneId: string,
+    seconds: number,
+    primaryTagId: string,
+    title: string = '',
+    endSeconds?: number | null,
+    tagIds: string[] = []
+  ): Promise<{ id: string; title: string; seconds: number; end_seconds?: number; stream?: string; preview?: string; scene: any; primary_tag: { id: string; name: string }; tags: Array<{ id: string; name: string }> }> {
+    const mutation = `mutation SceneMarkerCreate($title: String!, $seconds: Float!, $end_seconds: Float, $scene_id: ID!, $primary_tag_id: ID!, $tag_ids: [ID!] = []) {
+      sceneMarkerCreate(
+        input: {title: $title, seconds: $seconds, end_seconds: $end_seconds, scene_id: $scene_id, primary_tag_id: $primary_tag_id, tag_ids: $tag_ids}
+      ) {
+        id
+        title
+        seconds
+        end_seconds
+        stream
+        preview
+        screenshot
+        scene {
+          id
+          title
+          files {
+            width
+            height
+            path
+          }
+          performers {
+            id
+            name
+            image_path
+          }
+        }
+        primary_tag {
+          id
+          name
+        }
+        tags {
+          id
+          name
+        }
+      }
+    }`;
+
+    const variables = {
+      title,
+      seconds,
+      end_seconds: endSeconds ?? null,
+      scene_id: sceneId,
+      primary_tag_id: primaryTagId,
+      tag_ids: tagIds,
+    };
+
+    try {
+      if (this.pluginApi?.GQL?.client) {
+        const client = this.pluginApi.GQL.client;
+        try {
+          if (client.mutate) {
+            const result = await client.mutate({ mutation: mutation as any, variables });
+            return result.data?.sceneMarkerCreate;
+          } else {
+            const result = await client.query({ query: mutation as any, variables });
+            return result.data?.sceneMarkerCreate;
+          }
+        } catch (err: any) {
+          console.error('StashAPI: Failed to create scene marker', {
+            error: err,
+            message: err?.message,
+            graphQLErrors: err?.graphQLErrors,
+            networkError: err?.networkError,
+            sceneId,
+            seconds,
+            primaryTagId,
+          });
+          throw err;
+        }
+      }
+
+      const response = await fetch(`${this.baseUrl}/graphql`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(this.apiKey && { ApiKey: this.apiKey }),
+        },
+        body: JSON.stringify({ query: mutation, variables }),
+      });
+
+      if (!response.ok) {
+        throw new Error(`GraphQL request failed: ${response.status}`);
+      }
+
+      const data = await response.json();
+      if (data.errors) {
+        throw new Error(`GraphQL errors: ${JSON.stringify(data.errors)}`);
+      }
+
+      return data.data?.sceneMarkerCreate;
+    } catch (error) {
+      console.error('StashAPI: Failed to create scene marker', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Fetch marker times for a scene using FindSceneMarkerTags query
+   * Returns array of marker seconds values
+   */
+  async fetchSceneMarkerTags(sceneId: string, signal?: AbortSignal): Promise<number[]> {
+    const query = `query FindSceneMarkerTags($id: ID!) {
+      sceneMarkerTags(scene_id: $id) {
+        scene_markers {
+          seconds
+        }
+      }
+    }`;
+    
+    // Note: sceneMarkerTags may return an array or a single object depending on Stash version
+    // We handle both cases in the parsing logic below
+
+    try {
+      if (signal?.aborted) return [];
+
+      if (this.pluginApi?.GQL?.client) {
+        const result = await this.pluginApi.GQL.client.query({
+          query: query as any,
+          variables: { id: sceneId },
+        });
+        if (signal?.aborted) return [];
+        
+        const sceneMarkerTags = result.data?.sceneMarkerTags;
+        if (!sceneMarkerTags) {
+          return [];
+        }
+
+        // Extract seconds from all markers
+        // sceneMarkerTags can be an array (multiple tag groups) or a single object
+        const markerTimes: number[] = [];
+        const tagGroups = Array.isArray(sceneMarkerTags) ? sceneMarkerTags : [sceneMarkerTags];
+        
+        for (const tagGroup of tagGroups) {
+          if (tagGroup.scene_markers && Array.isArray(tagGroup.scene_markers)) {
+            for (const marker of tagGroup.scene_markers) {
+              if (typeof marker.seconds === 'number') {
+                markerTimes.push(marker.seconds);
+              }
+            }
+          }
+        }
+        return markerTimes;
+      } else {
+        const response = await fetch(`${this.baseUrl}/graphql`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            ...(this.apiKey && { 'ApiKey': this.apiKey }),
+          },
+          body: JSON.stringify({ query, variables: { id: sceneId } }),
+          signal,
+        });
+
+        if (signal?.aborted) return [];
+        if (!response.ok) return [];
+
+        const data = await response.json();
+        if (signal?.aborted) return [];
+        if (data.errors) {
+          console.warn('StashAPI: GraphQL errors fetching scene marker tags', data.errors);
+          return [];
+        }
+
+        const sceneMarkerTags = data.data?.sceneMarkerTags;
+        if (!sceneMarkerTags) {
+          return [];
+        }
+
+        // Extract seconds from all markers
+        // sceneMarkerTags can be an array (multiple tag groups) or a single object
+        const markerTimes: number[] = [];
+        const tagGroups = Array.isArray(sceneMarkerTags) ? sceneMarkerTags : [sceneMarkerTags];
+        
+        for (const tagGroup of tagGroups) {
+          if (tagGroup.scene_markers && Array.isArray(tagGroup.scene_markers)) {
+            for (const marker of tagGroup.scene_markers) {
+              if (typeof marker.seconds === 'number') {
+                markerTimes.push(marker.seconds);
+              }
+            }
+          }
+        }
+        return markerTimes;
+      }
+    } catch (e: any) {
+      if (e.name === 'AbortError' || signal?.aborted) {
+        return [];
+      }
+      console.warn('StashAPI: Failed to fetch scene marker tags', e);
+      return [];
     }
   }
 }

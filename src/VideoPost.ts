@@ -44,6 +44,8 @@ const HQ_SVG_FILLED = `<svg viewBox="0 0 24 24" width="20" height="20" fill="cur
 
 const PLAY_SVG = '<svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor" aria-hidden="true"><path d="M8 5v14l11-7z"/></svg>';
 
+const MARKER_SVG = '<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>';
+
 const STAR_SVG = `<svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor" aria-hidden="true" focusable="false">
   <path d="M12 17.27L18.18 21l-1.64-7.03L22 9.24l-7.19-.62L12 2 9.19 8.62 2 9.24l5.46 4.73L5.82 21z"/>
 </svg>`;
@@ -62,6 +64,7 @@ export class VideoPost {
   private api?: StashAPI;
   private visibilityManager?: VisibilityManager;
   private heartButton?: HTMLElement;
+  private markerButton?: HTMLElement;
   private oCountButton?: HTMLElement;
   private hqButton?: HTMLElement;
   private playButton?: HTMLElement;
@@ -78,6 +81,16 @@ export class VideoPost {
   private isRatingDialogOpen: boolean = false;
   private isSavingRating: boolean = false;
   private isTogglingFavorite: boolean = false;
+  private markerDialog?: HTMLElement;
+  private markerDialogInput?: HTMLInputElement;
+  private markerDialogSuggestions?: HTMLElement;
+  private markerDialogRecentTags?: HTMLElement;
+  private markerDialogCreateButton?: HTMLButtonElement;
+  private isMarkerDialogOpen: boolean = false;
+  private selectedTagId?: string;
+  private selectedTagName?: string;
+  private autocompleteDebounceTimer?: ReturnType<typeof setTimeout>;
+  private hasCreatedMarker: boolean = false; // Track if marker has been created for this scene
   private videoLoadingIndicator?: HTMLElement;
   private cachedStarButtonWidth?: number; // Cache star button width (doesn't change)
   private loadErrorCount: number = 0;
@@ -98,6 +111,9 @@ export class VideoPost {
 
   private onPerformerChipClick?: (performerId: number, performerName: string) => void;
   private onTagChipClick?: (tagId: number, tagName: string) => void;
+  private onCancelRequests?: () => void; // Callback to cancel pending requests
+
+  private useShuffleMode: boolean = false;
 
   constructor(
     container: HTMLElement, 
@@ -106,7 +122,9 @@ export class VideoPost {
     api?: StashAPI, 
     visibilityManager?: VisibilityManager,
     onPerformerChipClick?: (performerId: number, performerName: string) => void,
-    onTagChipClick?: (tagId: number, tagName: string) => void
+    onTagChipClick?: (tagId: number, tagName: string) => void,
+    useShuffleMode?: boolean,
+    onCancelRequests?: () => void
   ) {
     this.container = container;
     this.data = data;
@@ -115,6 +133,8 @@ export class VideoPost {
     this.visibilityManager = visibilityManager;
     this.onPerformerChipClick = onPerformerChipClick;
     this.onTagChipClick = onTagChipClick;
+    this.useShuffleMode = useShuffleMode || false;
+    this.onCancelRequests = onCancelRequests;
     this.oCount = this.data.marker.scene.o_counter || 0;
     this.ratingValue = this.convertRating100ToStars(this.data.marker.scene.rating100);
     this.hasRating = typeof this.data.marker.scene.rating100 === 'number' && !Number.isNaN(this.data.marker.scene.rating100);
@@ -233,50 +253,52 @@ export class VideoPost {
       }
     }
 
-    // Add tag chips: show all tags from the tags array
-    if (this.data.marker.tags && this.data.marker.tags.length > 0) {
-      // Create a set to track displayed tags and ensure no duplicates
-      const displayedTagIds = new Set<string>();
-      
-      // First, add primary tag if it exists and is valid (but skip if it's the Favorite tag)
-      if (this.data.marker.primary_tag && 
-          this.data.marker.primary_tag.id && 
-          this.data.marker.primary_tag.name &&
-          this.data.marker.primary_tag.name !== FAVORITE_TAG_NAME) {
+    // Add tag chips: show all tags from the tags array (skip in shuffle mode)
+    if (!this.useShuffleMode) {
+      if (this.data.marker.tags && this.data.marker.tags.length > 0) {
+        // Create a set to track displayed tags and ensure no duplicates
+        const displayedTagIds = new Set<string>();
+        
+        // First, add primary tag if it exists and is valid (but skip if it's the Favorite tag)
+        if (this.data.marker.primary_tag && 
+            this.data.marker.primary_tag.id && 
+            this.data.marker.primary_tag.name &&
+            this.data.marker.primary_tag.name !== FAVORITE_TAG_NAME) {
+          const chip = this.createTagChip(this.data.marker.primary_tag);
+          chips.appendChild(chip);
+          displayedTagIds.add(this.data.marker.primary_tag.id);
+        }
+        
+        // Then, add all other tags from the tags array
+        for (const tag of this.data.marker.tags) {
+          // Skip if tag is invalid or already displayed
+          if (!tag || !tag.id || !tag.name || displayedTagIds.has(tag.id)) {
+            continue;
+          }
+          
+          // Skip if this tag is the same as the primary tag
+          if (this.data.marker.primary_tag && 
+              this.data.marker.primary_tag.id === tag.id) {
+            continue;
+          }
+          
+          // Skip the StashGifs Favorite tag (already represented by heart button)
+          if (tag.name === FAVORITE_TAG_NAME) {
+            continue;
+          }
+          
+          const chip = this.createTagChip(tag);
+          chips.appendChild(chip);
+          displayedTagIds.add(tag.id);
+        }
+      } else if (this.data.marker.primary_tag && 
+                 this.data.marker.primary_tag.id && 
+                 this.data.marker.primary_tag.name &&
+                 this.data.marker.primary_tag.name !== FAVORITE_TAG_NAME) {
+        // Fallback: if tags array is empty but primary tag exists, show it (unless it's Favorite tag)
         const chip = this.createTagChip(this.data.marker.primary_tag);
         chips.appendChild(chip);
-        displayedTagIds.add(this.data.marker.primary_tag.id);
       }
-      
-      // Then, add all other tags from the tags array
-      for (const tag of this.data.marker.tags) {
-        // Skip if tag is invalid or already displayed
-        if (!tag || !tag.id || !tag.name || displayedTagIds.has(tag.id)) {
-          continue;
-        }
-        
-        // Skip if this tag is the same as the primary tag
-        if (this.data.marker.primary_tag && 
-            this.data.marker.primary_tag.id === tag.id) {
-          continue;
-        }
-        
-        // Skip the StashGifs Favorite tag (already represented by heart button)
-        if (tag.name === FAVORITE_TAG_NAME) {
-          continue;
-        }
-        
-        const chip = this.createTagChip(tag);
-        chips.appendChild(chip);
-        displayedTagIds.add(tag.id);
-      }
-    } else if (this.data.marker.primary_tag && 
-               this.data.marker.primary_tag.id && 
-               this.data.marker.primary_tag.name &&
-               this.data.marker.primary_tag.name !== FAVORITE_TAG_NAME) {
-      // Fallback: if tags array is empty but primary tag exists, show it (unless it's Favorite tag)
-      const chip = this.createTagChip(this.data.marker.primary_tag);
-      chips.appendChild(chip);
     }
 
     header.appendChild(chips);
@@ -532,7 +554,13 @@ export class VideoPost {
     buttonGroup.style.gap = '4px';
 
     // Add buttons in order
-    if (this.favoritesManager) {
+    // Hide favorite button in shuffle mode, show marker button instead
+    if (this.useShuffleMode) {
+      if (this.api) {
+        const markerBtn = this.createMarkerButton();
+        buttonGroup.appendChild(markerBtn);
+      }
+    } else if (this.favoritesManager) {
       const heartBtn = this.createHeartButton();
       buttonGroup.appendChild(heartBtn);
     }
@@ -712,6 +740,54 @@ export class VideoPost {
     this.addHoverEffect(heartBtn);
     this.heartButton = heartBtn;
     return heartBtn;
+  }
+
+  /**
+   * Create marker button for creating new markers in shuffle mode
+   */
+  private createMarkerButton(): HTMLElement {
+    const markerBtn = document.createElement('button');
+    markerBtn.className = 'icon-btn icon-btn--marker';
+    markerBtn.type = 'button';
+    markerBtn.setAttribute('aria-label', 'Create marker');
+    this.applyIconButtonStyles(markerBtn);
+    markerBtn.style.padding = '0';
+    markerBtn.innerHTML = MARKER_SVG;
+
+    const clickHandler = (e: Event) => {
+      e.preventDefault();
+      e.stopPropagation();
+      this.openMarkerDialog();
+    };
+
+    markerBtn.addEventListener('click', clickHandler);
+    this.addHoverEffect(markerBtn);
+    this.markerButton = markerBtn;
+    this.updateMarkerButtonState();
+    return markerBtn;
+  }
+
+  /**
+   * Update marker button visual state (red when marker has been created)
+   */
+  private updateMarkerButtonState(): void {
+    if (!this.markerButton) return;
+
+    if (this.hasCreatedMarker) {
+      // Set button to red color to indicate marker has been created
+      this.markerButton.style.color = '#ef4444'; // red-500
+      const svg = this.markerButton.querySelector('svg');
+      if (svg) {
+        svg.style.color = '#ef4444';
+      }
+    } else {
+      // Default color
+      this.markerButton.style.color = 'rgba(255, 255, 255, 0.7)';
+      const svg = this.markerButton.querySelector('svg');
+      if (svg) {
+        svg.style.color = 'rgba(255, 255, 255, 0.7)';
+      }
+    }
   }
 
   /**
@@ -1974,6 +2050,525 @@ export class VideoPost {
         markerId: this.data.marker.id,
         startTime: clamped,
       });
+    }
+  }
+
+  /**
+   * Create marker creation dialog
+   */
+  private createMarkerDialog(): HTMLElement {
+    const dialog = document.createElement('div');
+    dialog.className = 'marker-dialog';
+    dialog.setAttribute('role', 'dialog');
+    dialog.setAttribute('aria-modal', 'true');
+    dialog.setAttribute('aria-hidden', 'true');
+    dialog.hidden = true;
+    dialog.style.position = 'absolute';
+    dialog.style.bottom = 'calc(100% + 6px)';
+    dialog.style.left = '50%';
+    dialog.style.transform = 'translateX(-50%)';
+    dialog.style.width = '320px';
+    dialog.style.maxWidth = 'calc(100vw - 32px)';
+    dialog.style.background = 'rgba(28, 28, 30, 0.98)';
+    dialog.style.backdropFilter = 'blur(20px) saturate(180%)';
+    (dialog.style as any).webkitBackdropFilter = 'blur(20px) saturate(180%)';
+    dialog.style.border = '1px solid rgba(255, 255, 255, 0.12)';
+    dialog.style.borderRadius = '12px';
+    dialog.style.padding = '16px';
+    dialog.style.boxShadow = '0 8px 32px rgba(0, 0, 0, 0.4)';
+    dialog.style.zIndex = '200';
+    dialog.style.opacity = '0';
+    dialog.style.transform = 'translateX(-50%) translateY(4px) scale(0.96)';
+    dialog.style.pointerEvents = 'none';
+    dialog.style.transition = 'opacity 0.2s cubic-bezier(0.2, 0, 0, 1), transform 0.2s cubic-bezier(0.2, 0, 0, 1)';
+    dialog.style.boxSizing = 'border-box';
+    this.markerDialog = dialog;
+
+    // Title
+    const title = document.createElement('div');
+    title.textContent = 'Create Marker';
+    title.style.fontSize = '16px';
+    title.style.fontWeight = '600';
+    title.style.color = 'rgba(255, 255, 255, 0.9)';
+    title.style.marginBottom = '12px';
+    dialog.appendChild(title);
+
+    // Input wrapper
+    const inputWrapper = document.createElement('div');
+    inputWrapper.style.position = 'relative';
+    inputWrapper.style.marginBottom = '12px';
+
+    // Tag input
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.placeholder = 'Search for tag...';
+    input.style.width = '100%';
+    input.style.padding = '10px 12px';
+    input.style.background = 'rgba(255, 255, 255, 0.08)';
+    input.style.border = '1px solid rgba(255, 255, 255, 0.12)';
+    input.style.borderRadius = '8px';
+    input.style.color = 'rgba(255, 255, 255, 0.9)';
+    input.style.fontSize = '14px';
+    input.style.boxSizing = 'border-box';
+    input.setAttribute('aria-label', 'Tag name');
+    this.markerDialogInput = input;
+
+    input.addEventListener('input', () => {
+      this.handleMarkerTagInput();
+    });
+
+    input.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' && this.selectedTagId && this.markerDialogCreateButton && !this.markerDialogCreateButton.disabled) {
+        e.preventDefault();
+        void this.createMarker();
+      } else if (e.key === 'Escape') {
+        e.preventDefault();
+        this.closeMarkerDialog();
+      }
+    });
+
+    inputWrapper.appendChild(input);
+
+    // Suggestions dropdown
+    const suggestions = document.createElement('div');
+    suggestions.className = 'marker-dialog__suggestions';
+    suggestions.style.display = 'none';
+    suggestions.style.position = 'absolute';
+    suggestions.style.top = '100%';
+    suggestions.style.left = '0';
+    suggestions.style.right = '0';
+    suggestions.style.background = 'rgba(28, 28, 30, 0.98)';
+    suggestions.style.border = '1px solid rgba(255, 255, 255, 0.12)';
+    suggestions.style.borderTop = 'none';
+    suggestions.style.borderRadius = '0 0 8px 8px';
+    suggestions.style.maxHeight = '200px';
+    suggestions.style.overflowY = 'auto';
+    suggestions.style.zIndex = '201';
+    suggestions.style.boxShadow = '0 4px 16px rgba(0, 0, 0, 0.3)';
+    this.markerDialogSuggestions = suggestions;
+    inputWrapper.appendChild(suggestions);
+
+    dialog.appendChild(inputWrapper);
+
+    // Recent tags section
+    const recentSection = document.createElement('div');
+    recentSection.className = 'marker-dialog__recent';
+    recentSection.style.marginBottom = '12px';
+    const recentTitle = document.createElement('div');
+    recentTitle.textContent = 'Recent tags';
+    recentTitle.style.fontSize = '12px';
+    recentTitle.style.fontWeight = '500';
+    recentTitle.style.color = 'rgba(255, 255, 255, 0.6)';
+    recentTitle.style.marginBottom = '8px';
+    recentSection.appendChild(recentTitle);
+    const recentTags = document.createElement('div');
+    recentTags.style.display = 'none'; // Hidden by default, shown when tags are loaded
+    recentTags.style.flexWrap = 'wrap';
+    recentTags.style.gap = '6px';
+    this.markerDialogRecentTags = recentTags;
+    recentSection.appendChild(recentTags);
+    dialog.appendChild(recentSection);
+
+    // Buttons
+    const buttons = document.createElement('div');
+    buttons.style.display = 'flex';
+    buttons.style.gap = '8px';
+    buttons.style.justifyContent = 'flex-end';
+
+    const cancelBtn = document.createElement('button');
+    cancelBtn.type = 'button';
+    cancelBtn.textContent = 'Cancel';
+    cancelBtn.style.padding = '8px 16px';
+    cancelBtn.style.background = 'rgba(255, 255, 255, 0.08)';
+    cancelBtn.style.border = '1px solid rgba(255, 255, 255, 0.12)';
+    cancelBtn.style.borderRadius = '8px';
+    cancelBtn.style.color = 'rgba(255, 255, 255, 0.9)';
+    cancelBtn.style.fontSize = '14px';
+    cancelBtn.style.cursor = 'pointer';
+    cancelBtn.addEventListener('click', () => this.closeMarkerDialog());
+    buttons.appendChild(cancelBtn);
+
+    const createBtn = document.createElement('button');
+    createBtn.type = 'button';
+    createBtn.textContent = 'Create';
+    createBtn.disabled = true;
+    createBtn.style.padding = '8px 16px';
+    createBtn.style.background = 'rgba(99, 102, 241, 0.3)';
+    createBtn.style.border = '1px solid rgba(99, 102, 241, 0.5)';
+    createBtn.style.borderRadius = '8px';
+    createBtn.style.color = 'rgba(255, 255, 255, 0.5)';
+    createBtn.style.fontSize = '14px';
+    createBtn.style.cursor = 'not-allowed';
+    createBtn.style.transition = 'all 0.2s ease';
+    createBtn.addEventListener('click', () => {
+      void this.createMarker();
+    });
+    this.markerDialogCreateButton = createBtn;
+    buttons.appendChild(createBtn);
+
+    dialog.appendChild(buttons);
+
+    return dialog;
+  }
+
+  /**
+   * Open marker dialog
+   */
+  private openMarkerDialog(): void {
+    if (!this.markerDialog) {
+      if (!this.markerButton) return;
+      const dialog = this.createMarkerDialog();
+      // Append to buttonGroup (parent of markerButton) and ensure it has position relative
+      const buttonGroup = this.markerButton.parentElement;
+      if (buttonGroup) {
+        buttonGroup.style.position = 'relative';
+        buttonGroup.appendChild(dialog);
+      }
+    }
+    if (this.isMarkerDialogOpen) return;
+
+    this.isMarkerDialogOpen = true;
+    this.selectedTagId = undefined;
+    this.selectedTagName = undefined;
+    if (this.markerDialogInput) {
+      this.markerDialogInput.value = '';
+    }
+    this.updateMarkerDialogState();
+    this.loadRecentTags();
+
+    if (this.markerDialog) {
+      this.markerDialog.hidden = false;
+      this.markerDialog.setAttribute('aria-hidden', 'false');
+      this.markerDialog.style.opacity = '1';
+      this.markerDialog.style.transform = 'translateX(-50%) translateY(0) scale(1)';
+      this.markerDialog.style.pointerEvents = 'auto';
+    }
+
+    document.addEventListener('mousedown', this.onMarkerDialogOutsideClick);
+    document.addEventListener('touchstart', this.onMarkerDialogOutsideClick);
+    document.addEventListener('keydown', this.onMarkerDialogKeydown);
+
+    // Focus input
+    requestAnimationFrame(() => {
+      this.markerDialogInput?.focus();
+    });
+  }
+
+  /**
+   * Close marker dialog
+   */
+  private closeMarkerDialog(): void {
+    if (!this.isMarkerDialogOpen) return;
+    this.isMarkerDialogOpen = false;
+
+    if (this.markerDialog) {
+      this.markerDialog.style.opacity = '0';
+      this.markerDialog.style.transform = 'translateX(-50%) translateY(4px) scale(0.96)';
+      this.markerDialog.style.pointerEvents = 'none';
+      setTimeout(() => {
+        if (this.markerDialog && !this.isMarkerDialogOpen) {
+          this.markerDialog.hidden = true;
+          this.markerDialog.setAttribute('aria-hidden', 'true');
+        }
+      }, 200);
+    }
+
+    if (this.markerDialogSuggestions) {
+      this.markerDialogSuggestions.style.display = 'none';
+    }
+
+    document.removeEventListener('mousedown', this.onMarkerDialogOutsideClick);
+    document.removeEventListener('touchstart', this.onMarkerDialogOutsideClick);
+    document.removeEventListener('keydown', this.onMarkerDialogKeydown);
+  }
+
+  /**
+   * Handle clicks outside marker dialog
+   */
+  private onMarkerDialogOutsideClick = (event: Event): void => {
+    if (!this.isMarkerDialogOpen || !this.markerDialog) return;
+    const target = event.target as Node | null;
+    if (target && this.markerDialog.contains(target)) {
+      return;
+    }
+    this.closeMarkerDialog();
+  };
+
+  /**
+   * Handle keyboard events for marker dialog
+   */
+  private onMarkerDialogKeydown = (event: KeyboardEvent): void => {
+    if (!this.isMarkerDialogOpen) return;
+    if (event.key === 'Escape') {
+      event.preventDefault();
+      this.closeMarkerDialog();
+      this.markerButton?.focus();
+    }
+  };
+
+  /**
+   * Handle tag input for autocomplete
+   */
+  private handleMarkerTagInput(): void {
+    if (!this.markerDialogInput) return;
+
+    const searchTerm = this.markerDialogInput.value.trim();
+    this.selectedTagId = undefined;
+    this.selectedTagName = undefined;
+    this.updateMarkerDialogState();
+
+    if (this.autocompleteDebounceTimer) {
+      clearTimeout(this.autocompleteDebounceTimer);
+    }
+
+    if (searchTerm.length === 0) {
+      if (this.markerDialogSuggestions) {
+        this.markerDialogSuggestions.style.display = 'none';
+      }
+      return;
+    }
+
+    this.autocompleteDebounceTimer = setTimeout(() => {
+      void this.searchTagsForMarker(searchTerm);
+    }, 250);
+  }
+
+  /**
+   * Search tags for marker creation (using faster searchMarkerTags API)
+   */
+  private async searchTagsForMarker(searchTerm: string): Promise<void> {
+    if (!this.api || !this.markerDialogSuggestions) return;
+
+    try {
+      // Use searchMarkerTags which is much faster than findTagsForSelect
+      const tags = await this.api.searchMarkerTags(searchTerm, 20);
+      this.displayTagSuggestions(tags);
+    } catch (error) {
+      console.error('Failed to search tags', error);
+    }
+  }
+
+  /**
+   * Display tag suggestions in dropdown
+   */
+  private displayTagSuggestions(tags: Array<{ id: string; name: string }>): void {
+    if (!this.markerDialogSuggestions) return;
+
+    this.markerDialogSuggestions.innerHTML = '';
+    this.markerDialogSuggestions.style.display = tags.length > 0 ? 'block' : 'none';
+
+    if (tags.length === 0) {
+      const noResults = document.createElement('div');
+      noResults.textContent = 'No tags found';
+      noResults.style.padding = '12px';
+      noResults.style.color = 'rgba(255, 255, 255, 0.5)';
+      noResults.style.fontSize = '14px';
+      this.markerDialogSuggestions.appendChild(noResults);
+      return;
+    }
+
+    tags.forEach(tag => {
+      const item = document.createElement('button');
+      item.type = 'button';
+      item.textContent = tag.name;
+      item.style.width = '100%';
+      item.style.padding = '10px 12px';
+      item.style.textAlign = 'left';
+      item.style.background = 'transparent';
+      item.style.border = 'none';
+      item.style.color = 'rgba(255, 255, 255, 0.9)';
+      item.style.fontSize = '14px';
+      item.style.cursor = 'pointer';
+      item.style.transition = 'background 0.15s ease';
+
+      item.addEventListener('mouseenter', () => {
+        item.style.background = 'rgba(255, 255, 255, 0.08)';
+      });
+      item.addEventListener('mouseleave', () => {
+        item.style.background = 'transparent';
+      });
+
+      item.addEventListener('click', () => {
+        this.selectTagForMarker(tag.id, tag.name);
+      });
+
+      if (this.markerDialogSuggestions) {
+        this.markerDialogSuggestions.appendChild(item);
+      }
+    });
+  }
+
+  /**
+   * Select tag for marker creation
+   */
+  private selectTagForMarker(tagId: string, tagName: string): void {
+    this.selectedTagId = tagId;
+    this.selectedTagName = tagName;
+    if (this.markerDialogInput) {
+      this.markerDialogInput.value = tagName;
+    }
+    if (this.markerDialogSuggestions) {
+      this.markerDialogSuggestions.style.display = 'none';
+    }
+    this.updateMarkerDialogState();
+    this.addToRecentTags(tagId, tagName);
+  }
+
+  /**
+   * Update marker dialog state (enable/disable create button)
+   */
+  private updateMarkerDialogState(): void {
+    if (!this.markerDialogCreateButton) return;
+
+    const hasTag = !!this.selectedTagId;
+    this.markerDialogCreateButton.disabled = !hasTag;
+
+    if (hasTag) {
+      this.markerDialogCreateButton.style.background = 'rgba(99, 102, 241, 0.6)';
+      this.markerDialogCreateButton.style.borderColor = 'rgba(99, 102, 241, 0.8)';
+      this.markerDialogCreateButton.style.color = 'rgba(255, 255, 255, 0.9)';
+      this.markerDialogCreateButton.style.cursor = 'pointer';
+    } else {
+      this.markerDialogCreateButton.style.background = 'rgba(99, 102, 241, 0.3)';
+      this.markerDialogCreateButton.style.borderColor = 'rgba(99, 102, 241, 0.5)';
+      this.markerDialogCreateButton.style.color = 'rgba(255, 255, 255, 0.5)';
+      this.markerDialogCreateButton.style.cursor = 'not-allowed';
+    }
+  }
+
+  /**
+   * Load recent tags from localStorage
+   */
+  private loadRecentTags(): void {
+    if (!this.markerDialogRecentTags) return;
+
+    try {
+      const stored = localStorage.getItem('stashgifs-recent-marker-tags');
+      if (!stored) return;
+
+      const recentTags: Array<{ id: string; name: string }> = JSON.parse(stored);
+      this.markerDialogRecentTags.innerHTML = '';
+
+      if (recentTags.length === 0) {
+        if (this.markerDialogRecentTags) {
+          this.markerDialogRecentTags.style.display = 'none';
+        }
+        // Hide the entire recent section if no tags
+        const recentSection = this.markerDialogRecentTags?.parentElement;
+        if (recentSection) {
+          recentSection.style.display = 'none';
+        }
+        return;
+      }
+
+      // Show recent section and tags
+      const recentSection = this.markerDialogRecentTags?.parentElement;
+      if (recentSection) {
+        recentSection.style.display = 'block';
+      }
+      this.markerDialogRecentTags.style.display = 'flex';
+      recentTags.forEach(tag => {
+        const chip = document.createElement('button');
+        chip.type = 'button';
+        chip.textContent = tag.name;
+        chip.style.padding = '6px 12px';
+        chip.style.background = 'rgba(255, 255, 255, 0.08)';
+        chip.style.border = '1px solid rgba(255, 255, 255, 0.12)';
+        chip.style.borderRadius = '16px';
+        chip.style.color = 'rgba(255, 255, 255, 0.9)';
+        chip.style.fontSize = '12px';
+        chip.style.cursor = 'pointer';
+        chip.style.transition = 'all 0.15s ease';
+
+        chip.addEventListener('mouseenter', () => {
+          chip.style.background = 'rgba(255, 255, 255, 0.12)';
+          chip.style.borderColor = 'rgba(255, 255, 255, 0.18)';
+        });
+        chip.addEventListener('mouseleave', () => {
+          chip.style.background = 'rgba(255, 255, 255, 0.08)';
+          chip.style.borderColor = 'rgba(255, 255, 255, 0.12)';
+        });
+
+        chip.addEventListener('click', () => {
+          this.selectTagForMarker(tag.id, tag.name);
+        });
+
+        if (this.markerDialogRecentTags) {
+          this.markerDialogRecentTags.appendChild(chip);
+        }
+      });
+    } catch (error) {
+      console.error('Failed to load recent tags', error);
+    }
+  }
+
+  /**
+   * Add tag to recent tags cache
+   */
+  private addToRecentTags(tagId: string, tagName: string): void {
+    try {
+      const stored = localStorage.getItem('stashgifs-recent-marker-tags');
+      let recentTags: Array<{ id: string; name: string }> = stored ? JSON.parse(stored) : [];
+
+      // Remove if already exists
+      recentTags = recentTags.filter(t => t.id !== tagId);
+
+      // Add to beginning
+      recentTags.unshift({ id: tagId, name: tagName });
+
+      // Limit to 20
+      recentTags = recentTags.slice(0, 20);
+
+      localStorage.setItem('stashgifs-recent-marker-tags', JSON.stringify(recentTags));
+    } catch (error) {
+      console.error('Failed to save recent tags', error);
+    }
+  }
+
+  /**
+   * Create marker at current random start time
+   */
+  private async createMarker(): Promise<void> {
+    if (!this.api || !this.selectedTagId || !this.selectedTagName) return;
+    if (!this.markerDialogCreateButton) return;
+
+    const startTime = this.data.startTime ?? 0;
+    const sceneId = this.data.marker.scene.id;
+
+    // Pause all videos and cancel pending requests before creating marker
+    if (this.visibilityManager) {
+      this.visibilityManager.pauseAllVideos();
+    }
+    if (this.onCancelRequests) {
+      this.onCancelRequests();
+    }
+
+    this.markerDialogCreateButton.disabled = true;
+    this.markerDialogCreateButton.textContent = 'Creating...';
+    this.markerDialogCreateButton.style.opacity = '0.6';
+
+    try {
+      await this.api.createSceneMarker(
+        sceneId,
+        startTime,
+        this.selectedTagId,
+        '',
+        null,
+        []
+      );
+
+      showToast(`Marker created with tag "${this.selectedTagName}"`);
+      this.hasCreatedMarker = true;
+      this.updateMarkerButtonState();
+      this.closeMarkerDialog();
+      // Videos will resume naturally via visibility manager when they become visible again
+    } catch (error) {
+      console.error('Failed to create marker', error);
+      showToast('Failed to create marker. Please try again.');
+      this.markerDialogCreateButton.disabled = false;
+      this.markerDialogCreateButton.textContent = 'Create';
+      this.markerDialogCreateButton.style.opacity = '1';
+      // Videos will resume naturally via visibility manager when they become visible again
     }
   }
 

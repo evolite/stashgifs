@@ -517,6 +517,26 @@ export class VisibilityManager {
   }
 
   /**
+   * Pause all currently playing videos
+   */
+  pauseAllVideos(): void {
+    for (const [postId, entry] of this.entries.entries()) {
+      if (entry.player) {
+        try {
+          entry.player.pause();
+          this.videoStates.set(postId, 'paused');
+          this.activeVideos.delete(postId);
+          this.cancelPlaybackRetry(postId);
+          entry.pendingVisibilityPlay = false;
+        } catch (error) {
+          // Ignore errors when pausing
+        }
+      }
+    }
+    this.debugLog('pause-all-videos', { count: this.entries.size });
+  }
+
+  /**
    * Handle intersection state transitions with hysteresis to prevent rapid toggling.
    * Playback decisions rely on true viewport visibility — the entry must intersect,
    * meet the configured threshold, and overlap with the actual viewport rectangle.

@@ -84,6 +84,8 @@ export class FeedContainer {
   private skeletonLoaders: HTMLElement[] = [];
   private useHDMode: boolean = false;
   private useVolumeMode: boolean = false;
+  private shuffleMode: number = 0; // 0 = off, 1 = shuffle with markers only, 2 = shuffle all (including no markers)
+  private sceneMarkerTimesCache: Map<string, number[]> = new Map(); // Cache marker times per scene ID
   private loadObservers: Map<string, IntersectionObserver> = new Map(); // Track load observers for cleanup
   private deviceCapabilities: DeviceCapabilities; // Device capabilities for adaptive quality
 
@@ -132,6 +134,18 @@ export class FeedContainer {
       this.useHDMode = savedHD === 'true' ? true : false;
     } catch {
       this.useHDMode = false;
+    }
+    // Load shuffle mode preference (0 = off, 1 = markers only, 2 = all)
+    try {
+      const savedShuffle = localStorage.getItem('stashgifs-shuffleMode');
+      if (savedShuffle !== null) {
+        const parsed = parseInt(savedShuffle, 10);
+        if (!isNaN(parsed) && parsed >= 0 && parsed <= 2) {
+          this.shuffleMode = parsed;
+        }
+      }
+    } catch {
+      this.shuffleMode = 0;
     }
     // Always default to muted (volume mode disabled)
     this.useVolumeMode = false;
@@ -625,6 +639,9 @@ export class FeedContainer {
     buttonsContainer.style.gap = '8px';
     buttonsContainer.style.height = '36px';
 
+    // Declare shuffle button variable early so it can be referenced in setHDToggleVisualState
+    let shuffleToggle: HTMLButtonElement | null = null;
+
     // HD toggle button (separate element like logo)
     const hdToggle = document.createElement('button');
     hdToggle.type = 'button';
@@ -653,10 +670,18 @@ export class FeedContainer {
         hdToggle.style.background = 'rgba(76, 175, 80, 0.25)'; // green-ish background
         hdToggle.style.borderColor = 'rgba(76, 175, 80, 0.55)';
         hdToggle.style.color = '#C8E6C9';
+        // Show shuffle button when HD mode is enabled
+        if (shuffleToggle) {
+          shuffleToggle.style.display = 'inline-flex';
+        }
       } else {
         hdToggle.style.background = 'rgba(28, 28, 30, 0.9)';
         hdToggle.style.borderColor = 'rgba(255,255,255,0.16)';
         hdToggle.style.color = 'rgba(255,255,255,0.85)';
+        // Hide shuffle button when HD mode is disabled
+        if (shuffleToggle) {
+          shuffleToggle.style.display = 'none';
+        }
       }
     };
     setHDToggleVisualState();
@@ -762,8 +787,121 @@ export class FeedContainer {
     // Append input to wrapper
     inputWrapper.appendChild(queryInput);
     
+    // Shuffle button (only visible in HD mode)
+    shuffleToggle = document.createElement('button');
+    shuffleToggle.type = 'button';
+    shuffleToggle.title = 'Toggle shuffle mode';
+    shuffleToggle.setAttribute('aria-label', 'Toggle shuffle mode');
+    shuffleToggle.style.height = '44px';
+    shuffleToggle.style.minWidth = '44px';
+    shuffleToggle.style.padding = '0 14px';
+    shuffleToggle.style.borderRadius = '10px';
+    shuffleToggle.style.border = '1px solid rgba(255,255,255,0.12)';
+    shuffleToggle.style.background = 'rgba(28, 28, 30, 0.9)';
+    shuffleToggle.style.color = 'rgba(255,255,255,0.85)';
+    shuffleToggle.style.cursor = 'pointer';
+    shuffleToggle.style.display = this.useHDMode ? 'inline-flex' : 'none';
+    shuffleToggle.style.alignItems = 'center';
+    shuffleToggle.style.justifyContent = 'center';
+    shuffleToggle.style.transition = 'background 0.2s ease, border-color 0.2s ease, color 0.2s ease, transform 0.2s cubic-bezier(0.2, 0, 0, 1)';
+    
+    // Shuffle icon SVG (two curved arrows crossing)
+    const shuffleIcon = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="16" height="16" style="display: block;"><path d="M16 3h5v5M21 3l-5 5M8 21H3v-5M3 16l5-5"/><path d="M21 16v-5h-5M16 21l5-5"/></svg>';
+    shuffleToggle.innerHTML = shuffleIcon;
+
+    const setShuffleToggleVisualState = () => {
+      if (this.shuffleMode === 0) {
+        // Off state
+        shuffleToggle.style.background = 'rgba(28, 28, 30, 0.9)';
+        shuffleToggle.style.borderColor = 'rgba(255,255,255,0.12)';
+        shuffleToggle.style.color = 'rgba(255,255,255,0.85)';
+        shuffleToggle.title = 'Shuffle mode: Off';
+      } else if (this.shuffleMode === 1) {
+        // Shuffle with markers only
+        shuffleToggle.style.background = 'rgba(255, 152, 0, 0.25)';
+        shuffleToggle.style.borderColor = 'rgba(255, 152, 0, 0.55)';
+        shuffleToggle.style.color = '#FFE0B2';
+        shuffleToggle.title = 'Shuffle mode: Markers only';
+      } else {
+        // Shuffle all (including no markers)
+        shuffleToggle.style.background = 'rgba(255, 152, 0, 0.35)';
+        shuffleToggle.style.borderColor = 'rgba(255, 152, 0, 0.65)';
+        shuffleToggle.style.color = '#FFE0B2';
+        shuffleToggle.title = 'Shuffle mode: All scenes';
+      }
+    };
+    setShuffleToggleVisualState();
+
+    shuffleToggle.addEventListener('mouseenter', () => {
+      if (this.shuffleMode === 0) {
+        shuffleToggle.style.background = 'rgba(28, 28, 30, 0.95)';
+        shuffleToggle.style.borderColor = 'rgba(255,255,255,0.16)';
+      }
+      shuffleToggle.style.opacity = '0.9';
+    });
+    shuffleToggle.addEventListener('mouseleave', () => {
+      setShuffleToggleVisualState();
+      shuffleToggle.style.opacity = '1';
+    });
+
+    const onShuffleClick = async () => {
+      // Cycle through three states: 0 (off) -> 1 (markers only) -> 2 (all) -> 0
+      this.shuffleMode = (this.shuffleMode + 1) % 3;
+      
+      // Save to localStorage
+      try {
+        localStorage.setItem('stashgifs-shuffleMode', String(this.shuffleMode));
+      } catch (e) {
+        console.error('Failed to save shuffle mode preference:', e);
+      }
+      
+      setShuffleToggleVisualState();
+      
+      // If shuffle is enabled (mode 1 or 2), reload the feed
+      if (this.shuffleMode > 0) {
+        // Clear current posts
+        this.clearPosts();
+        
+        // Clear posts container
+        if (this.postsContainer) {
+          this.postsContainer.innerHTML = '';
+        }
+        
+        // Reset pagination
+        this.currentPage = 1;
+        this.hasMore = true;
+        this.isLoading = false;
+        
+        // Reload videos with current filters
+        await this.loadVideos(this.currentFilters, false, undefined, true);
+      } else {
+        // When turning off shuffle, reload to show normal markers
+        this.clearPosts();
+        if (this.postsContainer) {
+          this.postsContainer.innerHTML = '';
+        }
+        this.currentPage = 1;
+        this.hasMore = true;
+        this.isLoading = false;
+        await this.loadVideos(this.currentFilters, false, undefined, true);
+      }
+    };
+    
+    shuffleToggle.addEventListener('click', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      void onShuffleClick();
+    });
+
+    // Store reference to shuffle button for visibility updates
+    (this as any).shuffleToggle = shuffleToggle;
+    
+    // Update shuffle button visibility now that it's created
+    setHDToggleVisualState();
+
     // Add buttons to buttons container
     buttonsContainer.appendChild(volToggle);
+    buttonsContainer.appendChild(shuffleToggle);
     buttonsContainer.appendChild(hdToggle);
     
     // Add buttons container to header inner (third grid column)
@@ -2617,6 +2755,8 @@ export class FeedContainer {
         ...currentFilters,
         limit,
         offset,
+        shuffleMode: this.shuffleMode > 0,
+        includeScenesWithoutMarkers: this.shuffleMode === 2, // Only include scenes without markers when mode is 2
       }, signal);
       
       // Check if aborted after fetching
@@ -2827,6 +2967,22 @@ export class FeedContainer {
   }
 
   /**
+   * Cancel all pending requests (used during marker creation)
+   */
+  cancelAllPendingRequests(): void {
+    if (this.activeLoadVideosAbortController) {
+      this.activeLoadVideosAbortController.abort();
+      this.activeLoadVideosAbortController = undefined;
+    }
+    if (this.activeSearchAbortController) {
+      this.activeSearchAbortController.abort();
+      this.activeSearchAbortController = undefined;
+    }
+    // Also stop any loading videos
+    this.stopLoadingVideos();
+  }
+
+  /**
    * Stop video elements that are currently loading
    */
   private stopLoadingVideos(): void {
@@ -2845,6 +3001,42 @@ export class FeedContainer {
           }
         }
       }
+    }
+  }
+
+  /**
+   * Check if a time is within 60 seconds (before or after) any marker time
+   */
+  private isTimeWithinOneMinuteOfMarker(time: number, markerTimes: number[]): boolean {
+    if (markerTimes.length === 0) return false;
+    
+    const oneMinute = 60; // 60 seconds
+    return markerTimes.some(markerTime => {
+      const distance = Math.abs(time - markerTime);
+      return distance <= oneMinute;
+    });
+  }
+
+  /**
+   * Get marker times for a scene, with caching to avoid repeated API calls
+   */
+  private async getMarkerTimesForScene(sceneId: string): Promise<number[]> {
+    // Check cache first
+    if (this.sceneMarkerTimesCache.has(sceneId)) {
+      return this.sceneMarkerTimesCache.get(sceneId)!;
+    }
+    
+    // If not cached, fetch from API
+    try {
+      const markerTimes = await this.api.fetchSceneMarkerTags(sceneId);
+      // Cache the result
+      this.sceneMarkerTimesCache.set(sceneId, markerTimes);
+      return markerTimes;
+    } catch (error) {
+      // If API call fails, return empty array and don't cache
+      // This allows the video to load with original random time
+      console.warn('Failed to fetch marker times for scene', sceneId, error);
+      return [];
     }
   }
 
@@ -2880,10 +3072,59 @@ export class FeedContainer {
     const postContainer = document.createElement('article');
     postContainer.className = 'video-post-wrapper';
 
+    // When shuffle mode is enabled and we're in HD mode (loading full scene videos),
+    // randomize the start time instead of using the marker's specific timestamp
+    let startTime: number | undefined = marker.seconds;
+    if (this.shuffleMode > 0 && this.useHDMode) {
+      // Try to get video duration from scene files to calculate random start time
+      const sceneDuration = marker.scene?.files?.[0]?.duration;
+      if (sceneDuration && sceneDuration > 0) {
+        // Randomize start time within the video (leave some buffer at the end)
+        // Use 90% of duration to avoid starting too close to the end
+        const maxStartTime = Math.floor(sceneDuration * 0.9);
+        
+        // Get marker times for this scene to avoid conflicts
+        const markerTimes = await this.getMarkerTimesForScene(marker.scene.id);
+        
+        // Try up to 10 times to find a time that's not within 1 minute of any marker
+        let attempts = 0;
+        const maxAttempts = 10;
+        let candidateTime = Math.floor(Math.random() * maxStartTime);
+        
+        while (attempts < maxAttempts && this.isTimeWithinOneMinuteOfMarker(candidateTime, markerTimes)) {
+          candidateTime = Math.floor(Math.random() * maxStartTime);
+          attempts++;
+        }
+        
+        // If all attempts failed, find the time furthest from any marker
+        if (attempts >= maxAttempts && markerTimes.length > 0) {
+          let maxDistance = 0;
+          let bestTime = candidateTime;
+          
+          // Try a few more random times and pick the one furthest from any marker
+          for (let i = 0; i < 5; i++) {
+            const testTime = Math.floor(Math.random() * maxStartTime);
+            const minDistance = Math.min(...markerTimes.map((mt: number) => Math.abs(testTime - mt)));
+            if (minDistance > maxDistance) {
+              maxDistance = minDistance;
+              bestTime = testTime;
+            }
+          }
+          candidateTime = bestTime;
+        }
+        
+        startTime = candidateTime;
+      } else {
+        // If duration not available, start at beginning (0) instead of using marker.seconds
+        // This prevents the conflict where both marker timestamp and random timestamp are used
+        startTime = 0;
+      }
+    }
+
     const postData: VideoPostData = {
       marker,
       videoUrl: safeVideoUrl, // Use safeVideoUrl instead of potentially invalid videoUrl
-      startTime: marker.seconds,
+      startTime: startTime,
       endTime: marker.end_seconds,
     };
 
@@ -2894,7 +3135,9 @@ export class FeedContainer {
       this.api, 
       this.visibilityManager,
       (performerId, performerName) => this.handlePerformerChipClick(performerId, performerName),
-      (tagId, tagName) => this.handleTagChipClick(tagId, tagName)
+      (tagId, tagName) => this.handleTagChipClick(tagId, tagName),
+      this.shuffleMode > 0,
+      () => this.cancelAllPendingRequests() // Callback to cancel requests during marker creation
     );
     this.posts.set(marker.id, post);
     this.postOrder.push(marker.id);
@@ -4342,15 +4585,8 @@ export class FeedContainer {
     // Clear skeleton loaders
     this.hideSkeletonLoaders();
     
-    // Abort any pending requests
-    if (this.activeLoadVideosAbortController) {
-      this.activeLoadVideosAbortController.abort();
-      this.activeLoadVideosAbortController = undefined;
-    }
-    if (this.activeSearchAbortController) {
-      this.activeSearchAbortController.abort();
-      this.activeSearchAbortController = undefined;
-    }
+    // Cancel all pending requests
+    this.cancelAllPendingRequests();
 
     // Clear mobile load timeout
     if ((this as any)._mobileLoadTimeout) {

@@ -81,6 +81,8 @@ export interface FilterOptions {
   limit?: number;
   offset?: number;
   savedFilterId?: string; // Saved filter id from Stash (scene markers)
+  shuffleMode?: boolean; // When true, use shuffle mode (query scenes directly)
+  includeScenesWithoutMarkers?: boolean; // When true in shuffle mode, include scenes with 0 markers
 }
 
 export interface FeedSettings {
