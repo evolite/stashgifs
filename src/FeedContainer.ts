@@ -2559,15 +2559,7 @@ export class FeedContainer {
 
       if (append) {
         this.currentPage = page;
-        
-        // Clean up distant posts when loading more content (infinite scroll)
-        // This prevents memory buildup without being jarring during regular scrolling
-        this.cleanupDistantPosts();
       }
-      
-      // Always ensure loadMoreTrigger is at the end after adding posts
-      // This is critical for infinite scroll to continue working
-      this.updateInfiniteScrollTrigger();
 
       // Batch load all thumbnails - start immediately after first post is rendered
       // Reduced delay for faster initial load (single RAF instead of double + timeout)
@@ -2600,7 +2592,8 @@ export class FeedContainer {
         this.hideSkeletonLoaders();
       }
       
-      // Update infinite scroll trigger position
+      // Update infinite scroll trigger position - must be done BEFORE isLoading is set to false
+      // This ensures the trigger is moved to the new bottom before the observer can fire again
       this.updateInfiniteScrollTrigger();
     } catch (error: any) {
       console.error('Error loading scene markers:', error);
@@ -2609,7 +2602,14 @@ export class FeedContainer {
       }
       this.hideSkeletonLoaders();
     } finally {
-      this.isLoading = false;
+      // Defer setting isLoading to false to ensure trigger has moved and observer won't fire immediately
+      // This prevents the "machine-gun" effect where multiple loads fire in rapid succession
+      // Use double requestAnimationFrame to ensure DOM update is complete
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          this.isLoading = false;
+        });
+      });
     }
   }
 
@@ -2756,7 +2756,14 @@ export class FeedContainer {
     // Observe for visibility
     this.visibilityManager.observePost(postContainer, marker.id);
 
-    // Thumbnails removed - just load videos directly
+    // Register thumbnail for batch loading (GIF-like behavior)
+    const thumbnail = post.getThumbnailElement();
+    if (thumbnail) {
+      const thumbnailUrl = this.api.getMarkerThumbnailUrl(marker);
+      if (thumbnailUrl) {
+        this.registerThumbnailForBatch(marker.id, thumbnail, thumbnailUrl, postContainer);
+      }
+    }
 
     // Check if aborted before setting up observers
     if (signal?.aborted) {
@@ -3028,57 +3035,9 @@ export class FeedContainer {
    * Update infinite scroll trigger position
    */
   private updateInfiniteScrollTrigger(): void {
-    if (!this.loadMoreTrigger) {
-      return;
-    }
-    
-    // Preserve scroll position on mobile to prevent auto-scroll to bottom
-    const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
-    let scrollPosition: number | undefined;
-    if (isMobile) {
-      scrollPosition = window.scrollY || document.documentElement.scrollTop;
-    }
-    
-    // Ensure trigger is in the correct container
-    if (this.postsContainer) {
-      // Only move if not already in the correct container and position
-      const isInCorrectContainer = this.loadMoreTrigger.parentNode === this.postsContainer;
-      const isLastChild = isInCorrectContainer && 
-        this.loadMoreTrigger === this.postsContainer.lastChild;
-      
-      if (!isInCorrectContainer) {
-        // Remove from current parent if it exists elsewhere
-        if (this.loadMoreTrigger.parentNode) {
-          this.loadMoreTrigger.parentNode.removeChild(this.loadMoreTrigger);
-        }
-        this.postsContainer.appendChild(this.loadMoreTrigger);
-      } else if (!isLastChild) {
-        // Only move to end if not already at the end (to avoid unnecessary DOM manipulation)
-        this.postsContainer.appendChild(this.loadMoreTrigger);
-      }
-    } else if (this.scrollContainer) {
-      // Fallback to scroll container
-      const isInCorrectContainer = this.loadMoreTrigger.parentNode === this.scrollContainer;
-      if (!isInCorrectContainer) {
-        if (this.loadMoreTrigger.parentNode) {
-          this.loadMoreTrigger.parentNode.removeChild(this.loadMoreTrigger);
-        }
-        this.scrollContainer.appendChild(this.loadMoreTrigger);
-      }
-    }
-    
-    // Restore scroll position on mobile after DOM manipulation
-    if (isMobile && scrollPosition !== undefined) {
-      // Use requestAnimationFrame to ensure DOM has updated
-      requestAnimationFrame(() => {
-        window.scrollTo(0, scrollPosition!);
-      });
-    }
-    
-    // Re-observe if observer exists and trigger is not being observed
-    if (this.scrollObserver && this.loadMoreTrigger) {
-      // Re-observe to ensure it's still being watched (safe to call multiple times)
-      this.scrollObserver.observe(this.loadMoreTrigger);
+    if (this.loadMoreTrigger && this.postsContainer) {
+      // Ensure trigger is at the bottom of posts
+      this.postsContainer.appendChild(this.loadMoreTrigger);
     }
   }
 
@@ -4231,6 +4190,12 @@ export class FeedContainer {
     if (this.activeSearchAbortController) {
       this.activeSearchAbortController.abort();
       this.activeSearchAbortController = undefined;
+    }
+
+    // Clear mobile load timeout
+    if ((this as any)._mobileLoadTimeout) {
+      clearTimeout((this as any)._mobileLoadTimeout);
+      (this as any)._mobileLoadTimeout = null;
     }
     
     // Clean up all load observers

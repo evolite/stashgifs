@@ -84,6 +84,7 @@ export class VideoPost {
   private hasFailedPermanently: boolean = false;
   private errorPlaceholder?: HTMLElement;
   private retryTimeoutId?: number;
+  private thumbnailImage?: HTMLImageElement; // Thumbnail image shown before video loads
   
   // Event handlers for cleanup
   private ratingOutsideClickHandler = (event: Event) => this.onRatingOutsideClick(event);
@@ -153,7 +154,7 @@ export class VideoPost {
 
 
   /**
-   * Create the player container with loading indicator
+   * Create the player container with loading indicator and thumbnail
    */
   private createPlayerContainer(): HTMLElement {
     const container = document.createElement('div');
@@ -171,13 +172,35 @@ export class VideoPost {
     }
     container.classList.add(aspectRatioClass);
 
+    // Thumbnail image - shown immediately like a GIF
+    // Only load thumbnail when close to viewport to reduce initial network requests
+    if (this.api && this.data.marker) {
+      const thumbnailUrl = this.api.getMarkerThumbnailUrl(this.data.marker);
+      if (thumbnailUrl) {
+        const thumbnail = document.createElement('img');
+        thumbnail.className = 'video-post__thumbnail';
+        thumbnail.alt = this.data.marker.title || 'Video thumbnail';
+        thumbnail.style.width = '100%';
+        thumbnail.style.height = '100%';
+        thumbnail.style.objectFit = 'cover';
+        thumbnail.style.position = 'absolute';
+        thumbnail.style.top = '0';
+        thumbnail.style.left = '0';
+        thumbnail.style.cursor = 'pointer';
+        thumbnail.style.display = this.isLoaded ? 'none' : 'block';
+        thumbnail.style.backgroundColor = 'transparent'; // Transparent background while loading
+        container.appendChild(thumbnail);
+        this.thumbnailImage = thumbnail;
+      }
+    }
+
     // Loading indicator for video
     const loading = document.createElement('div');
     loading.className = 'video-post__loading';
     const spinner = document.createElement('div');
     spinner.className = 'spinner';
     loading.appendChild(spinner);
-    loading.style.display = 'flex';
+    loading.style.display = this.isLoaded ? 'none' : 'flex';
     container.appendChild(loading);
     this.videoLoadingIndicator = loading;
 
@@ -1349,11 +1372,28 @@ export class VideoPost {
     // Create new player with full scene video (with error handling)
     try {
       const startTime = this.data.startTime ?? this.data.marker.seconds;
+      
+      // Debug: Log the startTime being passed
+      console.log('VideoPost: Creating HD video player', {
+        markerId: this.data.marker.id,
+        markerTitle: this.data.marker.title,
+        startTime: startTime,
+        markerSeconds: this.data.marker.seconds,
+        dataStartTime: this.data.startTime,
+      });
+      
+      // Always get thumbnail URL to use as poster - prevents black flicker
+      let posterUrl: string | undefined;
+      if (this.api && this.data.marker) {
+        posterUrl = this.api.getMarkerThumbnailUrl(this.data.marker);
+      }
+      
       this.player = new NativeVideoPlayer(playerContainer, sceneVideoUrl, {
         muted: true,
         autoplay: false,
         startTime: startTime,
         endTime: this.data.endTime ?? this.data.marker.end_seconds,
+        poster: posterUrl, // Always set poster to prevent black flicker
         aggressivePreload: false, // HD videos use metadata preload
         isHDMode: true, // HD mode - show mute button
       });
@@ -1363,7 +1403,7 @@ export class VideoPost {
       if (startTime !== undefined) {
         void this.seekPlayerToStart(this.player, startTime);
       }
-      this.hideLoadingWhenReady(this.player, playerContainer);
+      this.hideMediaWhenReady(this.player, playerContainer);
     } catch (error) {
       console.error('VideoPost: Failed to create scene video player', {
         error,
@@ -1491,23 +1531,18 @@ export class VideoPost {
     }
 
     try {
-      // Determine start time for marker alignment
-      const start =
-        (typeof startTime === 'number' ? startTime : undefined) ??
-        (typeof this.data.startTime === 'number' ? this.data.startTime : undefined) ??
-        (typeof this.data.marker.seconds === 'number' ? this.data.marker.seconds : undefined);
+      // Get startTime - use provided startTime, fallback to data.startTime, then marker.seconds
+      const finalStartTime = startTime ?? this.data.startTime ?? this.data.marker.seconds;
       
       this.player = new NativeVideoPlayer(playerContainer, videoUrl, {
         muted: true,
         autoplay: false,
-        startTime: start,
+        startTime: finalStartTime,
         endTime: endTime ?? this.data.endTime ?? this.data.marker.end_seconds,
-        aggressivePreload: true, // Non-HD marker videos use aggressive preload
-        isHDMode: false, // Non-HD mode - hide mute button
       });
 
       this.isLoaded = true;
-      this.hideLoadingWhenReady(this.player, playerContainer);
+      this.hideMediaWhenReady(this.player, playerContainer);
 
       if (this.visibilityManager && this.data.marker.id) {
         this.visibilityManager.registerPlayer(this.data.marker.id, this.player);
@@ -1592,6 +1627,13 @@ export class VideoPost {
   }
 
   /**
+   * Get the thumbnail element for batch loading registration
+   */
+  public getThumbnailElement(): HTMLImageElement | undefined {
+    return this.thumbnailImage;
+  }
+
+  /**
    * Check if currently in HQ mode (using scene video)
    */
   isInHQMode(): boolean {
@@ -1623,40 +1665,74 @@ export class VideoPost {
   }
 
   /**
-   * Hide loading spinner when video is ready
+   * Keep thumbnail/loading visible until the native player reports it can render frames.
    */
-  private hideLoadingWhenReady(player: NativeVideoPlayer, container: HTMLElement): void {
+  private hideMediaWhenReady(player: NativeVideoPlayer, container: HTMLElement): void {
+    const thumbnail = container.querySelector('.video-post__thumbnail') as HTMLElement | null;
     const loading = container.querySelector('.video-post__loading') as HTMLElement | null;
 
-    const hideLoading = () => {
+    const hideVisuals = () => {
+      if (thumbnail) {
+        thumbnail.style.display = 'none';
+        // Remove click handler once video is loaded
+        const img = thumbnail as HTMLImageElement;
+        if (img) {
+          img.style.cursor = 'default';
+          img.onclick = null;
+        }
+      }
       if (loading) {
-        loading.style.transition = 'opacity 0.2s ease-out';
-        loading.style.opacity = '0';
-        setTimeout(() => {
-          if (loading) {
-            loading.style.display = 'none';
-          }
-          if (this.videoLoadingIndicator) {
-            this.videoLoadingIndicator = undefined;
-          }
-        }, 200);
+        loading.style.display = 'none';
+        // Mark video as ready
+        if (this.videoLoadingIndicator) {
+          this.videoLoadingIndicator = undefined;
+        }
       }
     };
 
+    const scheduleTimeout = typeof window !== 'undefined'
+      ? window.setTimeout.bind(window)
+      : setTimeout;
+    const clearScheduledTimeout = typeof window !== 'undefined'
+      ? window.clearTimeout.bind(window)
+      : clearTimeout;
+    const requestFrame = typeof window !== 'undefined' && typeof window.requestAnimationFrame === 'function'
+      ? window.requestAnimationFrame.bind(window)
+      : (cb: FrameRequestCallback) => setTimeout(cb, 16);
+
     const videoElement = player.getVideoElement();
+    let revealed = false;
 
-    // Hide loading when video is ready
-    const onCanPlay = () => {
-      hideLoading();
-      videoElement.removeEventListener('canplay', onCanPlay);
+    const cleanup = () => {
+      videoElement.removeEventListener('loadeddata', onLoadedData);
+      videoElement.removeEventListener('playing', onPlaying);
+      videoElement.removeEventListener('timeupdate', onTimeUpdate);
+      clearScheduledTimeout(fallbackHandle);
     };
-    videoElement.addEventListener('canplay', onCanPlay, { once: true });
 
-    // Fallback: hide loading after timeout
-    const fallbackHandle = setTimeout(() => {
-      hideLoading();
-      videoElement.removeEventListener('canplay', onCanPlay);
-    }, 5000);
+    const reveal = () => {
+      if (revealed) {
+        return;
+      }
+      revealed = true;
+      cleanup();
+      const performHide = () => hideVisuals();
+      requestFrame(() => requestFrame(() => performHide()));
+    };
+
+    const onLoadedData = () => reveal();
+    const onPlaying = () => reveal();
+    const onTimeUpdate = () => {
+      if (videoElement.currentTime > 0 || videoElement.readyState >= 2) {
+        reveal();
+      }
+    };
+
+    videoElement.addEventListener('loadeddata', onLoadedData, { once: true });
+    videoElement.addEventListener('playing', onPlaying, { once: true });
+    videoElement.addEventListener('timeupdate', onTimeUpdate);
+
+    const fallbackHandle = scheduleTimeout(() => reveal(), 6000);
 
     player.waitForReady(4000)
       .catch((error) => {
@@ -1666,9 +1742,9 @@ export class VideoPost {
         });
       })
       .finally(() => {
-        clearTimeout(fallbackHandle);
-        videoElement.removeEventListener('canplay', onCanPlay);
-        hideLoading();
+        if (videoElement.readyState >= 2) {
+          reveal();
+        }
       });
   }
 
@@ -1882,6 +1958,15 @@ export class VideoPost {
     if (this.errorPlaceholder) {
       this.errorPlaceholder.remove();
       this.errorPlaceholder = undefined;
+    }
+
+    // Remove thumbnail if exists
+    if (this.thumbnailImage) {
+      this.thumbnailImage.src = '';
+      if (this.thumbnailImage.parentNode) {
+        this.thumbnailImage.parentNode.removeChild(this.thumbnailImage);
+      }
+      this.thumbnailImage = undefined;
     }
 
     // Destroy player

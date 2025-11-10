@@ -168,8 +168,11 @@ export class NativeVideoPlayer {
     
     // Set poster BEFORE setting src to prevent showing last frame
     // The poster will display until the video is ready and at the correct start time
+    // Always set poster if provided - this prevents black flicker during loading
     if (options?.poster) {
       this.videoElement.poster = options.poster;
+      // Ensure poster stays visible by setting object-fit
+      this.videoElement.style.objectFit = 'cover';
     }
     
     // Use 'metadata' preload to prevent showing last frame
@@ -236,6 +239,7 @@ export class NativeVideoPlayer {
     }
     
     // Use loadstart event to set currentTime as early as possible and ensure paused
+    // Note: desiredStartTime is set later, so we use initialStartTime here
     const onLoadStart = () => {
       // Ensure video is paused
       this.videoElement.pause();
@@ -248,6 +252,31 @@ export class NativeVideoPlayer {
       }
     };
     this.videoElement.addEventListener('loadstart', onLoadStart, { once: true });
+    
+    // Also add a seeking event listener to enforce startTime when browser allows seeking
+    // This catches cases where the browser resets currentTime after loadstart
+    if (initialStartTime > 0) {
+      const onSeeking = () => {
+        // Only enforce if we're seeking to 0 or very early when we should be at startTime
+        if (this.videoElement.readyState >= 1) {
+          const current = this.videoElement.currentTime;
+          if (current < initialStartTime - 0.5 && initialStartTime > 0.5) {
+            try {
+              this.videoElement.currentTime = initialStartTime;
+            } catch {
+              // Ignore
+            }
+          }
+        }
+      };
+      // Use a one-time listener that removes itself after first successful seek
+      const seekingHandler = () => {
+        onSeeking();
+        // Remove listener after first check to avoid interfering with user seeks
+        this.videoElement.removeEventListener('seeking', seekingHandler);
+      };
+      this.videoElement.addEventListener('seeking', seekingHandler, { once: true });
+    }
     
     // Handle end time if provided (only if endTime is greater than a small tolerance)
     // Loop back to 0 when reaching endTime
@@ -324,7 +353,12 @@ export class NativeVideoPlayer {
     }, { once: true, capture: true }); // Use capture phase to catch errors early
     
     // Resolve ready promise when video can play
-    const handleReady = () => this.resolveReady();
+    // Don't show video yet - let VideoPost control visibility after thumbnail fades
+    const handleReady = () => {
+      // Keep video hidden - VideoPost will show it after thumbnail fades out
+      // This prevents flash during transition
+      this.resolveReady();
+    };
     this.videoElement.addEventListener('loadeddata', handleReady, { once: true });
     this.videoElement.addEventListener('canplay', handleReady, { once: true });
 
@@ -333,6 +367,16 @@ export class NativeVideoPlayer {
     const hasStart = typeof options?.startTime === 'number' && Number.isFinite(options?.startTime as number);
     this.desiredStartTime = hasStart ? Math.max(0, options!.startTime as number) : undefined;
     this.startTimeEnforced = false;
+    
+    // Debug: Log the startTime received
+    if (hasStart && this.desiredStartTime !== undefined) {
+      console.log('NativeVideoPlayer: Received startTime', {
+        startTime: options?.startTime,
+        desiredStartTime: this.desiredStartTime,
+        hasStart,
+        videoUrl: videoUrl.substring(0, 100) + '...',
+      });
+    }
     
     if (hasStart && this.desiredStartTime !== undefined) {
       const trySeek = () => {
@@ -355,25 +399,53 @@ export class NativeVideoPlayer {
         this.videoElement.pause();
         trySeek();
         
-        // Also check if video is positioned at the end and seek immediately
-        // This prevents the browser from showing the last frame
-        if (this.desiredStartTime !== undefined && this.videoElement.readyState >= 1) {
-          const current = this.videoElement.currentTime;
-          const desired = this.desiredStartTime;
-          const duration = this.videoElement.duration;
-          const isNearEnd = duration > 0 && (duration - current) < 0.5;
-          const isPastStart = current > desired + 0.5;
-          
-          // Seek immediately on metadata load if we're at the wrong position
-          if (isNearEnd || isPastStart) {
-            try {
-              this.videoElement.currentTime = desired;
+        // Also check if video is positioned at the end or wrong position and seek immediately
+        // This prevents the browser from showing the last frame or starting at 0
+        // Check position immediately after trySeek() and also with a delayed check as backup
+        const checkAndSeek = () => {
+          if (this.desiredStartTime !== undefined && this.videoElement.readyState >= 1) {
+            const current = this.videoElement.currentTime;
+            const desired = this.desiredStartTime;
+            const duration = this.videoElement.duration;
+            const isNearEnd = duration > 0 && (duration - current) < 0.5;
+            const isPastStart = current > desired + 0.5;
+            const isBeforeStart = desired > 0.5 && (desired - current) > 0.5; // Video is significantly before marker start time (e.g., at 0 when should be at 30)
+            
+            // Debug: Log position check
+            console.log('NativeVideoPlayer: onMeta position check', {
+              current,
+              desired,
+              duration,
+              isNearEnd,
+              isPastStart,
+              isBeforeStart,
+              readyState: this.videoElement.readyState,
+            });
+            
+            // Seek immediately on metadata load if we're at the wrong position
+            if (isNearEnd || isPastStart || isBeforeStart) {
+              try {
+                console.log('NativeVideoPlayer: Seeking to', desired, 'from', current);
+                this.videoElement.currentTime = desired;
+                this.startTimeEnforced = true;
+              } catch (error) {
+                console.error('NativeVideoPlayer: Seek failed', error);
+              }
+            } else if (Math.abs(current - desired) <= 0.1) {
+              // If we're at the correct position, mark as enforced
               this.startTimeEnforced = true;
-            } catch {
-              // Ignore seek errors
             }
           }
-        }
+        };
+        
+        // Check immediately
+        checkAndSeek();
+        
+        // Also check after a short delay as backup (in case seek didn't work immediately)
+        setTimeout(checkAndSeek, 50);
+        
+        // Don't show video yet - let VideoPost control visibility after thumbnail fades
+        // This prevents flash during transition from thumbnail to video
         
         // Keep preload as 'metadata' - poster will show until correct frame is ready
         // For non-HD videos with aggressivePreload, we can switch to 'auto' after seek completes
@@ -388,10 +460,13 @@ export class NativeVideoPlayer {
       this.videoElement.addEventListener('canplay', onMeta, { once: true });
       
       // Also ensure seek when first frame loads - prevents showing last frame
-      // This catches cases where browser initially positions video at end
+      // This catches cases where browser initially positions video at end or at 0
       const onLoadedData = () => {
         // Ensure video is paused to prevent auto-playing
         this.videoElement.pause();
+        
+        // Don't show video yet - let VideoPost control visibility after thumbnail fades
+        // This prevents flash during transition from thumbnail to video
         
         if (this.desiredStartTime !== undefined && this.videoElement.readyState >= 2) {
           const current = this.videoElement.currentTime;
@@ -401,14 +476,20 @@ export class NativeVideoPlayer {
           const duration = this.videoElement.duration;
           const isNearEnd = duration > 0 && (duration - current) < 0.5;
           const isPastStart = current > desired + 0.5;
+          const isBeforeStart = desired > 0.5 && (desired - current) > 0.5; // Video is significantly before marker start time (e.g., at 0 when should be at 30)
           
-          if (isNearEnd || isPastStart) {
+          // Always check and seek if needed, regardless of startTimeEnforced flag
+          // This ensures we catch cases where previous seeks didn't work
+          if (isNearEnd || isPastStart || isBeforeStart) {
             try {
               this.videoElement.currentTime = desired;
               this.startTimeEnforced = true;
             } catch {
               // Ignore seek errors
             }
+          } else if (Math.abs(current - desired) <= 0.1) {
+            // If we're at the correct position, mark as enforced
+            this.startTimeEnforced = true;
           }
           
           // For non-HD videos with aggressivePreload, switch to auto after loadeddata
@@ -506,7 +587,7 @@ export class NativeVideoPlayer {
     playerWrapper.style.left = '0';
     playerWrapper.style.width = '100%';
     playerWrapper.style.height = '100%';
-    playerWrapper.style.zIndex = '1'; // Below thumbnail (z-index: 2) but above background
+    playerWrapper.style.zIndex = '1'; // Below thumbnail (z-index: 10) but above background
     // Set transparent background to prevent black flicker - let thumbnail/poster show through
     playerWrapper.style.backgroundColor = 'transparent';
     // Enable hardware acceleration for video wrapper
@@ -622,6 +703,24 @@ export class NativeVideoPlayer {
       this.state.isPlaying = true;
       this.updatePlayButton();
       this.notifyStateChange();
+      
+      // When video starts playing, check if we need to enforce startTime
+      // Some browsers reset currentTime to 0 when play() is called
+      if (this.desiredStartTime !== undefined && this.desiredStartTime > 0 && this.videoElement.readyState >= 1) {
+        const current = this.videoElement.currentTime;
+        const desired = this.desiredStartTime;
+        const diff = Math.abs(current - desired);
+        
+        // If we're significantly before the desired start time, seek to it
+        if (diff > 0.5 && (current < 1 || (current < desired - 0.5 && desired > 0.5))) {
+          try {
+            this.videoElement.currentTime = desired;
+            this.startTimeEnforced = true;
+          } catch {
+            // Ignore seek errors
+          }
+        }
+      }
     });
 
     this.videoElement.addEventListener('pause', () => {
@@ -725,10 +824,13 @@ export class NativeVideoPlayer {
     // Hint browser to allow autoplay of muted content
     this.videoElement.autoplay = true;
     
-    // On mobile, ensure startTime is set right before play (browsers may reset on play)
-    // Only reset flag if we have a startTime > 0
-    if (isMobile && this.desiredStartTime !== undefined && this.desiredStartTime > 0 && this.videoElement.readyState >= 1) {
-      this.startTimeEnforced = false; // Reset flag to allow re-seeking
+    // Ensure startTime is set right before play (browsers may reset on play)
+    // This applies to both mobile and desktop
+    if (this.desiredStartTime !== undefined && this.desiredStartTime > 0 && this.videoElement.readyState >= 1) {
+      // Reset flag to allow re-seeking
+      if (isMobile) {
+        this.startTimeEnforced = false;
+      }
       try {
         this.videoElement.currentTime = this.desiredStartTime;
       } catch {
@@ -741,9 +843,9 @@ export class NativeVideoPlayer {
       if (playPromise !== undefined) {
         await playPromise;
         
-        // On mobile, re-seek after play() in case browser reset currentTime
-        // Only for videos with startTime > 0, and only if video is actually at wrong position
-        if (isMobile && this.desiredStartTime !== undefined && this.desiredStartTime > 0) {
+        // Re-seek after play() in case browser reset currentTime
+        // This applies to both mobile and desktop for HD videos
+        if (this.desiredStartTime !== undefined && this.desiredStartTime > 0) {
           const performReSeek = (attempt: number = 0) => {
             try {
               if (this.videoElement.readyState >= 1) {
@@ -753,7 +855,8 @@ export class NativeVideoPlayer {
                 
                 // Only seek if video is significantly off AND at 0 or very early
                 // This prevents interfering with normal playback
-                if (diff > 0.5 && current < 1) {
+                // Also check if we're before the desired start time (not just at 0)
+                if (diff > 0.5 && (current < 1 || (current < desired - 0.5 && desired > 0.5))) {
                   this.videoElement.currentTime = desired;
                   this.startTimeEnforced = true;
                   
@@ -777,6 +880,7 @@ export class NativeVideoPlayer {
           };
           
           // Start first attempt using requestAnimationFrame to ensure play() has fully started
+          // This applies to both mobile and desktop
           requestAnimationFrame(() => performReSeek(0));
         }
         
