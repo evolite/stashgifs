@@ -4,7 +4,7 @@
  */
 
 import { Scene, SceneMarker, FilterOptions, Performer } from './types.js';
-import { isValidMediaUrl, getOptimizedThumbnailUrl } from './utils.js';
+import { isValidMediaUrl } from './utils.js';
 
 interface StashPluginApi {
   GQL: {
@@ -845,10 +845,12 @@ export class StashAPI {
       const limit = filters?.limit || 20;
       
       // Check if any filters are active (tags, saved filter, or query)
-      const hasActiveFilters = !!(filters?.primary_tags?.length || filters?.savedFilterId || (filters?.query && filters.query.trim() !== ''));
+      // Note: When tags are searched, we filter by tags but still use random sorting
+      const hasActiveFilters = !!(filters?.primary_tags?.length || filters?.tags?.length || filters?.savedFilterId || (filters?.query && filters.query.trim() !== ''));
       
       // If we want random and no offset, get count first to calculate random page
       // Skip random page selection when filters are active - start from page 1 instead
+      // But we still use random sorting even with tag filters (just filter the results)
       if (!filters?.offset && !hasActiveFilters) {
         const countQuery = `query GetMarkerCount($filter: FindFilterType, $scene_marker_filter: SceneMarkerFilterType) {
           findSceneMarkers(filter: $filter, scene_marker_filter: $scene_marker_filter) {
@@ -871,14 +873,17 @@ export class StashAPI {
         const countSceneFilter: any = this.normalizeMarkerFilter(countSceneFilterRaw);
         
         // If a saved filter is active, ONLY use its criteria (don't combine with manual filters)
-        // Otherwise, apply manual primary tag filters
+        // Otherwise, apply manual tag filters (primary_tags or tags)
         if (!filters?.savedFilterId) {
-          if (filters?.primary_tags && filters.primary_tags.length > 0) {
-            const tagIds = filters.primary_tags
+          // Use tags if provided, otherwise fall back to primary_tags
+          const tagFilter = filters?.tags || filters?.primary_tags;
+          if (tagFilter && tagFilter.length > 0) {
+            const tagIds = tagFilter
               .map((v) => parseInt(String(v), 10))
               .filter((n) => !Number.isNaN(n));
             if (tagIds.length > 0) {
-              countSceneFilter.tags = { value: tagIds, modifier: 'INCLUDES' };
+              // Use INCLUDES_ALL when multiple tags (like Stash UI does)
+              countSceneFilter.tags = { value: tagIds, modifier: tagIds.length > 1 ? 'INCLUDES_ALL' : 'INCLUDES' };
             }
           }
         }
@@ -962,15 +967,18 @@ export class StashAPI {
         const sceneMarkerFilter: any = this.normalizeMarkerFilter(sceneMarkerFilterRaw);
         
         // If a saved filter is active, ONLY use its criteria (don't combine with manual filters)
-        // Otherwise, apply manual primary tag filters
+        // Otherwise, apply manual tag filters (primary_tags or tags)
         if (!filters?.savedFilterId) {
-          if (filters?.primary_tags && filters.primary_tags.length > 0) {
-            const tagIds = filters.primary_tags
+          // Use tags if provided, otherwise fall back to primary_tags
+          const tagFilter = filters?.tags || filters?.primary_tags;
+          if (tagFilter && tagFilter.length > 0) {
+            const tagIds = tagFilter
               .map((v) => parseInt(String(v), 10))
               .filter((n) => !Number.isNaN(n));
             if (tagIds.length > 0) {
-              // Primary tags can be filtered server-side
-              sceneMarkerFilter.tags = { value: tagIds, modifier: 'INCLUDES' };
+              // Use INCLUDES_ALL when multiple tags (like Stash UI does)
+              // This finds markers that have ALL of the specified tags
+              sceneMarkerFilter.tags = { value: tagIds, modifier: tagIds.length > 1 ? 'INCLUDES_ALL' : 'INCLUDES' };
             }
           }
         }
@@ -1051,27 +1059,30 @@ export class StashAPI {
       const sceneMarkerFilter: any = this.normalizeMarkerFilter(sceneMarkerFilterRaw);
       
       // If a saved filter is active, ONLY use its criteria (don't combine with manual filters)
-      // Otherwise, apply manual primary tag filters
+      // Otherwise, apply manual tag filters (primary_tags or tags)
       if (!filters?.savedFilterId) {
-        if (filters?.primary_tags && filters.primary_tags.length > 0) {
-          const tagIds = filters.primary_tags
+        // Use tags if provided, otherwise fall back to primary_tags
+        const tagFilter = filters?.tags || filters?.primary_tags;
+        if (tagFilter && tagFilter.length > 0) {
+          const tagIds = tagFilter
             .map((v) => parseInt(String(v), 10))
             .filter((n) => !Number.isNaN(n));
           if (tagIds.length > 0) {
-            // Primary tags can be filtered server-side
-            sceneMarkerFilter.tags = { value: tagIds, modifier: 'INCLUDES' };
+            // Use INCLUDES_ALL when multiple tags (like Stash UI does)
+            // This finds markers that have ALL of the specified tags
+            sceneMarkerFilter.tags = { value: tagIds, modifier: tagIds.length > 1 ? 'INCLUDES_ALL' : 'INCLUDES' };
           } else {
-            console.warn('Scene marker primary_tags must be numeric IDs; ignoring provided values');
+            console.warn('Scene marker tags must be numeric IDs; ignoring provided values');
           }
         }
-        // Filter by performers using the correct field name
-        if (filters?.performers && filters.performers.length > 0 && !filters?.savedFilterId) {
-          const performerIds = filters.performers
-            .map((v) => parseInt(String(v), 10))
-            .filter((n) => !Number.isNaN(n));
-          if (performerIds.length > 0) {
-            sceneMarkerFilter.performers = { value: performerIds, modifier: 'INCLUDES_ALL' };
-          }
+      }
+      // Filter by performers using the correct field name
+      if (filters?.performers && filters.performers.length > 0 && !filters?.savedFilterId) {
+        const performerIds = filters.performers
+          .map((v) => parseInt(String(v), 10))
+          .filter((n) => !Number.isNaN(n));
+        if (performerIds.length > 0) {
+          sceneMarkerFilter.performers = { value: performerIds, modifier: 'INCLUDES_ALL' };
         }
       }
 
@@ -1166,6 +1177,208 @@ export class StashAPI {
   }
 
   /**
+   * Fetch scene markers from Stash using REST API endpoint
+   * Uses /scenes/markers endpoint with query parameters for filtering and sorting
+   * This is the primary method - GraphQL is kept as fallback
+   */
+  async fetchSceneMarkersREST(filters?: FilterOptions, signal?: AbortSignal): Promise<SceneMarker[]> {
+    // Check if already aborted
+    if (signal?.aborted) return [];
+    
+    // In shuffle mode, query scenes directly to include scenes with 0 markers
+    if (filters?.shuffleMode) {
+      return this.fetchScenesForShuffle(filters, signal);
+    }
+
+    try {
+      const limit = filters?.limit || 32;
+      const perPage = limit;
+      
+      // Build query parameters
+      const params = new URLSearchParams();
+      
+      // Random sorting - generate random sort key
+      // Always use random sorting for better randomization
+      const randomSortKey = Math.floor(Math.random() * 1000000);
+      params.set('sortby', `random_${randomSortKey}`);
+      params.set('sortdir', 'desc');
+      params.set('perPage', perPage.toString());
+      
+      // Check if any filters are active (primary_tags, saved filter, or query)
+      const hasActiveFilters = !!(filters?.primary_tags?.length || filters?.tags?.length || filters?.savedFilterId || (filters?.query && filters.query.trim() !== ''));
+      
+      // Handle tag filtering - prioritize primary_tags over tags
+      // Use primary_tags if available, otherwise fall back to tags
+      const tagFilter = filters?.primary_tags || filters?.tags;
+      if (tagFilter && tagFilter.length > 0) {
+        const tagIds = tagFilter
+          .map((v) => String(v)) // Keep as strings to match GraphQL format
+          .filter((id) => id && id.trim().length > 0);
+        
+        if (tagIds.length > 0) {
+          // Build filter criteria in REST API format
+          // Based on GraphQL structure: tags with modifier, value (array of string IDs), depth, excludes
+          // REST API format: {"type":"tags","modifier":"INCLUDES_ALL","value":{"items":[{"id":"159","label":"Ball Sucking"}],"excluded":[],"depth":0}}
+          // But we can also try the simpler format that matches GraphQL more closely
+          const filterCriteria = {
+            type: 'tags',
+            modifier: tagIds.length > 1 ? 'INCLUDES_ALL' : 'INCLUDES',
+            value: {
+              items: tagIds.map(id => ({ id: String(id), label: '' })), // Label not needed for filtering by ID
+              excluded: [],
+              depth: 0
+            }
+          };
+          
+          // URL-encode the JSON filter criteria
+          // URLSearchParams will handle encoding, but we need to ensure proper format
+          const filterJson = JSON.stringify(filterCriteria);
+          params.set('c', filterJson);
+        }
+      }
+      
+      // Handle query string if provided
+      if (filters?.query && filters.query.trim() !== '') {
+        params.set('q', filters.query.trim());
+      }
+      
+      // Build the full URL
+      const url = `${this.baseUrl}/scenes/markers?${params.toString()}`;
+      
+      // Make the request
+      const response = await fetch(url, {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(this.apiKey && { 'ApiKey': this.apiKey }),
+        },
+        signal,
+      });
+
+      if (signal?.aborted) return [];
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error('REST API request failed', {
+          status: response.status,
+          statusText: response.statusText,
+          error: errorText
+        });
+        throw new Error(`REST API request failed: ${response.status} ${response.statusText}`);
+      }
+
+      // Check content type before parsing
+      const contentType = response.headers.get('content-type');
+      if (!contentType || !contentType.includes('application/json')) {
+        const text = await response.text();
+        console.warn('REST API returned non-JSON response, falling back to GraphQL', {
+          contentType,
+          preview: text.substring(0, 200)
+        });
+        throw new Error('REST API returned non-JSON response');
+      }
+
+      const data = await response.json();
+      if (signal?.aborted) return [];
+      
+      // Parse REST API response and convert to SceneMarker format
+      // The REST API response structure may vary, but typically returns an array of markers
+      // or an object with a markers/scene_markers property
+      let markers: any[] = [];
+      
+      if (Array.isArray(data)) {
+        markers = data;
+      } else if (data.scene_markers && Array.isArray(data.scene_markers)) {
+        markers = data.scene_markers;
+      } else if (data.markers && Array.isArray(data.markers)) {
+        markers = data.markers;
+      } else if (data.results && Array.isArray(data.results)) {
+        markers = data.results;
+      }
+      
+      // Convert REST API marker format to SceneMarker format
+      const sceneMarkers: SceneMarker[] = markers.map((marker: any) => {
+        // Handle different possible REST API response formats
+        const markerId = marker.id || marker.marker_id;
+        const sceneId = marker.scene?.id || marker.scene_id;
+        const sceneData = marker.scene || {};
+        
+        return {
+          id: String(markerId),
+          title: marker.title || marker.name || '',
+          seconds: marker.seconds || marker.start_time || 0,
+          end_seconds: marker.end_seconds || marker.end_time,
+          stream: marker.stream || marker.stream_url,
+          preview: marker.preview || marker.preview_url,
+          primary_tag: marker.primary_tag ? {
+            id: String(marker.primary_tag.id || marker.primary_tag.tag_id),
+            name: marker.primary_tag.name || marker.primary_tag.tag_name || ''
+          } : undefined,
+          tags: (marker.tags || []).map((tag: any) => ({
+            id: String(tag.id || tag.tag_id),
+            name: tag.name || tag.tag_name || ''
+          })),
+          scene: {
+            id: String(sceneId),
+            title: sceneData.title,
+            date: sceneData.date,
+            details: sceneData.details,
+            url: sceneData.url,
+            rating100: sceneData.rating100 || sceneData.rating,
+            o_counter: sceneData.o_counter || sceneData.oCounter,
+            studio: sceneData.studio ? {
+              id: String(sceneData.studio.id || sceneData.studio.studio_id),
+              name: sceneData.studio.name || sceneData.studio.studio_name || ''
+            } : undefined,
+            performers: (sceneData.performers || []).map((perf: any) => ({
+              id: String(perf.id || perf.performer_id),
+              name: perf.name || perf.performer_name || '',
+              image_path: perf.image_path || perf.imagePath
+            })),
+            tags: (sceneData.tags || []).map((tag: any) => ({
+              id: String(tag.id || tag.tag_id),
+              name: tag.name || tag.tag_name || ''
+            })),
+            files: (sceneData.files || []).map((file: any) => ({
+              id: String(file.id || file.file_id),
+              path: file.path || file.file_path || '',
+              size: file.size,
+              duration: file.duration,
+              video_codec: file.video_codec || file.videoCodec,
+              audio_codec: file.audio_codec || file.audioCodec,
+              width: file.width,
+              height: file.height,
+              bit_rate: file.bit_rate || file.bitRate
+            })),
+            paths: sceneData.paths ? {
+              screenshot: sceneData.paths.screenshot,
+              preview: sceneData.paths.preview,
+              stream: sceneData.paths.stream,
+              webp: sceneData.paths.webp,
+              vtt: sceneData.paths.vtt
+            } : undefined,
+            sceneStreams: sceneData.sceneStreams || sceneData.scene_streams || []
+          }
+        };
+      });
+      
+      // Filter to scenes with less than 5 markers when shuffle mode is enabled
+      if (filters?.shuffleMode && sceneMarkers.length > 0) {
+        return this.filterScenesByMarkerCount(sceneMarkers, 5);
+      }
+      
+      return sceneMarkers;
+    } catch (e: any) {
+      // Ignore AbortError - it's expected when cancelling
+      if (e.name === 'AbortError' || signal?.aborted) {
+        return [];
+      }
+      console.warn('REST API request failed, falling back to GraphQL:', e);
+      // Fallback to GraphQL method if REST API fails
+      return this.fetchSceneMarkers(filters, signal);
+    }
+  }
+
+  /**
    * Fetch scenes directly for shuffle mode (includes scenes with 0 markers)
    * @param filters Filter options
    * @param signal Abort signal
@@ -1239,23 +1452,23 @@ export class StashAPI {
         }`;
 
         const countFilter: any = { per_page: 1, page: 1 };
-        const sceneFilter: any = {};
+        let sceneFilter: any = null;
         
         // Use has_markers filter based on includeScenesWithoutMarkers preference
+        // Mode 1 (includeScenesWithoutMarkers = false): All scenes (no filter)
+        // Mode 2 (includeScenesWithoutMarkers = true): Only scenes with no markers (has_markers = false)
         if (filters?.includeScenesWithoutMarkers) {
-          // Include all scenes (both with and without markers)
-          // Don't filter by has_markers when including scenes without markers
-        } else {
-          // Only scenes with markers - use boolean directly, not object
-          sceneFilter.has_markers = true;
+          // Only scenes with no markers - use string "false"
+          sceneFilter = { has_markers: 'false' };
         }
+        // If includeScenesWithoutMarkers is false, sceneFilter stays null (no filter = all scenes)
 
         try {
           if (signal?.aborted) return [];
           if (this.pluginApi?.GQL?.client) {
             const countResult = await this.pluginApi.GQL.client.query({
               query: countQuery as any,
-              variables: { filter: countFilter, scene_filter: sceneFilter },
+              variables: { filter: countFilter, ...(sceneFilter && { scene_filter: sceneFilter }) },
             });
             if (signal?.aborted) return [];
             const totalCount = countResult.data?.findScenes?.count || 0;
@@ -1270,7 +1483,7 @@ export class StashAPI {
                 'Content-Type': 'application/json',
                 ...(this.apiKey && { 'ApiKey': this.apiKey }),
               },
-              body: JSON.stringify({ query: countQuery, variables: { filter: countFilter, scene_filter: sceneFilter } }),
+              body: JSON.stringify({ query: countQuery, variables: { filter: countFilter, ...(sceneFilter && { scene_filter: sceneFilter }) } }),
               signal,
             });
             if (signal?.aborted) return [];
@@ -1299,23 +1512,23 @@ export class StashAPI {
         sort: `random_${Math.floor(Math.random() * 1000000)}`,
       };
 
-      const sceneFilter: any = {};
+      let sceneFilter: any = null;
       
       // Use has_markers filter based on includeScenesWithoutMarkers preference
+      // Mode 1 (includeScenesWithoutMarkers = false): All scenes (no filter)
+      // Mode 2 (includeScenesWithoutMarkers = true): Only scenes with no markers (has_markers = false)
       if (filters?.includeScenesWithoutMarkers) {
-        // Include all scenes (both with and without markers)
-        // Don't filter by has_markers when including scenes without markers
-      } else {
-        // Only scenes with markers - use boolean directly, not object
-        sceneFilter.has_markers = true;
+        // Only scenes with no markers - use string "false"
+        sceneFilter = { has_markers: 'false' };
       }
+      // If includeScenesWithoutMarkers is false, sceneFilter stays null (no filter = all scenes)
 
       let scenes: any[] = [];
 
       if (this.pluginApi?.GQL?.client) {
         const result = await this.pluginApi.GQL.client.query({
           query: query as any,
-          variables: { filter, scene_filter: sceneFilter },
+          variables: { filter, ...(sceneFilter && { scene_filter: sceneFilter }) },
         });
         if (signal?.aborted) return [];
         scenes = result.data?.findScenes?.scenes || [];
@@ -1326,7 +1539,7 @@ export class StashAPI {
             'Content-Type': 'application/json',
             ...(this.apiKey && { 'ApiKey': this.apiKey }),
           },
-          body: JSON.stringify({ query, variables: { filter, scene_filter: sceneFilter } }),
+          body: JSON.stringify({ query, variables: { filter, ...(sceneFilter && { scene_filter: sceneFilter }) } }),
           signal,
         });
 
@@ -1344,10 +1557,13 @@ export class StashAPI {
 
       // Create synthetic markers for each scene (one per scene, starting at 0 seconds)
       // This allows us to display scenes with 0 markers
+      // Note: Synthetic markers don't have marker stream URLs, so they won't work in non-HD mode
+      // They will only work in HD mode (which uses full scene videos)
       const syntheticMarkers: SceneMarker[] = scenes.map((scene) => ({
         id: `synthetic-${scene.id}-${Date.now()}-${Math.random()}`,
         title: scene.title || 'Untitled',
         seconds: 0, // Will be randomized in createPost when shuffle mode is active
+        stream: undefined, // No marker stream for synthetic markers - they require HD mode
         scene: scene,
         primary_tag: undefined,
         tags: [],
@@ -1472,87 +1688,6 @@ export class StashAPI {
     return undefined;
   }
 
-  /**
-   * Get thumbnail URL for a scene marker (uses marker-specific screenshot endpoint)
-   * Optimized to prefer WebP/AVIF formats when supported
-   * @param marker - Scene marker
-   * @param maxWidth - Optional max width for optimized thumbnail (reduces memory)
-   * @param maxHeight - Optional max height for optimized thumbnail
-   */
-  getMarkerThumbnailUrl(marker: SceneMarker, maxWidth?: number, maxHeight?: number): string | undefined {
-    // Skip marker screenshot for synthetic markers (created in random/shuffle mode)
-    // Synthetic markers have IDs like "synthetic-{sceneId}-{timestamp}-{random}"
-    const markerId = typeof marker.id === 'string' ? marker.id : String(marker.id);
-    const isSyntheticMarker = markerId.startsWith('synthetic-');
-    
-    // Use marker-specific screenshot endpoint: /scene/{sceneId}/scene_marker/{markerId}/screenshot
-    // Only if it's a real marker (not synthetic)
-    if (!isSyntheticMarker && marker.id && marker.scene?.id) {
-      const sceneId = typeof marker.scene.id === 'string' ? marker.scene.id : String(marker.scene.id);
-      let baseUrl = `${this.baseUrl}/scene/${sceneId}/scene_marker/${markerId}/screenshot`;
-      
-      // Optimize thumbnail size if dimensions provided (reduces memory usage)
-      if (maxWidth) {
-        baseUrl = getOptimizedThumbnailUrl(baseUrl, maxWidth, maxHeight);
-      }
-      
-      return baseUrl;
-    }
-    // Fallback to scene preview if marker screenshot not available (or synthetic marker)
-    return this.getThumbnailUrl(marker.scene, maxWidth, maxHeight);
-  }
-
-  /**
-   * Get thumbnail URL for a scene
-   * Prefers WebP format when available for better performance
-   * @param scene - Scene object
-   * @param maxWidth - Optional max width for optimized thumbnail (reduces memory)
-   * @param maxHeight - Optional max height for optimized thumbnail
-   */
-  getThumbnailUrl(scene: Scene, maxWidth?: number, maxHeight?: number): string | undefined {
-    let url: string | undefined;
-    
-    // Prefer WebP format for better compression and performance
-    if (scene.paths?.webp) {
-      url = scene.paths.webp.startsWith('http')
-        ? scene.paths.webp
-        : `${this.baseUrl}${scene.paths.webp}`;
-    }
-    // Fallback to screenshot
-    else if (scene.paths?.screenshot) {
-      url = scene.paths.screenshot.startsWith('http')
-        ? scene.paths.screenshot
-        : `${this.baseUrl}${scene.paths.screenshot}`;
-    }
-    // Fallback to preview
-    else if (scene.paths?.preview) {
-      url = scene.paths.preview.startsWith('http')
-        ? scene.paths.preview
-        : `${this.baseUrl}${scene.paths.preview}`;
-    }
-    
-    if (!url) return undefined;
-    
-    // Optimize thumbnail size if dimensions provided (reduces memory usage)
-    if (maxWidth) {
-      return getOptimizedThumbnailUrl(url, maxWidth, maxHeight);
-    }
-    
-    return url;
-  }
-
-  /**
-   * Get preview URL for a scene
-   */
-  getPreviewUrl(scene: Scene): string | undefined {
-    if (scene.paths?.preview) {
-      const url = scene.paths.preview.startsWith('http')
-        ? scene.paths.preview
-        : `${this.baseUrl}${scene.paths.preview}`;
-      return url;
-    }
-    return this.getThumbnailUrl(scene);
-  }
 
   /**
    * Find a tag by name

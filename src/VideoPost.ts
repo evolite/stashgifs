@@ -12,6 +12,7 @@ import { calculateAspectRatio, getAspectRatioClass, isValidMediaUrl, showToast, 
 
 // Constants for magic numbers and strings
 const FAVORITE_TAG_NAME = 'StashGifs Favorite';
+const MARKER_TAG_NAME = 'StashGifs Marker';
 const RATING_MAX_STARS = 10;
 const RATING_MIN_STARS = 0;
 const RATING_DIALOG_MAX_WIDTH = 900;
@@ -97,7 +98,7 @@ export class VideoPost {
   private hasFailedPermanently: boolean = false;
   private errorPlaceholder?: HTMLElement;
   private retryTimeoutId?: number;
-  private thumbnailImage?: HTMLImageElement; // Thumbnail image shown before video loads
+  private loadErrorCheckIntervalId?: ReturnType<typeof setInterval>;
   
   // Event handlers for cleanup
   private ratingOutsideClickHandler = (event: Event) => this.onRatingOutsideClick(event);
@@ -108,6 +109,7 @@ export class VideoPost {
   // Cached DOM elements
   private playerContainer?: HTMLElement;
   private footer?: HTMLElement;
+  private buttonGroup?: HTMLElement;
 
   private onPerformerChipClick?: (performerId: number, performerName: string) => void;
   private onTagChipClick?: (tagId: number, tagName: string) => void;
@@ -174,7 +176,7 @@ export class VideoPost {
 
 
   /**
-   * Create the player container with loading indicator and thumbnail
+   * Create the player container with loading indicator
    */
   private createPlayerContainer(): HTMLElement {
     const container = document.createElement('div');
@@ -192,27 +194,6 @@ export class VideoPost {
     }
     container.classList.add(aspectRatioClass);
 
-    // Thumbnail image - shown immediately like a GIF
-    // Only load thumbnail when close to viewport to reduce initial network requests
-    if (this.api && this.data.marker) {
-      const thumbnailUrl = this.api.getMarkerThumbnailUrl(this.data.marker);
-      if (thumbnailUrl) {
-        const thumbnail = document.createElement('img');
-        thumbnail.className = 'video-post__thumbnail';
-        thumbnail.alt = this.data.marker.title || 'Video thumbnail';
-        thumbnail.style.width = '100%';
-        thumbnail.style.height = '100%';
-        thumbnail.style.objectFit = 'cover';
-        thumbnail.style.position = 'absolute';
-        thumbnail.style.top = '0';
-        thumbnail.style.left = '0';
-        thumbnail.style.cursor = 'pointer';
-        thumbnail.style.display = this.isLoaded ? 'none' : 'block';
-        thumbnail.style.backgroundColor = 'transparent'; // Transparent background while loading
-        container.appendChild(thumbnail);
-        this.thumbnailImage = thumbnail;
-      }
-    }
 
     // Loading indicator for video
     const loading = document.createElement('div');
@@ -259,11 +240,12 @@ export class VideoPost {
         // Create a set to track displayed tags and ensure no duplicates
         const displayedTagIds = new Set<string>();
         
-        // First, add primary tag if it exists and is valid (but skip if it's the Favorite tag)
+        // First, add primary tag if it exists and is valid (but skip if it's the Favorite or Marker tag)
         if (this.data.marker.primary_tag && 
             this.data.marker.primary_tag.id && 
             this.data.marker.primary_tag.name &&
-            this.data.marker.primary_tag.name !== FAVORITE_TAG_NAME) {
+            this.data.marker.primary_tag.name !== FAVORITE_TAG_NAME &&
+            this.data.marker.primary_tag.name !== MARKER_TAG_NAME) {
           const chip = this.createTagChip(this.data.marker.primary_tag);
           chips.appendChild(chip);
           displayedTagIds.add(this.data.marker.primary_tag.id);
@@ -287,6 +269,11 @@ export class VideoPost {
             continue;
           }
           
+          // Skip the StashGifs Marker tag (internal tag for plugin-created markers)
+          if (tag.name === MARKER_TAG_NAME) {
+            continue;
+          }
+          
           const chip = this.createTagChip(tag);
           chips.appendChild(chip);
           displayedTagIds.add(tag.id);
@@ -294,7 +281,8 @@ export class VideoPost {
       } else if (this.data.marker.primary_tag && 
                  this.data.marker.primary_tag.id && 
                  this.data.marker.primary_tag.name &&
-                 this.data.marker.primary_tag.name !== FAVORITE_TAG_NAME) {
+                 this.data.marker.primary_tag.name !== FAVORITE_TAG_NAME &&
+                 this.data.marker.primary_tag.name !== MARKER_TAG_NAME) {
         // Fallback: if tags array is empty but primary tag exists, show it (unless it's Favorite tag)
         const chip = this.createTagChip(this.data.marker.primary_tag);
         chips.appendChild(chip);
@@ -552,11 +540,18 @@ export class VideoPost {
     buttonGroup.style.display = 'flex';
     buttonGroup.style.alignItems = 'center';
     buttonGroup.style.gap = '4px';
+    this.buttonGroup = buttonGroup; // Store reference for button swapping
 
     // Add buttons in order
     // Hide favorite button in shuffle mode, show marker button instead
+    // But if marker was already created, show heart button instead
     if (this.useShuffleMode) {
-      if (this.api) {
+      if (this.hasCreatedMarker && this.favoritesManager) {
+        // Marker was created, show heart button instead
+        const heartBtn = this.createHeartButton();
+        buttonGroup.appendChild(heartBtn);
+      } else if (this.api) {
+        // Show marker button to create marker
         const markerBtn = this.createMarkerButton();
         buttonGroup.appendChild(markerBtn);
       }
@@ -598,6 +593,7 @@ export class VideoPost {
     iconBtn.target = '_blank';
     iconBtn.rel = 'noopener noreferrer';
     iconBtn.setAttribute('aria-label', 'View full scene');
+    iconBtn.title = 'Open scene in Stash';
     this.applyIconButtonStyles(iconBtn);
     iconBtn.style.padding = '0';
     // Keep 44x44px for touch target
@@ -688,6 +684,7 @@ export class VideoPost {
     heartBtn.className = 'icon-btn icon-btn--heart';
     heartBtn.type = 'button';
     heartBtn.setAttribute('aria-label', 'Toggle favorite');
+    heartBtn.title = 'Add to favorites';
     this.applyIconButtonStyles(heartBtn);
     heartBtn.style.padding = '0';
 
@@ -750,6 +747,7 @@ export class VideoPost {
     markerBtn.className = 'icon-btn icon-btn--marker';
     markerBtn.type = 'button';
     markerBtn.setAttribute('aria-label', 'Create marker');
+    markerBtn.title = 'Create marker from post';
     this.applyIconButtonStyles(markerBtn);
     markerBtn.style.padding = '0';
     markerBtn.innerHTML = MARKER_SVG;
@@ -763,31 +761,25 @@ export class VideoPost {
     markerBtn.addEventListener('click', clickHandler);
     this.addHoverEffect(markerBtn);
     this.markerButton = markerBtn;
-    this.updateMarkerButtonState();
     return markerBtn;
   }
 
   /**
-   * Update marker button visual state (red when marker has been created)
+   * Replace marker button with heart button after marker creation
    */
-  private updateMarkerButtonState(): void {
-    if (!this.markerButton) return;
+  private replaceMarkerButtonWithHeart(): void {
+    if (!this.buttonGroup || !this.markerButton || !this.favoritesManager) return;
 
-    if (this.hasCreatedMarker) {
-      // Set button to red color to indicate marker has been created
-      this.markerButton.style.color = '#ef4444'; // red-500
-      const svg = this.markerButton.querySelector('svg');
-      if (svg) {
-        svg.style.color = '#ef4444';
-      }
-    } else {
-      // Default color
-      this.markerButton.style.color = 'rgba(255, 255, 255, 0.7)';
-      const svg = this.markerButton.querySelector('svg');
-      if (svg) {
-        svg.style.color = 'rgba(255, 255, 255, 0.7)';
-      }
-    }
+    // Remove marker button
+    this.buttonGroup.removeChild(this.markerButton);
+    this.markerButton = undefined;
+
+    // Create and add heart button in the same position (first button)
+    const heartBtn = this.createHeartButton();
+    this.buttonGroup.insertBefore(heartBtn, this.buttonGroup.firstChild);
+
+    // Check favorite status to ensure heart button shows correct state
+    this.checkFavoriteStatus();
   }
 
   /**
@@ -797,9 +789,11 @@ export class VideoPost {
     if (this.isFavorite) {
       button.innerHTML = HEART_SVG_FILLED;
       button.style.color = '#ff6b9d';
+      button.title = 'Remove from favorites';
     } else {
       button.innerHTML = HEART_SVG_OUTLINE;
       button.style.color = 'rgba(255, 255, 255, 0.7)';
+      button.title = 'Add to favorites';
     }
   }
 
@@ -811,6 +805,7 @@ export class VideoPost {
     oCountBtn.className = 'icon-btn icon-btn--ocount';
     oCountBtn.type = 'button';
     oCountBtn.setAttribute('aria-label', 'Increment o count');
+    oCountBtn.title = 'Increment o-count';
     this.applyIconButtonStyles(oCountBtn);
     oCountBtn.style.padding = '0 8px';
     oCountBtn.style.gap = '6px';
@@ -888,6 +883,7 @@ export class VideoPost {
     hqBtn.className = 'icon-btn icon-btn--hq';
     hqBtn.type = 'button';
     hqBtn.setAttribute('aria-label', 'Load high-quality scene video with audio');
+    hqBtn.title = 'Load HD marker';
     this.applyIconButtonStyles(hqBtn);
     hqBtn.style.padding = '0';
 
@@ -942,9 +938,11 @@ export class VideoPost {
     if (this.isHQMode) {
       button.innerHTML = HQ_SVG_FILLED;
       button.style.color = '#4CAF50';
+      button.title = 'HD video loaded';
     } else {
       button.innerHTML = HQ_SVG_OUTLINE;
       button.style.color = 'rgba(255, 255, 255, 0.7)';
+      button.title = 'Load HD video with audio';
     }
   }
 
@@ -978,6 +976,7 @@ export class VideoPost {
     displayButton.className = 'icon-btn icon-btn--rating';
     displayButton.setAttribute('aria-haspopup', 'dialog');
     displayButton.setAttribute('aria-expanded', 'false');
+    displayButton.title = 'Set rating on scene';
     this.applyIconButtonStyles(displayButton);
     displayButton.style.padding = '0 8px';
     displayButton.style.gap = '6px';
@@ -1449,18 +1448,11 @@ export class VideoPost {
     try {
       const startTime = this.data.startTime ?? this.data.marker.seconds;
       
-      // Always get thumbnail URL to use as poster - prevents black flicker
-      let posterUrl: string | undefined;
-      if (this.api && this.data.marker) {
-        posterUrl = this.api.getMarkerThumbnailUrl(this.data.marker);
-      }
-      
       this.player = new NativeVideoPlayer(playerContainer, sceneVideoUrl, {
         muted: true,
         autoplay: false,
         startTime: startTime,
         endTime: this.data.endTime ?? this.data.marker.end_seconds,
-        poster: posterUrl, // Always set poster to prevent black flicker
         aggressivePreload: false, // HD videos use metadata preload
         isHDMode: true, // HD mode - show mute button
       });
@@ -1668,6 +1660,23 @@ export class VideoPost {
       if (this.visibilityManager && this.data.marker.id) {
         this.visibilityManager.registerPlayer(this.data.marker.id, this.player);
       }
+
+      // Set up periodic error checking (every 3 seconds) to catch blocked requests
+      // Clear any existing interval first
+      if (this.loadErrorCheckIntervalId) {
+        clearInterval(this.loadErrorCheckIntervalId);
+      }
+      this.loadErrorCheckIntervalId = setInterval(() => {
+        if (this.player && !this.hasFailedPermanently) {
+          this.checkForLoadError();
+        } else {
+          // Stop checking if player is gone or has failed permanently
+          if (this.loadErrorCheckIntervalId) {
+            clearInterval(this.loadErrorCheckIntervalId);
+            this.loadErrorCheckIntervalId = undefined;
+          }
+        }
+      }, 3000);
     } catch (error) {
       console.error('VideoPost: Failed to create video player', {
         error,
@@ -1735,12 +1744,6 @@ export class VideoPost {
     return player;
   }
 
-  /**
-   * Get the thumbnail element for batch loading registration
-   */
-  public getThumbnailElement(): HTMLImageElement | undefined {
-    return this.thumbnailImage;
-  }
 
   /**
    * Check if currently in HQ mode (using scene video)
@@ -1774,22 +1777,12 @@ export class VideoPost {
   }
 
   /**
-   * Keep thumbnail/loading visible until the native player reports it can render frames.
+   * Keep loading visible until the native player reports it can render frames.
    */
   private hideMediaWhenReady(player: NativeVideoPlayer, container: HTMLElement): void {
-    const thumbnail = container.querySelector('.video-post__thumbnail') as HTMLElement | null;
     const loading = container.querySelector('.video-post__loading') as HTMLElement | null;
 
     const hideVisuals = () => {
-      if (thumbnail) {
-        thumbnail.style.display = 'none';
-        // Remove click handler once video is loaded
-        const img = thumbnail as HTMLImageElement;
-        if (img) {
-          img.style.cursor = 'default';
-          img.onclick = null;
-        }
-      }
       if (loading) {
         loading.style.display = 'none';
         // Mark video as ready
@@ -1858,7 +1851,7 @@ export class VideoPost {
   }
 
   /**
-   * Show error placeholder with marker screenshot and "Failed to load" text
+   * Show error placeholder with "Failed to load" text
    */
   private showErrorPlaceholder(): void {
     if (this.errorPlaceholder) {
@@ -1874,26 +1867,10 @@ export class VideoPost {
     // Hide the video player container
     playerContainer.style.display = 'none';
 
-    // Get marker screenshot URL
-    let screenshotUrl: string | undefined;
-    if (this.api && this.data.marker) {
-      screenshotUrl = this.api.getMarkerThumbnailUrl(this.data.marker);
-    }
-
     // Create placeholder element
     const placeholder = document.createElement('div');
     placeholder.className = 'video-post__error-placeholder';
-    
-    // Set background image if screenshot is available
-    if (screenshotUrl) {
-      placeholder.style.backgroundImage = `url(${screenshotUrl})`;
-      placeholder.style.backgroundSize = 'cover';
-      placeholder.style.backgroundPosition = 'center';
-      placeholder.style.backgroundRepeat = 'no-repeat';
-    } else {
-      // Fallback: dark background if no screenshot
-      placeholder.style.backgroundColor = '#1a1a1a';
-    }
+    placeholder.style.backgroundColor = '#1a1a1a';
 
     // Create error text overlay
     const errorText = document.createElement('div');
@@ -1982,7 +1959,7 @@ export class VideoPost {
       return;
     }
 
-    // Clear current player
+    // Clear current player (this will properly clean up the video element and clear src)
     if (this.player) {
       this.player.destroy();
       this.player = undefined;
@@ -1992,20 +1969,24 @@ export class VideoPost {
     // Hide placeholder if showing (cleanup before retry)
     this.hideErrorPlaceholder();
 
-    // Get video URL and reload
-    if (this.hasVideoSource() && this.data.videoUrl) {
-      const player = this.loadPlayer(
-        this.data.videoUrl,
-        this.data.startTime ?? this.data.marker.seconds,
-        this.data.endTime ?? this.data.marker.end_seconds
-      );
-      
-      // If retry succeeds, ensure placeholder stays hidden
-      if (player) {
-        // Placeholder is already hidden, but ensure it stays that way
-        this.hideErrorPlaceholder();
+    // Small delay to ensure cleanup completes and browser releases resources
+    // This helps with blocked requests by giving the browser time to clear the connection
+    setTimeout(() => {
+      // Get video URL and reload
+      if (this.hasVideoSource() && this.data.videoUrl) {
+        const player = this.loadPlayer(
+          this.data.videoUrl,
+          this.data.startTime ?? this.data.marker.seconds,
+          this.data.endTime ?? this.data.marker.end_seconds
+        );
+        
+        // If retry succeeds, ensure placeholder stays hidden
+        if (player) {
+          // Placeholder is already hidden, but ensure it stays that way
+          this.hideErrorPlaceholder();
+        }
       }
-    }
+    }, 100); // Small delay to allow cleanup
   }
 
   private async seekPlayerToStart(player: NativeVideoPlayer, startTime: number): Promise<void> {
@@ -2548,18 +2529,35 @@ export class VideoPost {
     this.markerDialogCreateButton.style.opacity = '0.6';
 
     try {
+      // Find or create the "StashGifs Marker" tag
+      let markerTagId: string | null = null;
+      try {
+        const existingMarkerTag = await this.api.findTagByName(MARKER_TAG_NAME);
+        if (existingMarkerTag) {
+          markerTagId = existingMarkerTag.id;
+        } else {
+          const newMarkerTag = await this.api.createTag(MARKER_TAG_NAME);
+          markerTagId = newMarkerTag?.id || null;
+        }
+      } catch (error) {
+        console.warn('VideoPost: Failed to get marker tag, continuing without it', error);
+      }
+
+      // Include marker tag in tagIds if we got it
+      const tagIds = markerTagId ? [markerTagId] : [];
+
       await this.api.createSceneMarker(
         sceneId,
         startTime,
         this.selectedTagId,
         '',
         null,
-        []
+        tagIds
       );
 
       showToast(`Marker created with tag "${this.selectedTagName}"`);
       this.hasCreatedMarker = true;
-      this.updateMarkerButtonState();
+      this.replaceMarkerButtonWithHeart();
       this.closeMarkerDialog();
       // Videos will resume naturally via visibility manager when they become visible again
     } catch (error) {
@@ -2582,20 +2580,18 @@ export class VideoPost {
       this.retryTimeoutId = undefined;
     }
 
+    // Clear error check interval
+    if (this.loadErrorCheckIntervalId) {
+      clearInterval(this.loadErrorCheckIntervalId);
+      this.loadErrorCheckIntervalId = undefined;
+    }
+
     // Remove error placeholder if exists
     if (this.errorPlaceholder) {
       this.errorPlaceholder.remove();
       this.errorPlaceholder = undefined;
     }
 
-    // Remove thumbnail if exists
-    if (this.thumbnailImage) {
-      this.thumbnailImage.src = '';
-      if (this.thumbnailImage.parentNode) {
-        this.thumbnailImage.parentNode.removeChild(this.thumbnailImage);
-      }
-      this.thumbnailImage = undefined;
-    }
 
     // Destroy player
     if (this.player) {

@@ -9,7 +9,7 @@ import { VideoPost } from './VideoPost.js';
 import { NativeVideoPlayer } from './NativeVideoPlayer.js';
 import { VisibilityManager } from './VisibilityManager.js';
 import { FavoritesManager } from './FavoritesManager.js';
-import { throttle, debounce, isValidMediaUrl, detectDeviceCapabilities, getOptimizedThumbnailUrl, DeviceCapabilities } from './utils.js';
+import { throttle, debounce, isValidMediaUrl, detectDeviceCapabilities, DeviceCapabilities } from './utils.js';
 
 const DEFAULT_SETTINGS: FeedSettings = {
   autoPlay: true, // Enable autoplay for markers
@@ -68,14 +68,8 @@ export class FeedContainer {
   private currentlyPreloadingCount: number = 0;
   private mobilePreloadQueue: string[] = [];
   private mobilePreloadActive: boolean = false;
-  private thumbnailQueue: Array<{ postId: string; thumbnail: HTMLImageElement; url: string; container: HTMLElement; distance: number }> = [];
-  private thumbnailBatchActive: boolean = false;
-  private thumbnailObserver?: IntersectionObserver;
-  private readonly thumbnailBatchSize: number = 5; // Load 5 thumbnails at a time (increased from 3)
-  private readonly thumbnailBatchDelay: number = 100; // 100ms delay between batches (reduced from 200ms)
-  private thumbnailLoadStarted: boolean = false;
   private readonly initialLoadLimit: number; // Set in constructor based on device
-  private readonly subsequentLoadLimit: number = 20; // Load 20 items on subsequent loads
+  private readonly subsequentLoadLimit: number = 12; // Load 12 items on subsequent loads (reduced from 20)
   private placeholderAnimationInterval?: ReturnType<typeof setInterval>; // For scrolling placeholder animation
   private savedFiltersCache: Array<{ id: string; name: string }> = [];
   private savedFiltersLoaded: boolean = false;
@@ -98,10 +92,9 @@ export class FeedContainer {
     this.isMobileDevice = /iPhone|iPad|iPod|Android/i.test(userAgent);
     
     // Mobile: reduce initial load for faster perceived performance
-    this.initialLoadLimit = this.isMobileDevice ? 8 : 12; // Load 8 on mobile, 12 on desktop
+    this.initialLoadLimit = this.isMobileDevice ? 6 : 8; // Load 6 on mobile, 8 on desktop (reduced to prevent overload)
     
     // Disabled eager preload - videos now load on-demand when close to viewport (50px) or on click
-    // This prevents early video loads that compete with thumbnail loading
     this.eagerPreloadCount = 0; // No eager preloading - let Intersection Observer handle it
     // Extremely reduced to prevent 8GB+ RAM usage: max 1 on mobile, 2 on desktop
     this.maxSimultaneousPreloads = this.isMobileDevice ? 1 : 2;
@@ -700,6 +693,16 @@ export class FeedContainer {
       // Flip mode
       const newHDMode = !this.useHDMode;
       
+      // If turning off HD mode, reset shuffle mode to default (0 = off)
+      if (!newHDMode && this.shuffleMode > 0) {
+        this.shuffleMode = 0;
+        try {
+          localStorage.setItem('stashgifs-shuffleMode', '0');
+        } catch (e) {
+          console.error('Failed to save shuffle mode preference:', e);
+        }
+      }
+      
       // Persist the new HD mode preference to localStorage
       // This will be read when the page reloads
       try {
@@ -805,8 +808,10 @@ export class FeedContainer {
     shuffleToggle.style.justifyContent = 'center';
     shuffleToggle.style.transition = 'background 0.2s ease, border-color 0.2s ease, color 0.2s ease, transform 0.2s cubic-bezier(0.2, 0, 0, 1)';
     
-    // Shuffle icon SVG (two curved arrows crossing)
+    // Icons for different states
     const shuffleIcon = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="16" height="16" style="display: block;"><path d="M16 3h5v5M21 3l-5 5M8 21H3v-5M3 16l5-5"/><path d="M21 16v-5h-5M16 21l5-5"/></svg>';
+    const noMarkersIcon = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="16" height="16" style="display: block;"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/><path d="M6 6l12 12" stroke-width="2.5"/></svg>';
+    
     shuffleToggle.innerHTML = shuffleIcon;
 
     const setShuffleToggleVisualState = () => {
@@ -815,19 +820,22 @@ export class FeedContainer {
         shuffleToggle.style.background = 'rgba(28, 28, 30, 0.9)';
         shuffleToggle.style.borderColor = 'rgba(255,255,255,0.12)';
         shuffleToggle.style.color = 'rgba(255,255,255,0.85)';
+        shuffleToggle.innerHTML = shuffleIcon;
         shuffleToggle.title = 'Shuffle mode: Off';
       } else if (this.shuffleMode === 1) {
-        // Shuffle with markers only
-        shuffleToggle.style.background = 'rgba(255, 152, 0, 0.25)';
-        shuffleToggle.style.borderColor = 'rgba(255, 152, 0, 0.55)';
-        shuffleToggle.style.color = '#FFE0B2';
-        shuffleToggle.title = 'Shuffle mode: Markers only';
-      } else {
-        // Shuffle all (including no markers)
-        shuffleToggle.style.background = 'rgba(255, 152, 0, 0.35)';
-        shuffleToggle.style.borderColor = 'rgba(255, 152, 0, 0.65)';
-        shuffleToggle.style.color = '#FFE0B2';
+        // Shuffle all scenes (with and without markers) - Blue/cyan color
+        shuffleToggle.style.background = 'rgba(33, 150, 243, 0.25)'; // Blue-500
+        shuffleToggle.style.borderColor = 'rgba(33, 150, 243, 0.65)';
+        shuffleToggle.style.color = '#64B5F6'; // Blue-300
+        shuffleToggle.innerHTML = shuffleIcon;
         shuffleToggle.title = 'Shuffle mode: All scenes';
+      } else {
+        // Shuffle only scenes with no markers - Purple/magenta color
+        shuffleToggle.style.background = 'rgba(156, 39, 176, 0.25)'; // Purple-500
+        shuffleToggle.style.borderColor = 'rgba(156, 39, 176, 0.65)';
+        shuffleToggle.style.color = '#BA68C8'; // Purple-300
+        shuffleToggle.innerHTML = noMarkersIcon;
+        shuffleToggle.title = 'Shuffle mode: Scenes with no markers';
       }
     };
     setShuffleToggleVisualState();
@@ -836,6 +844,14 @@ export class FeedContainer {
       if (this.shuffleMode === 0) {
         shuffleToggle.style.background = 'rgba(28, 28, 30, 0.95)';
         shuffleToggle.style.borderColor = 'rgba(255,255,255,0.16)';
+      } else if (this.shuffleMode === 1) {
+        // Slightly brighter blue on hover
+        shuffleToggle.style.background = 'rgba(33, 150, 243, 0.35)';
+        shuffleToggle.style.borderColor = 'rgba(33, 150, 243, 0.75)';
+      } else {
+        // Slightly brighter purple on hover
+        shuffleToggle.style.background = 'rgba(156, 39, 176, 0.35)';
+        shuffleToggle.style.borderColor = 'rgba(156, 39, 176, 0.75)';
       }
       shuffleToggle.style.opacity = '0.9';
     });
@@ -2367,6 +2383,8 @@ export class FeedContainer {
       // Render as chips
       items.forEach((tag) => {
         if (this.selectedTagId === parseInt(tag.id, 10)) return;
+        // Skip StashGifs Favorite and StashGifs Marker tags (internal plugin tags)
+        if (tag.name === 'StashGifs Favorite' || tag.name === 'StashGifs Marker') return;
         const chip = document.createElement('button');
         chip.textContent = tag.name;
         chip.className = 'suggest-chip';
@@ -2756,7 +2774,7 @@ export class FeedContainer {
         limit,
         offset,
         shuffleMode: this.shuffleMode > 0,
-        includeScenesWithoutMarkers: this.shuffleMode === 2, // Only include scenes without markers when mode is 2
+        includeScenesWithoutMarkers: this.shuffleMode === 2, // Mode 2: only scenes with no markers
       }, signal);
       
       // Check if aborted after fetching
@@ -2853,22 +2871,6 @@ export class FeedContainer {
 
       if (append) {
         this.currentPage = page;
-      }
-
-      // Batch load all thumbnails - start immediately after first post is rendered
-      // Reduced delay for faster initial load (single RAF instead of double + timeout)
-      if (!append && page === 1) {
-        this.thumbnailLoadStarted = true;
-        // Use single requestAnimationFrame for immediate start (removed double RAF + mobile delay)
-        requestAnimationFrame(() => {
-          this.startThumbnailBatchLoad();
-        });
-      } else if (append) {
-        // For appended pages, also batch load new thumbnails
-        this.thumbnailLoadStarted = true;
-        requestAnimationFrame(() => {
-          this.startThumbnailBatchLoad();
-        });
       }
 
       // Initial autoplay disabled - using hover-based autoplay instead
@@ -3074,52 +3076,61 @@ export class FeedContainer {
 
     // When shuffle mode is enabled and we're in HD mode (loading full scene videos),
     // randomize the start time instead of using the marker's specific timestamp
-    let startTime: number | undefined = marker.seconds;
-    if (this.shuffleMode > 0 && this.useHDMode) {
-      // Try to get video duration from scene files to calculate random start time
-      const sceneDuration = marker.scene?.files?.[0]?.duration;
-      if (sceneDuration && sceneDuration > 0) {
-        // Randomize start time within the video (leave some buffer at the end)
-        // Use 90% of duration to avoid starting too close to the end
-        const maxStartTime = Math.floor(sceneDuration * 0.9);
-        
-        // Get marker times for this scene to avoid conflicts
-        const markerTimes = await this.getMarkerTimesForScene(marker.scene.id);
-        
-        // Try up to 10 times to find a time that's not within 1 minute of any marker
-        let attempts = 0;
-        const maxAttempts = 10;
-        let candidateTime = Math.floor(Math.random() * maxStartTime);
-        
-        while (attempts < maxAttempts && this.isTimeWithinOneMinuteOfMarker(candidateTime, markerTimes)) {
-          candidateTime = Math.floor(Math.random() * maxStartTime);
-          attempts++;
-        }
-        
-        // If all attempts failed, find the time furthest from any marker
-        if (attempts >= maxAttempts && markerTimes.length > 0) {
-          let maxDistance = 0;
-          let bestTime = candidateTime;
+    // For non-HD marker videos, don't set startTime - marker clips are pre-rendered and should start at beginning
+    let startTime: number | undefined = undefined;
+    if (this.useHDMode) {
+      // Only set startTime for HD mode (full scene videos)
+      if (this.shuffleMode > 0) {
+        // Randomize start time when shuffle mode is enabled
+        // Try to get video duration from scene files to calculate random start time
+        const sceneDuration = marker.scene?.files?.[0]?.duration;
+        if (sceneDuration && sceneDuration > 0) {
+          // Randomize start time within the video (leave some buffer at the end)
+          // Use 90% of duration to avoid starting too close to the end
+          const maxStartTime = Math.floor(sceneDuration * 0.9);
           
-          // Try a few more random times and pick the one furthest from any marker
-          for (let i = 0; i < 5; i++) {
-            const testTime = Math.floor(Math.random() * maxStartTime);
-            const minDistance = Math.min(...markerTimes.map((mt: number) => Math.abs(testTime - mt)));
-            if (minDistance > maxDistance) {
-              maxDistance = minDistance;
-              bestTime = testTime;
-            }
+          // Get marker times for this scene to avoid conflicts
+          const markerTimes = await this.getMarkerTimesForScene(marker.scene.id);
+          
+          // Try up to 10 times to find a time that's not within 1 minute of any marker
+          let attempts = 0;
+          const maxAttempts = 10;
+          let candidateTime = Math.floor(Math.random() * maxStartTime);
+          
+          while (attempts < maxAttempts && this.isTimeWithinOneMinuteOfMarker(candidateTime, markerTimes)) {
+            candidateTime = Math.floor(Math.random() * maxStartTime);
+            attempts++;
           }
-          candidateTime = bestTime;
+          
+          // If all attempts failed, find the time furthest from any marker
+          if (attempts >= maxAttempts && markerTimes.length > 0) {
+            let maxDistance = 0;
+            let bestTime = candidateTime;
+            
+            // Try a few more random times and pick the one furthest from any marker
+            for (let i = 0; i < 5; i++) {
+              const testTime = Math.floor(Math.random() * maxStartTime);
+              const minDistance = Math.min(...markerTimes.map((mt: number) => Math.abs(testTime - mt)));
+              if (minDistance > maxDistance) {
+                maxDistance = minDistance;
+                bestTime = testTime;
+              }
+            }
+            candidateTime = bestTime;
+          }
+          
+          startTime = candidateTime;
+        } else {
+          // If duration not available, start at beginning (0) instead of using marker.seconds
+          // This prevents the conflict where both marker timestamp and random timestamp are used
+          startTime = 0;
         }
-        
-        startTime = candidateTime;
       } else {
-        // If duration not available, start at beginning (0) instead of using marker.seconds
-        // This prevents the conflict where both marker timestamp and random timestamp are used
-        startTime = 0;
+        // HD mode but not shuffle - use marker's timestamp
+        startTime = marker.seconds;
       }
     }
+    // For non-HD mode, startTime remains undefined - marker videos are pre-rendered clips
 
     const postData: VideoPostData = {
       marker,
@@ -3153,14 +3164,6 @@ export class FeedContainer {
     // Observe for visibility
     this.visibilityManager.observePost(postContainer, marker.id);
 
-    // Register thumbnail for batch loading (GIF-like behavior)
-    const thumbnail = post.getThumbnailElement();
-    if (thumbnail) {
-      const thumbnailUrl = this.api.getMarkerThumbnailUrl(marker);
-      if (thumbnailUrl) {
-        this.registerThumbnailForBatch(marker.id, thumbnail, thumbnailUrl, postContainer);
-      }
-    }
 
     // Check if aborted before setting up observers
     if (signal?.aborted) {
@@ -3250,98 +3253,6 @@ export class FeedContainer {
     return postContainer;
   }
 
-  /**
-   * Register a thumbnail for batched loading
-   */
-  private registerThumbnailForBatch(
-    postId: string, 
-    thumbnail: HTMLImageElement, 
-    url: string, 
-    container: HTMLElement
-  ): void {
-    // Calculate distance from viewport for prioritization
-    // Use fallback if container isn't laid out yet (common on mobile)
-    let distance = this.getViewportDistance(container);
-    if (distance < 0 || !isFinite(distance)) {
-      // Fallback: assume visible if we can't calculate distance
-      distance = 0;
-    }
-    
-    // Add to queue immediately (will be processed in batches)
-    const exists = this.thumbnailQueue.some(item => item.postId === postId);
-    if (!exists && !thumbnail.src) {
-      const wasEmpty = this.thumbnailQueue.length === 0;
-      this.thumbnailQueue.push({
-        postId,
-        thumbnail,
-        url,
-        container,
-        distance
-      });
-      
-      // If queue was empty and batch loading hasn't started, trigger it
-      // This handles late registrations that happen after initial batch load attempt
-      if (wasEmpty && !this.thumbnailBatchActive && this.thumbnailLoadStarted) {
-        // Use a small delay to allow other registrations to complete
-        window.setTimeout(() => {
-          this.startThumbnailBatchLoad();
-        }, this.isMobileDevice ? 100 : 50);
-      }
-    }
-  }
-
-  /**
-   * Start batched thumbnail loading for all queued thumbnails
-   */
-  private startThumbnailBatchLoad(): void {
-    if (this.thumbnailQueue.length === 0 || this.thumbnailBatchActive) {
-      return;
-    }
-
-    // Sort by viewport distance (visible first)
-    this.thumbnailQueue.sort((a, b) => a.distance - b.distance);
-    
-    // Start processing batches
-    this.processThumbnailBatch();
-  }
-
-  /**
-   * Process thumbnail queue in batches
-   */
-  private processThumbnailBatch(): void {
-    if (this.thumbnailQueue.length === 0) {
-      this.thumbnailBatchActive = false;
-      return;
-    }
-
-    this.thumbnailBatchActive = true;
-    
-    // Re-sort queue by viewport distance (prioritize visible thumbnails)
-    // Update distances in case user scrolled
-    this.thumbnailQueue.forEach(item => {
-      item.distance = this.getViewportDistance(item.container);
-    });
-    this.thumbnailQueue.sort((a, b) => a.distance - b.distance);
-
-    // Process a batch
-    const batch = this.thumbnailQueue.splice(0, this.thumbnailBatchSize);
-    
-    // Load all thumbnails in the batch
-    for (const item of batch) {
-      if (!item.thumbnail.src) {
-        item.thumbnail.src = item.url;
-      }
-    }
-
-    // Schedule next batch
-    if (this.thumbnailQueue.length > 0) {
-      window.setTimeout(() => {
-        this.processThumbnailBatch();
-      }, this.thumbnailBatchDelay);
-    } else {
-      this.thumbnailBatchActive = false;
-    }
-  }
 
   /**
    * Clear all posts
@@ -3362,13 +3273,6 @@ export class FeedContainer {
     this.mobilePreloadQueue = [];
     this.mobilePreloadActive = false;
     this.cancelScheduledPreload();
-    this.thumbnailQueue = [];
-    this.thumbnailBatchActive = false;
-    this.thumbnailLoadStarted = false;
-    if (this.thumbnailObserver) {
-      this.thumbnailObserver.disconnect();
-      this.thumbnailObserver = undefined;
-    }
     // Don't clear posts container - let browser handle cleanup naturally
     // if (this.postsContainer) {
     //   // Clear posts efficiently
@@ -4079,20 +3983,6 @@ export class FeedContainer {
         }
       }
       
-      // Clear thumbnail queue entries for removed posts
-      this.thumbnailQueue = this.thumbnailQueue.filter(item => {
-        const stillExists = this.posts.has(item.postId);
-        if (!stillExists && item.thumbnail) {
-          // Clear image src to free memory
-          item.thumbnail.src = '';
-          item.thumbnail.removeAttribute('src');
-          // Remove image from DOM if it exists
-          if (item.thumbnail.parentNode) {
-            item.thumbnail.parentNode.removeChild(item.thumbnail);
-          }
-        }
-        return stillExists;
-      });
       
       // Remove markers for deleted posts to free memory
       // This prevents the markers array from growing unbounded
@@ -4572,15 +4462,6 @@ export class FeedContainer {
     // Clear all posts (which will destroy players and clean up observers)
     this.clearPosts();
     
-    // Clean up thumbnail observer
-    if (this.thumbnailObserver) {
-      this.thumbnailObserver.disconnect();
-      this.thumbnailObserver = undefined;
-    }
-    
-    // Clear thumbnail queue
-    this.thumbnailQueue = [];
-    this.thumbnailBatchActive = false;
     
     // Clear skeleton loaders
     this.hideSkeletonLoaders();

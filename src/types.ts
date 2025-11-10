@@ -103,7 +103,6 @@ export interface FeedSettings {
 export interface VideoPostData {
   marker: SceneMarker;
   videoUrl?: string;
-  thumbnailUrl?: string;
   aspectRatio?: number; // width/height
   startTime?: number; // Start time in seconds for markers
   endTime?: number; // End time in seconds for markers

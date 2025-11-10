@@ -27,20 +27,28 @@ export class NativeVideoPlayer {
   private originalVideoUrl?: string; // Store original URL for reload
   private originalStartTime?: number; // Store original start time for reload
   private originalEndTime?: number; // Store original end time for reload
-  private originalPoster?: string; // Store original poster for reload
   private isHDMode: boolean = false; // Track if this is HD mode (affects mute button visibility)
   // Store event handlers for proper cleanup
   private fullscreenChangeHandler?: () => void;
   private webkitFullscreenChangeHandler?: () => void;
   private mozFullscreenChangeHandler?: () => void;
   private msFullscreenChangeHandler?: () => void;
+  // Timeout and progress tracking for blocked requests
+  private loadTimeoutId?: ReturnType<typeof setTimeout>;
+  private stalledTimeoutId?: ReturnType<typeof setTimeout>;
+  private waitingTimeoutId?: ReturnType<typeof setTimeout>;
+  private lastProgressTime?: number;
+  private progressCheckIntervalId?: ReturnType<typeof setInterval>;
+  private loadStartTime?: number;
+  private stalledHandler?: () => void;
+  private waitingHandler?: () => void;
+  private progressHandler?: () => void;
 
   constructor(container: HTMLElement, videoUrl: string, options?: {
     autoplay?: boolean;
     muted?: boolean;
     startTime?: number;
     endTime?: number;
-    poster?: string;
     onStateChange?: (state: VideoPlayerState) => void;
     aggressivePreload?: boolean; // Use 'auto' preload for non-HD videos
     isHDMode?: boolean; // Whether this is HD mode (affects mute button visibility)
@@ -75,14 +83,12 @@ export class NativeVideoPlayer {
     this.originalVideoUrl = videoUrl;
     this.originalStartTime = options?.startTime;
     this.originalEndTime = options?.endTime;
-    this.originalPoster = options?.poster;
 
     this.createVideoElement(videoUrl, {
       autoplay: options?.autoplay,
       muted: options?.muted,
       startTime: options?.startTime,
       endTime: options?.endTime,
-      poster: options?.poster,
       aggressivePreload: options?.aggressivePreload,
     });
     this.createControls();
@@ -119,7 +125,7 @@ export class NativeVideoPlayer {
     });
   }
 
-  private createVideoElement(videoUrl: string, options?: { autoplay?: boolean; muted?: boolean; startTime?: number; endTime?: number; poster?: string; aggressivePreload?: boolean }): void {
+  private createVideoElement(videoUrl: string, options?: { autoplay?: boolean; muted?: boolean; startTime?: number; endTime?: number; aggressivePreload?: boolean }): void {
     // Defensive validation - validate URL again before setting src
     // This is a last line of defense in case validation was bypassed
     // If invalid, create element but don't set src - error handler will catch it
@@ -166,14 +172,8 @@ export class NativeVideoPlayer {
     
     checkCodecSupport(videoUrl);
     
-    // Set poster BEFORE setting src to prevent showing last frame
-    // The poster will display until the video is ready and at the correct start time
-    // Always set poster if provided - this prevents black flicker during loading
-    if (options?.poster) {
-      this.videoElement.poster = options.poster;
-      // Ensure poster stays visible by setting object-fit
-      this.videoElement.style.objectFit = 'cover';
-    }
+    // Set object-fit for proper video display
+    this.videoElement.style.objectFit = 'cover';
     
     // Set preload based on whether we have startTime
     // For non-HD videos (no startTime), use 'auto' like the old version
@@ -186,7 +186,6 @@ export class NativeVideoPlayer {
     this.videoElement.className = 'video-player__element';
     
     // Don't hide video - let it render but ensure it's positioned correctly
-    // The thumbnail will cover it until ready
     
     // Mobile-specific attributes
     this.videoElement.setAttribute('playsinline', 'true'); // iOS Safari requires lowercase
@@ -350,15 +349,43 @@ export class NativeVideoPlayer {
       }
     }, { once: true, capture: true }); // Use capture phase to catch errors early
     
+    // Track load start time for timeout detection
+    this.loadStartTime = Date.now();
+    
+    // Set up timeout detection (15 seconds)
+    this.loadTimeoutId = setTimeout(() => {
+      if (this.videoElement.readyState === 0) {
+        // Video still hasn't loaded after 15 seconds
+        this.errorHandled = true;
+        console.warn('NativeVideoPlayer: Video load timeout - readyState still 0 after 15 seconds', {
+          src: this.videoElement.src,
+          networkState: this.videoElement.networkState,
+          readyState: this.videoElement.readyState,
+        });
+      }
+    }, 15000);
+    
+    // Clear timeout when video successfully loads
+    const clearLoadTimeout = () => {
+      if (this.loadTimeoutId) {
+        clearTimeout(this.loadTimeoutId);
+        this.loadTimeoutId = undefined;
+      }
+    };
+    
     // Resolve ready promise when video can play
-    // Don't show video yet - let VideoPost control visibility after thumbnail fades
+    // Don't show video yet - let VideoPost control visibility
     const handleReady = () => {
-      // Keep video hidden - VideoPost will show it after thumbnail fades out
+      // Keep video hidden until ready
       // This prevents flash during transition
+      clearLoadTimeout();
       this.resolveReady();
     };
     this.videoElement.addEventListener('loadeddata', handleReady, { once: true });
     this.videoElement.addEventListener('canplay', handleReady, { once: true });
+    
+    // Also clear timeout on loadedmetadata (video has metadata)
+    this.videoElement.addEventListener('loadedmetadata', clearLoadTimeout, { once: true });
 
     // If a startTime is provided, ensure we seek to it as soon as metadata is available,
     // and also attempt an immediate seek if already ready.
@@ -420,15 +447,14 @@ export class NativeVideoPlayer {
         // Also check after a short delay as backup (in case seek didn't work immediately)
         setTimeout(checkAndSeek, 50);
         
-        // Don't show video yet - let VideoPost control visibility after thumbnail fades
-        // This prevents flash during transition from thumbnail to video
+        // Don't show video yet - let VideoPost control visibility
+        // This prevents flash during video loading
         
-        // Keep preload as 'metadata' - poster will show until correct frame is ready
+        // Keep preload as 'metadata'
         // For non-HD videos with aggressivePreload, we can switch to 'auto' after seek completes
-        // but only if we have a poster to cover any potential frame flashes
-        if (options?.aggressivePreload && this.originalPoster) {
+        if (options?.aggressivePreload) {
           // Switch to auto preload after metadata is loaded and seek is attempted
-          // This allows better loading while poster is still showing
+          // This allows better loading
           this.videoElement.preload = 'auto';
         }
       };
@@ -441,8 +467,8 @@ export class NativeVideoPlayer {
         // Ensure video is paused to prevent auto-playing
         this.videoElement.pause();
         
-        // Don't show video yet - let VideoPost control visibility after thumbnail fades
-        // This prevents flash during transition from thumbnail to video
+        // Don't show video yet - let VideoPost control visibility
+        // This prevents flash during video loading
         
         if (this.desiredStartTime !== undefined && this.videoElement.readyState >= 2) {
           const current = this.videoElement.currentTime;
@@ -469,8 +495,7 @@ export class NativeVideoPlayer {
           }
           
           // For non-HD videos with aggressivePreload, switch to auto after loadeddata
-          // if we have a poster to cover any potential frame flashes
-          if (options?.aggressivePreload && this.originalPoster) {
+          if (options?.aggressivePreload) {
             this.videoElement.preload = 'auto';
           }
         }
@@ -563,8 +588,8 @@ export class NativeVideoPlayer {
     playerWrapper.style.left = '0';
     playerWrapper.style.width = '100%';
     playerWrapper.style.height = '100%';
-    playerWrapper.style.zIndex = '1'; // Below thumbnail (z-index: 10) but above background
-    // Set transparent background to prevent black flicker - let thumbnail/poster show through
+    playerWrapper.style.zIndex = '1';
+    // Set transparent background
     playerWrapper.style.backgroundColor = 'transparent';
     // Enable hardware acceleration for video wrapper
     playerWrapper.style.transform = 'translateZ(0)';
@@ -572,7 +597,7 @@ export class NativeVideoPlayer {
     
     this.videoElement.style.position = 'relative';
     this.videoElement.style.zIndex = '1';
-    // Set background to transparent to prevent black flicker - let poster/thumbnail show through
+    // Set background to transparent
     this.videoElement.style.backgroundColor = 'transparent';
     // Enable hardware acceleration for video element
     this.videoElement.style.transform = 'translateZ(0)';
@@ -646,6 +671,89 @@ export class NativeVideoPlayer {
       this.updateTimeDisplay();
       this.notifyStateChange();
     });
+
+    // Track progress events to detect blocked requests
+    this.progressHandler = () => {
+      this.lastProgressTime = Date.now();
+    };
+    this.videoElement.addEventListener('progress', this.progressHandler);
+
+    // Set up progress check interval (check every 2 seconds)
+    this.progressCheckIntervalId = setInterval(() => {
+      if (this.lastProgressTime && this.videoElement.readyState === 0) {
+        const timeSinceLastProgress = Date.now() - this.lastProgressTime;
+        // If no progress for >10 seconds and still at readyState 0, consider it blocked
+        if (timeSinceLastProgress > 10000) {
+          this.errorHandled = true;
+          console.warn('NativeVideoPlayer: Video appears blocked - no progress for >10 seconds', {
+            src: this.videoElement.src,
+            networkState: this.videoElement.networkState,
+            readyState: this.videoElement.readyState,
+            timeSinceLastProgress,
+          });
+          // Clear interval since we've detected the issue
+          if (this.progressCheckIntervalId) {
+            clearInterval(this.progressCheckIntervalId);
+            this.progressCheckIntervalId = undefined;
+          }
+        }
+      }
+    }, 2000);
+
+    // Handle stalled event (video stops loading)
+    this.stalledHandler = () => {
+      // Clear any existing stalled timeout
+      if (this.stalledTimeoutId) {
+        clearTimeout(this.stalledTimeoutId);
+      }
+      // Set timeout - if still stalled after 10 seconds, mark as error
+      this.stalledTimeoutId = setTimeout(() => {
+        if (this.videoElement.readyState === 0 || this.videoElement.networkState === 2) {
+          this.errorHandled = true;
+          console.warn('NativeVideoPlayer: Video stalled for >10 seconds', {
+            src: this.videoElement.src,
+            networkState: this.videoElement.networkState,
+            readyState: this.videoElement.readyState,
+          });
+        }
+      }, 10000);
+    };
+    this.videoElement.addEventListener('stalled', this.stalledHandler);
+
+    // Handle waiting event (video is buffering)
+    this.waitingHandler = () => {
+      // Clear any existing waiting timeout
+      if (this.waitingTimeoutId) {
+        clearTimeout(this.waitingTimeoutId);
+      }
+      // Set timeout - if still waiting after 10 seconds, mark as error
+      this.waitingTimeoutId = setTimeout(() => {
+        if (this.videoElement.readyState === 0 || this.videoElement.networkState === 2) {
+          this.errorHandled = true;
+          console.warn('NativeVideoPlayer: Video waiting/buffering for >10 seconds', {
+            src: this.videoElement.src,
+            networkState: this.videoElement.networkState,
+            readyState: this.videoElement.readyState,
+          });
+        }
+      }, 10000);
+    };
+    this.videoElement.addEventListener('waiting', this.waitingHandler);
+
+    // Clear stalled/waiting timeouts when video makes progress
+    const clearStalledWaitingTimeouts = () => {
+      if (this.stalledTimeoutId) {
+        clearTimeout(this.stalledTimeoutId);
+        this.stalledTimeoutId = undefined;
+      }
+      if (this.waitingTimeoutId) {
+        clearTimeout(this.waitingTimeoutId);
+        this.waitingTimeoutId = undefined;
+      }
+    };
+    this.videoElement.addEventListener('progress', clearStalledWaitingTimeouts);
+    this.videoElement.addEventListener('canplay', clearStalledWaitingTimeouts, { once: true });
+    this.videoElement.addEventListener('loadeddata', clearStalledWaitingTimeouts, { once: true });
 
     // Fullscreen change events (desktop and Android)
     // Store handlers for proper cleanup
@@ -931,21 +1039,93 @@ export class NativeVideoPlayer {
    */
   hasLoadError(): boolean {
     // networkState 3 = NETWORK_NO_SOURCE (no source available)
+    // networkState 2 = NETWORK_LOADING (but might be stuck)
+    // networkState 1 = NETWORK_IDLE (but might indicate failed load)
     // readyState 0 = HAVE_NOTHING (no information available)
-    return this.videoElement.networkState === 3 || 
-           (this.videoElement.readyState === 0 && this.videoElement.networkState !== 0);
+    
+    // Check for explicit error state
+    if (this.videoElement.networkState === 3) {
+      return true;
+    }
+    
+    // Check if video has been at readyState 0 for >15 seconds (timeout)
+    if (this.loadStartTime && this.videoElement.readyState === 0) {
+      const timeSinceLoadStart = Date.now() - this.loadStartTime;
+      if (timeSinceLoadStart > 15000) {
+        return true;
+      }
+    }
+    
+    // Check for networkState 2 (NETWORK_LOADING) but stuck with readyState 0
+    if (this.videoElement.networkState === 2 && this.videoElement.readyState === 0) {
+      // If we've been loading for >15 seconds, consider it blocked
+      if (this.loadStartTime) {
+        const timeSinceLoadStart = Date.now() - this.loadStartTime;
+        if (timeSinceLoadStart > 15000) {
+          return true;
+        }
+      }
+    }
+    
+    // Check for networkState 1 (NETWORK_IDLE) with readyState 0 (indicates failed load)
+    if (this.videoElement.networkState === 1 && this.videoElement.readyState === 0) {
+      return true;
+    }
+    
+    // Check if error was explicitly handled (from timeout, stalled, waiting, etc.)
+    if (this.errorHandled && this.videoElement.readyState === 0) {
+      return true;
+    }
+    
+    // Original check: readyState 0 with networkState !== 0
+    if (this.videoElement.readyState === 0 && this.videoElement.networkState !== 0) {
+      return true;
+    }
+    
+    return false;
   }
 
   /**
    * Get the type of load error
    */
   getLoadErrorType(): 'timeout' | 'network' | 'play' | null {
+    // Check for timeout (readyState 0 for >15 seconds)
+    if (this.loadStartTime && this.videoElement.readyState === 0) {
+      const timeSinceLoadStart = Date.now() - this.loadStartTime;
+      if (timeSinceLoadStart > 15000) {
+        return 'timeout';
+      }
+    }
+    
+    // Check for explicit network error
     if (this.videoElement.networkState === 3) {
       return 'network';
     }
+    
+    // Check for blocked request (networkState 2 stuck or networkState 1 with readyState 0)
+    if ((this.videoElement.networkState === 2 || this.videoElement.networkState === 1) && 
+        this.videoElement.readyState === 0) {
+      // If we've been in this state for >15 seconds, it's a network issue
+      if (this.loadStartTime) {
+        const timeSinceLoadStart = Date.now() - this.loadStartTime;
+        if (timeSinceLoadStart > 15000) {
+          return 'network';
+        }
+      }
+      // Otherwise, still likely a network issue
+      return 'network';
+    }
+    
+    // Check if error was explicitly handled (from stalled/waiting/progress timeout)
+    if (this.errorHandled && this.videoElement.readyState === 0) {
+      return 'network';
+    }
+    
+    // Original check: readyState 0 with networkState !== 0
     if (this.videoElement.readyState === 0 && this.videoElement.networkState !== 0) {
       return 'play';
     }
+    
     return null;
   }
 
@@ -1152,8 +1332,6 @@ export class NativeVideoPlayer {
       this.videoElement.removeChild(this.videoElement.firstChild);
     }
     
-    // Clear any poster to free image memory
-    this.videoElement.removeAttribute('poster');
     this.videoElement.removeAttribute('src');
     
     // Force browser to release video buffer
@@ -1182,10 +1360,6 @@ export class NativeVideoPlayer {
 
     // Recreate video element with original URL and settings
     this.videoElement.src = this.originalVideoUrl;
-    // Restore poster if it was set
-    if (this.originalPoster) {
-      this.videoElement.poster = this.originalPoster;
-    }
     this.videoElement.load();
     this.isUnloaded = false;
     this.errorHandled = false;
@@ -1253,6 +1427,40 @@ export class NativeVideoPlayer {
   }
 
   destroy(): void {
+    // Clear all timeouts and intervals
+    if (this.loadTimeoutId) {
+      clearTimeout(this.loadTimeoutId);
+      this.loadTimeoutId = undefined;
+    }
+    if (this.stalledTimeoutId) {
+      clearTimeout(this.stalledTimeoutId);
+      this.stalledTimeoutId = undefined;
+    }
+    if (this.waitingTimeoutId) {
+      clearTimeout(this.waitingTimeoutId);
+      this.waitingTimeoutId = undefined;
+    }
+    if (this.progressCheckIntervalId) {
+      clearInterval(this.progressCheckIntervalId);
+      this.progressCheckIntervalId = undefined;
+    }
+
+    // Remove event listeners
+    if (this.videoElement) {
+      if (this.stalledHandler) {
+        this.videoElement.removeEventListener('stalled', this.stalledHandler);
+        this.stalledHandler = undefined;
+      }
+      if (this.waitingHandler) {
+        this.videoElement.removeEventListener('waiting', this.waitingHandler);
+        this.waitingHandler = undefined;
+      }
+      if (this.progressHandler) {
+        this.videoElement.removeEventListener('progress', this.progressHandler);
+        this.progressHandler = undefined;
+      }
+    }
+
     // Aggressively clean up all resources to free RAM
     if (!this.isUnloaded) {
       this.unload();
@@ -1277,7 +1485,6 @@ export class NativeVideoPlayer {
       }
       
       // Clear all attributes that might hold references
-      this.videoElement.removeAttribute('poster');
       this.videoElement.removeAttribute('src');
       this.videoElement.removeAttribute('preload');
       
@@ -1352,7 +1559,6 @@ export class NativeVideoPlayer {
     this.originalVideoUrl = undefined;
     this.originalStartTime = undefined;
     this.originalEndTime = undefined;
-    this.originalPoster = undefined;
   }
 }
 
