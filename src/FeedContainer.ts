@@ -317,19 +317,19 @@ export class FeedContainer {
     brandContainer.style.padding = '0 14px';
     brandContainer.style.borderRadius = '10px';
     brandContainer.style.border = '1px solid rgba(255,255,255,0.12)';
-    brandContainer.style.background = 'rgba(28, 28, 30, 0.6)';
+    brandContainer.style.background = 'rgba(28, 28, 30, 0.9)';
     brandContainer.style.cursor = 'pointer';
     brandContainer.style.transition = 'background 0.2s ease, border-color 0.2s ease, opacity 0.2s ease';
     brandContainer.title = 'Click to refresh feed';
     
     // Hover effect on container
     brandContainer.addEventListener('mouseenter', () => {
-      brandContainer.style.background = 'rgba(28, 28, 30, 0.8)';
+      brandContainer.style.background = 'rgba(28, 28, 30, 0.95)';
       brandContainer.style.borderColor = 'rgba(255,255,255,0.16)';
       brand.style.opacity = '0.9';
     });
     brandContainer.addEventListener('mouseleave', () => {
-      brandContainer.style.background = 'rgba(28, 28, 30, 0.6)';
+      brandContainer.style.background = 'rgba(28, 28, 30, 0.9)';
       brandContainer.style.borderColor = 'rgba(255,255,255,0.12)';
       brand.style.opacity = '1';
     });
@@ -440,7 +440,7 @@ export class FeedContainer {
     queryInput.style.padding = '0 14px';
     queryInput.style.borderRadius = '10px';
     queryInput.style.border = '1px solid rgba(255,255,255,0.12)';
-    queryInput.style.background = 'rgba(28, 28, 30, 0.6)';
+    queryInput.style.background = 'rgba(28, 28, 30, 0.9)';
     queryInput.style.color = 'inherit';
     queryInput.style.fontSize = '15px';
     queryInput.style.lineHeight = '1.4';
@@ -481,7 +481,7 @@ export class FeedContainer {
     hdToggle.style.padding = '0 14px';
     hdToggle.style.borderRadius = '10px';
     hdToggle.style.border = '1px solid rgba(255,255,255,0.12)';
-    hdToggle.style.background = 'rgba(28, 28, 30, 0.6)';
+    hdToggle.style.background = 'rgba(28, 28, 30, 0.9)';
     hdToggle.style.color = 'rgba(255,255,255,0.85)';
     hdToggle.style.fontSize = '12px';
     hdToggle.style.fontWeight = '700';
@@ -500,7 +500,7 @@ export class FeedContainer {
         hdToggle.style.borderColor = 'rgba(76, 175, 80, 0.55)';
         hdToggle.style.color = '#C8E6C9';
       } else {
-        hdToggle.style.background = 'rgba(28, 28, 30, 0.6)';
+        hdToggle.style.background = 'rgba(28, 28, 30, 0.9)';
         hdToggle.style.borderColor = 'rgba(255,255,255,0.16)';
         hdToggle.style.color = 'rgba(255,255,255,0.85)';
       }
@@ -508,7 +508,7 @@ export class FeedContainer {
     setHDToggleVisualState();
 
     hdToggle.addEventListener('mouseenter', () => {
-      hdToggle.style.background = 'rgba(28, 28, 30, 0.8)';
+      hdToggle.style.background = 'rgba(28, 28, 30, 0.95)';
       hdToggle.style.borderColor = 'rgba(255,255,255,0.16)';
       hdToggle.style.opacity = '0.9';
     });
@@ -549,7 +549,7 @@ export class FeedContainer {
     volToggle.style.padding = '0 14px';
     volToggle.style.borderRadius = '10px';
     volToggle.style.border = '1px solid rgba(255,255,255,0.12)';
-    volToggle.style.background = 'rgba(28, 28, 30, 0.6)';
+    volToggle.style.background = 'rgba(28, 28, 30, 0.9)';
     volToggle.style.color = 'rgba(255,255,255,0.85)';
     volToggle.style.fontSize = '12px';
     volToggle.style.fontWeight = '700';
@@ -574,7 +574,7 @@ export class FeedContainer {
         volToggle.style.color = '#BBDEFB';
         volToggle.innerHTML = unmutedIcon;
       } else {
-        volToggle.style.background = 'rgba(28, 28, 30, 0.6)';
+        volToggle.style.background = 'rgba(28, 28, 30, 0.9)';
         volToggle.style.borderColor = 'rgba(255,255,255,0.16)';
         volToggle.style.color = 'rgba(255,255,255,0.85)';
         volToggle.innerHTML = mutedIcon;
@@ -583,7 +583,7 @@ export class FeedContainer {
     setVolToggleVisualState();
 
     volToggle.addEventListener('mouseenter', () => {
-      volToggle.style.background = 'rgba(28, 28, 30, 0.8)';
+      volToggle.style.background = 'rgba(28, 28, 30, 0.95)';
       volToggle.style.borderColor = 'rgba(255,255,255,0.16)';
       volToggle.style.opacity = '0.9';
     });
@@ -626,7 +626,7 @@ export class FeedContainer {
     suggestions.style.zIndex = '1000';
     suggestions.style.display = 'none';
     suggestions.style.flexDirection = 'column';
-    suggestions.style.background = 'rgba(0, 0, 0, 0.85)';
+    suggestions.style.background = 'rgba(0, 0, 0, 0.95)';
     suggestions.style.backdropFilter = 'blur(20px) saturate(180%)';
     (suggestions.style as any).webkitBackdropFilter = 'blur(20px) saturate(180%)';
     suggestions.style.overflowY = 'auto';
@@ -1343,7 +1343,7 @@ export class FeedContainer {
       // Ensure background suggestions stay fresh
       this.preloadSuggestions().catch((e) => console.warn('Suggestion preload refresh failed', e));
       
-      queryInput.style.background = 'rgba(28, 28, 30, 0.8)';
+      queryInput.style.background = 'rgba(28, 28, 30, 0.95)';
       queryInput.style.borderColor = 'rgba(255,255,255,0.16)';
       // Clear and reset when focusing on search bar for fresh search
       this.selectedTagId = undefined;
@@ -1427,7 +1427,7 @@ export class FeedContainer {
     queryInput.addEventListener('focus', handleFocus);
     
     queryInput.addEventListener('blur', () => {
-      queryInput.style.background = 'rgba(28, 28, 30, 0.6)';
+      queryInput.style.background = 'rgba(28, 28, 30, 0.9)';
       queryInput.style.borderColor = 'rgba(255,255,255,0.12)';
     });
     
@@ -1698,7 +1698,7 @@ export class FeedContainer {
     suggestions.style.bottom = '0';
     suggestions.style.zIndex = '1000';
     suggestions.style.display = 'none';
-    suggestions.style.background = 'rgba(0, 0, 0, 0.85)';
+    suggestions.style.background = 'rgba(0, 0, 0, 0.95)';
     suggestions.style.backdropFilter = 'blur(20px) saturate(180%)';
     (suggestions.style as any).webkitBackdropFilter = 'blur(20px) saturate(180%)';
     suggestions.style.overflowY = 'auto';

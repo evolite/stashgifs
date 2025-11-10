@@ -382,8 +382,17 @@ export class VisibilityManager {
     
     // If currently hovered, execute hover enter action (unmute + play)
     // Use executeHoverEnter directly since player is being registered now (no debounce needed)
+    // But first verify the player has a valid video element
     if (this.hoveredPostId === postId) {
-      this.executeHoverEnter(postId);
+      try {
+        // Check if player has video element before calling executeHoverEnter
+        player.getVideoElement();
+        this.executeHoverEnter(postId);
+      } catch {
+        // Player doesn't have video element yet, skip hover actions
+        // The hover action will be handled when player becomes ready in waitForPlayerReady
+        this.debugLog('register-player-hover-deferred', { postId, reason: 'video-element-not-ready' });
+      }
     }
 
     // Apply audio focus if exclusive audio is enabled AND video is already playing
@@ -427,14 +436,24 @@ export class VisibilityManager {
       if (this.hoveredPostId === postId) {
         this.executeHoverEnter(postId);
       } else if (entry.pendingVisibilityPlay) {
-        // If not hovered but pending, just execute play (no unmute needed)
-        this.executePlayOnHover(postId);
+        // If not hovered but pending, check if we should use autoplay or hover-based play
+        // In non-HD mode (autoplay enabled), use autoplay instead of hover-based play
+        if (this.options.autoPlay && entry.isVisible) {
+          // Use autoplay for non-HD mode when visible
+          this.requestPlaybackIfReady(postId, entry, 'ready');
+        } else {
+          // Only use hover-based play if actually hovered (shouldn't reach here if not hovered)
+          // This is a fallback for edge cases
+          if (this.hoveredPostId === postId) {
+            this.executePlayOnHover(postId);
+          }
+        }
       }
     }
-    // Old autoplay logic disabled - using hover-based autoplay instead
-    // if (entry && entry.isVisible && this.options.autoPlay) {
-    //   this.requestPlaybackIfReady(postId, entry, 'ready');
-    // }
+    // Also handle autoplay if enabled and visible (for non-HD mode)
+    if (entry && entry.isVisible && this.options.autoPlay && !entry.pendingVisibilityPlay && this.hoveredPostId !== postId) {
+      this.requestPlaybackIfReady(postId, entry, 'ready');
+    }
   }
 
   private computeVisibilityDelay(isEntering: boolean): number {
@@ -802,8 +821,22 @@ export class VisibilityManager {
           player.setMuted(false);
         }
         // If exclusive audio is disabled (global mute ON), video stays muted
-      } catch (error) {
+      } catch (error: any) {
         this.debugLog('play-failed', { postId, origin, attempt, error });
+        
+        // Check if this is a load failure (not just playback failure)
+        const isLoadFailure = error?.errorType === 'timeout' || 
+                             error?.errorType === 'network' || 
+                             error?.errorType === 'play' ||
+                             (entry.player && entry.player.hasLoadError());
+        
+        if (isLoadFailure) {
+          // Notify VideoPost of load failure via FeedContainer
+          // We'll handle this by checking the error and letting VideoPost handle retries
+          // For now, we'll let the existing retry logic handle it, but VideoPost will also handle it
+          this.debugLog('load-failure-detected', { postId, errorType: error?.errorType });
+        }
+        
         if (!entry.isVisible) {
           return;
         }
@@ -1232,12 +1265,32 @@ export class VisibilityManager {
     // Browsers block autoplay of unmuted videos, so we must play muted, then unmute
     // This is especially important in HD mode where videos have audio
     
+    // Check if player has a valid video element before proceeding
+    if (entry.player) {
+      try {
+        entry.player.getVideoElement();
+      } catch {
+        // Player doesn't have video element yet, skip hover actions
+        return;
+      }
+    } else {
+      // No player yet, skip hover actions
+      return;
+    }
+    
     // If exclusive audio is enabled, mute all other videos first
     if (this.exclusiveAudioEnabled && entry.player) {
       // Mute all other videos
       for (const [otherPostId, otherEntry] of this.entries) {
         if (otherPostId !== postId && otherEntry.player) {
-          otherEntry.player.setMuted(true);
+          // Check if other player has video element before muting
+          try {
+            otherEntry.player.getVideoElement();
+            otherEntry.player.setMuted(true);
+          } catch {
+            // Player doesn't have video element yet, skip
+            continue;
+          }
         }
       }
     }
@@ -1259,7 +1312,17 @@ export class VisibilityManager {
           this.currentAudioPostId = postId;
         }
       }
-    }).catch(() => {
+    }).catch((error: any) => {
+      // If play fails, check if it's a load failure
+      const isLoadFailure = error?.errorType === 'timeout' || 
+                           error?.errorType === 'network' || 
+                           error?.errorType === 'play' ||
+                           (entry.player && entry.player.hasLoadError());
+      
+      if (isLoadFailure) {
+        this.debugLog('load-failure-on-hover', { postId, errorType: error?.errorType });
+        // VideoPost will handle the retry logic via its own error checking
+      }
       // If play fails, don't unmute
     });
   }

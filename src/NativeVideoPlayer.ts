@@ -28,6 +28,7 @@ export class NativeVideoPlayer {
   private originalStartTime?: number; // Store original start time for reload
   private originalEndTime?: number; // Store original end time for reload
   private originalPoster?: string; // Store original poster for reload
+  private isHDMode: boolean = false; // Track if this is HD mode (affects mute button visibility)
   // Store event handlers for proper cleanup
   private fullscreenChangeHandler?: () => void;
   private webkitFullscreenChangeHandler?: () => void;
@@ -42,6 +43,7 @@ export class NativeVideoPlayer {
     poster?: string;
     onStateChange?: (state: VideoPlayerState) => void;
     aggressivePreload?: boolean; // Use 'auto' preload for non-HD videos
+    isHDMode?: boolean; // Whether this is HD mode (affects mute button visibility)
   }) {
     // Validate video URL before proceeding
     if (!videoUrl || !isValidMediaUrl(videoUrl)) {
@@ -56,6 +58,7 @@ export class NativeVideoPlayer {
 
     this.container = container;
     this.onStateChange = options?.onStateChange;
+    this.isHDMode = options?.isHDMode ?? false;
 
     this.state = {
       isPlaying: false,
@@ -205,7 +208,21 @@ export class NativeVideoPlayer {
     this.videoElement.pause();
     
     // Now set src - this will trigger loading
-    this.videoElement.src = videoUrl;
+    // Wrap in try-catch to handle any immediate errors silently
+    try {
+      // Double-check URL is valid before setting src to prevent MediaLoadInvalidURI errors
+      if (videoUrl && isValidMediaUrl(videoUrl)) {
+        this.videoElement.src = videoUrl;
+      } else {
+        // URL is invalid, don't set src to prevent error
+        this.errorHandled = true;
+        return;
+      }
+    } catch (error) {
+      // If setting src throws an error, mark as handled and return
+      this.errorHandled = true;
+      return;
+    }
     
     // Ensure video stays paused after setting src
     this.videoElement.pause();
@@ -247,9 +264,12 @@ export class NativeVideoPlayer {
     }
     
     // Add error handler (with guard to prevent loops)
+    // Use capture phase to catch errors early and prevent browser logging
     this.videoElement.addEventListener('error', (e) => {
       // Prevent error handler from running multiple times
       if (this.errorHandled) {
+        e.stopPropagation();
+        e.preventDefault();
         return;
       }
       
@@ -258,20 +278,26 @@ export class NativeVideoPlayer {
       
       // Check if this is a known invalid URL error (MediaLoadInvalidURI)
       // Error code 4 = MEDIA_ERR_SRC_NOT_SUPPORTED / MediaLoadInvalidURI
+      // Also check for empty/blank error messages (Firefox with privacy.resistFingerprinting)
       const isInvalidUriError = errorCode === 4 || 
-        (errorMessage && errorMessage.includes('MediaLoadInvalidURI'));
+        (errorMessage && (errorMessage.includes('MediaLoadInvalidURI') || errorMessage.includes('INVALID_STATE_ERR'))) ||
+        (!errorMessage && errorCode === 4); // Firefox may blank the message when privacy.resistFingerprinting is enabled
       
       // Check for codec/format errors (including HEVC)
       const isCodecError = errorCode === 4 && 
-        (errorMessage?.includes('codec') || 
-         errorMessage?.includes('format') ||
-         errorMessage?.includes('not supported') ||
-         errorMessage?.toLowerCase().includes('hevc') ||
-         errorMessage?.toLowerCase().includes('h.265'));
+        errorMessage &&
+        (errorMessage.includes('codec') || 
+         errorMessage.includes('format') ||
+         errorMessage.includes('not supported') ||
+         errorMessage.toLowerCase().includes('hevc') ||
+         errorMessage.toLowerCase().includes('h.265'));
       
       if (isInvalidUriError && !isCodecError) {
         // Mark as handled and silently suppress - validation should have caught this
         this.errorHandled = true;
+        // Stop propagation to prevent browser from logging the error
+        e.stopPropagation();
+        e.preventDefault();
         // Don't clear src or do anything that could trigger more events
         return;
       }
@@ -295,7 +321,7 @@ export class NativeVideoPlayer {
           src: this.videoElement.src,
         });
       }
-    }, { once: true }); // Use once: true to ensure handler only runs once
+    }, { once: true, capture: true }); // Use capture phase to catch errors early
     
     // Resolve ready promise when video can play
     const handleReady = () => this.resolveReady();
@@ -531,12 +557,19 @@ export class NativeVideoPlayer {
     progressContainer.appendChild(this.timeDisplay);
     this.controlsContainer.appendChild(progressContainer);
 
-    // Mute button
+    // Mute button (only show in HD mode)
     this.muteButton = document.createElement('button');
     this.muteButton.className = 'video-player__mute-button';
     this.muteButton.setAttribute('aria-label', 'Mute');
     this.updateMuteButton();
-    this.controlsContainer.appendChild(this.muteButton);
+    // Only show mute button in HD mode
+    if (this.isHDMode) {
+      this.controlsContainer.appendChild(this.muteButton);
+    } else {
+      // Hide mute button in non-HD mode
+      this.muteButton.style.display = 'none';
+      this.controlsContainer.appendChild(this.muteButton); // Still append but hidden
+    }
 
     // Fullscreen button
     this.fullscreenButton = document.createElement('button');
@@ -753,14 +786,31 @@ export class NativeVideoPlayer {
         this.notifyStateChange();
       }
     } catch (err: any) {
+      // Check if this is a load failure
+      const isLoadFailure = this.hasLoadError();
+      const errorType = isLoadFailure ? this.getLoadErrorType() : null;
+      
       console.error('NativeVideoPlayer: play() failed', {
         error: err,
         readyState: this.videoElement.readyState,
         paused: this.videoElement.paused,
         muted: this.videoElement.muted,
         src: this.videoElement.src,
-        networkState: this.videoElement.networkState
+        networkState: this.videoElement.networkState,
+        isLoadFailure,
+        errorType
       });
+      
+      // Enhance error with load failure information
+      if (isLoadFailure && errorType) {
+        const enhancedError = new Error(`Video load failed: ${errorType}`);
+        (enhancedError as any).originalError = err;
+        (enhancedError as any).errorType = errorType;
+        (enhancedError as any).networkState = this.videoElement.networkState;
+        (enhancedError as any).readyState = this.videoElement.readyState;
+        throw enhancedError;
+      }
+      
       throw err;
     }
   }
@@ -789,6 +839,10 @@ export class NativeVideoPlayer {
   }
 
   setMuted(isMuted: boolean): void {
+    // Check if video element exists before accessing it
+    if (!this.videoElement) {
+      return;
+    }
     this.videoElement.muted = !!isMuted;
     this.state.isMuted = this.videoElement.muted;
     this.updateMuteButton();
@@ -809,6 +863,29 @@ export class NativeVideoPlayer {
 
   getVideoElement(): HTMLVideoElement {
     return this.videoElement;
+  }
+
+  /**
+   * Check if video has a load error
+   */
+  hasLoadError(): boolean {
+    // networkState 3 = NETWORK_NO_SOURCE (no source available)
+    // readyState 0 = HAVE_NOTHING (no information available)
+    return this.videoElement.networkState === 3 || 
+           (this.videoElement.readyState === 0 && this.videoElement.networkState !== 0);
+  }
+
+  /**
+   * Get the type of load error
+   */
+  getLoadErrorType(): 'timeout' | 'network' | 'play' | null {
+    if (this.videoElement.networkState === 3) {
+      return 'network';
+    }
+    if (this.videoElement.readyState === 0 && this.videoElement.networkState !== 0) {
+      return 'play';
+    }
+    return null;
   }
 
   toggleFullscreen(): void {
@@ -937,7 +1014,11 @@ export class NativeVideoPlayer {
           // On mobile, even HAVE_METADATA (1) might be enough to start
           resolve();
         } else {
-          reject(new Error('Video not ready within timeout'));
+          const timeoutError = new Error('Video not ready within timeout');
+          (timeoutError as any).errorType = 'timeout';
+          (timeoutError as any).readyState = this.videoElement.readyState;
+          (timeoutError as any).networkState = this.videoElement.networkState;
+          reject(timeoutError);
         }
       }, timeoutMs);
       

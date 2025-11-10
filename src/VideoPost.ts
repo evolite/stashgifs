@@ -80,6 +80,10 @@ export class VideoPost {
   private isTogglingFavorite: boolean = false;
   private videoLoadingIndicator?: HTMLElement;
   private cachedStarButtonWidth?: number; // Cache star button width (doesn't change)
+  private loadErrorCount: number = 0;
+  private hasFailedPermanently: boolean = false;
+  private errorPlaceholder?: HTMLElement;
+  private retryTimeoutId?: number;
   
   // Event handlers for cleanup
   private ratingOutsideClickHandler = (event: Event) => this.onRatingOutsideClick(event);
@@ -1351,6 +1355,7 @@ export class VideoPost {
         startTime: startTime,
         endTime: this.data.endTime ?? this.data.marker.end_seconds,
         aggressivePreload: false, // HD videos use metadata preload
+        isHDMode: true, // HD mode - show mute button
       });
 
       this.isLoaded = true;
@@ -1450,9 +1455,21 @@ export class VideoPost {
    * Load the video player
    */
   loadPlayer(videoUrl: string, startTime?: number, endTime?: number): NativeVideoPlayer | undefined {
-    // Early return if already loaded
-    if (this.isLoaded) {
+    // Early return if already loaded (unless we're retrying)
+    if (this.isLoaded && !this.retryTimeoutId) {
       return this.player;
+    }
+
+    // Reset error state when starting new load (unless this is a retry)
+    if (!this.retryTimeoutId) {
+      this.loadErrorCount = 0;
+      this.hasFailedPermanently = false;
+    }
+    
+    // Clear any pending retry
+    if (this.retryTimeoutId) {
+      clearTimeout(this.retryTimeoutId);
+      this.retryTimeoutId = undefined;
     }
 
     // Validate URL early before any other checks
@@ -1462,12 +1479,14 @@ export class VideoPost {
         markerId: this.data.marker.id,
         sceneId: this.data.marker.scene?.id,
       });
+      this.handleLoadError(new Error('Invalid media URL'));
       return undefined;
     }
 
     const playerContainer = this.playerContainer || this.container.querySelector('.video-post__player') as HTMLElement;
     if (!playerContainer) {
       console.warn('VideoPost: Player container not found', { markerId: this.data.marker.id });
+      this.handleLoadError(new Error('Player container not found'));
       return undefined;
     }
 
@@ -1484,6 +1503,7 @@ export class VideoPost {
         startTime: start,
         endTime: endTime ?? this.data.endTime ?? this.data.marker.end_seconds,
         aggressivePreload: true, // Non-HD marker videos use aggressive preload
+        isHDMode: false, // Non-HD mode - hide mute button
       });
 
       this.isLoaded = true;
@@ -1492,6 +1512,11 @@ export class VideoPost {
       if (this.visibilityManager && this.data.marker.id) {
         this.visibilityManager.registerPlayer(this.data.marker.id, this.player);
       }
+
+      // Check for load errors after a short delay to catch timeout/network errors
+      setTimeout(() => {
+        this.checkForLoadError();
+      }, 5000); // Check after 5 seconds
     } catch (error) {
       console.error('VideoPost: Failed to create video player', {
         error,
@@ -1499,6 +1524,7 @@ export class VideoPost {
         markerId: this.data.marker.id,
       });
       // Don't set isLoaded to true if player creation failed
+      this.handleLoadError(error instanceof Error ? error : new Error('Failed to create video player'));
       return undefined;
     }
 
@@ -1646,6 +1672,157 @@ export class VideoPost {
       });
   }
 
+  /**
+   * Show error placeholder with marker screenshot and "Failed to load" text
+   */
+  private showErrorPlaceholder(): void {
+    if (this.errorPlaceholder) {
+      // Already showing placeholder
+      return;
+    }
+
+    const playerContainer = this.playerContainer || this.container.querySelector('.video-post__player') as HTMLElement;
+    if (!playerContainer) {
+      return;
+    }
+
+    // Hide the video player container
+    playerContainer.style.display = 'none';
+
+    // Get marker screenshot URL
+    let screenshotUrl: string | undefined;
+    if (this.api && this.data.marker) {
+      screenshotUrl = this.api.getMarkerThumbnailUrl(this.data.marker);
+    }
+
+    // Create placeholder element
+    const placeholder = document.createElement('div');
+    placeholder.className = 'video-post__error-placeholder';
+    
+    // Set background image if screenshot is available
+    if (screenshotUrl) {
+      placeholder.style.backgroundImage = `url(${screenshotUrl})`;
+      placeholder.style.backgroundSize = 'cover';
+      placeholder.style.backgroundPosition = 'center';
+      placeholder.style.backgroundRepeat = 'no-repeat';
+    } else {
+      // Fallback: dark background if no screenshot
+      placeholder.style.backgroundColor = '#1a1a1a';
+    }
+
+    // Create error text overlay
+    const errorText = document.createElement('div');
+    errorText.className = 'video-post__error-text';
+    errorText.textContent = 'Failed to load';
+    placeholder.appendChild(errorText);
+
+    // Insert placeholder before player container
+    if (playerContainer.parentNode) {
+      playerContainer.parentNode.insertBefore(placeholder, playerContainer);
+    }
+
+    this.errorPlaceholder = placeholder;
+  }
+
+  /**
+   * Hide error placeholder and show video player
+   */
+  private hideErrorPlaceholder(): void {
+    if (this.errorPlaceholder) {
+      this.errorPlaceholder.remove();
+      this.errorPlaceholder = undefined;
+    }
+
+    const playerContainer = this.playerContainer || this.container.querySelector('.video-post__player') as HTMLElement;
+    if (playerContainer) {
+      playerContainer.style.display = '';
+    }
+  }
+
+  /**
+   * Check if player has a load error and handle it
+   */
+  public checkForLoadError(): void {
+    if (!this.player) {
+      return;
+    }
+
+    if (this.player.hasLoadError()) {
+      const errorType = this.player.getLoadErrorType();
+      const error = new Error(`Video load failed: ${errorType || 'unknown'}`);
+      (error as any).errorType = errorType;
+      this.handleLoadError(error);
+    }
+  }
+
+  /**
+   * Handle video load error with retry logic
+   */
+  private handleLoadError(error: Error): void {
+    this.loadErrorCount++;
+
+    if (this.loadErrorCount >= 5) {
+      // Exhausted retries, show placeholder
+      this.hasFailedPermanently = true;
+      this.showErrorPlaceholder();
+      console.warn('VideoPost: Video failed to load after 5 attempts, showing placeholder', {
+        markerId: this.data.marker.id,
+        error,
+        attempts: this.loadErrorCount,
+      });
+    } else {
+      // Schedule retry with exponential backoff
+      const delays = [1000, 2000, 4000, 8000, 16000]; // 1s, 2s, 4s, 8s, 16s
+      const delay = delays[this.loadErrorCount - 1] || 16000;
+      
+      console.warn('VideoPost: Video load failed, retrying...', {
+        markerId: this.data.marker.id,
+        attempt: this.loadErrorCount,
+        maxAttempts: 5,
+        retryDelay: delay,
+        error,
+      });
+
+      this.retryTimeoutId = window.setTimeout(() => {
+        this.retryLoad();
+      }, delay);
+    }
+  }
+
+  /**
+   * Retry loading the video player
+   */
+  private retryLoad(): void {
+    if (this.hasFailedPermanently) {
+      return;
+    }
+
+    // Clear current player
+    if (this.player) {
+      this.player.destroy();
+      this.player = undefined;
+    }
+    this.isLoaded = false;
+
+    // Hide placeholder if showing (cleanup before retry)
+    this.hideErrorPlaceholder();
+
+    // Get video URL and reload
+    if (this.hasVideoSource() && this.data.videoUrl) {
+      const player = this.loadPlayer(
+        this.data.videoUrl,
+        this.data.startTime ?? this.data.marker.seconds,
+        this.data.endTime ?? this.data.marker.end_seconds
+      );
+      
+      // If retry succeeds, ensure placeholder stays hidden
+      if (player) {
+        // Placeholder is already hidden, but ensure it stays that way
+        this.hideErrorPlaceholder();
+      }
+    }
+  }
+
   private async seekPlayerToStart(player: NativeVideoPlayer, startTime: number): Promise<void> {
     const clamped = Number.isFinite(startTime) ? Math.max(0, startTime) : 0;
     const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
@@ -1695,6 +1872,18 @@ export class VideoPost {
    * Destroy the post and clean up all resources
    */
   destroy(): void {
+    // Clear any pending retry
+    if (this.retryTimeoutId) {
+      clearTimeout(this.retryTimeoutId);
+      this.retryTimeoutId = undefined;
+    }
+
+    // Remove error placeholder if exists
+    if (this.errorPlaceholder) {
+      this.errorPlaceholder.remove();
+      this.errorPlaceholder = undefined;
+    }
+
     // Destroy player
     if (this.player) {
       this.player.destroy();
