@@ -557,19 +557,15 @@ export class NativeVideoPlayer {
     progressContainer.appendChild(this.timeDisplay);
     this.controlsContainer.appendChild(progressContainer);
 
-    // Mute button (only show in HD mode)
+    // Mute button (hidden in HD mode - use global volume toggle instead)
     this.muteButton = document.createElement('button');
     this.muteButton.className = 'video-player__mute-button';
     this.muteButton.setAttribute('aria-label', 'Mute');
     this.updateMuteButton();
-    // Only show mute button in HD mode
-    if (this.isHDMode) {
-      this.controlsContainer.appendChild(this.muteButton);
-    } else {
-      // Hide mute button in non-HD mode
-      this.muteButton.style.display = 'none';
-      this.controlsContainer.appendChild(this.muteButton); // Still append but hidden
-    }
+    // Hide mute button in HD mode - global volume toggle in header controls muting
+    // Also hide in non-HD mode (marker videos don't have audio)
+    this.muteButton.style.display = 'none';
+    this.controlsContainer.appendChild(this.muteButton); // Still append but hidden
 
     // Fullscreen button
     this.fullscreenButton = document.createElement('button');
