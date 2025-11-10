@@ -1373,15 +1373,6 @@ export class VideoPost {
     try {
       const startTime = this.data.startTime ?? this.data.marker.seconds;
       
-      // Debug: Log the startTime being passed
-      console.log('VideoPost: Creating HD video player', {
-        markerId: this.data.marker.id,
-        markerTitle: this.data.marker.title,
-        startTime: startTime,
-        markerSeconds: this.data.marker.seconds,
-        dataStartTime: this.data.startTime,
-      });
-      
       // Always get thumbnail URL to use as poster - prevents black flicker
       let posterUrl: string | undefined;
       if (this.api && this.data.marker) {
