@@ -175,10 +175,11 @@ export class NativeVideoPlayer {
       this.videoElement.style.objectFit = 'cover';
     }
     
-    // Use 'metadata' preload to prevent showing last frame
-    // For non-HD videos, we can be more aggressive but still use metadata initially
-    // The poster will cover the video until the correct frame is ready
-    this.videoElement.preload = 'metadata';
+    // Set preload based on whether we have startTime
+    // For non-HD videos (no startTime), use 'auto' like the old version
+    // For HD videos (with startTime), use 'metadata' to prevent showing last frame
+    const hasStartTimeForPreload = typeof options?.startTime === 'number' && Number.isFinite(options.startTime) && options.startTime > 0;
+    this.videoElement.preload = hasStartTimeForPreload ? 'metadata' : 'auto';
     this.videoElement.playsInline = true; // Required for iOS inline playback
     this.videoElement.muted = options?.muted ?? false; // Default to unmuted (markers don't have sound anyway)
     this.videoElement.loop = true; // Enable looping
@@ -193,65 +194,87 @@ export class NativeVideoPlayer {
     this.videoElement.setAttribute('x5-playsinline', 'true'); // Android X5 browser
     this.videoElement.setAttribute('x-webkit-airplay', 'allow'); // AirPlay support
     
-    // Set initial currentTime BEFORE setting src to prevent showing last frame
-    // This ensures the browser knows where to position the video
-    const initialStartTime = (typeof options?.startTime === 'number' && Number.isFinite(options.startTime))
-      ? Math.max(0, options.startTime)
-      : 0;
+    // Determine if we have a startTime that needs to be enforced
+    const hasStartTime = typeof options?.startTime === 'number' && Number.isFinite(options.startTime) && options.startTime > 0;
+    const initialStartTime = hasStartTime ? Math.max(0, options.startTime as number) : 0;
     
-    // Set currentTime BEFORE setting src to prevent browser from showing last frame
-    // Some browsers respect this if set before src
-    try {
-      this.videoElement.currentTime = initialStartTime;
-    } catch {
-      // Ignore - will set in event handlers
-    }
-    
-    // Ensure video is paused to prevent auto-playing
-    this.videoElement.pause();
-    
-    // Now set src - this will trigger loading
-    // Wrap in try-catch to handle any immediate errors silently
-    try {
-      // Double-check URL is valid before setting src to prevent MediaLoadInvalidURI errors
-      if (videoUrl && isValidMediaUrl(videoUrl)) {
-        this.videoElement.src = videoUrl;
-      } else {
-        // URL is invalid, don't set src to prevent error
+    // For non-HD videos (no startTime or startTime = 0), use simple approach:
+    // Just set src directly and let browser show first frame naturally
+    // This matches the old behavior and prevents showing last frame
+    if (!hasStartTime) {
+      // Simple approach: set src directly, no currentTime manipulation
+      // Ensure video is paused to prevent auto-playing
+      this.videoElement.pause();
+      
+      // Set src - this will trigger loading
+      try {
+        if (videoUrl && isValidMediaUrl(videoUrl)) {
+          this.videoElement.src = videoUrl;
+        } else {
+          // URL is invalid, don't set src to prevent error
+          this.errorHandled = true;
+          return;
+        }
+      } catch (error) {
+        // If setting src throws an error, mark as handled and return
         this.errorHandled = true;
         return;
       }
-    } catch (error) {
-      // If setting src throws an error, mark as handled and return
-      this.errorHandled = true;
-      return;
-    }
-    
-    // Ensure video stays paused after setting src
-    this.videoElement.pause();
-    
-    // Immediately try to set currentTime again after setting src
-    // This is critical to prevent showing last frame
-    try {
-      this.videoElement.currentTime = initialStartTime;
-    } catch {
-      // Ignore - metadata not loaded yet, will be set in event handlers below
-    }
-    
-    // Use loadstart event to set currentTime as early as possible and ensure paused
-    // Note: desiredStartTime is set later, so we use initialStartTime here
-    const onLoadStart = () => {
-      // Ensure video is paused
+      
+      // Ensure video stays paused after setting src
       this.videoElement.pause();
+    } else {
+      // HD videos with startTime: use complex approach to enforce startTime
+      // Set initial currentTime BEFORE setting src to prevent showing last frame
       try {
-        if (this.videoElement.readyState >= 0) {
-          this.videoElement.currentTime = initialStartTime;
-        }
+        this.videoElement.currentTime = initialStartTime;
       } catch {
-        // Ignore
+        // Ignore - will set in event handlers
       }
-    };
-    this.videoElement.addEventListener('loadstart', onLoadStart, { once: true });
+      
+      // Ensure video is paused to prevent auto-playing
+      this.videoElement.pause();
+      
+      // Now set src - this will trigger loading
+      try {
+        if (videoUrl && isValidMediaUrl(videoUrl)) {
+          this.videoElement.src = videoUrl;
+        } else {
+          // URL is invalid, don't set src to prevent error
+          this.errorHandled = true;
+          return;
+        }
+      } catch (error) {
+        // If setting src throws an error, mark as handled and return
+        this.errorHandled = true;
+        return;
+      }
+      
+      // Ensure video stays paused after setting src
+      this.videoElement.pause();
+      
+      // Immediately try to set currentTime again after setting src
+      // This is critical to prevent showing last frame
+      try {
+        this.videoElement.currentTime = initialStartTime;
+      } catch {
+        // Ignore - metadata not loaded yet, will be set in event handlers below
+      }
+      
+      // Use loadstart event to set currentTime as early as possible and ensure paused
+      const onLoadStart = () => {
+        // Ensure video is paused
+        this.videoElement.pause();
+        try {
+          if (this.videoElement.readyState >= 0) {
+            this.videoElement.currentTime = initialStartTime;
+          }
+        } catch {
+          // Ignore
+        }
+      };
+      this.videoElement.addEventListener('loadstart', onLoadStart, { once: true });
+    }
     
     // Handle end time if provided (only if endTime is greater than a small tolerance)
     // Loop back to 0 when reaching endTime
