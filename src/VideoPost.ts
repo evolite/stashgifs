@@ -188,7 +188,7 @@ export class VideoPost {
     let aspectRatioClass = 'aspect-16-9';
     if (this.data.marker.scene.files && this.data.marker.scene.files.length > 0) {
       const file = this.data.marker.scene.files[0];
-      if (file.width && file.height) {
+      if (file && file.width && file.height) {
         const ratio = calculateAspectRatio(file.width, file.height);
         aspectRatioClass = getAspectRatioClass(ratio);
       }
@@ -359,12 +359,14 @@ export class VideoPost {
       chip.addEventListener('touchmove', (e) => {
         if (e.touches.length > 0) {
           const touch = e.touches[0];
-          const deltaX = Math.abs(touch.clientX - touchStartX);
-          const deltaY = Math.abs(touch.clientY - touchStartY);
-          
-          // If touch moved more than threshold, consider it scrolling
-          if (deltaX > touchMoveThreshold || deltaY > touchMoveThreshold) {
-            isScrolling = true;
+          if (touch) {
+            const deltaX = Math.abs(touch.clientX - touchStartX);
+            const deltaY = Math.abs(touch.clientY - touchStartY);
+            
+            // If touch moved more than threshold, consider it scrolling
+            if (deltaX > touchMoveThreshold || deltaY > touchMoveThreshold) {
+              isScrolling = true;
+            }
           }
         }
       }, { passive: true });
@@ -470,12 +472,14 @@ export class VideoPost {
       chip.addEventListener('touchmove', (e) => {
         if (e.touches.length > 0) {
           const touch = e.touches[0];
-          const deltaX = Math.abs(touch.clientX - touchStartX);
-          const deltaY = Math.abs(touch.clientY - touchStartY);
-          
-          // If touch moved more than threshold, consider it scrolling
-          if (deltaX > touchMoveThreshold || deltaY > touchMoveThreshold) {
-            isScrolling = true;
+          if (touch) {
+            const deltaX = Math.abs(touch.clientX - touchStartX);
+            const deltaY = Math.abs(touch.clientY - touchStartY);
+            
+            // If touch moved more than threshold, consider it scrolling
+            if (deltaX > touchMoveThreshold || deltaY > touchMoveThreshold) {
+              isScrolling = true;
+            }
           }
         }
       }, { passive: true });

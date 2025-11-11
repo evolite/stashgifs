@@ -1,0 +1,43 @@
+overwrite: true
+schema:
+  # Option 1: Use schema introspection from Stash API
+  # Replace with your Stash API endpoint
+  - ${STASH_GRAPHQL_ENDPOINT:-http://localhost:9999/graphql}:
+      headers:
+        ApiKey: ${STASH_API_KEY:-}
+  # Option 2: Use local schema file (uncomment if you have schema.graphql)
+  # - ./schema.graphql
+documents: 'src/**/*.{ts,graphql,gql}'
+generates:
+  src/graphql/generated/types.ts:
+    plugins:
+      - typescript
+      - typescript-operations
+    config:
+      skipTypename: false
+      enumsAsTypes: true
+      scalars:
+        Timestamp: string
+        Date: string
+        URL: string
+      maybeValue: T | null
+  src/graphql/generated/operations.ts:
+    plugins:
+      - typescript
+      - typescript-operations
+      - typescript-graphql-request
+    config:
+      skipTypename: false
+      enumsAsTypes: true
+      scalars:
+        Timestamp: string
+        Date: string
+        URL: string
+      maybeValue: T | null
+      rawRequest: false
+      documentMode: documentNode
+hooks:
+  afterAllFileWrite:
+    - prettier --write
+
+

@@ -3,7 +3,7 @@
  * TypeScript interfaces for GraphQL queries, mutations, and filters
  */
 
-import { Scene, SceneMarker, Studio, Performer, Tag } from '../types.js';
+import { Scene, SceneMarker, Tag } from '../types.js';
 
 // ============================================================================
 // Filter Types
@@ -387,7 +387,7 @@ export interface SceneAddOResponse {
 /**
  * Typed GraphQL query options
  */
-export interface GraphQLQueryOptions<TVariables = Record<string, unknown>, TData = unknown> {
+export interface GraphQLQueryOptions<TVariables = Record<string, unknown>, _TData = unknown> {
   query: string;
   variables?: TVariables;
   signal?: AbortSignal;
@@ -396,11 +396,17 @@ export interface GraphQLQueryOptions<TVariables = Record<string, unknown>, TData
 /**
  * Typed GraphQL mutation options
  */
-export interface GraphQLMutationOptions<TVariables = Record<string, unknown>, TData = unknown> {
+export interface GraphQLMutationOptions<TVariables = Record<string, unknown>, _TData = unknown> {
   mutation: string;
   variables?: TVariables;
   signal?: AbortSignal;
 }
+
+/**
+ * GraphQL mutation string type
+ * Represents a GraphQL mutation operation string
+ */
+export type GraphQLMutation = string;
 
 /**
  * Typed GraphQL client interface

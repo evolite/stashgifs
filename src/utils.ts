@@ -98,7 +98,9 @@ export function escapeHtml(text: string): string {
 export function shuffleInPlace<T>(arr: T[]): T[] {
   for (let i = arr.length - 1; i > 0; i--) {
     const j = Math.floor(Math.random() * (i + 1));
-    [arr[i], arr[j]] = [arr[j], arr[i]];
+    const temp = arr[i];
+    arr[i] = arr[j]!;
+    arr[j] = temp!;
   }
   return arr;
 }
@@ -303,4 +305,164 @@ export function toAbsoluteUrl(url?: string): string | undefined {
   if (/^https?:\/\//i.test(url)) return url;
   if (url.startsWith('/')) return `${window.location.origin}${url}`;
   return `${window.location.origin}/${url}`;
+}
+
+// ============================================================================
+// Browser API Type Guards
+// ============================================================================
+
+/**
+ * Navigator with standalone property (iOS Safari)
+ */
+interface NavigatorStandalone extends Navigator {
+  standalone?: boolean;
+}
+
+/**
+ * Type guard for standalone navigator (iOS Safari app mode)
+ */
+export function isStandaloneNavigator(nav: Navigator): nav is NavigatorStandalone {
+  return 'standalone' in nav;
+}
+
+/**
+ * Element with webkit fullscreen methods
+ */
+export interface ElementWebkitFullscreen extends Element {
+  webkitRequestFullscreen?: () => Promise<void>;
+  webkitEnterFullscreen?: () => void;
+}
+
+/**
+ * Element with moz fullscreen methods
+ */
+export interface ElementMozFullscreen extends Element {
+  mozRequestFullscreen?: () => Promise<void>;
+}
+
+/**
+ * Element with ms fullscreen methods
+ */
+export interface ElementMsFullscreen extends Element {
+  msRequestFullscreen?: () => Promise<void>;
+}
+
+/**
+ * Container with webkit fullscreen methods
+ */
+interface HTMLElementWebkitFullscreen extends HTMLElement {
+  webkitRequestFullscreen?: () => Promise<void>;
+}
+
+/**
+ * Container with moz fullscreen methods
+ */
+interface HTMLElementMozFullscreen extends HTMLElement {
+  mozRequestFullscreen?: () => Promise<void>;
+}
+
+/**
+ * Container with ms fullscreen methods
+ */
+interface HTMLElementMsFullscreen extends HTMLElement {
+  msRequestFullscreen?: () => Promise<void>;
+}
+
+/**
+ * Document with webkit fullscreen methods
+ */
+interface DocumentWebkitFullscreen extends Document {
+  webkitExitFullscreen?: () => Promise<void>;
+  webkitFullscreenElement?: Element | null;
+}
+
+/**
+ * Document with moz fullscreen methods
+ */
+interface DocumentMozFullscreen extends Document {
+  mozCancelFullscreen?: () => Promise<void>;
+  mozFullScreenElement?: Element | null;
+}
+
+/**
+ * Document with ms fullscreen methods
+ */
+interface DocumentMsFullscreen extends Document {
+  msExitFullscreen?: () => Promise<void>;
+  msFullscreenElement?: Element | null;
+}
+
+/**
+ * Type guard for element with webkit fullscreen support
+ */
+export function hasWebkitFullscreen(element: Element): element is ElementWebkitFullscreen {
+  return 'webkitRequestFullscreen' in element || 'webkitEnterFullscreen' in element;
+}
+
+/**
+ * Type guard for element with moz fullscreen support
+ */
+export function hasMozFullscreen(element: Element): element is ElementMozFullscreen {
+  return 'mozRequestFullscreen' in element;
+}
+
+/**
+ * Type guard for element with ms fullscreen support
+ */
+export function hasMsFullscreen(element: Element): element is ElementMsFullscreen {
+  return 'msRequestFullscreen' in element;
+}
+
+/**
+ * Type guard for HTML element with webkit fullscreen support
+ */
+export function hasWebkitFullscreenHTMLElement(element: HTMLElement): element is HTMLElementWebkitFullscreen {
+  return 'webkitRequestFullscreen' in element;
+}
+
+/**
+ * Type guard for HTML element with moz fullscreen support
+ */
+export function hasMozFullscreenHTMLElement(element: HTMLElement): element is HTMLElementMozFullscreen {
+  return 'mozRequestFullscreen' in element;
+}
+
+/**
+ * Type guard for HTML element with ms fullscreen support
+ */
+export function hasMsFullscreenHTMLElement(element: HTMLElement): element is HTMLElementMsFullscreen {
+  return 'msRequestFullscreen' in element;
+}
+
+/**
+ * Type guard for document with webkit fullscreen support
+ */
+export function hasWebkitFullscreenDocument(doc: Document): doc is DocumentWebkitFullscreen {
+  return 'webkitExitFullscreen' in doc || 'webkitFullscreenElement' in doc;
+}
+
+/**
+ * Type guard for document with moz fullscreen support
+ */
+export function hasMozFullscreenDocument(doc: Document): doc is DocumentMozFullscreen {
+  return 'mozCancelFullscreen' in doc || 'mozFullScreenElement' in doc;
+}
+
+/**
+ * Type guard for document with ms fullscreen support
+ */
+export function hasMsFullscreenDocument(doc: Document): doc is DocumentMsFullscreen {
+  return 'msExitFullscreen' in doc || 'msFullscreenElement' in doc;
+}
+
+/**
+ * Check if fullscreen API is supported
+ */
+export function hasFullscreenSupport(element: Element): boolean {
+  return !!(
+    element.requestFullscreen ||
+    hasWebkitFullscreen(element) ||
+    hasMozFullscreen(element) ||
+    hasMsFullscreen(element)
+  );
 }

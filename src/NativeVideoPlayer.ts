@@ -4,7 +4,17 @@
  */
 
 import { VideoPlayerState } from './types.js';
-import { formatDuration, isValidMediaUrl } from './utils.js';
+import { formatDuration, isValidMediaUrl, hasWebkitFullscreen, hasMozFullscreen, hasMsFullscreen, hasWebkitFullscreenHTMLElement, hasMozFullscreenHTMLElement, hasMsFullscreenHTMLElement, hasWebkitFullscreenDocument, hasMozFullscreenDocument, hasMsFullscreenDocument, type ElementWebkitFullscreen, type ElementMozFullscreen, type ElementMsFullscreen } from './utils.js';
+
+/**
+ * Enhanced error with additional video loading information
+ */
+interface EnhancedVideoError extends Error {
+  originalError?: Error;
+  errorType?: string;
+  networkState?: number;
+  readyState?: number;
+}
 
 export class NativeVideoPlayer {
   private container: HTMLElement;
@@ -610,9 +620,8 @@ export class NativeVideoPlayer {
     this.videoElement.style.transform = 'translateZ(0)';
     this.videoElement.style.willChange = 'auto'; // Browser will optimize based on video playback
     // Additional GPU acceleration hints
-    (this.videoElement.style as any).webkitTransform = 'translateZ(0)';
-    (this.videoElement.style as any).backfaceVisibility = 'hidden';
-    (this.videoElement.style as any).perspective = '1000px';
+    this.videoElement.style.backfaceVisibility = 'hidden';
+    this.videoElement.style.perspective = '1000px';
     
     playerWrapper.appendChild(this.videoElement);
     this.container.appendChild(playerWrapper);
@@ -961,7 +970,7 @@ export class NativeVideoPlayer {
         this.updatePlayButton();
         this.notifyStateChange();
       }
-    } catch (err: any) {
+    } catch (err: unknown) {
       // Check if this is a load failure
       const isLoadFailure = this.hasLoadError();
       const errorType = isLoadFailure ? this.getLoadErrorType() : null;
@@ -979,11 +988,11 @@ export class NativeVideoPlayer {
       
       // Enhance error with load failure information
       if (isLoadFailure && errorType) {
-        const enhancedError = new Error(`Video load failed: ${errorType}`);
-        (enhancedError as any).originalError = err;
-        (enhancedError as any).errorType = errorType;
-        (enhancedError as any).networkState = this.videoElement.networkState;
-        (enhancedError as any).readyState = this.videoElement.readyState;
+        const enhancedError: EnhancedVideoError = new Error(`Video load failed: ${errorType}`);
+        enhancedError.originalError = err instanceof Error ? err : undefined;
+        enhancedError.errorType = errorType;
+        enhancedError.networkState = this.videoElement.networkState;
+        enhancedError.readyState = this.videoElement.readyState;
         throw enhancedError;
       }
       
@@ -1142,30 +1151,49 @@ export class NativeVideoPlayer {
 
     if (isIOS) {
       // iOS Safari: Use webkitEnterFullscreen on video element
-      const webkitEnterFullscreen = (this.videoElement as any).webkitEnterFullscreen;
-      if (webkitEnterFullscreen) {
-        try {
-          webkitEnterFullscreen.call(this.videoElement);
-          // State will be updated via webkitbeginfullscreen event
-        } catch (error) {
-          console.error('Failed to enter fullscreen on iOS', error);
+      if (hasWebkitFullscreen(this.videoElement)) {
+        const element = this.videoElement as ElementWebkitFullscreen;
+        const webkitEnterFullscreen = element.webkitEnterFullscreen;
+        if (webkitEnterFullscreen) {
+          try {
+            webkitEnterFullscreen();
+            // State will be updated via webkitbeginfullscreen event
+          } catch (error) {
+            console.error('Failed to enter fullscreen on iOS', error);
+          }
+        } else {
+          console.warn('Fullscreen not supported on this iOS device');
         }
       } else {
         console.warn('Fullscreen not supported on this iOS device');
       }
     } else if (isMobile) {
       // Android: Try video element fullscreen first, then container
-      const videoRequestFullscreen = 
-        this.videoElement.requestFullscreen ||
-        (this.videoElement as any).webkitRequestFullscreen ||
-        (this.videoElement as any).mozRequestFullscreen ||
-        (this.videoElement as any).msRequestFullscreen;
+      let videoRequestFullscreen: (() => Promise<void>) | undefined;
+      if (this.videoElement.requestFullscreen) {
+        videoRequestFullscreen = this.videoElement.requestFullscreen.bind(this.videoElement);
+      } else if (hasWebkitFullscreen(this.videoElement)) {
+        const element = this.videoElement as ElementWebkitFullscreen;
+        if (element.webkitRequestFullscreen) {
+          videoRequestFullscreen = element.webkitRequestFullscreen.bind(this.videoElement);
+        }
+      } else if (hasMozFullscreen(this.videoElement)) {
+        const element = this.videoElement as ElementMozFullscreen;
+        if (element.mozRequestFullscreen) {
+          videoRequestFullscreen = element.mozRequestFullscreen.bind(this.videoElement);
+        }
+      } else if (hasMsFullscreen(this.videoElement)) {
+        const element = this.videoElement as ElementMsFullscreen;
+        if (element.msRequestFullscreen) {
+          videoRequestFullscreen = element.msRequestFullscreen.bind(this.videoElement);
+        }
+      }
 
       if (videoRequestFullscreen) {
-        videoRequestFullscreen.call(this.videoElement).then(() => {
+        videoRequestFullscreen().then(() => {
           this.state.isFullscreen = true;
           this.notifyStateChange();
-        }).catch((error: any) => {
+        }).catch((error: unknown) => {
           console.error('Failed to enter fullscreen on Android', error);
           // Fallback to container fullscreen
           this.tryContainerFullscreen();
@@ -1183,31 +1211,31 @@ export class NativeVideoPlayer {
   private tryContainerFullscreen(): void {
     const containerRequestFullscreen =
       this.container.requestFullscreen ||
-      (this.container as any).webkitRequestFullscreen ||
-      (this.container as any).mozRequestFullscreen ||
-      (this.container as any).msRequestFullscreen;
+      (hasWebkitFullscreenHTMLElement(this.container) && this.container.webkitRequestFullscreen) ||
+      (hasMozFullscreenHTMLElement(this.container) && this.container.mozRequestFullscreen) ||
+      (hasMsFullscreenHTMLElement(this.container) && this.container.msRequestFullscreen);
 
     if (!this.isFullscreen()) {
       if (containerRequestFullscreen) {
         containerRequestFullscreen.call(this.container).then(() => {
           this.state.isFullscreen = true;
           this.notifyStateChange();
-        }).catch((error: any) => {
+        }).catch((error: unknown) => {
           console.error('Failed to enter fullscreen', error);
         });
       }
     } else {
       const exitFullscreen =
         document.exitFullscreen ||
-        (document as any).webkitExitFullscreen ||
-        (document as any).mozCancelFullscreen ||
-        (document as any).msExitFullscreen;
+        (hasWebkitFullscreenDocument(document) && document.webkitExitFullscreen) ||
+        (hasMozFullscreenDocument(document) && document.mozCancelFullscreen) ||
+        (hasMsFullscreenDocument(document) && document.msExitFullscreen);
 
       if (exitFullscreen) {
         exitFullscreen.call(document).then(() => {
           this.state.isFullscreen = false;
           this.notifyStateChange();
-        }).catch((error: any) => {
+        }).catch((error: unknown) => {
           console.error('Failed to exit fullscreen', error);
         });
       }
@@ -1217,9 +1245,9 @@ export class NativeVideoPlayer {
   private isFullscreen(): boolean {
     return !!(
       document.fullscreenElement ||
-      (document as any).webkitFullscreenElement ||
-      (document as any).mozFullScreenElement ||
-      (document as any).msFullscreenElement
+      (hasWebkitFullscreenDocument(document) && document.webkitFullscreenElement) ||
+      (hasMozFullscreenDocument(document) && document.mozFullScreenElement) ||
+      (hasMsFullscreenDocument(document) && document.msFullscreenElement)
     );
   }
 
@@ -1262,10 +1290,10 @@ export class NativeVideoPlayer {
           // On mobile, even HAVE_METADATA (1) might be enough to start
           resolve();
         } else {
-          const timeoutError = new Error('Video not ready within timeout');
-          (timeoutError as any).errorType = 'timeout';
-          (timeoutError as any).readyState = this.videoElement.readyState;
-          (timeoutError as any).networkState = this.videoElement.networkState;
+          const timeoutError: EnhancedVideoError = new Error('Video not ready within timeout');
+          timeoutError.errorType = 'timeout';
+          timeoutError.readyState = this.videoElement.readyState;
+          timeoutError.networkState = this.videoElement.networkState;
           reject(timeoutError);
         }
       }, timeoutMs);
@@ -1553,13 +1581,14 @@ export class NativeVideoPlayer {
     // }
     
     // Clear all references to help garbage collection
-    this.videoElement = undefined as any;
-    this.controlsContainer = undefined as any;
-    this.playButton = undefined as any;
-    this.muteButton = undefined as any;
-    this.progressBar = undefined as any;
-    this.timeDisplay = undefined as any;
-    this.fullscreenButton = undefined as any;
+    // Using null! to satisfy TypeScript's definite assignment requirement
+    this.videoElement = null!;
+    this.controlsContainer = null!;
+    this.playButton = null!;
+    this.muteButton = null!;
+    this.progressBar = null!;
+    this.timeDisplay = null!;
+    this.fullscreenButton = null!;
     this.onStateChange = undefined;
     this.externalStateListener = undefined;
     this.readyResolver = undefined;

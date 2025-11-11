@@ -5,9 +5,16 @@
   "scripts": {
     "build": "tsc",
     "watch": "tsc --watch",
-    "clean": "rm -rf app/assets/*.js app/assets/*.js.map"
+    "clean": "rm -rf app/assets/*.js app/assets/*.js.map",
+    "codegen": "graphql-codegen --config codegen.yml",
+    "codegen:watch": "graphql-codegen --config codegen.yml --watch",
+    "type-check": "tsc --noEmit"
   },
   "devDependencies": {
+    "@graphql-codegen/cli": "^5.0.2",
+    "@graphql-codegen/typescript": "^4.0.1",
+    "@graphql-codegen/typescript-operations": "^4.2.0",
+    "@graphql-codegen/typescript-graphql-request": "^6.0.1",
     "typescript": "^5.9.3"
   }
 }

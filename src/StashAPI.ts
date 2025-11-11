@@ -3,7 +3,7 @@
  * This will interface with the Stash GraphQL API
  */
 
-import { Scene, SceneMarker, FilterOptions, Performer } from './types.js';
+import { Scene, SceneMarker, FilterOptions } from './types.js';
 import { isValidMediaUrl } from './utils.js';
 import * as queries from './graphql/queries.js';
 import * as mutations from './graphql/mutations.js';
@@ -32,9 +32,6 @@ import {
   SceneAddOResponse,
   TagCreateInput,
   SceneMarkerUpdateInput,
-  SceneMarkerCreateInput,
-  SceneUpdateInput,
-  SceneAddOInput,
   TypedGraphQLClient,
   GraphQLResponse,
 } from './graphql/types.js';
@@ -44,9 +41,8 @@ import {
   GraphQLNetworkError,
   GraphQLAbortError,
   isAbortError,
-  createGraphQLError,
-  handleGraphQLError,
 } from './graphql/errors.js';
+import { GraphQLClient } from './graphql/client.js';
 
 interface StashPluginApi {
   GQL: {
@@ -57,21 +53,94 @@ interface StashPluginApi {
   apiKey?: string;
 }
 
+/**
+ * LRU Cache implementation for tracking access order
+ * Uses Map to maintain insertion order (most recently accessed at end)
+ */
+class LRUCache<K, V> {
+  private cache: Map<K, V>;
+  private readonly maxSize: number;
+
+  constructor(maxSize: number) {
+    this.cache = new Map();
+    this.maxSize = maxSize;
+  }
+
+  /**
+   * Get value from cache and move to end (most recently used)
+   */
+  get(key: K): V | undefined {
+    const value = this.cache.get(key);
+    if (value !== undefined) {
+      // Move to end (most recently used)
+      this.cache.delete(key);
+      this.cache.set(key, value);
+    }
+    return value;
+  }
+
+  /**
+   * Set value in cache, evicting least recently used if at capacity
+   */
+  set(key: K, value: V): void {
+    if (this.cache.has(key)) {
+      // Update existing: remove and re-add to end
+      this.cache.delete(key);
+    } else if (this.cache.size >= this.maxSize) {
+      // Evict least recently used (first item in Map)
+      const firstKey = this.cache.keys().next().value;
+      if (firstKey !== undefined) {
+        this.cache.delete(firstKey);
+      }
+    }
+    this.cache.set(key, value);
+  }
+
+  /**
+   * Check if key exists in cache (without updating access order)
+   */
+  has(key: K): boolean {
+    return this.cache.has(key);
+  }
+
+  /**
+   * Delete key from cache
+   */
+  delete(key: K): boolean {
+    return this.cache.delete(key);
+  }
+
+  /**
+   * Get current size of cache
+   */
+  get size(): number {
+    return this.cache.size;
+  }
+
+  /**
+   * Clear all entries
+   */
+  clear(): void {
+    this.cache.clear();
+  }
+}
+
 export class StashAPI {
   private baseUrl: string;
   private apiKey?: string
   // Cache for tags/performers that have markers (to avoid repeated checks)
-  private tagsWithMarkersCache: Set<number> = new Set();
-  private performersWithMarkersCache: Set<number> = new Set();;
+  // Using LRU cache to track access order and intelligently evict least recently used
+  private tagsWithMarkersCache: LRUCache<number, boolean>;
+  private performersWithMarkersCache: LRUCache<number, boolean>;
   private pluginApi?: StashPluginApi;
-  // Request deduplication - cache in-flight requests
-  private pendingRequests: Map<string, Promise<unknown>> = new Map();
+  // Centralized GraphQL client
+  private gqlClient: GraphQLClient;
   // Simple cache for search results (TTL: 5 minutes)
   private searchCache: Map<string, { data: unknown; timestamp: number }> = new Map();
   private readonly CACHE_TTL = 5 * 60 * 1000; // 5 minutes
   private cacheCleanupInterval?: ReturnType<typeof setInterval>;
   private readonly MAX_CACHE_SIZE = 1000; // Maximum cache entries before cleanup
-  private readonly MAX_TAG_CACHE_SIZE = 1000; // Maximum tag/performer cache entries
+  private readonly MAX_TAG_CACHE_SIZE = 1000; // Maximum tag/performer cache entries (used for LRU cache)
 
   constructor(baseUrl?: string, apiKey?: string) {
     // Get from window if available (Stash plugin context)
@@ -92,6 +161,17 @@ export class StashAPI {
     }
     
     this.apiKey = apiKey || this.pluginApi?.apiKey;
+    
+    // Initialize GraphQL client
+    this.gqlClient = new GraphQLClient({
+      baseUrl: this.baseUrl,
+      apiKey: this.apiKey,
+      pluginApi: this.pluginApi,
+    });
+    
+    // Initialize LRU caches
+    this.tagsWithMarkersCache = new LRUCache(this.MAX_TAG_CACHE_SIZE);
+    this.performersWithMarkersCache = new LRUCache(this.MAX_TAG_CACHE_SIZE);
     
     // Start periodic cache cleanup
     this.startCacheCleanup();
@@ -130,28 +210,9 @@ export class StashAPI {
       }
     }
     
-    // Limit tag cache size (remove oldest entries if over limit)
-    // Since Set doesn't track insertion order, we'll clear and rebuild if too large
-    if (this.tagsWithMarkersCache.size > this.MAX_TAG_CACHE_SIZE) {
-      // Clear half of the cache (simple approach)
-      const entries = Array.from(this.tagsWithMarkersCache);
-      this.tagsWithMarkersCache.clear();
-      // Keep the most recent half (approximation)
-      const keepCount = Math.floor(this.MAX_TAG_CACHE_SIZE / 2);
-      for (let i = entries.length - keepCount; i < entries.length; i++) {
-        this.tagsWithMarkersCache.add(entries[i]);
-      }
-    }
-    
-    // Limit performer cache size (same approach)
-    if (this.performersWithMarkersCache.size > this.MAX_TAG_CACHE_SIZE) {
-      const entries = Array.from(this.performersWithMarkersCache);
-      this.performersWithMarkersCache.clear();
-      const keepCount = Math.floor(this.MAX_TAG_CACHE_SIZE / 2);
-      for (let i = entries.length - keepCount; i < entries.length; i++) {
-        this.performersWithMarkersCache.add(entries[i]);
-      }
-    }
+    // LRU caches automatically evict least recently used items when at capacity
+    // No manual cleanup needed - LRU handles eviction on set()
+    // The cleanup here is just for the search cache which uses TTL
   }
 
   /**
@@ -251,7 +312,7 @@ export class StashAPI {
         const ids = normalizeIdArray(out.scene_performers);
         if (ids) {
           out.scene_performers = { 
-            value: ids.map(id => String(id)), 
+            value: ids.map(id => Number(id)), 
             modifier: 'INCLUDES' 
           } as SceneMarkerFilterInput['scene_performers'];
         } else {
@@ -266,7 +327,7 @@ export class StashAPI {
         const ids = normalizeIdArray(raw);
         if (ids) {
           out.scene_performers = { 
-            value: ids.map(id => String(id)), 
+            value: ids.map(id => Number(id)), 
             modifier: scenePerformersObj.modifier ?? 'INCLUDES' 
           } as SceneMarkerFilterInput['scene_performers'];
         } else {
@@ -290,6 +351,8 @@ export class StashAPI {
     const uncachedIds: number[] = [];
     for (const tagId of tagIds) {
       if (this.tagsWithMarkersCache.has(tagId)) {
+        // Get to update access order (move to most recently used)
+        this.tagsWithMarkersCache.get(tagId);
         results.add(tagId);
       } else {
         uncachedIds.push(tagId);
@@ -306,12 +369,11 @@ export class StashAPI {
     };
     
     try {
-      if (this.pluginApi?.GQL?.client) {
-        const result = await this.pluginApi.GQL.client.query<CheckTagsHaveMarkersResponse>({
-          query: queries.CHECK_TAGS_HAVE_MARKERS,
-          variables: { scene_marker_filter: sceneMarkerFilter }
-        });
-        const count = result.data?.findSceneMarkers?.count || 0;
+      const result = await this.gqlClient.query<CheckTagsHaveMarkersResponse>({
+        query: queries.CHECK_TAGS_HAVE_MARKERS,
+        variables: { scene_marker_filter: sceneMarkerFilter }
+      });
+      const count = result.data?.findSceneMarkers?.count || 0;
         // If count > 0, at least one tag has markers, but we need to check individually
         // For efficiency, we'll check in smaller batches
         if (count === 0) return results; // Return cached results
@@ -338,29 +400,11 @@ export class StashAPI {
                     } 
                   };
                   try {
-                    if (this.pluginApi?.GQL?.client) {
-                      const batchResult = await this.pluginApi.GQL.client.query<CheckTagsHaveMarkersResponse>({
-                        query: queries.CHECK_TAG_HAS_MARKERS,
-                        variables: { scene_marker_filter: batchFilter }
-                      });
-                      return batchResult.data?.findSceneMarkers?.count > 0 ? tagId : null;
-                    } else {
-                      const response = await fetch(`${this.baseUrl}/graphql`, {
-                        method: 'POST',
-                        headers: {
-                          'Content-Type': 'application/json',
-                          ...(this.apiKey && { 'ApiKey': this.apiKey }),
-                        },
-                        body: JSON.stringify({ 
-                          query: queries.CHECK_TAG_HAS_MARKERS, 
-                          variables: { scene_marker_filter: batchFilter } 
-                        }),
-                      });
-                      if (!response.ok) return null;
-                      const data = await response.json() as GraphQLResponse<CheckTagsHaveMarkersResponse>;
-                      if (data.errors) return null;
-                      return data.data?.findSceneMarkers?.count > 0 ? tagId : null;
-                    }
+                    const batchResult = await this.gqlClient.query<CheckTagsHaveMarkersResponse>({
+                      query: queries.CHECK_TAG_HAS_MARKERS,
+                      variables: { scene_marker_filter: batchFilter }
+                    });
+                    return (batchResult.data?.findSceneMarkers?.count ?? 0) > 0 ? tagId : null;
                   } catch {
                     return null;
                   }
@@ -374,66 +418,11 @@ export class StashAPI {
           batchResults.flat().forEach(id => { 
             if (id !== null) {
               results.add(id);
-              this.tagsWithMarkersCache.add(id); // Cache positive results
+              this.tagsWithMarkersCache.set(id, true); // Cache positive results
             }
           });
         }
         return results;
-      } else {
-        // Fallback: check individually but in smaller batches (with parallel batch processing)
-        const batchSize = 5;
-        const maxConcurrentBatches = 3;
-        const batches: number[][] = [];
-        for (let i = 0; i < uncachedIds.length; i += batchSize) {
-          batches.push(uncachedIds.slice(i, i + batchSize));
-        }
-        
-        for (let i = 0; i < batches.length; i += maxConcurrentBatches) {
-          const concurrentBatches = batches.slice(i, i + maxConcurrentBatches);
-          const batchResults = await Promise.all(
-            concurrentBatches.map(async (batch) => {
-              const batchChecks = await Promise.all(
-                batch.map(async (tagId) => {
-                  const batchFilter: SceneMarkerFilterInput = { 
-                    tags: { 
-                      value: [String(tagId)], 
-                      modifier: 'INCLUDES' 
-                    } 
-                  };
-                  try {
-                    const response = await fetch(`${this.baseUrl}/graphql`, {
-                      method: 'POST',
-                      headers: {
-                        'Content-Type': 'application/json',
-                        ...(this.apiKey && { 'ApiKey': this.apiKey }),
-                      },
-                      body: JSON.stringify({ 
-                        query: queries.CHECK_TAG_HAS_MARKERS, 
-                        variables: { scene_marker_filter: batchFilter } 
-                      }),
-                    });
-                    if (!response.ok) return null;
-                    const data = await response.json() as GraphQLResponse<CheckTagsHaveMarkersResponse>;
-                    if (data.errors) return null;
-                    return data.data?.findSceneMarkers?.count > 0 ? tagId : null;
-                  } catch {
-                    return null;
-                  }
-                })
-              );
-              return batchChecks;
-            })
-          );
-          
-          batchResults.flat().forEach(id => { 
-            if (id !== null) {
-              results.add(id);
-              this.tagsWithMarkersCache.add(id); // Cache positive results
-            }
-          });
-        }
-        return results;
-      }
     } catch (e) {
       console.warn('batchCheckTagsHaveMarkers failed', e);
       return results; // Return cached results even if new checks fail
@@ -452,6 +441,8 @@ export class StashAPI {
     const uncachedIds: number[] = [];
     for (const performerId of performerIds) {
       if (this.performersWithMarkersCache.has(performerId)) {
+        // Get to update access order (move to most recently used)
+        this.performersWithMarkersCache.get(performerId);
         results.add(performerId);
       } else {
         uncachedIds.push(performerId);
@@ -482,29 +473,11 @@ export class StashAPI {
                 } 
               };
               try {
-                if (this.pluginApi?.GQL?.client) {
-                  const result = await this.pluginApi.GQL.client.query<CheckPerformerHasMarkersResponse>({
-                    query: queries.CHECK_PERFORMER_HAS_MARKERS,
-                    variables: { scene_marker_filter: sceneMarkerFilter }
-                  });
-                  return result.data?.findSceneMarkers?.count > 0 ? performerId : null;
-                } else {
-                  const response = await fetch(`${this.baseUrl}/graphql`, {
-                    method: 'POST',
-                    headers: {
-                      'Content-Type': 'application/json',
-                      ...(this.apiKey && { 'ApiKey': this.apiKey }),
-                    },
-                    body: JSON.stringify({ 
-                      query: queries.CHECK_PERFORMER_HAS_MARKERS, 
-                      variables: { scene_marker_filter: sceneMarkerFilter } 
-                    }),
-                  });
-                  if (!response.ok) return null;
-                  const data = await response.json() as GraphQLResponse<CheckPerformerHasMarkersResponse>;
-                  if (data.errors) return null;
-                  return data.data?.findSceneMarkers?.count > 0 ? performerId : null;
-                }
+                const result = await this.gqlClient.query<CheckPerformerHasMarkersResponse>({
+                  query: queries.CHECK_PERFORMER_HAS_MARKERS,
+                  variables: { scene_marker_filter: sceneMarkerFilter }
+                });
+                return (result.data?.findSceneMarkers?.count ?? 0) > 0 ? performerId : null;
               } catch {
                 return null;
               }
@@ -518,7 +491,7 @@ export class StashAPI {
       batchResults.flat().forEach(id => { 
         if (id !== null) {
           results.add(id);
-          this.performersWithMarkersCache.add(id); // Cache positive results
+          this.performersWithMarkersCache.set(id, true); // Cache positive results
         }
       });
     }
@@ -539,20 +512,12 @@ export class StashAPI {
       const cacheKey = `tags:${term}:${limit}`;
       const cached = this.searchCache.get(cacheKey);
       if (cached && Date.now() - cached.timestamp < this.CACHE_TTL) {
-        return cached.data;
+        return cached.data as Promise<Array<{ id: string; name: string }>>;
       }
     }
     
-    // Check for in-flight request (deduplication)
-    const requestKey = `searchMarkerTags:${term}:${limit}`;
-    const pending = this.pendingRequests.get(requestKey);
-    if (pending) {
-      return pending;
-    }
-    
-    // Create new request
+    // Create new request (deduplication handled by GraphQL client)
     const request = this._searchMarkerTags(term, limit, signal);
-    this.pendingRequests.set(requestKey, request);
     
     try {
       const result = await request;
@@ -562,9 +527,9 @@ export class StashAPI {
         this.searchCache.set(cacheKey, { data: result, timestamp: Date.now() });
       }
       return result;
-    } finally {
-      // Remove from pending requests
-      this.pendingRequests.delete(requestKey);
+    } catch (error: unknown) {
+      // Re-throw to maintain error handling
+      throw error;
     }
   }
   
@@ -604,44 +569,31 @@ export class StashAPI {
       // Check if already aborted
       if (signal?.aborted) return [];
       
-      let tags: Array<{ id: string; name: string }> = [];
-      if (this.pluginApi?.GQL?.client) {
-        const result = await this.pluginApi.GQL.client.query<FindTagsResponse>({
-          query: queries.FIND_TAGS,
-          variables
-        });
-        // Check if aborted after query
-        if (signal?.aborted) return [];
-        tags = result.data?.findTags?.tags ?? [];
-      } else {
-        const response = await fetch(`${this.baseUrl}/graphql`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            ...(this.apiKey && { 'ApiKey': this.apiKey }),
-          },
-          body: JSON.stringify({ query: queries.FIND_TAGS, variables }),
-          signal,
-        });
-        if (signal?.aborted) return [];
-        if (!response.ok) return [];
-        const data = await response.json() as GraphQLResponse<FindTagsResponse>;
-        if (signal?.aborted) return [];
-        if (data.errors) return [];
-        tags = data.data?.findTags?.tags ?? [];
-      }
+      const result = await this.gqlClient.query<FindTagsResponse>({
+        query: queries.FIND_TAGS,
+        variables,
+        signal,
+      });
+      // Check if aborted after query
+      if (signal?.aborted) return [];
+      const tags = result.data?.findTags?.tags ?? [];
       
       // Check if aborted before processing
       if (signal?.aborted) return [];
       
       // Return tags (already randomly sorted by GraphQL when no search term)
       return tags.slice(0, limit);
-    } catch (e: any) {
+    } catch (error: unknown) {
       // Ignore AbortError - it's expected when cancelling
-      if (e.name === 'AbortError' || signal?.aborted) {
+      if (isAbortError(error) || signal?.aborted) {
         return [];
       }
-      console.warn('searchMarkerTags failed', e);
+      // Log error for search methods (non-critical, return empty array)
+      if (error instanceof GraphQLRequestError || error instanceof GraphQLResponseError || error instanceof GraphQLNetworkError) {
+        console.warn('searchMarkerTags failed', error);
+      } else {
+        console.warn('searchMarkerTags failed', error instanceof Error ? error.message : 'Unknown error');
+      }
       return [];
     }
   }
@@ -660,20 +612,12 @@ export class StashAPI {
       const cacheKey = `performers:${term}:${limit}`;
       const cached = this.searchCache.get(cacheKey);
       if (cached && Date.now() - cached.timestamp < this.CACHE_TTL) {
-        return cached.data;
+        return cached.data as Promise<Array<{ id: string; name: string; image_path?: string }>>;
       }
     }
     
-    // Check for in-flight request (deduplication)
-    const requestKey = `searchPerformers:${term}:${limit}`;
-    const pending = this.pendingRequests.get(requestKey);
-    if (pending) {
-      return pending;
-    }
-    
-    // Create new request
+    // Create new request (deduplication handled by GraphQL client)
     const request = this._searchPerformers(term, limit, signal);
-    this.pendingRequests.set(requestKey, request);
     
     try {
       const result = await request;
@@ -683,9 +627,9 @@ export class StashAPI {
         this.searchCache.set(cacheKey, { data: result, timestamp: Date.now() });
       }
       return result;
-    } finally {
-      // Remove from pending requests
-      this.pendingRequests.delete(requestKey);
+    } catch (error: unknown) {
+      // Re-throw to maintain error handling
+      throw error;
     }
   }
   
@@ -723,32 +667,14 @@ export class StashAPI {
       // Check if already aborted
       if (signal?.aborted) return [];
       
-      let performers: Array<{ id: string; name: string; image_path?: string }> = [];
-      if (this.pluginApi?.GQL?.client) {
-        const result = await this.pluginApi.GQL.client.query<FindPerformersResponse>({
-          query: queries.FIND_PERFORMERS,
-          variables
-        });
-        // Check if aborted after query
-        if (signal?.aborted) return [];
-        performers = result.data?.findPerformers?.performers ?? [];
-      } else {
-        const response = await fetch(`${this.baseUrl}/graphql`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            ...(this.apiKey && { 'ApiKey': this.apiKey }),
-          },
-          body: JSON.stringify({ query: queries.FIND_PERFORMERS, variables }),
-          signal,
-        });
-        if (signal?.aborted) return [];
-        if (!response.ok) return [];
-        const data = await response.json() as GraphQLResponse<FindPerformersResponse>;
-        if (signal?.aborted) return [];
-        if (data.errors) return [];
-        performers = data.data?.findPerformers?.performers ?? [];
-      }
+      const result = await this.gqlClient.query<FindPerformersResponse>({
+        query: queries.FIND_PERFORMERS,
+        variables,
+        signal,
+      });
+      // Check if aborted after query
+      if (signal?.aborted) return [];
+      const performers = result.data?.findPerformers?.performers ?? [];
       
       // Check if aborted before processing
       if (signal?.aborted) return [];
@@ -774,32 +700,16 @@ export class StashAPI {
       // Check if already aborted
       if (signal?.aborted) return [];
       
-      if (this.pluginApi?.GQL?.client) {
-        const result = await this.pluginApi.GQL.client.query<GetSavedMarkerFiltersResponse>({
-          query: queries.GET_SAVED_MARKER_FILTERS
-        });
-        // Check if aborted after query
-        if (signal?.aborted) return [];
-        return result.data?.findSavedFilters || [];
-      }
-      const response = await fetch(`${this.baseUrl}/graphql`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(this.apiKey && { 'ApiKey': this.apiKey }),
-        },
-        body: JSON.stringify({ query: queries.GET_SAVED_MARKER_FILTERS }),
+      const result = await this.gqlClient.query<GetSavedMarkerFiltersResponse>({
+        query: queries.GET_SAVED_MARKER_FILTERS,
         signal,
       });
+      // Check if aborted after query
       if (signal?.aborted) return [];
-      if (!response.ok) return [];
-      const data = await response.json() as GraphQLResponse<GetSavedMarkerFiltersResponse>;
-      if (signal?.aborted) return [];
-      if (data.errors) return [];
-      return data.data?.findSavedFilters || [];
-    } catch (e: any) {
+      return result.data?.findSavedFilters || [];
+    } catch (e: unknown) {
       // Ignore AbortError - it's expected when cancelling
-      if (e.name === 'AbortError' || signal?.aborted) {
+      if (isAbortError(e) || signal?.aborted) {
         return [];
       }
       console.error('Error fetching saved marker filters:', e);
@@ -812,25 +722,11 @@ export class StashAPI {
    */
   async getSavedFilter(id: string): Promise<GetSavedFilterResponse['findSavedFilter']> {
     try {
-      if (this.pluginApi?.GQL?.client) {
-        const result = await this.pluginApi.GQL.client.query<GetSavedFilterResponse>({
-          query: queries.GET_SAVED_FILTER,
-          variables: { id }
-        });
-        return result.data?.findSavedFilter || null;
-      }
-      const response = await fetch(`${this.baseUrl}/graphql`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(this.apiKey && { 'ApiKey': this.apiKey }),
-        },
-        body: JSON.stringify({ query: queries.GET_SAVED_FILTER, variables: { id } }),
+      const result = await this.gqlClient.query<GetSavedFilterResponse>({
+        query: queries.GET_SAVED_FILTER,
+        variables: { id }
       });
-      if (!response.ok) return null;
-      const data = await response.json() as GraphQLResponse<GetSavedFilterResponse>;
-      if (data.errors) return null;
-      return data.data?.findSavedFilter || null;
+      return result.data?.findSavedFilter || null;
     } catch (e) {
       console.error('Error fetching saved filter:', e);
       return null;
@@ -918,49 +814,22 @@ export class StashAPI {
         
         try {
           if (signal?.aborted) return [];
-          if (this.pluginApi?.GQL?.client) {
-            const countResult = await this.pluginApi.GQL.client.query<CheckTagsHaveMarkersResponse>({
-              query: queries.GET_MARKER_COUNT,
-              variables: {
-                filter: countFilter,
-                scene_marker_filter: Object.keys(countSceneFilter).length > 0 ? countSceneFilter : {},
-              },
-            });
-            if (signal?.aborted) return [];
-            const totalCount = countResult.data?.findSceneMarkers?.count || 0;
-            if (totalCount > 0) {
-              const totalPages = Math.ceil(totalCount / limit);
-              page = Math.floor(Math.random() * totalPages) + 1;
-            }
-          } else {
-            const countResponse = await fetch(`${this.baseUrl}/graphql`, {
-              method: 'POST',
-              headers: {
-                'Content-Type': 'application/json',
-                ...(this.apiKey && { 'ApiKey': this.apiKey }),
-              },
-              body: JSON.stringify({
-                query: queries.GET_MARKER_COUNT,
-                variables: {
-                  filter: countFilter,
-                  scene_marker_filter: Object.keys(countSceneFilter).length > 0 ? countSceneFilter : {},
-                },
-              }),
-              signal,
-            });
-            if (signal?.aborted) return [];
-            if (!countResponse.ok) return [];
-            const countData = await countResponse.json() as GraphQLResponse<CheckTagsHaveMarkersResponse>;
-            if (signal?.aborted) return [];
-            if (countData.errors) return [];
-            const totalCount = countData.data?.findSceneMarkers?.count || 0;
-            if (totalCount > 0) {
-              const totalPages = Math.ceil(totalCount / limit);
-              page = Math.floor(Math.random() * totalPages) + 1;
-            }
+          const countResult = await this.gqlClient.query<CheckTagsHaveMarkersResponse>({
+            query: queries.GET_MARKER_COUNT,
+            variables: {
+              filter: countFilter,
+              scene_marker_filter: Object.keys(countSceneFilter).length > 0 ? countSceneFilter : {},
+            },
+            signal,
+          });
+          if (signal?.aborted) return [];
+          const totalCount = countResult.data?.findSceneMarkers?.count || 0;
+          if (totalCount > 0) {
+            const totalPages = Math.ceil(totalCount / limit);
+            page = Math.floor(Math.random() * totalPages) + 1;
           }
-        } catch (e: any) {
-          if (e.name === 'AbortError' || signal?.aborted) {
+        } catch (e: unknown) {
+          if (isAbortError(e) || signal?.aborted) {
             return [];
           }
           console.warn('Failed to get count for random page, using page 1', e);
@@ -970,8 +839,7 @@ export class StashAPI {
       // Check if aborted before main query
       if (signal?.aborted) return [];
       
-      // Try using PluginApi GraphQL client if available
-      if (this.pluginApi?.GQL?.client) {
+      {
         // Build filter - start with saved filter criteria if available, then allow manual overrides
         const filter: FindFilterInput = {
           per_page: limit,
@@ -1044,28 +912,30 @@ export class StashAPI {
           }
         }
 
-        const result = await this.pluginApi.GQL.client.query<FindSceneMarkersResponse>({
+        const result = await this.gqlClient.query<FindSceneMarkersResponse>({
           query: queries.FIND_SCENE_MARKERS,
           variables: {
             filter,
             scene_marker_filter: Object.keys(sceneMarkerFilter).length > 0 ? sceneMarkerFilter : {},
           },
+          signal,
         });
         if (signal?.aborted) return [];
         const responseData = result.data?.findSceneMarkers;
         let markers = responseData?.scene_markers || [];
-        if (responseData?.count > 0 && markers.length === 0) {
+        if ((responseData?.count ?? 0) > 0 && markers.length === 0) {
           console.warn('[StashAPI] Count > 0 but no markers returned - retrying with page 1');
           // If count > 0 but no markers, try page 1 instead
           if (filter.page !== 1) {
             if (signal?.aborted) return [];
             filter.page = 1;
-            const retryResult = await this.pluginApi.GQL.client.query<FindSceneMarkersResponse>({
+            const retryResult = await this.gqlClient.query<FindSceneMarkersResponse>({
               query: queries.FIND_SCENE_MARKERS,
               variables: {
                 filter,
                 scene_marker_filter: Object.keys(sceneMarkerFilter).length > 0 ? sceneMarkerFilter : {},
               },
+              signal,
             });
             if (signal?.aborted) return [];
             const retryData = retryResult.data?.findSceneMarkers;
@@ -1083,20 +953,21 @@ export class StashAPI {
         return markers;
       }
 
-      // Fallback to direct fetch
+      // Fallback (should not be needed with centralized client, but kept for safety)
       // Build filter - start with saved filter criteria if available, then allow manual overrides
       const filter: FindFilterInput = {
         per_page: limit,
         page: page,
       };
       // If saved filter exists, start with its find_filter criteria
-      if (savedFilterCriteria?.find_filter) {
-        Object.assign(filter, savedFilterCriteria.find_filter);
+      if (savedFilterCriteria !== null && savedFilterCriteria!.find_filter) {
+        Object.assign(filter, savedFilterCriteria!.find_filter);
       }
       // Manual query overrides saved filter query (if user typed something)
-      if (filters?.query && filters.query.trim() !== '') {
-        filter.q = filters.query;
-        console.log('[StashAPI] Applying query filter (fallback):', { query: filters.query });
+      const queryValue = filters?.query;
+      if (queryValue !== undefined && typeof queryValue === 'string' && queryValue!.trim() !== '') {
+        filter.q = queryValue;
+        console.log('[StashAPI] Applying query filter (fallback):', { query: queryValue });
       }
       // Override page with our calculated random page
       filter.page = page;
@@ -1106,51 +977,54 @@ export class StashAPI {
       filter.sort = `random_${Math.floor(Math.random() * 1000000)}`;
 
       // Build scene_marker_filter - start with saved filter object_filter if available
-      const sceneMarkerFilterRaw = savedFilterCriteria?.object_filter ? { ...(savedFilterCriteria.object_filter as Record<string, unknown>) } : {};
+      let sceneMarkerFilterRaw: Record<string, unknown> = {};
+      if (savedFilterCriteria !== null && savedFilterCriteria!.object_filter) {
+        sceneMarkerFilterRaw = { ...(savedFilterCriteria!.object_filter as Record<string, unknown>) };
+      }
       const sceneMarkerFilter = this.normalizeMarkerFilter(sceneMarkerFilterRaw);
       
       // If a saved filter is active, ONLY use its criteria (don't combine with manual filters)
       // Otherwise, apply manual tag filters (primary_tags or tags)
-      if (!filters?.savedFilterId) {
+      if (filters !== undefined && filters !== null && !filters!.savedFilterId) {
         // Use tags if provided, otherwise fall back to primary_tags
-        const tagFilter = filters?.tags || filters?.primary_tags;
-        if (tagFilter && tagFilter.length > 0) {
-          const tagIds = tagFilter
+        const tagFilter = filters!.tags || filters!.primary_tags;
+        if (tagFilter !== undefined && Array.isArray(tagFilter) && tagFilter!.length > 0) {
+          const tagIds = tagFilter!
             .map((v) => parseInt(String(v), 10))
             .filter((n) => !Number.isNaN(n));
-            if (tagIds.length > 0) {
-              // SceneMarkerFilterType tags filter requires: value (array of strings), excludes, modifier, depth
-              // For single tag: use INCLUDES_ALL (works the same as INCLUDES for single tag)
-              // For multiple tags: use INCLUDES (OR logic) to find markers with ANY of the tags
-              // (INCLUDES_ALL would require ALL tags to be present, which is usually not what we want)
-              sceneMarkerFilter.tags = {
-                value: tagIds.map(id => String(id)), // Array of strings, not numbers
-                excludes: [],
-                modifier: tagIds.length === 1 ? 'INCLUDES_ALL' : 'INCLUDES', // INCLUDES for multiple tags (OR logic)
-                depth: 0
-              };
-              console.log('[StashAPI] Applying tags filter (fallback):', { 
-                tagIds: tagIds.map(id => String(id)), 
-                modifier: tagIds.length === 1 ? 'INCLUDES_ALL' : 'INCLUDES',
-                reason: tagIds.length > 1 ? 'Multiple tags - using INCLUDES (OR logic)' : 'Single tag - using INCLUDES_ALL'
-              });
-            } else {
-              console.warn('Scene marker tags must be numeric IDs; ignoring provided values', { tagFilter });
-            }
+          if (tagIds.length > 0) {
+                // SceneMarkerFilterType tags filter requires: value (array of strings), excludes, modifier, depth
+                // For single tag: use INCLUDES_ALL (works the same as INCLUDES for single tag)
+                // For multiple tags: use INCLUDES (OR logic) to find markers with ANY of the tags
+                // (INCLUDES_ALL would require ALL tags to be present, which is usually not what we want)
+                sceneMarkerFilter.tags = {
+                  value: tagIds.map(id => String(id)), // Array of strings, not numbers
+                  excludes: [],
+                  modifier: tagIds.length === 1 ? 'INCLUDES_ALL' : 'INCLUDES', // INCLUDES for multiple tags (OR logic)
+                  depth: 0
+                };
+                console.log('[StashAPI] Applying tags filter (fallback):', { 
+                  tagIds: tagIds.map(id => String(id)), 
+                  modifier: tagIds.length === 1 ? 'INCLUDES_ALL' : 'INCLUDES',
+                  reason: tagIds.length > 1 ? 'Multiple tags - using INCLUDES (OR logic)' : 'Single tag - using INCLUDES_ALL'
+                });
+              } else {
+            console.warn('Scene marker tags must be numeric IDs; ignoring provided values', { tagFilter });
+          }
         }
       }
       // Filter by performers using the correct field name
-      if (filters?.performers && filters.performers.length > 0 && !filters?.savedFilterId) {
-        const performerIds = filters.performers
+      if (filters !== undefined && filters !== null && !filters!.savedFilterId && filters!.performers !== undefined && Array.isArray(filters!.performers) && filters!.performers!.length > 0) {
+        const performerIds = filters!.performers!
           .map((v) => parseInt(String(v), 10))
           .filter((n) => !Number.isNaN(n));
         if (performerIds.length > 0) {
-          // IMPORTANT: value must be an array of numbers, not strings
-          // Use INCLUDES for single performer, INCLUDES_ALL for multiple
-          sceneMarkerFilter.performers = { 
-            value: performerIds, // Array of numbers
-            modifier: performerIds.length > 1 ? 'INCLUDES_ALL' : 'INCLUDES' 
-          };
+                // IMPORTANT: value must be an array of numbers, not strings
+                // Use INCLUDES for single performer, INCLUDES_ALL for multiple
+                sceneMarkerFilter.performers = { 
+                  value: performerIds, // Array of numbers
+                  modifier: performerIds.length > 1 ? 'INCLUDES_ALL' : 'INCLUDES' 
+                };
           console.log('[StashAPI] Applying performer filter:', { performerIds, modifier: performerIds.length > 1 ? 'INCLUDES_ALL' : 'INCLUDES' });
         }
       }
@@ -1160,42 +1034,17 @@ export class StashAPI {
         scene_marker_filter: Object.keys(sceneMarkerFilter).length > 0 ? sceneMarkerFilter : {}
       };
 
-
-      const response = await fetch(`${this.baseUrl}/graphql`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(this.apiKey && { 'ApiKey': this.apiKey }),
-        },
-        body: JSON.stringify({
-          query: queries.FIND_SCENE_MARKERS,
-          variables,
-        }),
+      const result = await this.gqlClient.query<FindSceneMarkersResponse>({
+        query: queries.FIND_SCENE_MARKERS,
+        variables,
         signal,
       });
 
       if (signal?.aborted) return [];
-      if (!response.ok) {
-        const errorText = await response.text();
-        console.error('GraphQL request failed', {
-          status: response.status,
-          statusText: response.statusText,
-          error: errorText
-        });
-        throw new Error(`GraphQL request failed: ${response.status} ${response.statusText}`);
-      }
-
-      const data = await response.json() as GraphQLResponse<FindSceneMarkersResponse>;
-      if (signal?.aborted) return [];
       
-      if (data.errors) {
-        console.error('GraphQL errors:', data.errors);
-        throw new Error(`GraphQL errors: ${JSON.stringify(data.errors)}`);
-      }
-      
-      const responseData = data.data?.findSceneMarkers;
+      const responseData = result.data?.findSceneMarkers;
       let markers = responseData?.scene_markers || [];
-      if (responseData?.count > 0 && markers.length === 0) {
+      if ((responseData?.count ?? 0) > 0 && markers.length === 0) {
         console.warn('[StashAPI] Count > 0 but no markers returned - possible page calculation issue');
         // If count > 0 but no markers, try page 1 instead
         if (filter.page !== 1) {
@@ -1272,9 +1121,6 @@ export class StashAPI {
       params.set('sortby', `random_${randomSortKey}`);
       params.set('sortdir', 'desc');
       params.set('perPage', perPage.toString());
-      
-      // Check if any filters are active (primary_tags, saved filter, or query)
-      const hasActiveFilters = !!(filters?.primary_tags?.length || filters?.tags?.length || filters?.savedFilterId || (filters?.query && filters.query.trim() !== ''));
       
       // Handle tag filtering - prioritize primary_tags over tags
       // Use primary_tags if available, otherwise fall back to tags
@@ -1474,40 +1320,19 @@ export class StashAPI {
 
         try {
           if (signal?.aborted) return [];
-          if (this.pluginApi?.GQL?.client) {
-            const countResult = await this.pluginApi.GQL.client.query<FindScenesResponse>({
-              query: queries.GET_SCENE_COUNT,
-              variables: { filter: countFilter, ...(sceneFilter && { scene_filter: sceneFilter }) },
-            });
-            if (signal?.aborted) return [];
-            const totalCount = countResult.data?.findScenes?.count || 0;
-            if (totalCount > 0) {
-              const totalPages = Math.ceil(totalCount / limit);
-              page = Math.floor(Math.random() * totalPages) + 1;
-            }
-          } else {
-            const countResponse = await fetch(`${this.baseUrl}/graphql`, {
-              method: 'POST',
-              headers: {
-                'Content-Type': 'application/json',
-                ...(this.apiKey && { 'ApiKey': this.apiKey }),
-              },
-              body: JSON.stringify({ query: queries.GET_SCENE_COUNT, variables: { filter: countFilter, ...(sceneFilter && { scene_filter: sceneFilter }) } }),
-              signal,
-            });
-            if (signal?.aborted) return [];
-            if (!countResponse.ok) return [];
-            const countData = await countResponse.json() as GraphQLResponse<FindScenesResponse>;
-            if (signal?.aborted) return [];
-            if (countData.errors) return [];
-            const totalCount = countData.data?.findScenes?.count || 0;
-            if (totalCount > 0) {
-              const totalPages = Math.ceil(totalCount / limit);
-              page = Math.floor(Math.random() * totalPages) + 1;
-            }
+          const countResult = await this.gqlClient.query<FindScenesResponse>({
+            query: queries.GET_SCENE_COUNT,
+            variables: { filter: countFilter, ...(sceneFilter && { scene_filter: sceneFilter }) },
+            signal,
+          });
+          if (signal?.aborted) return [];
+          const totalCount = countResult.data?.findScenes?.count || 0;
+          if (totalCount > 0) {
+            const totalPages = Math.ceil(totalCount / limit);
+            page = Math.floor(Math.random() * totalPages) + 1;
           }
-        } catch (e: any) {
-          if (e.name === 'AbortError' || signal?.aborted) {
+        } catch (e: unknown) {
+          if (isAbortError(e) || signal?.aborted) {
             return [];
           }
           console.warn('Failed to get scene count for shuffle, using page 1', e);
@@ -1535,35 +1360,13 @@ export class StashAPI {
 
       let scenes: Scene[] = [];
 
-      if (this.pluginApi?.GQL?.client) {
-        const result = await this.pluginApi.GQL.client.query<FindScenesResponse>({
-          query: queries.FIND_SCENES,
-          variables: { filter, ...(sceneFilter && { scene_filter: sceneFilter }) },
-        });
-        if (signal?.aborted) return [];
-        scenes = result.data?.findScenes?.scenes || [];
-      } else {
-        const response = await fetch(`${this.baseUrl}/graphql`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            ...(this.apiKey && { 'ApiKey': this.apiKey }),
-          },
-          body: JSON.stringify({ query: queries.FIND_SCENES, variables: { filter, ...(sceneFilter && { scene_filter: sceneFilter }) } }),
-          signal,
-        });
-
-        if (signal?.aborted) return [];
-        if (!response.ok) return [];
-
-        const data = await response.json() as GraphQLResponse<FindScenesResponse>;
-        if (signal?.aborted) return [];
-        if (data.errors) {
-          throw new Error(`GraphQL errors: ${JSON.stringify(data.errors)}`);
-        }
-
-        scenes = data.data?.findScenes?.scenes || [];
-      }
+      const result = await this.gqlClient.query<FindScenesResponse>({
+        query: queries.FIND_SCENES,
+        variables: { filter, ...(sceneFilter && { scene_filter: sceneFilter }) },
+        signal,
+      });
+      if (signal?.aborted) return [];
+      scenes = result.data?.findScenes?.scenes || [];
 
       // Create synthetic markers for each scene (one per scene, starting at 0 seconds)
       // This allows us to display scenes with 0 markers
@@ -1580,8 +1383,8 @@ export class StashAPI {
       }));
 
       return syntheticMarkers;
-    } catch (e: any) {
-      if (e.name === 'AbortError' || signal?.aborted) {
+    } catch (e: unknown) {
+      if (isAbortError(e) || signal?.aborted) {
         return [];
       }
       console.error('Error fetching scenes for shuffle', e);
@@ -1662,7 +1465,7 @@ export class StashAPI {
   getVideoUrl(scene: Scene): string | undefined {
     // Prefer sceneStreams if available (often provides mp4)
     if (scene.sceneStreams && scene.sceneStreams.length > 0) {
-      const streamUrl = scene.sceneStreams[0].url;
+      const streamUrl = scene.sceneStreams[0]?.url;
       if (!streamUrl || streamUrl.trim().length === 0) {
         // Try next fallback
       } else {
@@ -1685,7 +1488,7 @@ export class StashAPI {
       }
     }
     if (scene.files && scene.files.length > 0) {
-      const filePath = scene.files[0].path;
+      const filePath = scene.files[0]?.path;
       if (filePath && filePath.trim().length > 0) {
         const url = filePath.startsWith('http')
           ? filePath
@@ -1703,48 +1506,17 @@ export class StashAPI {
    * Find a tag by name
    */
   async findTagByName(tagName: string): Promise<{ id: string; name: string } | null> {
-    const query = `query FindTag($filter: FindFilterType, $tag_filter: TagFilterType) {
-      findTags(filter: $filter, tag_filter: $tag_filter) {
-        tags {
-          id
-          name
-        }
-      }
-    }`;
-
     const variables = {
       filter: { per_page: 1, page: 1 },
       tag_filter: { name: { value: tagName, modifier: 'EQUALS' } }
     };
 
     try {
-      if (this.pluginApi?.GQL?.client) {
-        const result = await this.pluginApi.GQL.client.query<FindTagResponse>({
-          query: queries.FIND_TAG,
-          variables,
-        });
-        return result.data?.findTag || null;
-      }
-
-      const response = await fetch(`${this.baseUrl}/graphql`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(this.apiKey && { 'ApiKey': this.apiKey }),
-        },
-        body: JSON.stringify({ query: queries.FIND_TAG, variables }),
+      const result = await this.gqlClient.query<FindTagResponse>({
+        query: queries.FIND_TAG,
+        variables,
       });
-
-      if (!response.ok) {
-        throw new Error(`GraphQL request failed: ${response.status}`);
-      }
-
-      const data = await response.json() as GraphQLResponse<FindTagResponse>;
-      if (data.errors) {
-        throw new Error(`GraphQL errors: ${JSON.stringify(data.errors)}`);
-      }
-
-      return data.data?.findTag || null;
+      return result.data?.findTag || null;
     } catch (error) {
       console.error('StashAPI: Failed to find tag', error);
       return null;
@@ -1760,48 +1532,11 @@ export class StashAPI {
     };
 
     try {
-      if (this.pluginApi?.GQL?.client) {
-        // Use mutate if available, otherwise fall back to query
-        const client = this.pluginApi.GQL.client;
-        let result;
-        try {
-          if (client.mutate) {
-            result = await client.mutate<TagCreateResponse>({ mutation: mutations.TAG_CREATE, variables });
-          } else {
-            // Some GraphQL clients accept mutations via query method
-            result = await client.query<TagCreateResponse>({ query: mutations.TAG_CREATE, variables });
-          }
-          return result.data?.tagCreate || null;
-        } catch (err: unknown) {
-          console.error('StashAPI: Mutation error details', {
-            error: err,
-            message: err instanceof Error ? err.message : 'Unknown error',
-            graphQLErrors: (err as { graphQLErrors?: unknown }).graphQLErrors,
-            networkError: (err as { networkError?: unknown }).networkError
-          });
-          throw err;
-        }
-      }
-
-      const response = await fetch(`${this.baseUrl}/graphql`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(this.apiKey && { 'ApiKey': this.apiKey }),
-        },
-        body: JSON.stringify({ query: mutations.TAG_CREATE, variables }),
+      const result = await this.gqlClient.mutate<TagCreateResponse>({
+        mutation: mutations.TAG_CREATE,
+        variables,
       });
-
-      if (!response.ok) {
-        throw new Error(`GraphQL request failed: ${response.status}`);
-      }
-
-      const data = await response.json() as GraphQLResponse<TagCreateResponse>;
-      if (data.errors) {
-        throw new Error(`GraphQL errors: ${JSON.stringify(data.errors)}`);
-      }
-
-      return data.data?.tagCreate || null;
+      return result.data?.tagCreate || null;
     } catch (error) {
       console.error('StashAPI: Failed to create tag', error);
       return null;
@@ -1830,34 +1565,11 @@ export class StashAPI {
     const variables = { id: sceneId };
 
     try {
-      if (this.pluginApi?.GQL?.client) {
-        const result = await this.pluginApi.GQL.client.query<FindSceneResponse>({
-          query: queries.FIND_SCENE_MINIMAL,
-          variables,
-        });
-        const tags = result.data?.findScene?.tags || [];
-        return tags.some((tag: { id: string }) => tag.id === tagId);
-      }
-
-      const response = await fetch(`${this.baseUrl}/graphql`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(this.apiKey && { 'ApiKey': this.apiKey }),
-        },
-        body: JSON.stringify({ query: queries.FIND_SCENE_MINIMAL, variables }),
+      const result = await this.gqlClient.query<FindSceneResponse>({
+        query: queries.FIND_SCENE_MINIMAL,
+        variables,
       });
-
-      if (!response.ok) {
-        throw new Error(`GraphQL request failed: ${response.status}`);
-      }
-
-      const data = await response.json() as GraphQLResponse<FindSceneResponse>;
-      if (data.errors) {
-        throw new Error(`GraphQL errors: ${JSON.stringify(data.errors)}`);
-      }
-
-      const tags = data.data?.findScene?.tags || [];
+      const tags = result.data?.findScene?.tags || [];
       return tags.some((tag: { id: string }) => tag.id === tagId);
     } catch (error) {
       console.error('StashAPI: Failed to check scene tag', error);
@@ -1881,22 +1593,6 @@ export class StashAPI {
     },
     tagId: string
   ): Promise<void> {
-    const mutation = `mutation SceneMarkerUpdate($id: ID!, $title: String!, $seconds: Float!, $end_seconds: Float, $scene_id: ID!, $primary_tag_id: ID!, $tag_ids: [ID!]!) {
-      sceneMarkerUpdate(
-        input: {
-          id: $id
-          title: $title
-          seconds: $seconds
-          end_seconds: $end_seconds
-          scene_id: $scene_id
-          primary_tag_id: $primary_tag_id
-          tag_ids: $tag_ids
-        }
-      ) {
-        id
-      }
-    }`;
-
     try {
       // Get current tags from marker data
       const currentTags: string[] = (marker.tags || []).map(t => t.id);
@@ -1920,45 +1616,10 @@ export class StashAPI {
           tag_ids: tagIds
         };
 
-        if (this.pluginApi?.GQL?.client) {
-          // Use mutate if available, otherwise fall back to query
-          const client = this.pluginApi.GQL.client;
-          try {
-            if (client.mutate) {
-              await client.mutate<SceneMarkerUpdateResponse>({ mutation: mutations.SCENE_MARKER_UPDATE, variables });
-            } else {
-              await client.query<SceneMarkerUpdateResponse>({ query: mutations.SCENE_MARKER_UPDATE, variables });
-            }
-          } catch (err: unknown) {
-            console.error('StashAPI: Failed to add tag to marker', {
-              error: err,
-              message: err instanceof Error ? err.message : 'Unknown error',
-              graphQLErrors: (err as { graphQLErrors?: unknown }).graphQLErrors,
-              networkError: (err as { networkError?: unknown }).networkError,
-              markerId: marker.id,
-              tagId
-            });
-            throw err;
-          }
-        } else {
-          const response = await fetch(`${this.baseUrl}/graphql`, {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              ...(this.apiKey && { 'ApiKey': this.apiKey }),
-            },
-            body: JSON.stringify({ query: mutations.SCENE_MARKER_UPDATE, variables }),
-          });
-
-          if (!response.ok) {
-            throw new Error(`GraphQL request failed: ${response.status}`);
-          }
-
-          const data = await response.json() as GraphQLResponse<SceneMarkerUpdateResponse>;
-          if (data.errors) {
-            throw new Error(`GraphQL errors: ${JSON.stringify(data.errors)}`);
-          }
-        }
+        await this.gqlClient.mutate<SceneMarkerUpdateResponse>({
+          mutation: mutations.SCENE_MARKER_UPDATE,
+          variables: variables as unknown as Record<string, unknown>,
+        });
       }
     } catch (error) {
       console.error('StashAPI: Failed to add tag to marker', error);
@@ -1988,34 +1649,11 @@ export class StashAPI {
 
     try {
       // Get current tags
-      let currentTags: string[] = [];
-      if (this.pluginApi?.GQL?.client) {
-        const result = await this.pluginApi.GQL.client.query({
-          query: query as any,
-          variables: { id: sceneId },
-        });
-        currentTags = (result.data?.findScene?.tags || []).map((t: { id: string }) => t.id);
-      } else {
-        const response = await fetch(`${this.baseUrl}/graphql`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            ...(this.apiKey && { 'ApiKey': this.apiKey }),
-          },
-          body: JSON.stringify({ query, variables: { id: sceneId } }),
-        });
-
-        if (!response.ok) {
-          throw new Error(`GraphQL request failed: ${response.status}`);
-        }
-
-        const data = await response.json();
-        if (data.errors) {
-          throw new Error(`GraphQL errors: ${JSON.stringify(data.errors)}`);
-        }
-
-        currentTags = (data.data?.findScene?.tags || []).map((t: { id: string }) => t.id);
-      }
+      const result = await this.gqlClient.query<FindSceneResponse>({
+        query: query,
+        variables: { id: sceneId },
+      });
+      const currentTags: string[] = (result.data?.findScene?.tags || []).map((t: { id: string }) => t.id);
 
       // Add the new tag if not already present
       if (!currentTags.includes(tagId)) {
@@ -2028,45 +1666,10 @@ export class StashAPI {
           }
         };
 
-        if (this.pluginApi?.GQL?.client) {
-          // Use mutate if available, otherwise fall back to query
-          const client = this.pluginApi.GQL.client;
-          try {
-            if (client.mutate) {
-              await client.mutate({ mutation: mutation as any, variables });
-            } else {
-              await client.query({ query: mutation as any, variables });
-            }
-          } catch (err: any) {
-            console.error('StashAPI: Failed to add tag to scene', {
-              error: err,
-              message: err?.message,
-              graphQLErrors: err?.graphQLErrors,
-              networkError: err?.networkError,
-              sceneId,
-              tagId
-            });
-            throw err;
-          }
-        } else {
-          const response = await fetch(`${this.baseUrl}/graphql`, {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              ...(this.apiKey && { 'ApiKey': this.apiKey }),
-            },
-            body: JSON.stringify({ query: mutation, variables }),
-          });
-
-          if (!response.ok) {
-            throw new Error(`GraphQL request failed: ${response.status}`);
-          }
-
-          const data = await response.json();
-          if (data.errors) {
-            throw new Error(`GraphQL errors: ${JSON.stringify(data.errors)}`);
-          }
-        }
+        await this.gqlClient.mutate<SceneUpdateResponse>({
+          mutation: mutations.SCENE_UPDATE,
+          variables,
+        });
       }
     } catch (error) {
       console.error('StashAPI: Failed to add tag to scene', error);
@@ -2090,22 +1693,6 @@ export class StashAPI {
     },
     tagId: string
   ): Promise<void> {
-    const mutation = `mutation SceneMarkerUpdate($id: ID!, $title: String!, $seconds: Float!, $end_seconds: Float, $scene_id: ID!, $primary_tag_id: ID!, $tag_ids: [ID!]!) {
-      sceneMarkerUpdate(
-        input: {
-          id: $id
-          title: $title
-          seconds: $seconds
-          end_seconds: $end_seconds
-          scene_id: $scene_id
-          primary_tag_id: $primary_tag_id
-          tag_ids: $tag_ids
-        }
-      ) {
-        id
-      }
-    }`;
-
     try {
       // Get current tags from marker data
       const currentTags: string[] = (marker.tags || []).map(t => t.id);
@@ -2128,45 +1715,10 @@ export class StashAPI {
         tag_ids: tagIds
       };
 
-      if (this.pluginApi?.GQL?.client) {
-        // Use mutate if available, otherwise fall back to query
-        const client = this.pluginApi.GQL.client;
-        try {
-          if (client.mutate) {
-            await client.mutate({ mutation: mutation as any, variables });
-          } else {
-            await client.query({ query: mutation as any, variables });
-          }
-        } catch (err: any) {
-          console.error('StashAPI: Failed to remove tag from marker', {
-            error: err,
-            message: err?.message,
-            graphQLErrors: err?.graphQLErrors,
-            networkError: err?.networkError,
-            markerId: marker.id,
-            tagId
-          });
-          throw err;
-        }
-      } else {
-        const response = await fetch(`${this.baseUrl}/graphql`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            ...(this.apiKey && { 'ApiKey': this.apiKey }),
-          },
-          body: JSON.stringify({ query: mutation, variables }),
-        });
-
-        if (!response.ok) {
-          throw new Error(`GraphQL request failed: ${response.status}`);
-        }
-
-        const data = await response.json();
-        if (data.errors) {
-          throw new Error(`GraphQL errors: ${JSON.stringify(data.errors)}`);
-        }
-      }
+      await this.gqlClient.mutate<SceneMarkerUpdateResponse>({
+        mutation: mutations.SCENE_MARKER_UPDATE,
+        variables,
+      });
     } catch (error) {
       console.error('StashAPI: Failed to remove tag from marker', error);
       throw error;
@@ -2195,34 +1747,11 @@ export class StashAPI {
 
     try {
       // Get current tags
-      let currentTags: string[] = [];
-      if (this.pluginApi?.GQL?.client) {
-        const result = await this.pluginApi.GQL.client.query({
-          query: query as any,
-          variables: { id: sceneId },
-        });
-        currentTags = (result.data?.findScene?.tags || []).map((t: { id: string }) => t.id);
-      } else {
-        const response = await fetch(`${this.baseUrl}/graphql`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            ...(this.apiKey && { 'ApiKey': this.apiKey }),
-          },
-          body: JSON.stringify({ query, variables: { id: sceneId } }),
-        });
-
-        if (!response.ok) {
-          throw new Error(`GraphQL request failed: ${response.status}`);
-        }
-
-        const data = await response.json();
-        if (data.errors) {
-          throw new Error(`GraphQL errors: ${JSON.stringify(data.errors)}`);
-        }
-
-        currentTags = (data.data?.findScene?.tags || []).map((t: { id: string }) => t.id);
-      }
+      const result = await this.gqlClient.query<FindSceneResponse>({
+        query: query,
+        variables: { id: sceneId },
+      });
+      const currentTags: string[] = (result.data?.findScene?.tags || []).map((t: { id: string }) => t.id);
 
       // Remove the tag
       const tagIds = currentTags.filter(id => id !== tagId);
@@ -2234,45 +1763,10 @@ export class StashAPI {
         }
       };
 
-      if (this.pluginApi?.GQL?.client) {
-        // Use mutate if available, otherwise fall back to query
-        const client = this.pluginApi.GQL.client;
-        try {
-          if (client.mutate) {
-            await client.mutate({ mutation: mutation as any, variables });
-          } else {
-            await client.query({ query: mutation as any, variables });
-          }
-        } catch (err: any) {
-          console.error('StashAPI: Failed to remove tag from scene', {
-            error: err,
-            message: err?.message,
-            graphQLErrors: err?.graphQLErrors,
-            networkError: err?.networkError,
-            sceneId,
-            tagId
-          });
-          throw err;
-        }
-      } else {
-        const response = await fetch(`${this.baseUrl}/graphql`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            ...(this.apiKey && { 'ApiKey': this.apiKey }),
-          },
-          body: JSON.stringify({ query: mutation, variables }),
-        });
-
-        if (!response.ok) {
-          throw new Error(`GraphQL request failed: ${response.status}`);
-        }
-
-        const data = await response.json();
-        if (data.errors) {
-          throw new Error(`GraphQL errors: ${JSON.stringify(data.errors)}`);
-        }
-      }
+      await this.gqlClient.mutate<SceneUpdateResponse>({
+        mutation: mutation,
+        variables,
+      });
     } catch (error) {
       console.error('StashAPI: Failed to remove tag from scene', error);
       throw error;
@@ -2299,47 +1793,15 @@ export class StashAPI {
     };
 
     try {
-      if (this.pluginApi?.GQL?.client) {
-        const client = this.pluginApi.GQL.client;
-        try {
-          if (client.mutate) {
-            const result = await client.mutate({ mutation: mutation as any, variables });
-            return result.data?.sceneAddO || { count: 0, history: [] };
-          } else {
-            const result = await client.query({ query: mutation as any, variables });
-            return result.data?.sceneAddO || { count: 0, history: [] };
-          }
-        } catch (err: any) {
-          console.error('StashAPI: Failed to increment o count', {
-            error: err,
-            message: err?.message,
-            graphQLErrors: err?.graphQLErrors,
-            networkError: err?.networkError,
-            sceneId
-          });
-          throw err;
-        }
-      } else {
-        const response = await fetch(`${this.baseUrl}/graphql`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            ...(this.apiKey && { 'ApiKey': this.apiKey }),
-          },
-          body: JSON.stringify({ query: mutation, variables }),
-        });
-
-        if (!response.ok) {
-          throw new Error(`GraphQL request failed: ${response.status}`);
-        }
-
-        const data = await response.json();
-        if (data.errors) {
-          throw new Error(`GraphQL errors: ${JSON.stringify(data.errors)}`);
-        }
-
-        return data.data?.sceneAddO || { count: 0, history: [] };
+      const result = await this.gqlClient.mutate<SceneAddOResponse>({
+        mutation: mutations.SCENE_ADD_O,
+        variables,
+      });
+      const sceneAddO = result.data?.sceneAddO;
+      if (sceneAddO && 'o_counter' in sceneAddO) {
+        return { count: sceneAddO.o_counter ?? 0, history: times || [] };
       }
+      return { count: 0, history: [] };
     } catch (error) {
       console.error('StashAPI: Failed to increment o count', error);
       throw error;
@@ -2353,13 +1815,6 @@ export class StashAPI {
    * @returns Updated rating100 value from Stash
    */
   async updateSceneRating(sceneId: string, rating10: number): Promise<number> {
-    const mutation = `mutation SceneUpdate($input: SceneUpdateInput!) {
-      sceneUpdate(input: $input) {
-        id
-        rating100
-      }
-    }`;
-
     const normalized = Number.isFinite(rating10) ? rating10 : 0;
     const clamped = Math.min(10, Math.max(0, normalized));
     const rating100 = Math.round(clamped * 10);
@@ -2372,51 +1827,13 @@ export class StashAPI {
     };
 
     try {
-      if (this.pluginApi?.GQL?.client) {
-        const client = this.pluginApi.GQL.client;
-        let result;
-        try {
-          if (client.mutate) {
-            result = await client.mutate({ mutation: mutation as any, variables });
-          } else {
-            result = await client.query({ query: mutation as any, variables });
-          }
-        } catch (err: any) {
-          console.error('StashAPI: Failed to update scene rating', {
-            error: err,
-            message: err?.message,
-            graphQLErrors: err?.graphQLErrors,
-            networkError: err?.networkError,
-            sceneId,
-            rating10,
-          });
-          throw err;
-        }
-
-        const updated = result.data?.sceneUpdate?.rating100;
-        return typeof updated === 'number' ? updated : rating100;
-      }
-
-      const response = await fetch(`${this.baseUrl}/graphql`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(this.apiKey && { ApiKey: this.apiKey }),
-        },
-        body: JSON.stringify({ query: mutation, variables }),
+      await this.gqlClient.mutate<SceneUpdateResponse>({
+        mutation: mutations.SCENE_UPDATE,
+        variables,
       });
 
-      if (!response.ok) {
-        throw new Error(`GraphQL request failed: ${response.status}`);
-      }
-
-      const data = await response.json();
-      if (data.errors) {
-        throw new Error(`GraphQL errors: ${JSON.stringify(data.errors)}`);
-      }
-
-      const updated = data.data?.sceneUpdate?.rating100;
-      return typeof updated === 'number' ? updated : rating100;
+      // SceneUpdateResponse doesn't include rating100, so we return the value we set
+      return rating100;
     } catch (error) {
       console.error('StashAPI: Failed to save scene rating', error);
       throw error;
@@ -2444,51 +1861,15 @@ export class StashAPI {
     };
 
     try {
-      if (this.pluginApi?.GQL?.client) {
-        const client = this.pluginApi.GQL.client;
-        try {
-          // Note: Plugin API client may not support abort signal in query options
-          // If signal is aborted, we'll catch it in the error handler
-          const result = await client.query<FindTagsExtendedResponse>({ query: queries.FIND_TAGS_FOR_SELECT, variables });
-          if (signal?.aborted) {
-            return [];
-          }
-          return result.data?.findTags?.tags || [];
-        } catch (err: unknown) {
-          if (isAbortError(err) || signal?.aborted) {
-            return [];
-          }
-          console.error('StashAPI: Failed to find tags for select', {
-            error: err,
-            message: err instanceof Error ? err.message : 'Unknown error',
-            graphQLErrors: (err as { graphQLErrors?: unknown }).graphQLErrors,
-            networkError: (err as { networkError?: unknown }).networkError,
-            searchTerm,
-          });
-          throw err;
-        }
-      }
-
-      const response = await fetch(`${this.baseUrl}/graphql`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(this.apiKey && { ApiKey: this.apiKey }),
-        },
-        body: JSON.stringify({ query: queries.FIND_TAGS_FOR_SELECT, variables }),
+      const result = await this.gqlClient.query<FindTagsExtendedResponse>({
+        query: queries.FIND_TAGS_FOR_SELECT,
+        variables,
         signal,
       });
-
-      if (!response.ok) {
-        throw new Error(`GraphQL request failed: ${response.status}`);
+      if (signal?.aborted) {
+        return [];
       }
-
-      const data = await response.json() as GraphQLResponse<FindTagsExtendedResponse>;
-      if (data.errors) {
-        throw new Error(`GraphQL errors: ${JSON.stringify(data.errors)}`);
-      }
-
-      return data.data?.findTags?.tags || [];
+      return result.data?.findTags?.tags || [];
     } catch (error: unknown) {
       if (isAbortError(error) || signal?.aborted) {
         return [];
@@ -2562,49 +1943,19 @@ export class StashAPI {
     };
 
     try {
-      if (this.pluginApi?.GQL?.client) {
-        const client = this.pluginApi.GQL.client;
-        try {
-          if (client.mutate) {
-            const result = await client.mutate({ mutation: mutation as any, variables });
-            return result.data?.sceneMarkerCreate;
-          } else {
-            const result = await client.query({ query: mutation as any, variables });
-            return result.data?.sceneMarkerCreate;
-          }
-        } catch (err: any) {
-          console.error('StashAPI: Failed to create scene marker', {
-            error: err,
-            message: err?.message,
-            graphQLErrors: err?.graphQLErrors,
-            networkError: err?.networkError,
-            sceneId,
-            seconds,
-            primaryTagId,
-          });
-          throw err;
-        }
-      }
-
-      const response = await fetch(`${this.baseUrl}/graphql`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(this.apiKey && { ApiKey: this.apiKey }),
-        },
-        body: JSON.stringify({ query: mutation, variables }),
+      const result = await this.gqlClient.mutate<SceneMarkerCreateResponse>({
+        mutation: mutations.SCENE_MARKER_CREATE,
+        variables,
       });
-
-      if (!response.ok) {
-        throw new Error(`GraphQL request failed: ${response.status}`);
+      const marker = result.data?.sceneMarkerCreate;
+      if (!marker) {
+        throw new Error('Failed to create scene marker: response was null');
       }
-
-      const data = await response.json();
-      if (data.errors) {
-        throw new Error(`GraphQL errors: ${JSON.stringify(data.errors)}`);
-      }
-
-      return data.data?.sceneMarkerCreate;
+      // Convert null end_seconds to undefined to match return type
+      return {
+        ...marker,
+        end_seconds: marker.end_seconds ?? undefined,
+      };
     } catch (error) {
       console.error('StashAPI: Failed to create scene marker', error);
       throw error;
@@ -2616,91 +1967,41 @@ export class StashAPI {
    * Returns array of marker seconds values
    */
   async fetchSceneMarkerTags(sceneId: string, signal?: AbortSignal): Promise<number[]> {
-    const query = `query FindSceneMarkerTags($id: ID!) {
-      sceneMarkerTags(scene_id: $id) {
-        scene_markers {
-          seconds
-        }
-      }
-    }`;
-    
     // Note: sceneMarkerTags may return an array or a single object depending on Stash version
     // We handle both cases in the parsing logic below
 
     try {
       if (signal?.aborted) return [];
 
-      if (this.pluginApi?.GQL?.client) {
-        const result = await this.pluginApi.GQL.client.query<FindSceneMarkerTagsResponse>({
-          query: queries.FIND_SCENE_MARKER_TAGS,
-          variables: { id: sceneId },
-        });
-        if (signal?.aborted) return [];
-        
-        const sceneMarkerTags = result.data?.sceneMarkerTags;
-        if (!sceneMarkerTags) {
-          return [];
-        }
-
-        // Extract seconds from all markers
-        // sceneMarkerTags can be an array (multiple tag groups) or a single object
-        const markerTimes: number[] = [];
-        const tagGroups = Array.isArray(sceneMarkerTags) ? sceneMarkerTags : [sceneMarkerTags];
-        
-        for (const tagGroup of tagGroups) {
-          if (tagGroup.scene_markers && Array.isArray(tagGroup.scene_markers)) {
-            for (const marker of tagGroup.scene_markers) {
-              if (typeof marker.seconds === 'number') {
-                markerTimes.push(marker.seconds);
-              }
-            }
-          }
-        }
-        return markerTimes;
-      } else {
-        const response = await fetch(`${this.baseUrl}/graphql`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            ...(this.apiKey && { 'ApiKey': this.apiKey }),
-          },
-          body: JSON.stringify({ query: queries.FIND_SCENE_MARKER_TAGS, variables: { id: sceneId } }),
-          signal,
-        });
-
-        if (signal?.aborted) return [];
-        if (!response.ok) return [];
-
-        const data = await response.json() as GraphQLResponse<FindSceneMarkerTagsResponse>;
-        if (signal?.aborted) return [];
-        if (data.errors) {
-          console.warn('StashAPI: GraphQL errors fetching scene marker tags', data.errors);
-          return [];
-        }
-
-        const sceneMarkerTags = data.data?.sceneMarkerTags;
-        if (!sceneMarkerTags) {
-          return [];
-        }
-
-        // Extract seconds from all markers
-        // sceneMarkerTags can be an array (multiple tag groups) or a single object
-        const markerTimes: number[] = [];
-        const tagGroups = Array.isArray(sceneMarkerTags) ? sceneMarkerTags : [sceneMarkerTags];
-        
-        for (const tagGroup of tagGroups) {
-          if (tagGroup.scene_markers && Array.isArray(tagGroup.scene_markers)) {
-            for (const marker of tagGroup.scene_markers) {
-              if (typeof marker.seconds === 'number') {
-                markerTimes.push(marker.seconds);
-              }
-            }
-          }
-        }
-        return markerTimes;
+      const result = await this.gqlClient.query<FindSceneMarkerTagsResponse>({
+        query: queries.FIND_SCENE_MARKER_TAGS,
+        variables: { id: sceneId },
+        signal,
+      });
+      if (signal?.aborted) return [];
+      
+      const sceneMarkerTags = result.data?.sceneMarkerTags;
+      if (!sceneMarkerTags) {
+        return [];
       }
-    } catch (e: any) {
-      if (e.name === 'AbortError' || signal?.aborted) {
+
+      // Extract seconds from all markers
+      // sceneMarkerTags can be an array (multiple tag groups) or a single object
+      const markerTimes: number[] = [];
+      const tagGroups = Array.isArray(sceneMarkerTags) ? sceneMarkerTags : [sceneMarkerTags];
+      
+      for (const tagGroup of tagGroups) {
+        if (tagGroup.scene_markers && Array.isArray(tagGroup.scene_markers)) {
+          for (const marker of tagGroup.scene_markers) {
+            if (typeof marker.seconds === 'number') {
+              markerTimes.push(marker.seconds);
+            }
+          }
+        }
+      }
+      return markerTimes;
+    } catch (e: unknown) {
+      if (isAbortError(e) || signal?.aborted) {
         return [];
       }
       console.warn('StashAPI: Failed to fetch scene marker tags', e);
@@ -2708,4 +2009,6 @@ export class StashAPI {
     }
   }
 }
+
+
 

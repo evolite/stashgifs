@@ -53,6 +53,8 @@ export class VisibilityManager {
   private onHoverLoadRequest?: (postId: string) => void; // Callback to trigger video loading on hover
   private hoverPlayDebounceTimers: Map<string, ReturnType<typeof setTimeout>> = new Map(); // Debounce rapid hover play attempts
   private hoverReloadTimers: Map<string, ReturnType<typeof setTimeout>> = new Map(); // Track reload timeouts
+  private scrollCleanup?: () => void; // Cleanup function for scroll velocity tracking
+  private audioFocusCleanup?: () => void; // Cleanup function for audio focus tracking
   private options: {
     threshold: number;
     rootMargin: string;
@@ -149,7 +151,7 @@ export class VisibilityManager {
     this.scrollVelocityRafHandle = requestAnimationFrame(updateScrollVelocity);
     
     // Store cleanup function
-    (this as any)._scrollCleanup = () => {
+    this.scrollCleanup = () => {
       this.scrollTrackingActive = false;
       if (this.scrollVelocityRafHandle !== undefined) {
         cancelAnimationFrame(this.scrollVelocityRafHandle);
@@ -219,7 +221,7 @@ export class VisibilityManager {
     window.addEventListener('scroll', handleScroll, { passive: true });
     
     // Store cleanup function
-    (this as any)._audioFocusCleanup = () => {
+    this.audioFocusCleanup = () => {
       window.removeEventListener('scroll', handleScroll);
       stopRafCheck();
       if (scrollTimeout) {
@@ -376,7 +378,8 @@ export class VisibilityManager {
     player.setMuted(true);
     
     // Autoplay when player is registered if visible and autoplay is enabled
-    if (entry.isVisible && this.options.autoPlay) {
+    // Skip if any video is hovered (hover has priority)
+    if (entry.isVisible && this.options.autoPlay && (!this.hoveredPostId || this.hoveredPostId === postId)) {
       this.requestPlaybackIfReady(postId, entry, 'register');
     }
     
@@ -438,7 +441,8 @@ export class VisibilityManager {
       } else if (entry.pendingVisibilityPlay) {
         // If not hovered but pending, check if we should use autoplay or hover-based play
         // In non-HD mode (autoplay enabled), use autoplay instead of hover-based play
-        if (this.options.autoPlay && entry.isVisible) {
+        // Skip if any video is hovered (hover has priority)
+        if (this.options.autoPlay && entry.isVisible && (!this.hoveredPostId || this.hoveredPostId === postId)) {
           // Use autoplay for non-HD mode when visible
           this.requestPlaybackIfReady(postId, entry, 'ready');
         } else {
@@ -451,7 +455,8 @@ export class VisibilityManager {
       }
     }
     // Also handle autoplay if enabled and visible (for non-HD mode)
-    if (entry && entry.isVisible && this.options.autoPlay && !entry.pendingVisibilityPlay && this.hoveredPostId !== postId) {
+    // Skip if any video is hovered (hover has priority)
+    if (entry && entry.isVisible && this.options.autoPlay && !entry.pendingVisibilityPlay && (!this.hoveredPostId || this.hoveredPostId === postId)) {
       this.requestPlaybackIfReady(postId, entry, 'ready');
     }
   }
@@ -588,7 +593,8 @@ export class VisibilityManager {
             return;
           }
           // Autoplay when entering viewport (if enabled)
-          if (this.options.autoPlay) {
+          // Skip if any video is hovered (hover has priority)
+          if (this.options.autoPlay && (!this.hoveredPostId || this.hoveredPostId === postId)) {
             this.requestPlaybackIfReady(postId, currentEntry, 'observer');
           }
         } else {
@@ -596,7 +602,8 @@ export class VisibilityManager {
           if (stillActuallyVisible) {
             currentEntry.isVisible = true;
             // Autoplay when re-entering viewport (if enabled)
-            if (this.options.autoPlay) {
+            // Skip if any video is hovered (hover has priority)
+            if (this.options.autoPlay && (!this.hoveredPostId || this.hoveredPostId === postId)) {
               this.requestPlaybackIfReady(postId, currentEntry, 'observer');
             }
             return;
@@ -649,7 +656,8 @@ export class VisibilityManager {
 
   private handlePostEnteredViewport(postId: string, entry: VisibilityEntry): void {
     // Autoplay when entering viewport (if enabled)
-    if (this.options.autoPlay) {
+    // Skip if any video is hovered (hover has priority)
+    if (this.options.autoPlay && (!this.hoveredPostId || this.hoveredPostId === postId)) {
       this.requestPlaybackIfReady(postId, entry, 'observer');
     }
   }
@@ -734,6 +742,12 @@ export class VisibilityManager {
 
     if (!currentEntry.isVisible) {
       this.debugLog('play-abort-not-visible', { postId, origin });
+      return;
+    }
+
+    // Hover has priority: don't start autoplay if any video is hovered (unless this is the hovered video)
+    if (this.hoveredPostId && this.hoveredPostId !== postId) {
+      this.debugLog('play-abort-hover-active', { postId, origin, hoveredId: this.hoveredPostId });
       return;
     }
 
@@ -841,20 +855,21 @@ export class VisibilityManager {
           player.setMuted(false);
         }
         // If exclusive audio is disabled (global mute ON), video stays muted
-      } catch (error: any) {
+      } catch (error: unknown) {
         this.debugLog('play-failed', { postId, origin, attempt, error });
         
         // Check if this is a load failure (not just playback failure)
-        const isLoadFailure = error?.errorType === 'timeout' || 
-                             error?.errorType === 'network' || 
-                             error?.errorType === 'play' ||
+        const errorObj = error as { errorType?: string } | null;
+        const isLoadFailure = errorObj?.errorType === 'timeout' || 
+                             errorObj?.errorType === 'network' || 
+                             errorObj?.errorType === 'play' ||
                              (entry.player && entry.player.hasLoadError());
         
         if (isLoadFailure) {
           // Notify VideoPost of load failure via FeedContainer
           // We'll handle this by checking the error and letting VideoPost handle retries
           // For now, we'll let the existing retry logic handle it, but VideoPost will also handle it
-          this.debugLog('load-failure-detected', { postId, errorType: error?.errorType });
+          this.debugLog('load-failure-detected', { postId, errorType: errorObj?.errorType });
         }
         
         if (!entry.isVisible) {
@@ -1013,15 +1028,15 @@ export class VisibilityManager {
     }
     
     // Clean up scroll velocity tracking
-    if ((this as any)._scrollCleanup) {
-      (this as any)._scrollCleanup();
-      (this as any)._scrollCleanup = undefined;
+    if (this.scrollCleanup) {
+      this.scrollCleanup();
+      this.scrollCleanup = undefined;
     }
     
     // Clean up audio focus tracking
-    if ((this as any)._audioFocusCleanup) {
-      (this as any)._audioFocusCleanup();
-      (this as any)._audioFocusCleanup = undefined;
+    if (this.audioFocusCleanup) {
+      this.audioFocusCleanup();
+      this.audioFocusCleanup = undefined;
     }
     
     this.observer.disconnect();
@@ -1173,13 +1188,24 @@ export class VisibilityManager {
         clearTimeout(entry.hoverHandlers.touchEndTimeout);
       }
 
-      // Delay muting on touch end to allow for tap interactions
+      // On mobile, touchend doesn't mean the user moved away - just that they lifted their finger
+      // Only clear the touched state, but keep the video playing if it's still visible
+      // The video will pause when:
+      // 1. User touches a different video (which will set a new hoveredPostId)
+      // 2. User scrolls away (visibility manager will handle pausing)
+      // 3. User manually pauses
       const timeout = setTimeout(() => {
         if (this.touchedPostId === postId) {
           this.touchedPostId = undefined;
         }
-        if (this.hoveredPostId === postId) {
+        // Only clear hoveredPostId if video is no longer visible
+        // This allows the video to keep playing after touch ends
+        if (this.hoveredPostId === postId && !entry.isVisible) {
           handleLeave();
+        } else if (this.hoveredPostId === postId) {
+          // Video is still visible, so keep it playing but clear hoveredPostId
+          // This allows viewport-based autoplay to take over if needed
+          this.hoveredPostId = undefined;
         }
         if (entry.hoverHandlers) {
           entry.hoverHandlers.touchEndTimeout = undefined;
@@ -1201,8 +1227,13 @@ export class VisibilityManager {
       if (this.touchedPostId === postId) {
         this.touchedPostId = undefined;
       }
-      if (this.hoveredPostId === postId) {
+      // On touch cancel, only pause if video is no longer visible
+      // This handles cases like scrolling during touch
+      if (this.hoveredPostId === postId && !entry.isVisible) {
         handleLeave();
+      } else if (this.hoveredPostId === postId) {
+        // Video is still visible, just clear the hover state
+        this.hoveredPostId = undefined;
       }
     };
     
@@ -1298,6 +1329,28 @@ export class VisibilityManager {
       return;
     }
     
+    // Pause all other playing videos (hover takes priority)
+    for (const [otherPostId, otherEntry] of this.entries) {
+      if (otherPostId !== postId && otherEntry.player) {
+        try {
+          // Check if other player has video element and is playing
+          otherEntry.player.getVideoElement();
+          if (otherEntry.player.isPlaying()) {
+            // Don't pause manually started videos
+            if (!this.manuallyStartedVideos.has(otherPostId)) {
+              otherEntry.player.pause();
+              this.videoStates.set(otherPostId, 'paused');
+              this.activeVideos.delete(otherPostId);
+              this.debugLog('hover-pause-other', { pausedId: otherPostId, hoveredId: postId });
+            }
+          }
+        } catch {
+          // Player doesn't have video element yet, skip
+          continue;
+        }
+      }
+    }
+
     // If exclusive audio is enabled, mute all other videos first
     if (this.exclusiveAudioEnabled && entry.player) {
       // Mute all other videos
@@ -1332,15 +1385,16 @@ export class VisibilityManager {
           this.currentAudioPostId = postId;
         }
       }
-    }).catch((error: any) => {
+    }).catch((error: unknown) => {
       // If play fails, check if it's a load failure
-      const isLoadFailure = error?.errorType === 'timeout' || 
-                           error?.errorType === 'network' || 
-                           error?.errorType === 'play' ||
+      const errorObj = error as { errorType?: string } | null;
+      const isLoadFailure = errorObj?.errorType === 'timeout' ||
+                           errorObj?.errorType === 'network' ||
+                           errorObj?.errorType === 'play' ||
                            (entry.player && entry.player.hasLoadError());
       
       if (isLoadFailure) {
-        this.debugLog('load-failure-on-hover', { postId, errorType: error?.errorType });
+        this.debugLog('load-failure-on-hover', { postId, errorType: errorObj?.errorType });
         // VideoPost will handle the retry logic via its own error checking
       }
       // If play fails, don't unmute
@@ -1496,6 +1550,7 @@ export class VisibilityManager {
 
   /**
    * Pause video on hover leave (if not manually started)
+   * Hover has priority over viewport-based autoplay, so always pause on hover leave
    */
   private pauseOnHoverLeave(postId: string): void {
     const entry = this.entries.get(postId);
@@ -1508,14 +1563,14 @@ export class VisibilityManager {
       return;
     }
 
-    // Don't pause if video is still visible in viewport
-    if (entry.isVisible) {
-      return;
-    }
-
-    // Pause the video
+    // Always pause on hover leave - hover has priority over viewport visibility
+    // This ensures hover has full control over playback
     try {
       entry.player.pause();
+      this.videoStates.set(postId, 'paused');
+      this.activeVideos.delete(postId);
+      entry.pendingVisibilityPlay = false;
+      this.debugLog('hover-leave-pause', { postId, wasVisible: entry.isVisible });
     } catch {
       // Ignore pause errors
     }

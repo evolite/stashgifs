@@ -9,7 +9,7 @@ import { VideoPost } from './VideoPost.js';
 import { NativeVideoPlayer } from './NativeVideoPlayer.js';
 import { VisibilityManager } from './VisibilityManager.js';
 import { FavoritesManager } from './FavoritesManager.js';
-import { throttle, debounce, isValidMediaUrl, detectDeviceCapabilities, DeviceCapabilities } from './utils.js';
+import { throttle, debounce, isValidMediaUrl, detectDeviceCapabilities, DeviceCapabilities, isStandaloneNavigator } from './utils.js';
 import { posterPreloader } from './PosterPreloader.js';
 
 const DEFAULT_SETTINGS: FeedSettings = {
@@ -83,6 +83,7 @@ export class FeedContainer {
   private shuffleMode: number = 0; // 0 = off, 1 = shuffle with markers only, 2 = shuffle all (including no markers)
   private loadObservers: Map<string, IntersectionObserver> = new Map(); // Track load observers for cleanup
   private deviceCapabilities: DeviceCapabilities; // Device capabilities for adaptive quality
+  private shuffleToggle?: HTMLElement; // Reference to shuffle toggle button
 
   constructor(container: HTMLElement, api?: StashAPI, settings?: Partial<FeedSettings>) {
     this.container = container;
@@ -290,7 +291,8 @@ export class FeedContainer {
     header.style.position = 'sticky';
     
     // Detect if we're in mobile Safari standalone/app mode
-    const isStandalone = (window.navigator as any).standalone || 
+    const nav = window.navigator;
+    const isStandalone = (isStandaloneNavigator(nav) && nav.standalone) || 
                          window.matchMedia('(display-mode: standalone)').matches;
     const isIOS = /iPhone|iPad|iPod/i.test(navigator.userAgent);
     
@@ -387,9 +389,8 @@ export class FeedContainer {
       // Scroll to top immediately (no smooth behavior)
       window.scrollTo(0, 0);
       // Also scroll any internal container
-      const sc: any = (this as any).scrollContainer;
-      if (sc) {
-        sc.scrollTop = 0;
+      if (this.scrollContainer) {
+        this.scrollContainer.scrollTop = 0;
       }
       // Reload the page
       window.location.reload();
@@ -494,8 +495,10 @@ export class FeedContainer {
     };
     
     // Initialize with first placeholder
-    placeholderText = createPlaceholderText(dynamicPlaceholders[0]);
-    dynamicContainer.appendChild(placeholderText);
+    if (dynamicPlaceholders[0]) {
+      placeholderText = createPlaceholderText(dynamicPlaceholders[0]);
+      dynamicContainer.appendChild(placeholderText);
+    }
     
     // Assemble placeholder: "Search " + [dynamic part]
     placeholderWrapper.appendChild(staticText);
@@ -531,8 +534,11 @@ export class FeedContainer {
         currentPlaceholderIndex = (currentPlaceholderIndex + 1) % dynamicPlaceholders.length;
         
         // Create new text sliding in from right
-        placeholderText = createPlaceholderText(dynamicPlaceholders[currentPlaceholderIndex], true);
-        dynamicContainer.appendChild(placeholderText);
+        const nextPlaceholder = dynamicPlaceholders[currentPlaceholderIndex];
+        if (nextPlaceholder) {
+          placeholderText = createPlaceholderText(nextPlaceholder, true);
+          dynamicContainer.appendChild(placeholderText);
+        }
         
         // Trigger reflow
         void dynamicContainer.offsetHeight;
@@ -968,7 +974,8 @@ export class FeedContainer {
     });
 
     // Store reference to shuffle button for visibility updates
-    (this as any).shuffleToggle = shuffleToggle;
+    // Note: This is stored as a private property, accessed via this.shuffleToggle
+    this.shuffleToggle = shuffleToggle;
     
     // Update shuffle button visibility now that it's created
     setHDToggleVisualState();
@@ -982,7 +989,8 @@ export class FeedContainer {
     const suggestions = document.createElement('div');
     suggestions.className = 'feed-filters__suggestions hide-scrollbar';
     suggestions.style.position = 'fixed';
-    (suggestions.style as any).inset = '0';
+    // Use CSS custom properties for inset (supported in modern browsers)
+    suggestions.style.setProperty('inset', '0');
     suggestions.style.top = '0';
     suggestions.style.left = '0';
     suggestions.style.right = '0';
@@ -992,7 +1000,8 @@ export class FeedContainer {
     suggestions.style.flexDirection = 'column';
     suggestions.style.background = 'rgba(0, 0, 0, 0.95)';
     suggestions.style.backdropFilter = 'blur(20px) saturate(180%)';
-    (suggestions.style as any).webkitBackdropFilter = 'blur(20px) saturate(180%)';
+    // webkitBackdropFilter for Safari compatibility
+    suggestions.style.setProperty('-webkit-backdrop-filter', 'blur(20px) saturate(180%)');
     suggestions.style.overflowY = 'auto';
     suggestions.style.padding = '0';
     suggestions.style.boxSizing = 'border-box';
@@ -1055,8 +1064,8 @@ export class FeedContainer {
       try {
         updateSearchBarDisplay();
         await this.applyCurrentSearch();
-      } catch (e: any) {
-        if (e?.name !== 'AbortError') {
+      } catch (e: unknown) {
+        if (!(e instanceof Error && e.name === 'AbortError')) {
           console.error('Apply filters failed', e);
         }
       } finally {
@@ -2070,7 +2079,7 @@ export class FeedContainer {
       } else {
         try {
           const matchingTags = await this.api.searchMarkerTags(this.selectedTagName, 50, loadSignal);
-          if ((loadSignal as any)?.aborted) return;
+          if (loadSignal?.aborted) return;
           const matchingTagIds = (matchingTags || [])
             .map(tag => parseInt(tag.id, 10))
             .filter(id => !Number.isNaN(id))
@@ -2102,8 +2111,8 @@ export class FeedContainer {
           this.selectedTagId = undefined;
         } else {
           const matchingPerformers = await this.api.searchPerformers(q, 10, loadSignal);
-          if ((loadSignal as any)?.aborted) return;
-          if (matchingPerformers && matchingPerformers.length > 0) {
+          if (loadSignal?.aborted) return;
+          if (matchingPerformers && matchingPerformers.length > 0 && matchingPerformers[0]) {
             performers = [String(matchingPerformers[0].id)];
             this.selectedPerformerName = matchingPerformers[0].name;
             this.selectedPerformerId = parseInt(String(matchingPerformers[0].id), 10);
@@ -2312,7 +2321,7 @@ export class FeedContainer {
     const suggestions = document.createElement('div');
     suggestions.className = 'feed-filters__suggestions';
     suggestions.style.position = 'fixed';
-    (suggestions.style as any).inset = '0';
+    suggestions.style.setProperty('inset', '0');
     suggestions.style.top = '0';
     suggestions.style.left = '0';
     suggestions.style.right = '0';
@@ -2321,7 +2330,7 @@ export class FeedContainer {
     suggestions.style.display = 'none';
     suggestions.style.background = 'rgba(0, 0, 0, 0.95)';
     suggestions.style.backdropFilter = 'blur(20px) saturate(180%)';
-    (suggestions.style as any).webkitBackdropFilter = 'blur(20px) saturate(180%)';
+    suggestions.style.setProperty('-webkit-backdrop-filter', 'blur(20px) saturate(180%)');
     suggestions.style.overflowY = 'auto';
     suggestions.style.padding = '0';
     suggestions.style.boxSizing = 'border-box';
@@ -3141,7 +3150,9 @@ export class FeedContainer {
         
         // Create post (returns container element)
         // Pass abort signal to allow cleanup if aborted during creation
-        const postContainer = await this.createPost(markers[i], signal);
+        const marker = markers[i];
+        if (!marker) continue;
+        const postContainer = await this.createPost(marker, signal);
         
         // Remove one skeleton loader as each real post is added
         if (!append && i < this.getSkeletonCount()) {
@@ -3233,8 +3244,12 @@ export class FeedContainer {
     
     // Check for HEVC/H.265 codec from scene files
     const sceneFiles = marker.scene?.files;
-    if (sceneFiles && sceneFiles.length > 0) {
-      const videoCodec = sceneFiles[0].video_codec?.toLowerCase() || '';
+    if (!sceneFiles || sceneFiles.length === 0) {
+      return true; // If no file info, assume supported
+    }
+    const firstFile = sceneFiles[0];
+    if (firstFile) {
+      const videoCodec = firstFile.video_codec?.toLowerCase() || '';
       const isHevc = videoCodec.includes('hevc') || 
                      videoCodec.includes('h.265') ||
                      videoCodec.includes('h265');
@@ -3697,6 +3712,7 @@ export class FeedContainer {
 
     for (let index = 0; index < orderedPosts.length && index < this.eagerPreloadCount; index++) {
       const post = orderedPosts[index];
+      if (!post) continue;
       const postId = post.getPostId();
 
       if (this.eagerPreloadedPosts.has(postId)) {
@@ -3816,6 +3832,10 @@ export class FeedContainer {
     // Remove already loaded videos from queue
     while (this.backgroundPreloadPriorityQueue.length > 0) {
       const postId = this.backgroundPreloadPriorityQueue[0];
+      if (!postId) {
+        this.backgroundPreloadPriorityQueue.shift();
+        continue;
+      }
       const post = this.posts.get(postId);
       
       if (!post || post.isPlayerLoaded() || !post.hasVideoSource()) {

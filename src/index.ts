@@ -58,25 +58,30 @@ function init(): void {
     const feed = new FeedContainer(appContainer, api, settings);
 
     // Initialize feed
-    feed.init().catch((error) => {
+    feed.init().catch((error: unknown) => {
       console.error('Failed to initialize feed:', error);
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
       appContainer.innerHTML = `
         <div style="padding: 2rem; text-align: center; color: #fff;">
           <h2>Error Loading Feed</h2>
-          <p>${error.message || 'Unknown error'}</p>
+          <p>${errorMessage}</p>
           <p style="font-size: 0.875rem; color: #999;">Check browser console for details</p>
         </div>
       `;
     });
 
     // Expose feed to window for debugging/extension
-    (window as any).stashgifsFeed = feed;
-  } catch (error: any) {
+    interface WindowWithStashgifs extends Window {
+      stashgifsFeed?: FeedContainer;
+    }
+    (window as WindowWithStashgifs).stashgifsFeed = feed;
+  } catch (error: unknown) {
     console.error('Stashgifs Feed UI: Fatal error during initialization:', error);
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
     appContainer.innerHTML = `
       <div style="padding: 2rem; text-align: center; color: #fff;">
         <h2>Fatal Error</h2>
-        <p>${error.message || 'Unknown error'}</p>
+        <p>${errorMessage}</p>
         <p style="font-size: 0.875rem; color: #999;">Check browser console for details</p>
       </div>
     `;
