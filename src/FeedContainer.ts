@@ -572,6 +572,33 @@ export class FeedContainer {
     
     // Add placeholder wrapper to input wrapper
     inputWrapper.appendChild(placeholderWrapper);
+
+    // Random (shuffle) left icon to replace placeholder in random mode
+    const randomLeftIcon = document.createElement('div');
+    randomLeftIcon.style.position = 'absolute';
+    randomLeftIcon.style.left = '14px';
+    randomLeftIcon.style.top = '50%';
+    randomLeftIcon.style.transform = 'translateY(-50%)';
+    randomLeftIcon.style.display = this.shuffleMode > 0 ? 'inline-flex' : 'none';
+    randomLeftIcon.style.alignItems = 'center';
+    randomLeftIcon.style.justifyContent = 'center';
+    randomLeftIcon.style.width = '18px';
+    randomLeftIcon.style.height = '18px';
+    randomLeftIcon.style.color = 'rgba(255,255,255,0.85)';
+    randomLeftIcon.style.pointerEvents = 'none';
+    const randomLeftSvg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    randomLeftSvg.setAttribute('viewBox', '0 0 24 24');
+    randomLeftSvg.setAttribute('width', '18');
+    randomLeftSvg.setAttribute('height', '18');
+    randomLeftSvg.setAttribute('fill', 'currentColor');
+    const rl1 = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+    rl1.setAttribute('d', 'M16 3h5v5h-2V6h-3V3z');
+    const rl2 = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+    rl2.setAttribute('d', 'M3 16h5v5H6v-3H3v-2z');
+    randomLeftSvg.appendChild(rl1);
+    randomLeftSvg.appendChild(rl2);
+    randomLeftIcon.appendChild(randomLeftSvg);
+    inputWrapper.appendChild(randomLeftIcon);
     
     // Stop animation on focus, restart on blur if empty
     queryInput.addEventListener('focus', () => {
@@ -1007,7 +1034,11 @@ export class FeedContainer {
       // Hide tag header since we're showing it in the search bar
       tagHeader.style.display = 'none';
       // Ensure animated placeholder hides when we have any value or focus
-      updatePlaceholderVisibility();
+      if (this.shuffleMode > 0) {
+        placeholderWrapper.style.display = 'none';
+      } else {
+        updatePlaceholderVisibility();
+      }
       // Disable search input in random mode
       const disabled = this.shuffleMode > 0;
       // Use readOnly so clicks can disable random mode
@@ -1015,6 +1046,8 @@ export class FeedContainer {
       queryInput.style.opacity = disabled ? '0.6' : '1';
       // Show shuffle indicator when random is active
       shuffleIndicator.style.display = this.shuffleMode > 0 ? 'inline-flex' : 'none';
+      // Show left icon when random is active
+      randomLeftIcon.style.display = this.shuffleMode > 0 ? 'inline-flex' : 'none';
     };
 
     const apply = async () => {
@@ -1323,6 +1356,7 @@ export class FeedContainer {
           this.shuffleMode = this.shuffleMode > 0 ? 0 : 1;
           try { localStorage.setItem('stashgifs-shuffleMode', String(this.shuffleMode)); } catch {}
           setRandomBtnState();
+          updateSearchBarDisplay();
           // Apply changes
           this.clearPosts();
           if (this.postsContainer) this.postsContainer.innerHTML = '';
@@ -1754,6 +1788,7 @@ export class FeedContainer {
         this.shuffleMode = this.shuffleMode > 0 ? 0 : 1;
         try { localStorage.setItem('stashgifs-shuffleMode', String(this.shuffleMode)); } catch {}
         setRandom2();
+        updateSearchBarDisplay();
         this.clearPosts();
         if (this.postsContainer) this.postsContainer.innerHTML = '';
         this.currentPage = 1;
