@@ -81,7 +81,6 @@ export class FeedContainer {
   private useHDMode: boolean = false;
   private useVolumeMode: boolean = false;
   private shuffleMode: number = 0; // 0 = off, 1 = shuffle with markers only, 2 = shuffle all (including no markers)
-  private sceneMarkerTimesCache: Map<string, number[]> = new Map(); // Cache marker times per scene ID
   private loadObservers: Map<string, IntersectionObserver> = new Map(); // Track load observers for cleanup
   private deviceCapabilities: DeviceCapabilities; // Device capabilities for adaptive quality
 
@@ -917,10 +916,8 @@ export class FeedContainer {
     // Update shuffle button visibility now that it's created
     setHDToggleVisualState();
 
-    // Add buttons to buttons container
+    // Add buttons to buttons container (keep mute/volume only; move HD/Shuffle to search popup)
     buttonsContainer.appendChild(volToggle);
-    buttonsContainer.appendChild(shuffleToggle);
-    buttonsContainer.appendChild(hdToggle);
     
     // Add buttons container to header inner (third grid column)
     headerInner.appendChild(buttonsContainer);
@@ -1213,6 +1210,66 @@ export class FeedContainer {
         while (container.firstChild) {
           container.removeChild(container.firstChild);
         }
+
+        // Playback & Shuffle options (moved from header into popup)
+        const playbackSection = document.createElement('div');
+        playbackSection.style.display = 'flex';
+        playbackSection.style.flexDirection = 'row';
+        playbackSection.style.alignItems = 'center';
+        playbackSection.style.gap = '8px';
+
+        // HD toggle button
+        const hdBtn = document.createElement('button');
+        hdBtn.type = 'button';
+        hdBtn.textContent = this.useHDMode ? 'HD Video: On' : 'HD Video: Off';
+        hdBtn.style.padding = '10px 12px';
+        hdBtn.style.borderRadius = '10px';
+        hdBtn.style.border = '1px solid rgba(255,255,255,0.12)';
+        hdBtn.style.background = this.useHDMode ? 'rgba(76, 175, 80, 0.25)' : 'rgba(28, 28, 30, 0.95)';
+        hdBtn.style.color = this.useHDMode ? '#C8E6C9' : 'rgba(255,255,255,0.85)';
+        hdBtn.style.cursor = 'pointer';
+        hdBtn.addEventListener('click', () => {
+          // Toggle HD mode with existing logic
+          onHDToggleClick();
+          // Reflect state
+          hdBtn.textContent = this.useHDMode ? 'HD Video: On' : 'HD Video: Off';
+          hdBtn.style.background = this.useHDMode ? 'rgba(76, 175, 80, 0.25)' : 'rgba(28, 28, 30, 0.95)';
+          hdBtn.style.color = this.useHDMode ? '#C8E6C9' : 'rgba(255,255,255,0.85)';
+          // Update random toggle visibility based on HD (only in HD)
+          randomBtn.style.display = this.useHDMode ? 'inline-flex' : 'none';
+        });
+        // Random positions toggle (appears only when HD is ON)
+        const randomBtn = document.createElement('button');
+        randomBtn.type = 'button';
+        const setRandomBtnState = () => {
+          const isOn = this.shuffleMode > 0;
+          randomBtn.textContent = isOn ? 'Random Positions: On' : 'Random Positions: Off';
+          randomBtn.style.background = isOn ? 'rgba(33, 150, 243, 0.25)' : 'rgba(28, 28, 30, 0.95)';
+          randomBtn.style.color = isOn ? '#BBDEFB' : 'rgba(255,255,255,0.85)';
+        };
+        randomBtn.style.padding = '10px 12px';
+        randomBtn.style.borderRadius = '10px';
+        randomBtn.style.border = '1px solid rgba(255,255,255,0.12)';
+        randomBtn.style.cursor = 'pointer';
+        setRandomBtnState();
+        randomBtn.style.display = this.useHDMode ? 'inline-flex' : 'none';
+        randomBtn.addEventListener('click', async () => {
+          // Toggle shuffleMode between 0 (off) and 1 (on) for random positions
+          this.shuffleMode = this.shuffleMode > 0 ? 0 : 1;
+          try { localStorage.setItem('stashgifs-shuffleMode', String(this.shuffleMode)); } catch {}
+          setRandomBtnState();
+          // Apply changes
+          this.clearPosts();
+          if (this.postsContainer) this.postsContainer.innerHTML = '';
+          this.currentPage = 1;
+          this.hasMore = true;
+          this.isLoading = false;
+          await this.loadVideos(this.currentFilters, false, undefined, true);
+        });
+
+        playbackSection.appendChild(hdBtn);
+        playbackSection.appendChild(randomBtn);
+        container.appendChild(playbackSection);
 
         // Show saved filters from cache immediately (no loading needed)
         await this.loadSavedFiltersIfNeeded();
@@ -1565,6 +1622,59 @@ export class FeedContainer {
         });
         container.appendChild(performersSection);
       }
+
+      // Append Playback & Shuffle options for non-empty searches as well
+      const playbackSection2 = document.createElement('div');
+      playbackSection2.style.display = 'flex';
+      playbackSection2.style.flexDirection = 'row';
+      playbackSection2.style.alignItems = 'center';
+      playbackSection2.style.gap = '8px';
+      const hdBtn2 = document.createElement('button');
+      hdBtn2.type = 'button';
+      hdBtn2.textContent = this.useHDMode ? 'HD Video: On' : 'HD Video: Off';
+      hdBtn2.style.padding = '10px 12px';
+      hdBtn2.style.borderRadius = '10px';
+      hdBtn2.style.border = '1px solid rgba(255,255,255,0.12)';
+      hdBtn2.style.background = this.useHDMode ? 'rgba(76, 175, 80, 0.25)' : 'rgba(28, 28, 30, 0.95)';
+      hdBtn2.style.color = this.useHDMode ? '#C8E6C9' : 'rgba(255,255,255,0.85)';
+      hdBtn2.style.cursor = 'pointer';
+      hdBtn2.addEventListener('click', () => {
+        onHDToggleClick();
+        hdBtn2.textContent = this.useHDMode ? 'HD Video: On' : 'HD Video: Off';
+        hdBtn2.style.background = this.useHDMode ? 'rgba(76, 175, 80, 0.25)' : 'rgba(28, 28, 30, 0.95)';
+        hdBtn2.style.color = this.useHDMode ? '#C8E6C9' : 'rgba(255,255,255,0.85)';
+        randomBtn2.style.display = this.useHDMode ? 'inline-flex' : 'none';
+      });
+      // Random positions toggle (inline)
+      const randomBtn2 = document.createElement('button');
+      randomBtn2.type = 'button';
+      const setRandom2 = () => {
+        const isOn = this.shuffleMode > 0;
+        randomBtn2.textContent = isOn ? 'Random Positions: On' : 'Random Positions: Off';
+        randomBtn2.style.background = isOn ? 'rgba(33, 150, 243, 0.25)' : 'rgba(28, 28, 30, 0.95)';
+        randomBtn2.style.color = isOn ? '#BBDEFB' : 'rgba(255,255,255,0.85)';
+      };
+      randomBtn2.style.padding = '10px 12px';
+      randomBtn2.style.borderRadius = '10px';
+      randomBtn2.style.border = '1px solid rgba(255,255,255,0.12)';
+      randomBtn2.style.cursor = 'pointer';
+      setRandom2();
+      randomBtn2.style.display = this.useHDMode ? 'inline-flex' : 'none';
+      randomBtn2.addEventListener('click', async () => {
+        this.shuffleMode = this.shuffleMode > 0 ? 0 : 1;
+        try { localStorage.setItem('stashgifs-shuffleMode', String(this.shuffleMode)); } catch {}
+        setRandom2();
+        this.clearPosts();
+        if (this.postsContainer) this.postsContainer.innerHTML = '';
+        this.currentPage = 1;
+        this.hasMore = true;
+        this.isLoading = false;
+        await this.loadVideos(this.currentFilters, false, undefined, true);
+      });
+
+      playbackSection2.appendChild(hdBtn2);
+      playbackSection2.appendChild(randomBtn2);
+      container.appendChild(playbackSection2);
 
       if (container.children.length === 0) {
         appendEmptyState(container, `No matches found for "${trimmedText}".`);
@@ -3041,41 +3151,7 @@ export class FeedContainer {
     }
   }
 
-  /**
-   * Check if a time is within 60 seconds (before or after) any marker time
-   */
-  private isTimeWithinOneMinuteOfMarker(time: number, markerTimes: number[]): boolean {
-    if (markerTimes.length === 0) return false;
-    
-    const oneMinute = 60; // 60 seconds
-    return markerTimes.some(markerTime => {
-      const distance = Math.abs(time - markerTime);
-      return distance <= oneMinute;
-    });
-  }
-
-  /**
-   * Get marker times for a scene, with caching to avoid repeated API calls
-   */
-  private async getMarkerTimesForScene(sceneId: string): Promise<number[]> {
-    // Check cache first
-    if (this.sceneMarkerTimesCache.has(sceneId)) {
-      return this.sceneMarkerTimesCache.get(sceneId)!;
-    }
-    
-    // If not cached, fetch from API
-    try {
-      const markerTimes = await this.api.fetchSceneMarkerTags(sceneId);
-      // Cache the result
-      this.sceneMarkerTimesCache.set(sceneId, markerTimes);
-      return markerTimes;
-    } catch (error) {
-      // If API call fails, return empty array and don't cache
-      // This allows the video to load with original random time
-      console.warn('Failed to fetch marker times for scene', sceneId, error);
-      return [];
-    }
-  }
+  // Removed marker proximity checks for random start time to improve performance
 
   /**
    * Create a video post from a scene marker
@@ -3124,37 +3200,8 @@ export class FeedContainer {
           // Use 90% of duration to avoid starting too close to the end
           const maxStartTime = Math.floor(sceneDuration * 0.9);
           
-          // Get marker times for this scene to avoid conflicts
-          const markerTimes = await this.getMarkerTimesForScene(marker.scene.id);
-          
-          // Try up to 10 times to find a time that's not within 1 minute of any marker
-          let attempts = 0;
-          const maxAttempts = 10;
-          let candidateTime = Math.floor(Math.random() * maxStartTime);
-          
-          while (attempts < maxAttempts && this.isTimeWithinOneMinuteOfMarker(candidateTime, markerTimes)) {
-            candidateTime = Math.floor(Math.random() * maxStartTime);
-            attempts++;
-          }
-          
-          // If all attempts failed, find the time furthest from any marker
-          if (attempts >= maxAttempts && markerTimes.length > 0) {
-            let maxDistance = 0;
-            let bestTime = candidateTime;
-            
-            // Try a few more random times and pick the one furthest from any marker
-            for (let i = 0; i < 5; i++) {
-              const testTime = Math.floor(Math.random() * maxStartTime);
-              const minDistance = Math.min(...markerTimes.map((mt: number) => Math.abs(testTime - mt)));
-              if (minDistance > maxDistance) {
-                maxDistance = minDistance;
-                bestTime = testTime;
-              }
-            }
-            candidateTime = bestTime;
-          }
-          
-          startTime = candidateTime;
+          // Simple random start without checking proximity to existing markers
+          startTime = Math.floor(Math.random() * maxStartTime);
         } else {
           // If duration not available, start at beginning (0) instead of using marker.seconds
           // This prevents the conflict where both marker timestamp and random timestamp are used
