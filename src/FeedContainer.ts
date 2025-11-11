@@ -973,6 +973,10 @@ export class FeedContainer {
       tagHeader.style.display = 'none';
       // Ensure animated placeholder hides when we have any value or focus
       updatePlaceholderVisibility();
+      // Disable search input in random mode
+      const disabled = this.shuffleMode > 0;
+      queryInput.disabled = disabled;
+      queryInput.style.opacity = disabled ? '0.6' : '1';
     };
 
     const apply = async () => {
@@ -1005,6 +1009,29 @@ export class FeedContainer {
     }, 150);
     
     const fetchAndShowSuggestions = async (text: string, forceShow: boolean = false) => {
+      // In random mode, disable suggestions entirely and show notice
+      if (this.shuffleMode > 0) {
+        suggestions.style.display = 'flex';
+        this.lockBodyScroll();
+        while (suggestions.firstChild) suggestions.removeChild(suggestions.firstChild);
+        const container = document.createElement('div');
+        container.style.display = 'flex';
+        container.style.justifyContent = 'center';
+        container.style.alignItems = 'center';
+        container.style.padding = '16px';
+        container.style.width = '100%';
+        const notice = document.createElement('div');
+        notice.textContent = 'Random mode active — search disabled';
+        notice.style.padding = '8px 12px';
+        notice.style.borderRadius = '999px';
+        notice.style.background = 'rgba(255,255,255,0.08)';
+        notice.style.border = '1px solid rgba(255,255,255,0.12)';
+        notice.style.color = 'rgba(255,255,255,0.85)';
+        notice.style.fontSize = '13px';
+        container.appendChild(notice);
+        suggestions.appendChild(container);
+        return;
+      }
       const trimmedText = text.trim();
       const requestId = ++suggestionsRequestId;
       const showDefault = forceShow || trimmedText.length === 0 || trimmedText.length < 2;
@@ -1289,6 +1316,7 @@ export class FeedContainer {
         pillRow.style.gap = '8px';
 
         pillRow.appendChild(createPillButton('Favorites', async () => {
+            if (this.shuffleMode > 0) return;
             this.selectedSavedFilter = undefined;
             this.selectedPerformerId = undefined;
             this.selectedPerformerName = undefined;
@@ -1314,6 +1342,7 @@ export class FeedContainer {
         // Show saved filters from cache
         this.savedFiltersCache.forEach((filter) => {
           pillRow.appendChild(createPillButton(filter.name, () => {
+            if (this.shuffleMode > 0) return;
             this.selectedSavedFilter = { id: filter.id, name: filter.name };
                 this.selectedTagId = undefined;
                 this.selectedTagName = undefined;
@@ -1446,6 +1475,7 @@ export class FeedContainer {
           availableTags.forEach((tag) => {
             tagsSection.appendChild(
               createListButton(tag.name, () => {
+                if (this.shuffleMode > 0) return;
                 this.selectedSavedFilter = undefined;
                 this.selectedPerformerId = undefined;
                 this.selectedPerformerName = undefined;
@@ -1483,6 +1513,7 @@ export class FeedContainer {
               createListButton(
                 performer.name,
                 () => {
+                if (this.shuffleMode > 0) return;
                 this.selectedSavedFilter = undefined;
                 this.selectedTagId = undefined;
                 this.selectedTagName = undefined;
@@ -1509,13 +1540,34 @@ export class FeedContainer {
       
       container.innerHTML = '';
 
+      // If random mode is on, short-circuit and show notice
+      if (this.shuffleMode > 0) {
+        container.innerHTML = '';
+        const banner = document.createElement('div');
+        banner.style.display = 'flex';
+        banner.style.justifyContent = 'center';
+        banner.style.alignItems = 'center';
+        banner.style.padding = '16px';
+        const notice = document.createElement('div');
+        notice.textContent = 'Random mode active — search disabled';
+        notice.style.padding = '8px 12px';
+        notice.style.borderRadius = '999px';
+        notice.style.background = 'rgba(255,255,255,0.08)';
+        notice.style.border = '1px solid rgba(255,255,255,0.12)';
+        notice.style.color = 'rgba(255,255,255,0.85)';
+        notice.style.fontSize = '13px';
+        banner.appendChild(notice);
+        container.appendChild(banner);
+        suggestions.scrollTop = 0;
+        return;
+      }
       // Load saved filters if needed
       await this.loadSavedFiltersIfNeeded();
       const matchingSavedFilters = this.savedFiltersCache
         .filter((filter) => filter.name.toLowerCase().includes(trimmedText.toLowerCase()))
         .slice(0, 6);
 
-      if (matchingSavedFilters.length > 0) {
+      if (matchingSavedFilters.length > 0 && this.shuffleMode === 0) {
         const savedSection = document.createElement('div');
         savedSection.style.display = 'flex';
         savedSection.style.flexDirection = 'column';
@@ -1891,6 +1943,19 @@ export class FeedContainer {
     if (activeEl && activeEl.classList && activeEl.classList.contains('feed-filters__input')) {
       const input = activeEl as HTMLInputElement;
       q = input.value?.trim() || undefined;
+    }
+
+    // In random mode we ignore search/tag resolution and just (re)load with random settings
+    if (this.shuffleMode > 0) {
+      const newFilters: FilterOptions = {
+        limit: this.initialLoadLimit,
+        offset: 0,
+        shuffleMode: true,
+        includeScenesWithoutMarkers: this.shuffleMode === 2,
+      };
+      this.currentFilters = newFilters;
+      await this.loadVideos(newFilters, false, loadSignal, true);
+      return;
     }
 
     // Build filters similar to header bar robust logic
