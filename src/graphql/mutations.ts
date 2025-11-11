@@ -3,7 +3,7 @@
  * Centralized mutation definitions
  */
 
-import { SceneMarkerFields, SceneFields, TagFields } from './fragments.js';
+import { TagFields } from './fragments.js';
 
 /**
  * Create a new tag
@@ -42,8 +42,6 @@ export const SCENE_MARKER_UPDATE = `
  * Create a new scene marker
  */
 export const SCENE_MARKER_CREATE = `
-  ${SceneMarkerFields}
-  ${SceneFields}
   ${TagFields}
   mutation SceneMarkerCreate($title: String!, $seconds: Float!, $end_seconds: Float, $scene_id: ID!, $primary_tag_id: ID!, $tag_ids: [ID!] = []) {
     sceneMarkerCreate(

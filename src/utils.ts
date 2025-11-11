@@ -307,6 +307,17 @@ export function toAbsoluteUrl(url?: string): string | undefined {
   return `${window.location.origin}/${url}`;
 }
 
+/**
+ * Add cache-busting query parameter to a URL to prevent 304 responses with empty/corrupted cache
+ * @param url - The URL to add cache-busting to
+ * @returns URL with cache-busting timestamp parameter
+ */
+export function addCacheBusting(url: string): string {
+  if (!url) return url;
+  const separator = url.includes('?') ? '&' : '?';
+  return `${url}${separator}t=${Date.now()}`;
+}
+
 // ============================================================================
 // Browser API Type Guards
 // ============================================================================

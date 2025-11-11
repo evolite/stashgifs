@@ -13,13 +13,18 @@ class PosterPreloader {
 
   /**
    * Build the marker screenshot URL using scene + marker IDs.
+   * Adds cache-busting query parameter to prevent 304 responses with empty data.
    */
   private buildMarkerScreenshotUrl(marker: SceneMarker): string | undefined {
     const markerId = marker?.id;
     const sceneId = marker?.scene?.id;
     if (!markerId || !sceneId) return undefined;
+    // Skip screenshot requests for synthetic markers (shuffle/random mode)
+    if (typeof markerId === 'string' && markerId.startsWith('synthetic-')) return undefined;
     // Path-style endpoint; assume same-origin
-    const path = `/scene/${sceneId}/scene_marker/${markerId}/screenshot`;
+    // Add cache-busting timestamp to prevent 304 responses with empty/corrupted cache
+    const timestamp = Date.now();
+    const path = `/scene/${sceneId}/scene_marker/${markerId}/screenshot?t=${timestamp}`;
     return toAbsoluteUrl(path);
   }
 

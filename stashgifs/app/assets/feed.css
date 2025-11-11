@@ -439,6 +439,21 @@
   will-change: auto; /* Browser optimizes based on video playback */
 }
 
+/* Video Player Loading Indicator */
+.video-player__loading {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.3);
+  z-index: 2; /* Above video (z-index: 1) but below controls (z-index: 10) */
+  will-change: opacity;
+}
+
 /* Video Controls */
 .video-player__controls {
   position: absolute;

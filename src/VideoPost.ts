@@ -220,7 +220,23 @@ export class VideoPost {
     if (cached) return cached;
     // Fallbacks if not preloaded
     const p = m?.preview || m?.scene?.paths?.preview || m?.scene?.paths?.webp || m?.scene?.paths?.screenshot;
-    return toAbsoluteUrl(p);
+    if (!p) return undefined;
+    // Add cache-busting to prevent 304 responses with empty/corrupted cache
+    const baseUrl = toAbsoluteUrl(p);
+    if (!baseUrl) return undefined;
+    const separator = baseUrl.includes('?') ? '&' : '?';
+    return `${baseUrl}${separator}t=${Date.now()}`;
+  }
+
+  /**
+   * Refresh the header to show updated tag chips (e.g., after creating a marker)
+   */
+  private refreshHeader(): void {
+    const header = this.container.querySelector('.video-post__header');
+    if (header) {
+      const newHeader = this.createHeader();
+      header.replaceWith(newHeader);
+    }
   }
 
   /**
@@ -249,8 +265,9 @@ export class VideoPost {
       }
     }
 
-    // Add tag chips: show all tags from the tags array (skip in shuffle mode)
-    if (!this.useShuffleMode) {
+    // Add tag chips: show all tags from the tags array
+    // Skip in shuffle mode UNLESS a marker has been created (to show the assigned tag)
+    if (!this.useShuffleMode || this.hasCreatedMarker) {
       if (this.data.marker.tags && this.data.marker.tags.length > 0) {
         // Create a set to track displayed tags and ensure no duplicates
         const displayedTagIds = new Set<string>();
@@ -2535,7 +2552,14 @@ export class VideoPost {
     if (!this.markerDialogCreateButton) return;
 
     const startTime = this.data.startTime ?? 0;
-    const sceneId = this.data.marker.scene.id;
+    // Ensure sceneId is a valid string (GraphQL ID type requires string)
+    const sceneIdRaw = this.data.marker.scene?.id;
+    if (!sceneIdRaw) {
+      console.error('Failed to create marker: scene ID is missing', this.data.marker);
+      showToast('Failed to create marker: scene information is missing.');
+      return;
+    }
+    const sceneId = String(sceneIdRaw);
 
     // Pause all videos and cancel pending requests before creating marker
     if (this.visibilityManager) {
@@ -2565,20 +2589,49 @@ export class VideoPost {
       }
 
       // Include marker tag in tagIds if we got it
-      const tagIds = markerTagId ? [markerTagId] : [];
+      const tagIds = markerTagId ? [String(markerTagId)] : [];
 
-      await this.api.createSceneMarker(
+      // Ensure all IDs are strings for GraphQL
+      const primaryTagId = String(this.selectedTagId);
+
+      // Create the marker and capture the returned data
+      const createdMarker = await this.api.createSceneMarker(
         sceneId,
         startTime,
-        this.selectedTagId,
+        primaryTagId,
         '',
         null,
         tagIds
       );
 
+      // Update this.data.marker with the real marker data from GraphQL
+      // This ensures the favorite button works with the real marker ID
+      if (createdMarker) {
+        // Preserve the existing scene data structure and merge with any new data
+        const existingScene = this.data.marker.scene;
+        this.data.marker = {
+          id: createdMarker.id, // Real marker ID (replaces synthetic ID)
+          title: createdMarker.title,
+          seconds: createdMarker.seconds,
+          end_seconds: createdMarker.end_seconds,
+          stream: createdMarker.stream,
+          preview: createdMarker.preview,
+          primary_tag: createdMarker.primary_tag,
+          tags: createdMarker.tags || [],
+          scene: {
+            ...existingScene, // Preserve existing scene data
+            ...createdMarker.scene, // Merge in any new scene data from the response
+          },
+        };
+      }
+
       showToast(`Marker created with tag "${this.selectedTagName}"`);
       this.hasCreatedMarker = true;
+      // Refresh header to show the newly assigned tag as a chip
+      this.refreshHeader();
       this.replaceMarkerButtonWithHeart();
+      // Check favorite status after updating marker data to refresh UI
+      await this.checkFavoriteStatus();
       this.closeMarkerDialog();
       // Videos will resume naturally via visibility manager when they become visible again
     } catch (error) {

@@ -53,6 +53,7 @@ export class NativeVideoPlayer {
   private stalledHandler?: () => void;
   private waitingHandler?: () => void;
   private progressHandler?: () => void;
+  private loadingIndicator?: HTMLElement; // Loading spinner indicator
 
   constructor(container: HTMLElement, videoUrl: string, options?: {
     autoplay?: boolean;
@@ -113,6 +114,15 @@ export class NativeVideoPlayer {
       this.readyResolver = undefined;
       resolve();
     }
+  }
+
+  /**
+   * Check if video element exists and is still valid (not removed from DOM)
+   */
+  private isVideoElementValid(): boolean {
+    return this.videoElement != null && 
+           this.videoElement instanceof HTMLVideoElement &&
+           document.contains(this.videoElement);
   }
 
   waitForReady(timeoutMs: number = 3000): Promise<void> {
@@ -226,6 +236,7 @@ export class NativeVideoPlayer {
       try {
         if (videoUrl && isValidMediaUrl(videoUrl)) {
           this.videoElement.src = videoUrl;
+          this.showLoadingIndicator();
         } else {
           // URL is invalid, don't set src to prevent error
           this.errorHandled = true;
@@ -239,6 +250,11 @@ export class NativeVideoPlayer {
       
       // Ensure video stays paused after setting src
       this.videoElement.pause();
+      
+      // Show loading indicator on loadstart as backup
+      this.videoElement.addEventListener('loadstart', () => {
+        this.showLoadingIndicator();
+      }, { once: true });
     } else {
       // HD videos with startTime: use complex approach to enforce startTime
       // Set initial currentTime BEFORE setting src to prevent showing last frame
@@ -255,6 +271,7 @@ export class NativeVideoPlayer {
       try {
         if (videoUrl && isValidMediaUrl(videoUrl)) {
           this.videoElement.src = videoUrl;
+          this.showLoadingIndicator();
         } else {
           // URL is invalid, don't set src to prevent error
           this.errorHandled = true;
@@ -281,6 +298,7 @@ export class NativeVideoPlayer {
       const onLoadStart = () => {
         // Ensure video is paused
         this.videoElement.pause();
+        this.showLoadingIndicator(); // Show loading indicator on loadstart as backup
         try {
           if (this.videoElement.readyState >= 0) {
             this.videoElement.currentTime = initialStartTime;
@@ -296,6 +314,7 @@ export class NativeVideoPlayer {
     // Loop back to 0 when reaching endTime
     if (options?.endTime !== undefined && options.endTime > 0.25) {
       this.videoElement.addEventListener('timeupdate', () => {
+        if (!this.isVideoElementValid()) return;
         if (this.videoElement.currentTime >= options.endTime!) {
           this.videoElement.currentTime = 0;
           // Continue playing if it was playing
@@ -315,6 +334,8 @@ export class NativeVideoPlayer {
         e.preventDefault();
         return;
       }
+      
+      if (!this.isVideoElementValid()) return;
       
       const errorCode = this.videoElement.error?.code;
       const errorMessage = this.videoElement.error?.message;
@@ -347,6 +368,7 @@ export class NativeVideoPlayer {
       
       // Mark as handled and log errors (including codec errors)
       this.errorHandled = true;
+      this.hideLoadingIndicator(); // Hide loading indicator on error
       
       if (isCodecError) {
         console.error('NativeVideoPlayer: Video codec not supported (possibly HEVC/H.265)', {
@@ -371,6 +393,7 @@ export class NativeVideoPlayer {
     
     // Set up timeout detection (15 seconds)
     this.loadTimeoutId = setTimeout(() => {
+      if (!this.isVideoElementValid()) return;
       if (this.videoElement.readyState === 0) {
         // Video still hasn't loaded after 15 seconds
         this.errorHandled = true;
@@ -396,6 +419,7 @@ export class NativeVideoPlayer {
       // Keep video hidden until ready
       // This prevents flash during transition
       clearLoadTimeout();
+      this.hideLoadingIndicator();
       this.resolveReady();
     };
     this.videoElement.addEventListener('loadeddata', handleReady, { once: true });
@@ -624,6 +648,16 @@ export class NativeVideoPlayer {
     this.videoElement.style.perspective = '1000px';
     
     playerWrapper.appendChild(this.videoElement);
+    
+    // Create loading indicator
+    this.loadingIndicator = document.createElement('div');
+    this.loadingIndicator.className = 'video-player__loading';
+    this.loadingIndicator.style.display = 'none'; // Start hidden, will show when loading starts
+    const spinner = document.createElement('div');
+    spinner.className = 'spinner';
+    this.loadingIndicator.appendChild(spinner);
+    playerWrapper.appendChild(this.loadingIndicator);
+    
     this.container.appendChild(playerWrapper);
   }
 
@@ -682,6 +716,7 @@ export class NativeVideoPlayer {
   private attachEventListeners(): void {
     // Video events
     this.videoElement.addEventListener('loadedmetadata', () => {
+      if (!this.isVideoElementValid()) return;
       this.state.duration = this.videoElement.duration;
       this.progressBar.max = this.videoElement.duration.toString();
       this.updateTimeDisplay();
@@ -690,12 +725,21 @@ export class NativeVideoPlayer {
 
     // Track progress events to detect blocked requests
     this.progressHandler = () => {
+      if (!this.isVideoElementValid()) return;
       this.lastProgressTime = Date.now();
     };
     this.videoElement.addEventListener('progress', this.progressHandler);
 
     // Set up progress check interval (check every 2 seconds)
     this.progressCheckIntervalId = setInterval(() => {
+      if (!this.isVideoElementValid()) {
+        // Clear interval if element is no longer valid
+        if (this.progressCheckIntervalId) {
+          clearInterval(this.progressCheckIntervalId);
+          this.progressCheckIntervalId = undefined;
+        }
+        return;
+      }
       if (this.lastProgressTime && this.videoElement.readyState === 0) {
         const timeSinceLastProgress = Date.now() - this.lastProgressTime;
         // If no progress for >10 seconds and still at readyState 0, consider it blocked
@@ -718,12 +762,14 @@ export class NativeVideoPlayer {
 
     // Handle stalled event (video stops loading)
     this.stalledHandler = () => {
+      if (!this.isVideoElementValid()) return;
       // Clear any existing stalled timeout
       if (this.stalledTimeoutId) {
         clearTimeout(this.stalledTimeoutId);
       }
       // Set timeout - if still stalled after 10 seconds, mark as error
       this.stalledTimeoutId = setTimeout(() => {
+        if (!this.isVideoElementValid()) return;
         if (this.videoElement.readyState === 0 || this.videoElement.networkState === 2) {
           this.errorHandled = true;
           console.warn('NativeVideoPlayer: Video stalled for >10 seconds', {
@@ -738,12 +784,14 @@ export class NativeVideoPlayer {
 
     // Handle waiting event (video is buffering)
     this.waitingHandler = () => {
+      if (!this.isVideoElementValid()) return;
       // Clear any existing waiting timeout
       if (this.waitingTimeoutId) {
         clearTimeout(this.waitingTimeoutId);
       }
       // Set timeout - if still waiting after 10 seconds, mark as error
       this.waitingTimeoutId = setTimeout(() => {
+        if (!this.isVideoElementValid()) return;
         if (this.videoElement.readyState === 0 || this.videoElement.networkState === 2) {
           this.errorHandled = true;
           console.warn('NativeVideoPlayer: Video waiting/buffering for >10 seconds', {
@@ -785,33 +833,39 @@ export class NativeVideoPlayer {
 
     // iOS fullscreen events
     this.videoElement.addEventListener('webkitbeginfullscreen', () => {
+      if (!this.isVideoElementValid()) return;
       this.state.isFullscreen = true;
       this.notifyStateChange();
     });
     this.videoElement.addEventListener('webkitendfullscreen', () => {
+      if (!this.isVideoElementValid()) return;
       this.state.isFullscreen = false;
       this.notifyStateChange();
     });
 
     this.videoElement.addEventListener('timeupdate', () => {
+      if (!this.isVideoElementValid()) return;
       this.state.currentTime = this.videoElement.currentTime;
       this.progressBar.value = this.videoElement.currentTime.toString();
       this.updateTimeDisplay();
     });
 
     this.videoElement.addEventListener('play', () => {
+      if (!this.isVideoElementValid()) return;
       this.state.isPlaying = true;
       this.updatePlayButton();
       this.notifyStateChange();
     });
 
     this.videoElement.addEventListener('pause', () => {
+      if (!this.isVideoElementValid()) return;
       this.state.isPlaying = false;
       this.updatePlayButton();
       this.notifyStateChange();
     });
 
     this.videoElement.addEventListener('volumechange', () => {
+      if (!this.isVideoElementValid()) return;
       this.state.volume = this.videoElement.volume;
       this.state.isMuted = this.videoElement.muted;
       this.updateMuteButton();
@@ -860,6 +914,18 @@ export class NativeVideoPlayer {
     this.timeDisplay.textContent = `${current} / ${total}`;
   }
 
+  private showLoadingIndicator(): void {
+    if (this.loadingIndicator) {
+      this.loadingIndicator.style.display = 'flex';
+    }
+  }
+
+  private hideLoadingIndicator(): void {
+    if (this.loadingIndicator) {
+      this.loadingIndicator.style.display = 'none';
+    }
+  }
+
   private notifyStateChange(): void {
     const snapshot = { ...this.state };
     if (this.onStateChange) {
@@ -875,6 +941,10 @@ export class NativeVideoPlayer {
   }
 
   async play(): Promise<void> {
+    if (!this.isVideoElementValid()) {
+      throw new Error('Video element is not valid');
+    }
+    
     // On mobile, mute for autoplay policies if not already muted
     // (markers don't have sound anyway, so this is just for autoplay compatibility)
     const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
@@ -929,6 +999,7 @@ export class NativeVideoPlayer {
         // This applies to both mobile and desktop for HD videos
         if (this.desiredStartTime !== undefined && this.desiredStartTime > 0) {
           const performReSeek = (attempt: number = 0) => {
+            if (!this.isVideoElementValid()) return;
             try {
               if (this.videoElement.readyState >= 1) {
                 const current = this.videoElement.currentTime;
@@ -966,28 +1037,31 @@ export class NativeVideoPlayer {
         }
         
         // Update state after successful play
-        this.state.isPlaying = !this.videoElement.paused;
-        this.updatePlayButton();
-        this.notifyStateChange();
+        if (this.isVideoElementValid()) {
+          this.state.isPlaying = !this.videoElement.paused;
+          this.updatePlayButton();
+          this.notifyStateChange();
+        }
       }
     } catch (err: unknown) {
       // Check if this is a load failure
       const isLoadFailure = this.hasLoadError();
       const errorType = isLoadFailure ? this.getLoadErrorType() : null;
       
+      const isValid = this.isVideoElementValid();
       console.error('NativeVideoPlayer: play() failed', {
         error: err,
-        readyState: this.videoElement.readyState,
-        paused: this.videoElement.paused,
-        muted: this.videoElement.muted,
-        src: this.videoElement.src,
-        networkState: this.videoElement.networkState,
+        readyState: isValid ? this.videoElement.readyState : 'N/A',
+        paused: isValid ? this.videoElement.paused : 'N/A',
+        muted: isValid ? this.videoElement.muted : 'N/A',
+        src: isValid ? this.videoElement.src : 'N/A',
+        networkState: isValid ? this.videoElement.networkState : 'N/A',
         isLoadFailure,
         errorType
       });
       
       // Enhance error with load failure information
-      if (isLoadFailure && errorType) {
+      if (isLoadFailure && errorType && isValid) {
         const enhancedError: EnhancedVideoError = new Error(`Video load failed: ${errorType}`);
         enhancedError.originalError = err instanceof Error ? err : undefined;
         enhancedError.errorType = errorType;
@@ -1001,6 +1075,7 @@ export class NativeVideoPlayer {
   }
 
   pause(): void {
+    if (!this.isVideoElementValid()) return;
     this.videoElement.pause();
   }
 
@@ -1008,6 +1083,7 @@ export class NativeVideoPlayer {
    * Check if the video is currently playing
    */
   isPlaying(): boolean {
+    if (!this.isVideoElementValid()) return false;
     return !this.videoElement.paused && !this.videoElement.ended && this.videoElement.readyState > 0;
   }
 
@@ -1020,20 +1096,19 @@ export class NativeVideoPlayer {
   }
 
   toggleMute(): void {
+    if (!this.isVideoElementValid()) return;
     this.videoElement.muted = !this.videoElement.muted;
   }
 
   setMuted(isMuted: boolean): void {
-    // Check if video element exists before accessing it
-    if (!this.videoElement) {
-      return;
-    }
+    if (!this.isVideoElementValid()) return;
     this.videoElement.muted = !!isMuted;
     this.state.isMuted = this.videoElement.muted;
     this.updateMuteButton();
   }
 
   setVolume(volume: number): void {
+    if (!this.isVideoElementValid()) return;
     // Clamp volume between 0 and 1
     const clampedVolume = Math.max(0, Math.min(1, volume));
     this.videoElement.volume = clampedVolume;
@@ -1043,6 +1118,7 @@ export class NativeVideoPlayer {
   }
 
   seekTo(time: number): void {
+    if (!this.isVideoElementValid()) return;
     this.videoElement.currentTime = time;
   }
 
@@ -1054,6 +1130,8 @@ export class NativeVideoPlayer {
    * Check if video has a load error
    */
   hasLoadError(): boolean {
+    if (!this.isVideoElementValid()) return false;
+    
     // networkState 3 = NETWORK_NO_SOURCE (no source available)
     // networkState 2 = NETWORK_LOADING (but might be stuck)
     // networkState 1 = NETWORK_IDLE (but might indicate failed load)
@@ -1105,6 +1183,8 @@ export class NativeVideoPlayer {
    * Get the type of load error
    */
   getLoadErrorType(): 'timeout' | 'network' | 'play' | null {
+    if (!this.isVideoElementValid()) return null;
+    
     // Check for timeout (readyState 0 for >15 seconds)
     if (this.loadStartTime && this.videoElement.readyState === 0) {
       const timeSinceLoadStart = Date.now() - this.loadStartTime;
@@ -1146,6 +1226,8 @@ export class NativeVideoPlayer {
   }
 
   toggleFullscreen(): void {
+    if (!this.isVideoElementValid()) return;
+    
     const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
     const isIOS = /iPhone|iPad|iPod/i.test(navigator.userAgent);
 
@@ -1313,8 +1395,14 @@ export class NativeVideoPlayer {
       
       const cleanup = () => {
         clearTimeout(timeout);
-        this.videoElement.removeEventListener('canplay', onCanPlay);
-        this.videoElement.removeEventListener('loadeddata', onLoadedData);
+        if (this.isVideoElementValid()) {
+          try {
+            this.videoElement.removeEventListener('canplay', onCanPlay);
+            this.videoElement.removeEventListener('loadeddata', onLoadedData);
+          } catch (e) {
+            // Element may have been removed, ignore
+          }
+        }
       };
       
       // On mobile, use 'canplay' instead of 'canplaythrough' for faster start
@@ -1325,6 +1413,12 @@ export class NativeVideoPlayer {
       // Also check if it becomes ready while we're waiting (faster polling on mobile)
       const pollInterval = isMobile ? 50 : 100;
       const checkInterval = setInterval(() => {
+        if (!this.isVideoElementValid()) {
+          clearInterval(checkInterval);
+          cleanup();
+          resolve();
+          return;
+        }
         if (this.videoElement.readyState >= minReadyState) {
           clearInterval(checkInterval);
           cleanup();
@@ -1344,6 +1438,11 @@ export class NativeVideoPlayer {
   unload(): void {
     if (this.isUnloaded) {
       return; // Already unloaded
+    }
+
+    if (!this.isVideoElementValid()) {
+      this.isUnloaded = true;
+      return;
     }
 
     this.videoElement.pause();
@@ -1481,18 +1580,22 @@ export class NativeVideoPlayer {
     }
 
     // Remove event listeners
-    if (this.videoElement) {
-      if (this.stalledHandler) {
-        this.videoElement.removeEventListener('stalled', this.stalledHandler);
-        this.stalledHandler = undefined;
-      }
-      if (this.waitingHandler) {
-        this.videoElement.removeEventListener('waiting', this.waitingHandler);
-        this.waitingHandler = undefined;
-      }
-      if (this.progressHandler) {
-        this.videoElement.removeEventListener('progress', this.progressHandler);
-        this.progressHandler = undefined;
+    if (this.videoElement && this.isVideoElementValid()) {
+      try {
+        if (this.stalledHandler) {
+          this.videoElement.removeEventListener('stalled', this.stalledHandler);
+          this.stalledHandler = undefined;
+        }
+        if (this.waitingHandler) {
+          this.videoElement.removeEventListener('waiting', this.waitingHandler);
+          this.waitingHandler = undefined;
+        }
+        if (this.progressHandler) {
+          this.videoElement.removeEventListener('progress', this.progressHandler);
+          this.progressHandler = undefined;
+        }
+      } catch (e) {
+        // Element may have been removed, ignore
       }
     }
 
@@ -1502,29 +1605,37 @@ export class NativeVideoPlayer {
     }
     
     // Remove all event listeners by clearing src and removing element
-    if (this.videoElement) {
+    if (this.videoElement && this.isVideoElementValid()) {
       // Pause and stop all playback
-      this.videoElement.pause();
-      this.videoElement.currentTime = 0;
+      try {
+        this.videoElement.pause();
+        this.videoElement.currentTime = 0;
+      } catch (e) {
+        // Element may have been removed, ignore
+      }
       
       // Get parent BEFORE removing element - we need it for clone-and-replace
       const parent = this.videoElement.parentNode;
       
-      // Clear all sources to stop network requests
-      this.videoElement.src = '';
-      this.videoElement.srcObject = null;
-      
-      // Remove all child nodes (source elements, etc.)
-      while (this.videoElement.firstChild) {
-        this.videoElement.removeChild(this.videoElement.firstChild);
+      try {
+        // Clear all sources to stop network requests
+        this.videoElement.src = '';
+        this.videoElement.srcObject = null;
+        
+        // Remove all child nodes (source elements, etc.)
+        while (this.videoElement.firstChild) {
+          this.videoElement.removeChild(this.videoElement.firstChild);
+        }
+        
+        // Clear all attributes that might hold references
+        this.videoElement.removeAttribute('src');
+        this.videoElement.removeAttribute('preload');
+        
+        // Force browser to release video buffers
+        this.videoElement.load();
+      } catch (e) {
+        // Element may have been removed or is invalid, ignore
       }
-      
-      // Clear all attributes that might hold references
-      this.videoElement.removeAttribute('src');
-      this.videoElement.removeAttribute('preload');
-      
-      // Force browser to release video buffers
-      this.videoElement.load();
       
       // Clone and replace to break all event listener references
       // This ensures all listeners are removed and memory is freed
@@ -1589,6 +1700,7 @@ export class NativeVideoPlayer {
     this.progressBar = null!;
     this.timeDisplay = null!;
     this.fullscreenButton = null!;
+    this.loadingIndicator = undefined;
     this.onStateChange = undefined;
     this.externalStateListener = undefined;
     this.readyResolver = undefined;

@@ -19,7 +19,6 @@ import {
   FindTagsExtendedResponse,
   FindPerformersResponse,
   FindSceneResponse,
-  FindTagResponse,
   GetSavedMarkerFiltersResponse,
   GetSavedFilterResponse,
   CheckTagsHaveMarkersResponse,
@@ -1443,7 +1442,7 @@ export class StashAPI {
         return this.getVideoUrl(marker.scene);
       }
       
-      const url = stream.startsWith('http') 
+      let url = stream.startsWith('http') 
         ? stream 
         : `${this.baseUrl}${stream}`;
       
@@ -1452,6 +1451,10 @@ export class StashAPI {
         // Fallback to scene stream
         return this.getVideoUrl(marker.scene);
       }
+      
+      // Add cache-busting to prevent 304 responses with empty/corrupted cache
+      const separator = url.includes('?') ? '&' : '?';
+      url = `${url}${separator}t=${Date.now()}`;
       
       return url;
     }
@@ -1463,15 +1466,19 @@ export class StashAPI {
    * Get video URL for a scene
    */
   getVideoUrl(scene: Scene): string | undefined {
+    let url: string | undefined;
+    
     // Prefer sceneStreams if available (often provides mp4)
     if (scene.sceneStreams && scene.sceneStreams.length > 0) {
       const streamUrl = scene.sceneStreams[0]?.url;
       if (!streamUrl || streamUrl.trim().length === 0) {
         // Try next fallback
       } else {
-        const url = streamUrl.startsWith('http') ? streamUrl : `${this.baseUrl}${streamUrl}`;
+        url = streamUrl.startsWith('http') ? streamUrl : `${this.baseUrl}${streamUrl}`;
         if (isValidMediaUrl(url)) {
-          return url;
+          // Add cache-busting to prevent 304 responses with empty/corrupted cache
+          const separator = url.includes('?') ? '&' : '?';
+          return `${url}${separator}t=${Date.now()}`;
         }
       }
     }
@@ -1479,22 +1486,26 @@ export class StashAPI {
     if (scene.paths?.stream) {
       const streamPath = scene.paths.stream.trim();
       if (streamPath && streamPath.length > 0) {
-        const url = streamPath.startsWith('http') 
+        url = streamPath.startsWith('http') 
           ? streamPath 
           : `${this.baseUrl}${streamPath}`;
         if (isValidMediaUrl(url)) {
-          return url;
+          // Add cache-busting to prevent 304 responses with empty/corrupted cache
+          const separator = url.includes('?') ? '&' : '?';
+          return `${url}${separator}t=${Date.now()}`;
         }
       }
     }
     if (scene.files && scene.files.length > 0) {
       const filePath = scene.files[0]?.path;
       if (filePath && filePath.trim().length > 0) {
-        const url = filePath.startsWith('http')
+        url = filePath.startsWith('http')
           ? filePath
           : `${this.baseUrl}${filePath}`;
         if (isValidMediaUrl(url)) {
-          return url;
+          // Add cache-busting to prevent 304 responses with empty/corrupted cache
+          const separator = url.includes('?') ? '&' : '?';
+          return `${url}${separator}t=${Date.now()}`;
         }
       }
     }
@@ -1512,11 +1523,13 @@ export class StashAPI {
     };
 
     try {
-      const result = await this.gqlClient.query<FindTagResponse>({
-        query: queries.FIND_TAG,
+      // Use findTags (plural) instead of findTag (singular) as it's more widely supported
+      const result = await this.gqlClient.query<FindTagsResponse>({
+        query: queries.FIND_TAGS,
         variables,
       });
-      return result.data?.findTag || null;
+      const tags = result.data?.findTags?.tags || [];
+      return tags.length > 0 ? tags[0] : null;
     } catch (error) {
       console.error('StashAPI: Failed to find tag', error);
       return null;
@@ -1525,6 +1538,7 @@ export class StashAPI {
 
   /**
    * Create a new tag
+   * If the tag already exists, attempts to find and return it
    */
   async createTag(tagName: string): Promise<{ id: string; name: string } | null> {
     const variables: { input: TagCreateInput } = {
@@ -1537,7 +1551,17 @@ export class StashAPI {
         variables,
       });
       return result.data?.tagCreate || null;
-    } catch (error) {
+    } catch (error: any) {
+      // If tag already exists, try to find it
+      const errorMessage = error?.message || '';
+      if (errorMessage.includes('already exists') || errorMessage.includes('duplicate')) {
+        console.warn(`StashAPI: Tag "${tagName}" already exists, attempting to find it`, error);
+        // Try to find the existing tag
+        const existingTag = await this.findTagByName(tagName);
+        if (existingTag) {
+          return existingTag;
+        }
+      }
       console.error('StashAPI: Failed to create tag', error);
       return null;
     }
