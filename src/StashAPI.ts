@@ -5,14 +5,53 @@
 
 import { Scene, SceneMarker, FilterOptions, Performer } from './types.js';
 import { isValidMediaUrl } from './utils.js';
+import * as queries from './graphql/queries.js';
+import * as mutations from './graphql/mutations.js';
+import {
+  FindFilterInput,
+  SceneMarkerFilterInput,
+  SceneFilterInput,
+  TagFilterInput,
+  PerformerFilterInput,
+  FindSceneMarkersResponse,
+  FindScenesResponse,
+  FindTagsResponse,
+  FindTagsExtendedResponse,
+  FindPerformersResponse,
+  FindSceneResponse,
+  FindTagResponse,
+  GetSavedMarkerFiltersResponse,
+  GetSavedFilterResponse,
+  CheckTagsHaveMarkersResponse,
+  CheckPerformerHasMarkersResponse,
+  FindSceneMarkerTagsResponse,
+  TagCreateResponse,
+  SceneMarkerUpdateResponse,
+  SceneMarkerCreateResponse,
+  SceneUpdateResponse,
+  SceneAddOResponse,
+  TagCreateInput,
+  SceneMarkerUpdateInput,
+  SceneMarkerCreateInput,
+  SceneUpdateInput,
+  SceneAddOInput,
+  TypedGraphQLClient,
+  GraphQLResponse,
+} from './graphql/types.js';
+import {
+  GraphQLRequestError,
+  GraphQLResponseError,
+  GraphQLNetworkError,
+  GraphQLAbortError,
+  isAbortError,
+  createGraphQLError,
+  handleGraphQLError,
+} from './graphql/errors.js';
 
 interface StashPluginApi {
   GQL: {
-    useFindScenesQuery?: (variables: any) => { data?: any; loading: boolean };
-    client?: {
-      query: (options: { query: any; variables?: any }) => Promise<{ data: any }>;
-      mutate?: (options: { mutation: any; variables?: any }) => Promise<{ data: any }>;
-    };
+    useFindScenesQuery?: (variables: unknown) => { data?: unknown; loading: boolean };
+    client?: TypedGraphQLClient;
   };
   baseURL?: string;
   apiKey?: string;
@@ -26,9 +65,9 @@ export class StashAPI {
   private performersWithMarkersCache: Set<number> = new Set();;
   private pluginApi?: StashPluginApi;
   // Request deduplication - cache in-flight requests
-  private pendingRequests: Map<string, Promise<any>> = new Map();
+  private pendingRequests: Map<string, Promise<unknown>> = new Map();
   // Simple cache for search results (TTL: 5 minutes)
-  private searchCache: Map<string, { data: any; timestamp: number }> = new Map();
+  private searchCache: Map<string, { data: unknown; timestamp: number }> = new Map();
   private readonly CACHE_TTL = 5 * 60 * 1000; // 5 minutes
   private cacheCleanupInterval?: ReturnType<typeof setInterval>;
   private readonly MAX_CACHE_SIZE = 1000; // Maximum cache entries before cleanup
@@ -36,8 +75,11 @@ export class StashAPI {
 
   constructor(baseUrl?: string, apiKey?: string) {
     // Get from window if available (Stash plugin context)
-    const windowAny = window as any;
-    this.pluginApi = windowAny.PluginApi || windowAny.stash;
+    const windowWithStash = window as typeof window & {
+      PluginApi?: StashPluginApi;
+      stash?: StashPluginApi;
+    };
+    this.pluginApi = windowWithStash.PluginApi || windowWithStash.stash;
     
     // Try to get base URL from various sources
     if (baseUrl) {
@@ -126,18 +168,18 @@ export class StashAPI {
    * Normalize a scene_marker_filter coming from a saved filter
    * Ensures fields like tags/scene_tags have numeric ID arrays
    */
-  private normalizeMarkerFilter(input: any): any {
+  private normalizeMarkerFilter(input: unknown): SceneMarkerFilterInput {
     if (!input || typeof input !== 'object') return {};
-    const out = { ...input };
+    const out: Record<string, unknown> = { ...(input as Record<string, unknown>) };
 
-    const normalizeIdArray = (val: any): number[] | undefined => {
+    const normalizeIdArray = (val: unknown): number[] | undefined => {
       if (!val) return undefined;
       const arr = Array.isArray(val) ? val : [val];
       const ids = arr
-        .map((x) => (typeof x === 'object' && x !== null ? (x.id ?? x.value ?? x) : x))
+        .map((x) => (typeof x === 'object' && x !== null ? ((x as { id?: unknown; value?: unknown }).id ?? (x as { id?: unknown; value?: unknown }).value ?? x) : x))
         .map((x) => parseInt(String(x), 10))
         .filter((n) => !Number.isNaN(n));
-      return ids.length ? ids : undefined;
+      return ids.length > 0 ? ids : undefined;
     };
 
     // Handle tags shapes: either { value, modifier } OR an array of objects/ids
@@ -145,18 +187,31 @@ export class StashAPI {
       // Case 1: array of ids/objects
       if (Array.isArray(out.tags)) {
         const ids = normalizeIdArray(out.tags);
-        if (ids) out.tags = { value: ids, modifier: 'INCLUDES' };
-        else delete out.tags;
+        if (ids) {
+          out.tags = { 
+            value: ids.map(id => String(id)), 
+            modifier: 'INCLUDES' 
+          } as SceneMarkerFilterInput['tags'];
+        } else {
+          delete out.tags;
+        }
       } else if (typeof out.tags === 'object') {
         // Case 2: { value: number[] | { items:[{id,label}], ... }, modifier? }
-        let raw = out.tags.value;
+        const tagsObj = out.tags as { value?: unknown; modifier?: 'INCLUDES' | 'INCLUDES_ALL' | 'EXCLUDES' };
+        let raw = tagsObj.value;
         // Stash saved filter format: value: { items: [{id,label},...], excluded:[], depth:-1 }
-        if (raw && typeof raw === 'object' && Array.isArray(raw.items)) {
-          raw = raw.items;
+        if (raw && typeof raw === 'object' && Array.isArray((raw as { items?: unknown[] }).items)) {
+          raw = (raw as { items: unknown[] }).items;
         }
         const ids = normalizeIdArray(raw);
-        if (ids) out.tags = { value: ids, modifier: out.tags.modifier ?? 'INCLUDES' };
-        else delete out.tags;
+        if (ids) {
+          out.tags = { 
+            value: ids.map(id => String(id)), 
+            modifier: tagsObj.modifier ?? 'INCLUDES' 
+          } as SceneMarkerFilterInput['tags'];
+        } else {
+          delete out.tags;
+        }
       }
     }
 
@@ -164,16 +219,29 @@ export class StashAPI {
     if (out.scene_tags) {
       if (Array.isArray(out.scene_tags)) {
         const ids = normalizeIdArray(out.scene_tags);
-        if (ids) out.scene_tags = { value: ids, modifier: 'INCLUDES' };
-        else delete out.scene_tags;
+        if (ids) {
+          out.scene_tags = { 
+            value: ids.map(id => String(id)), 
+            modifier: 'INCLUDES' 
+          } as SceneMarkerFilterInput['scene_tags'];
+        } else {
+          delete out.scene_tags;
+        }
       } else if (typeof out.scene_tags === 'object') {
-        let raw = out.scene_tags.value;
-        if (raw && typeof raw === 'object' && Array.isArray(raw.items)) {
-          raw = raw.items;
+        const sceneTagsObj = out.scene_tags as { value?: unknown; modifier?: 'INCLUDES' | 'INCLUDES_ALL' | 'EXCLUDES' };
+        let raw = sceneTagsObj.value;
+        if (raw && typeof raw === 'object' && Array.isArray((raw as { items?: unknown[] }).items)) {
+          raw = (raw as { items: unknown[] }).items;
         }
         const ids = normalizeIdArray(raw);
-        if (ids) out.scene_tags = { value: ids, modifier: out.scene_tags.modifier ?? 'INCLUDES' };
-        else delete out.scene_tags;
+        if (ids) {
+          out.scene_tags = { 
+            value: ids.map(id => String(id)), 
+            modifier: sceneTagsObj.modifier ?? 'INCLUDES' 
+          } as SceneMarkerFilterInput['scene_tags'];
+        } else {
+          delete out.scene_tags;
+        }
       }
     }
 
@@ -181,20 +249,33 @@ export class StashAPI {
     if (out.scene_performers) {
       if (Array.isArray(out.scene_performers)) {
         const ids = normalizeIdArray(out.scene_performers);
-        if (ids) out.scene_performers = { value: ids, modifier: 'INCLUDES' };
-        else delete out.scene_performers;
+        if (ids) {
+          out.scene_performers = { 
+            value: ids.map(id => String(id)), 
+            modifier: 'INCLUDES' 
+          } as SceneMarkerFilterInput['scene_performers'];
+        } else {
+          delete out.scene_performers;
+        }
       } else if (typeof out.scene_performers === 'object') {
-        let raw = out.scene_performers.value;
-        if (raw && typeof raw === 'object' && Array.isArray(raw.items)) {
-          raw = raw.items;
+        const scenePerformersObj = out.scene_performers as { value?: unknown; modifier?: 'INCLUDES' | 'INCLUDES_ALL' | 'EXCLUDES' };
+        let raw = scenePerformersObj.value;
+        if (raw && typeof raw === 'object' && Array.isArray((raw as { items?: unknown[] }).items)) {
+          raw = (raw as { items: unknown[] }).items;
         }
         const ids = normalizeIdArray(raw);
-        if (ids) out.scene_performers = { value: ids, modifier: out.scene_performers.modifier ?? 'INCLUDES' };
-        else delete out.scene_performers;
+        if (ids) {
+          out.scene_performers = { 
+            value: ids.map(id => String(id)), 
+            modifier: scenePerformersObj.modifier ?? 'INCLUDES' 
+          } as SceneMarkerFilterInput['scene_performers'];
+        } else {
+          delete out.scene_performers;
+        }
       }
     }
 
-    return out;
+    return out as SceneMarkerFilterInput;
   }
 
   /**
@@ -217,20 +298,17 @@ export class StashAPI {
     
     if (uncachedIds.length === 0) return results;
     
-    const query = `query CheckTagsHaveMarkers($scene_marker_filter: SceneMarkerFilterType) {
-      findSceneMarkers(scene_marker_filter: $scene_marker_filter) {
-        count
+    const sceneMarkerFilter: SceneMarkerFilterInput = {
+      tags: { 
+        value: tagIds.map(id => String(id)), 
+        modifier: 'INCLUDES' 
       }
-    }`;
-    
-    const sceneMarkerFilter = {
-      tags: { value: tagIds, modifier: 'INCLUDES' as const }
     };
     
     try {
       if (this.pluginApi?.GQL?.client) {
-        const result = await this.pluginApi.GQL.client.query({
-          query: query as any,
+        const result = await this.pluginApi.GQL.client.query<CheckTagsHaveMarkersResponse>({
+          query: queries.CHECK_TAGS_HAVE_MARKERS,
           variables: { scene_marker_filter: sceneMarkerFilter }
         });
         const count = result.data?.findSceneMarkers?.count || 0;
@@ -253,16 +331,16 @@ export class StashAPI {
             concurrentBatches.map(async (batch) => {
               const batchChecks = await Promise.all(
                 batch.map(async (tagId) => {
-                  const batchQuery = `query CheckTagHasMarkers($scene_marker_filter: SceneMarkerFilterType) {
-                    findSceneMarkers(scene_marker_filter: $scene_marker_filter) {
-                      count
-                    }
-                  }`;
-                  const batchFilter = { tags: { value: [tagId], modifier: 'INCLUDES' as const } };
+                  const batchFilter: SceneMarkerFilterInput = { 
+                    tags: { 
+                      value: [String(tagId)], 
+                      modifier: 'INCLUDES' 
+                    } 
+                  };
                   try {
                     if (this.pluginApi?.GQL?.client) {
-                      const batchResult = await this.pluginApi.GQL.client.query({
-                        query: batchQuery as any,
+                      const batchResult = await this.pluginApi.GQL.client.query<CheckTagsHaveMarkersResponse>({
+                        query: queries.CHECK_TAG_HAS_MARKERS,
                         variables: { scene_marker_filter: batchFilter }
                       });
                       return batchResult.data?.findSceneMarkers?.count > 0 ? tagId : null;
@@ -273,9 +351,14 @@ export class StashAPI {
                           'Content-Type': 'application/json',
                           ...(this.apiKey && { 'ApiKey': this.apiKey }),
                         },
-                        body: JSON.stringify({ query: batchQuery, variables: { scene_marker_filter: batchFilter } }),
+                        body: JSON.stringify({ 
+                          query: queries.CHECK_TAG_HAS_MARKERS, 
+                          variables: { scene_marker_filter: batchFilter } 
+                        }),
                       });
-                      const data = await response.json();
+                      if (!response.ok) return null;
+                      const data = await response.json() as GraphQLResponse<CheckTagsHaveMarkersResponse>;
+                      if (data.errors) return null;
                       return data.data?.findSceneMarkers?.count > 0 ? tagId : null;
                     }
                   } catch {
@@ -311,12 +394,12 @@ export class StashAPI {
             concurrentBatches.map(async (batch) => {
               const batchChecks = await Promise.all(
                 batch.map(async (tagId) => {
-                  const batchQuery = `query CheckTagHasMarkers($scene_marker_filter: SceneMarkerFilterType) {
-                    findSceneMarkers(scene_marker_filter: $scene_marker_filter) {
-                      count
-                    }
-                  }`;
-                  const batchFilter = { tags: { value: [tagId], modifier: 'INCLUDES' } };
+                  const batchFilter: SceneMarkerFilterInput = { 
+                    tags: { 
+                      value: [String(tagId)], 
+                      modifier: 'INCLUDES' 
+                    } 
+                  };
                   try {
                     const response = await fetch(`${this.baseUrl}/graphql`, {
                       method: 'POST',
@@ -324,9 +407,14 @@ export class StashAPI {
                         'Content-Type': 'application/json',
                         ...(this.apiKey && { 'ApiKey': this.apiKey }),
                       },
-                      body: JSON.stringify({ query: batchQuery, variables: { scene_marker_filter: batchFilter } }),
+                      body: JSON.stringify({ 
+                        query: queries.CHECK_TAG_HAS_MARKERS, 
+                        variables: { scene_marker_filter: batchFilter } 
+                      }),
                     });
-                    const data = await response.json();
+                    if (!response.ok) return null;
+                    const data = await response.json() as GraphQLResponse<CheckTagsHaveMarkersResponse>;
+                    if (data.errors) return null;
                     return data.data?.findSceneMarkers?.count > 0 ? tagId : null;
                   } catch {
                     return null;
@@ -387,16 +475,16 @@ export class StashAPI {
         concurrentBatches.map(async (batch) => {
           const batchChecks = await Promise.all(
             batch.map(async (performerId) => {
-              const query = `query CheckPerformerHasMarkers($scene_marker_filter: SceneMarkerFilterType) {
-                findSceneMarkers(scene_marker_filter: $scene_marker_filter) {
-                  count
-                }
-              }`;
-              const sceneMarkerFilter = { performers: { value: [performerId], modifier: 'INCLUDES_ALL' as const } };
+              const sceneMarkerFilter: SceneMarkerFilterInput = { 
+                performers: { 
+                  value: [performerId], 
+                  modifier: 'INCLUDES_ALL' 
+                } 
+              };
               try {
                 if (this.pluginApi?.GQL?.client) {
-                  const result = await this.pluginApi.GQL.client.query({
-                    query: query as any,
+                  const result = await this.pluginApi.GQL.client.query<CheckPerformerHasMarkersResponse>({
+                    query: queries.CHECK_PERFORMER_HAS_MARKERS,
                     variables: { scene_marker_filter: sceneMarkerFilter }
                   });
                   return result.data?.findSceneMarkers?.count > 0 ? performerId : null;
@@ -407,9 +495,14 @@ export class StashAPI {
                       'Content-Type': 'application/json',
                       ...(this.apiKey && { 'ApiKey': this.apiKey }),
                     },
-                    body: JSON.stringify({ query, variables: { scene_marker_filter: sceneMarkerFilter } }),
+                    body: JSON.stringify({ 
+                      query: queries.CHECK_PERFORMER_HAS_MARKERS, 
+                      variables: { scene_marker_filter: sceneMarkerFilter } 
+                    }),
                   });
-                  const data = await response.json();
+                  if (!response.ok) return null;
+                  const data = await response.json() as GraphQLResponse<CheckPerformerHasMarkersResponse>;
+                  if (data.errors) return null;
                   return data.data?.findSceneMarkers?.count > 0 ? performerId : null;
                 }
               } catch {
@@ -479,16 +572,13 @@ export class StashAPI {
    * Internal implementation of searchMarkerTags
    */
   private async _searchMarkerTags(term: string, limit: number = 10, signal?: AbortSignal): Promise<Array<{ id: string; name: string }>> {
-    const query = `query FindTags($filter: FindFilterType, $tag_filter: TagFilterType) {
-      findTags(filter: $filter, tag_filter: $tag_filter) {
-        tags { id name }
-      }
-    }`;
-    
     // When no search term, fetch a smaller assortment for faster loading
     // When searching, fetch more tags matching the search term
     const fetchLimit = term && term.trim() !== '' ? limit * 3 : Math.max(limit, 20);
-    const filter: any = { per_page: fetchLimit, page: 1 };
+    const filter: FindFilterInput = { 
+      per_page: fetchLimit, 
+      page: 1 
+    };
     
     // Only add query if term is provided and not empty
     if (term && term.trim() !== '') {
@@ -501,7 +591,7 @@ export class StashAPI {
     // Filter tags based on whether actively searching or getting suggestions
     // When actively searching (term provided): match any tag with more than 0 markers
     // When getting suggestions (no term): keep higher threshold for better quality suggestions
-    const tag_filter: any = {
+    const tag_filter: TagFilterInput = {
       marker_count: {
         value: (term && term.trim() !== '') ? 0 : 10,
         modifier: 'GREATER_THAN'
@@ -516,7 +606,10 @@ export class StashAPI {
       
       let tags: Array<{ id: string; name: string }> = [];
       if (this.pluginApi?.GQL?.client) {
-        const result = await this.pluginApi.GQL.client.query({ query: query as any, variables });
+        const result = await this.pluginApi.GQL.client.query<FindTagsResponse>({
+          query: queries.FIND_TAGS,
+          variables
+        });
         // Check if aborted after query
         if (signal?.aborted) return [];
         tags = result.data?.findTags?.tags ?? [];
@@ -527,13 +620,14 @@ export class StashAPI {
             'Content-Type': 'application/json',
             ...(this.apiKey && { 'ApiKey': this.apiKey }),
           },
-          body: JSON.stringify({ query, variables }),
+          body: JSON.stringify({ query: queries.FIND_TAGS, variables }),
           signal,
         });
         if (signal?.aborted) return [];
         if (!response.ok) return [];
-        const data = await response.json();
+        const data = await response.json() as GraphQLResponse<FindTagsResponse>;
         if (signal?.aborted) return [];
+        if (data.errors) return [];
         tags = data.data?.findTags?.tags ?? [];
       }
       
@@ -599,16 +693,13 @@ export class StashAPI {
    * Internal implementation of searchPerformers
    */
   private async _searchPerformers(term: string, limit: number = 10, signal?: AbortSignal): Promise<Array<{ id: string; name: string; image_path?: string }>> {
-    const query = `query FindPerformers($filter: FindFilterType, $performer_filter: PerformerFilterType) {
-      findPerformers(filter: $filter, performer_filter: $performer_filter) {
-        performers { id name image_path }
-      }
-    }`;
-    
     // When no search term, fetch a smaller assortment for faster loading
     // When searching, fetch more performers matching the search term
     const fetchLimit = term && term.trim() !== '' ? limit * 3 : Math.max(limit, 20);
-    const filter: any = { per_page: fetchLimit, page: 1 };
+    const filter: FindFilterInput = { 
+      per_page: fetchLimit, 
+      page: 1 
+    };
     
     // Only add query if term is provided and not empty
     if (term && term.trim() !== '') {
@@ -619,7 +710,7 @@ export class StashAPI {
     }
     
     // Filter to only performers with at least 1 scene (for autocompletion)
-    const performer_filter: any = {
+    const performer_filter: PerformerFilterInput = {
       scene_count: {
         value: 0,
         modifier: 'GREATER_THAN'
@@ -634,7 +725,10 @@ export class StashAPI {
       
       let performers: Array<{ id: string; name: string; image_path?: string }> = [];
       if (this.pluginApi?.GQL?.client) {
-        const result = await this.pluginApi.GQL.client.query({ query: query as any, variables });
+        const result = await this.pluginApi.GQL.client.query<FindPerformersResponse>({
+          query: queries.FIND_PERFORMERS,
+          variables
+        });
         // Check if aborted after query
         if (signal?.aborted) return [];
         performers = result.data?.findPerformers?.performers ?? [];
@@ -645,13 +739,14 @@ export class StashAPI {
             'Content-Type': 'application/json',
             ...(this.apiKey && { 'ApiKey': this.apiKey }),
           },
-          body: JSON.stringify({ query, variables }),
+          body: JSON.stringify({ query: queries.FIND_PERFORMERS, variables }),
           signal,
         });
         if (signal?.aborted) return [];
         if (!response.ok) return [];
-        const data = await response.json();
+        const data = await response.json() as GraphQLResponse<FindPerformersResponse>;
         if (signal?.aborted) return [];
+        if (data.errors) return [];
         performers = data.data?.findPerformers?.performers ?? [];
       }
       
@@ -675,13 +770,14 @@ export class StashAPI {
    * Fetch saved marker filters from Stash
    */
   async fetchSavedMarkerFilters(signal?: AbortSignal): Promise<Array<{ id: string; name: string }>> {
-    const query = `query GetSavedMarkerFilters { findSavedFilters(mode: SCENE_MARKERS) { id name } }`;
     try {
       // Check if already aborted
       if (signal?.aborted) return [];
       
       if (this.pluginApi?.GQL?.client) {
-        const result = await this.pluginApi.GQL.client.query({ query: query as any });
+        const result = await this.pluginApi.GQL.client.query<GetSavedMarkerFiltersResponse>({
+          query: queries.GET_SAVED_MARKER_FILTERS
+        });
         // Check if aborted after query
         if (signal?.aborted) return [];
         return result.data?.findSavedFilters || [];
@@ -692,13 +788,14 @@ export class StashAPI {
           'Content-Type': 'application/json',
           ...(this.apiKey && { 'ApiKey': this.apiKey }),
         },
-        body: JSON.stringify({ query }),
+        body: JSON.stringify({ query: queries.GET_SAVED_MARKER_FILTERS }),
         signal,
       });
       if (signal?.aborted) return [];
       if (!response.ok) return [];
-      const data = await response.json();
+      const data = await response.json() as GraphQLResponse<GetSavedMarkerFiltersResponse>;
       if (signal?.aborted) return [];
+      if (data.errors) return [];
       return data.data?.findSavedFilters || [];
     } catch (e: any) {
       // Ignore AbortError - it's expected when cancelling
@@ -713,27 +810,14 @@ export class StashAPI {
   /**
    * Get a saved filter's criteria
    */
-  async getSavedFilter(id: string): Promise<any> {
-    const query = `query GetSavedFilter($id: ID!) {
-      findSavedFilter(id: $id) {
-        id
-        name
-        mode
-        find_filter {
-          q
-          per_page
-          page
-        }
-        object_filter
-      }
-    }`;
+  async getSavedFilter(id: string): Promise<GetSavedFilterResponse['findSavedFilter']> {
     try {
       if (this.pluginApi?.GQL?.client) {
-        const result = await this.pluginApi.GQL.client.query({ 
-          query: query as any,
+        const result = await this.pluginApi.GQL.client.query<GetSavedFilterResponse>({
+          query: queries.GET_SAVED_FILTER,
           variables: { id }
         });
-        return result.data?.findSavedFilter;
+        return result.data?.findSavedFilter || null;
       }
       const response = await fetch(`${this.baseUrl}/graphql`, {
         method: 'POST',
@@ -741,10 +825,12 @@ export class StashAPI {
           'Content-Type': 'application/json',
           ...(this.apiKey && { 'ApiKey': this.apiKey }),
         },
-        body: JSON.stringify({ query, variables: { id } }),
+        body: JSON.stringify({ query: queries.GET_SAVED_FILTER, variables: { id } }),
       });
-      const data = await response.json();
-      return data.data?.findSavedFilter;
+      if (!response.ok) return null;
+      const data = await response.json() as GraphQLResponse<GetSavedFilterResponse>;
+      if (data.errors) return null;
+      return data.data?.findSavedFilter || null;
     } catch (e) {
       console.error('Error fetching saved filter:', e);
       return null;
@@ -775,78 +861,11 @@ export class StashAPI {
     }
     
     // If a saved filter is specified, fetch its criteria first
-    let savedFilterCriteria: any = null;
+    let savedFilterCriteria: GetSavedFilterResponse['findSavedFilter'] = null;
     if (filters?.savedFilterId) {
       savedFilterCriteria = await this.getSavedFilter(filters.savedFilterId);
       if (signal?.aborted) return [];
     }
-
-    // Query for scene markers based on FindSceneMarkersForTv
-    const query = `query FindSceneMarkers($filter: FindFilterType, $scene_marker_filter: SceneMarkerFilterType) {
-  findSceneMarkers(filter: $filter, scene_marker_filter: $scene_marker_filter) {
-    count
-    scene_markers {
-      id
-      title
-      seconds
-      end_seconds
-      stream
-      primary_tag {
-        id
-        name
-      }
-      tags {
-        id
-        name
-      }
-      scene {
-        id
-        title
-        date
-        details
-        url
-        rating100
-        o_counter
-        studio {
-          id
-          name
-        }
-        performers {
-          id
-          name
-          image_path
-        }
-        tags {
-          id
-          name
-        }
-        files {
-          id
-          path
-          size
-          duration
-          video_codec
-          audio_codec
-          width
-          height
-          bit_rate
-        }
-        paths {
-          screenshot
-          preview
-          stream
-          webp
-          vtt
-        }
-        sceneStreams {
-          url
-          mime_type
-          label
-        }
-      }
-    }
-  }
-}`;
 
     try {
       // Calculate random page if no offset specified
@@ -861,13 +880,7 @@ export class StashAPI {
       // Skip random page selection when filters are active - start from page 1 instead
       // But we still use random sorting even with tag filters (just filter the results)
       if (!filters?.offset && !hasActiveFilters) {
-        const countQuery = `query GetMarkerCount($filter: FindFilterType, $scene_marker_filter: SceneMarkerFilterType) {
-          findSceneMarkers(filter: $filter, scene_marker_filter: $scene_marker_filter) {
-            count
-          }
-        }`;
-        
-        const countFilter: any = { per_page: 1, page: 1 };
+        const countFilter: FindFilterInput = { per_page: 1, page: 1 };
         // Start with saved filter criteria if available
         if (savedFilterCriteria?.find_filter) {
           Object.assign(countFilter, savedFilterCriteria.find_filter);
@@ -878,8 +891,8 @@ export class StashAPI {
         }
         
         // Normalize saved filter object_filter before using in variables
-        const countSceneFilterRaw: any = savedFilterCriteria?.object_filter || {};
-        const countSceneFilter: any = this.normalizeMarkerFilter(countSceneFilterRaw);
+        const countSceneFilterRaw = savedFilterCriteria?.object_filter || {};
+        const countSceneFilter = this.normalizeMarkerFilter(countSceneFilterRaw);
         
         // If a saved filter is active, ONLY use its criteria (don't combine with manual filters)
         // Otherwise, apply manual tag filters (primary_tags or tags)
@@ -906,8 +919,8 @@ export class StashAPI {
         try {
           if (signal?.aborted) return [];
           if (this.pluginApi?.GQL?.client) {
-            const countResult = await this.pluginApi.GQL.client.query({
-              query: countQuery as any,
+            const countResult = await this.pluginApi.GQL.client.query<CheckTagsHaveMarkersResponse>({
+              query: queries.GET_MARKER_COUNT,
               variables: {
                 filter: countFilter,
                 scene_marker_filter: Object.keys(countSceneFilter).length > 0 ? countSceneFilter : {},
@@ -927,7 +940,7 @@ export class StashAPI {
                 ...(this.apiKey && { 'ApiKey': this.apiKey }),
               },
               body: JSON.stringify({
-                query: countQuery,
+                query: queries.GET_MARKER_COUNT,
                 variables: {
                   filter: countFilter,
                   scene_marker_filter: Object.keys(countSceneFilter).length > 0 ? countSceneFilter : {},
@@ -937,8 +950,9 @@ export class StashAPI {
             });
             if (signal?.aborted) return [];
             if (!countResponse.ok) return [];
-            const countData = await countResponse.json();
+            const countData = await countResponse.json() as GraphQLResponse<CheckTagsHaveMarkersResponse>;
             if (signal?.aborted) return [];
+            if (countData.errors) return [];
             const totalCount = countData.data?.findSceneMarkers?.count || 0;
             if (totalCount > 0) {
               const totalPages = Math.ceil(totalCount / limit);
@@ -959,7 +973,7 @@ export class StashAPI {
       // Try using PluginApi GraphQL client if available
       if (this.pluginApi?.GQL?.client) {
         // Build filter - start with saved filter criteria if available, then allow manual overrides
-        const filter: any = {
+        const filter: FindFilterInput = {
           per_page: limit,
           page: page,
         };
@@ -1030,8 +1044,8 @@ export class StashAPI {
           }
         }
 
-        const result = await this.pluginApi.GQL.client.query({
-          query: query as any,
+        const result = await this.pluginApi.GQL.client.query<FindSceneMarkersResponse>({
+          query: queries.FIND_SCENE_MARKERS,
           variables: {
             filter,
             scene_marker_filter: Object.keys(sceneMarkerFilter).length > 0 ? sceneMarkerFilter : {},
@@ -1046,8 +1060,8 @@ export class StashAPI {
           if (filter.page !== 1) {
             if (signal?.aborted) return [];
             filter.page = 1;
-            const retryResult = await this.pluginApi.GQL.client.query({
-              query: query as any,
+            const retryResult = await this.pluginApi.GQL.client.query<FindSceneMarkersResponse>({
+              query: queries.FIND_SCENE_MARKERS,
               variables: {
                 filter,
                 scene_marker_filter: Object.keys(sceneMarkerFilter).length > 0 ? sceneMarkerFilter : {},
@@ -1071,7 +1085,7 @@ export class StashAPI {
 
       // Fallback to direct fetch
       // Build filter - start with saved filter criteria if available, then allow manual overrides
-      const filter: any = {
+      const filter: FindFilterInput = {
         per_page: limit,
         page: page,
       };
@@ -1092,8 +1106,8 @@ export class StashAPI {
       filter.sort = `random_${Math.floor(Math.random() * 1000000)}`;
 
       // Build scene_marker_filter - start with saved filter object_filter if available
-      const sceneMarkerFilterRaw: any = savedFilterCriteria?.object_filter ? { ...savedFilterCriteria.object_filter } : {};
-      const sceneMarkerFilter: any = this.normalizeMarkerFilter(sceneMarkerFilterRaw);
+      const sceneMarkerFilterRaw = savedFilterCriteria?.object_filter ? { ...(savedFilterCriteria.object_filter as Record<string, unknown>) } : {};
+      const sceneMarkerFilter = this.normalizeMarkerFilter(sceneMarkerFilterRaw);
       
       // If a saved filter is active, ONLY use its criteria (don't combine with manual filters)
       // Otherwise, apply manual tag filters (primary_tags or tags)
@@ -1141,7 +1155,7 @@ export class StashAPI {
         }
       }
 
-      const variables: any = { 
+      const variables = { 
         filter,
         scene_marker_filter: Object.keys(sceneMarkerFilter).length > 0 ? sceneMarkerFilter : {}
       };
@@ -1154,7 +1168,7 @@ export class StashAPI {
           ...(this.apiKey && { 'ApiKey': this.apiKey }),
         },
         body: JSON.stringify({
-          query: query.trim(),
+          query: queries.FIND_SCENE_MARKERS,
           variables,
         }),
         signal,
@@ -1171,7 +1185,7 @@ export class StashAPI {
         throw new Error(`GraphQL request failed: ${response.status} ${response.statusText}`);
       }
 
-      const data = await response.json();
+      const data = await response.json() as GraphQLResponse<FindSceneMarkersResponse>;
       if (signal?.aborted) return [];
       
       if (data.errors) {
@@ -1194,7 +1208,7 @@ export class StashAPI {
               ...(this.apiKey && { 'ApiKey': this.apiKey }),
             },
             body: JSON.stringify({
-              query: query.trim(),
+              query: queries.FIND_SCENE_MARKERS,
               variables: {
                 filter,
                 scene_marker_filter: Object.keys(sceneMarkerFilter).length > 0 ? sceneMarkerFilter : {}
@@ -1204,7 +1218,7 @@ export class StashAPI {
           });
           if (signal?.aborted) return [];
           if (retryResponse.ok) {
-            const retryData = await retryResponse.json();
+            const retryData = await retryResponse.json() as GraphQLResponse<FindSceneMarkersResponse>;
             if (signal?.aborted) return [];
             if (!retryData.errors) {
               markers = retryData.data?.findSceneMarkers?.scene_markers || [];
@@ -1440,74 +1454,14 @@ export class StashAPI {
    * @returns Array of synthetic scene markers (one per scene)
    */
   private async fetchScenesForShuffle(filters?: FilterOptions, signal?: AbortSignal): Promise<SceneMarker[]> {
-    const query = `query FindScenes($filter: FindFilterType, $scene_filter: SceneFilterType) {
-      findScenes(filter: $filter, scene_filter: $scene_filter) {
-        count
-        scenes {
-          id
-          title
-          date
-          details
-          url
-          rating100
-          o_counter
-          studio {
-            id
-            name
-          }
-          performers {
-            id
-            name
-            image_path
-          }
-          tags {
-            id
-            name
-          }
-          files {
-            id
-            path
-            size
-            duration
-            video_codec
-            audio_codec
-            width
-            height
-            bit_rate
-          }
-          paths {
-            screenshot
-            preview
-            stream
-            webp
-            vtt
-          }
-          sceneStreams {
-            url
-            mime_type
-            label
-          }
-          scene_markers {
-            id
-          }
-        }
-      }
-    }`;
-
     try {
       const limit = filters?.limit || 20;
       let page = filters?.offset ? Math.floor(filters?.offset / limit) + 1 : 1;
 
       // Calculate random page if no offset
       if (!filters?.offset) {
-        const countQuery = `query GetSceneCount($filter: FindFilterType, $scene_filter: SceneFilterType) {
-          findScenes(filter: $filter, scene_filter: $scene_filter) {
-            count
-          }
-        }`;
-
-        const countFilter: any = { per_page: 1, page: 1 };
-        let sceneFilter: any = null;
+        const countFilter: FindFilterInput = { per_page: 1, page: 1 };
+        let sceneFilter: SceneFilterInput | null = null;
         
         // Use has_markers filter based on includeScenesWithoutMarkers preference
         // Mode 1 (includeScenesWithoutMarkers = false): All scenes (no filter)
@@ -1521,8 +1475,8 @@ export class StashAPI {
         try {
           if (signal?.aborted) return [];
           if (this.pluginApi?.GQL?.client) {
-            const countResult = await this.pluginApi.GQL.client.query({
-              query: countQuery as any,
+            const countResult = await this.pluginApi.GQL.client.query<FindScenesResponse>({
+              query: queries.GET_SCENE_COUNT,
               variables: { filter: countFilter, ...(sceneFilter && { scene_filter: sceneFilter }) },
             });
             if (signal?.aborted) return [];
@@ -1538,13 +1492,14 @@ export class StashAPI {
                 'Content-Type': 'application/json',
                 ...(this.apiKey && { 'ApiKey': this.apiKey }),
               },
-              body: JSON.stringify({ query: countQuery, variables: { filter: countFilter, ...(sceneFilter && { scene_filter: sceneFilter }) } }),
+              body: JSON.stringify({ query: queries.GET_SCENE_COUNT, variables: { filter: countFilter, ...(sceneFilter && { scene_filter: sceneFilter }) } }),
               signal,
             });
             if (signal?.aborted) return [];
             if (!countResponse.ok) return [];
-            const countData = await countResponse.json();
+            const countData = await countResponse.json() as GraphQLResponse<FindScenesResponse>;
             if (signal?.aborted) return [];
+            if (countData.errors) return [];
             const totalCount = countData.data?.findScenes?.count || 0;
             if (totalCount > 0) {
               const totalPages = Math.ceil(totalCount / limit);
@@ -1561,13 +1516,13 @@ export class StashAPI {
 
       if (signal?.aborted) return [];
 
-      const filter: any = {
+      const filter: FindFilterInput = {
         per_page: limit,
         page: page,
         sort: `random_${Math.floor(Math.random() * 1000000)}`,
       };
 
-      let sceneFilter: any = null;
+      let sceneFilter: SceneFilterInput | null = null;
       
       // Use has_markers filter based on includeScenesWithoutMarkers preference
       // Mode 1 (includeScenesWithoutMarkers = false): All scenes (no filter)
@@ -1578,11 +1533,11 @@ export class StashAPI {
       }
       // If includeScenesWithoutMarkers is false, sceneFilter stays null (no filter = all scenes)
 
-      let scenes: any[] = [];
+      let scenes: Scene[] = [];
 
       if (this.pluginApi?.GQL?.client) {
-        const result = await this.pluginApi.GQL.client.query({
-          query: query as any,
+        const result = await this.pluginApi.GQL.client.query<FindScenesResponse>({
+          query: queries.FIND_SCENES,
           variables: { filter, ...(sceneFilter && { scene_filter: sceneFilter }) },
         });
         if (signal?.aborted) return [];
@@ -1594,14 +1549,14 @@ export class StashAPI {
             'Content-Type': 'application/json',
             ...(this.apiKey && { 'ApiKey': this.apiKey }),
           },
-          body: JSON.stringify({ query, variables: { filter, ...(sceneFilter && { scene_filter: sceneFilter }) } }),
+          body: JSON.stringify({ query: queries.FIND_SCENES, variables: { filter, ...(sceneFilter && { scene_filter: sceneFilter }) } }),
           signal,
         });
 
         if (signal?.aborted) return [];
         if (!response.ok) return [];
 
-        const data = await response.json();
+        const data = await response.json() as GraphQLResponse<FindScenesResponse>;
         if (signal?.aborted) return [];
         if (data.errors) {
           throw new Error(`GraphQL errors: ${JSON.stringify(data.errors)}`);
@@ -1764,12 +1719,11 @@ export class StashAPI {
 
     try {
       if (this.pluginApi?.GQL?.client) {
-        const result = await this.pluginApi.GQL.client.query({
-          query: query as any,
+        const result = await this.pluginApi.GQL.client.query<FindTagResponse>({
+          query: queries.FIND_TAG,
           variables,
         });
-        const tags = result.data?.findTags?.tags || [];
-        return tags.length > 0 ? tags[0] : null;
+        return result.data?.findTag || null;
       }
 
       const response = await fetch(`${this.baseUrl}/graphql`, {
@@ -1778,20 +1732,19 @@ export class StashAPI {
           'Content-Type': 'application/json',
           ...(this.apiKey && { 'ApiKey': this.apiKey }),
         },
-        body: JSON.stringify({ query, variables }),
+        body: JSON.stringify({ query: queries.FIND_TAG, variables }),
       });
 
       if (!response.ok) {
         throw new Error(`GraphQL request failed: ${response.status}`);
       }
 
-      const data = await response.json();
+      const data = await response.json() as GraphQLResponse<FindTagResponse>;
       if (data.errors) {
         throw new Error(`GraphQL errors: ${JSON.stringify(data.errors)}`);
       }
 
-      const tags = data.data?.findTags?.tags || [];
-      return tags.length > 0 ? tags[0] : null;
+      return data.data?.findTag || null;
     } catch (error) {
       console.error('StashAPI: Failed to find tag', error);
       return null;
@@ -1802,14 +1755,7 @@ export class StashAPI {
    * Create a new tag
    */
   async createTag(tagName: string): Promise<{ id: string; name: string } | null> {
-    const mutation = `mutation TagCreate($input: TagCreateInput!) {
-      tagCreate(input: $input) {
-        id
-        name
-      }
-    }`;
-
-    const variables = {
+    const variables: { input: TagCreateInput } = {
       input: { name: tagName }
     };
 
@@ -1820,18 +1766,18 @@ export class StashAPI {
         let result;
         try {
           if (client.mutate) {
-            result = await client.mutate({ mutation: mutation as any, variables });
+            result = await client.mutate<TagCreateResponse>({ mutation: mutations.TAG_CREATE, variables });
           } else {
             // Some GraphQL clients accept mutations via query method
-            result = await client.query({ query: mutation as any, variables });
+            result = await client.query<TagCreateResponse>({ query: mutations.TAG_CREATE, variables });
           }
           return result.data?.tagCreate || null;
-        } catch (err: any) {
+        } catch (err: unknown) {
           console.error('StashAPI: Mutation error details', {
             error: err,
-            message: err?.message,
-            graphQLErrors: err?.graphQLErrors,
-            networkError: err?.networkError
+            message: err instanceof Error ? err.message : 'Unknown error',
+            graphQLErrors: (err as { graphQLErrors?: unknown }).graphQLErrors,
+            networkError: (err as { networkError?: unknown }).networkError
           });
           throw err;
         }
@@ -1843,14 +1789,14 @@ export class StashAPI {
           'Content-Type': 'application/json',
           ...(this.apiKey && { 'ApiKey': this.apiKey }),
         },
-        body: JSON.stringify({ query: mutation, variables }),
+        body: JSON.stringify({ query: mutations.TAG_CREATE, variables }),
       });
 
       if (!response.ok) {
         throw new Error(`GraphQL request failed: ${response.status}`);
       }
 
-      const data = await response.json();
+      const data = await response.json() as GraphQLResponse<TagCreateResponse>;
       if (data.errors) {
         throw new Error(`GraphQL errors: ${JSON.stringify(data.errors)}`);
       }
@@ -1881,21 +1827,12 @@ export class StashAPI {
    * Check if a scene has a specific tag (kept for backwards compatibility)
    */
   async sceneHasTag(sceneId: string, tagId: string): Promise<boolean> {
-    const query = `query FindScene($id: ID!) {
-      findScene(id: $id) {
-        id
-        tags {
-          id
-        }
-      }
-    }`;
-
     const variables = { id: sceneId };
 
     try {
       if (this.pluginApi?.GQL?.client) {
-        const result = await this.pluginApi.GQL.client.query({
-          query: query as any,
+        const result = await this.pluginApi.GQL.client.query<FindSceneResponse>({
+          query: queries.FIND_SCENE_MINIMAL,
           variables,
         });
         const tags = result.data?.findScene?.tags || [];
@@ -1908,14 +1845,14 @@ export class StashAPI {
           'Content-Type': 'application/json',
           ...(this.apiKey && { 'ApiKey': this.apiKey }),
         },
-        body: JSON.stringify({ query, variables }),
+        body: JSON.stringify({ query: queries.FIND_SCENE_MINIMAL, variables }),
       });
 
       if (!response.ok) {
         throw new Error(`GraphQL request failed: ${response.status}`);
       }
 
-      const data = await response.json();
+      const data = await response.json() as GraphQLResponse<FindSceneResponse>;
       if (data.errors) {
         throw new Error(`GraphQL errors: ${JSON.stringify(data.errors)}`);
       }
@@ -1973,7 +1910,7 @@ export class StashAPI {
           throw new Error('Marker must have a primary_tag');
         }
 
-        const variables = {
+        const variables: SceneMarkerUpdateInput = {
           id: marker.id,
           title: marker.title,
           seconds: marker.seconds,
@@ -1988,16 +1925,16 @@ export class StashAPI {
           const client = this.pluginApi.GQL.client;
           try {
             if (client.mutate) {
-              await client.mutate({ mutation: mutation as any, variables });
+              await client.mutate<SceneMarkerUpdateResponse>({ mutation: mutations.SCENE_MARKER_UPDATE, variables });
             } else {
-              await client.query({ query: mutation as any, variables });
+              await client.query<SceneMarkerUpdateResponse>({ query: mutations.SCENE_MARKER_UPDATE, variables });
             }
-          } catch (err: any) {
+          } catch (err: unknown) {
             console.error('StashAPI: Failed to add tag to marker', {
               error: err,
-              message: err?.message,
-              graphQLErrors: err?.graphQLErrors,
-              networkError: err?.networkError,
+              message: err instanceof Error ? err.message : 'Unknown error',
+              graphQLErrors: (err as { graphQLErrors?: unknown }).graphQLErrors,
+              networkError: (err as { networkError?: unknown }).networkError,
               markerId: marker.id,
               tagId
             });
@@ -2010,14 +1947,14 @@ export class StashAPI {
               'Content-Type': 'application/json',
               ...(this.apiKey && { 'ApiKey': this.apiKey }),
             },
-            body: JSON.stringify({ query: mutation, variables }),
+            body: JSON.stringify({ query: mutations.SCENE_MARKER_UPDATE, variables }),
           });
 
           if (!response.ok) {
             throw new Error(`GraphQL request failed: ${response.status}`);
           }
 
-          const data = await response.json();
+          const data = await response.json() as GraphQLResponse<SceneMarkerUpdateResponse>;
           if (data.errors) {
             throw new Error(`GraphQL errors: ${JSON.stringify(data.errors)}`);
           }
@@ -2494,35 +2431,15 @@ export class StashAPI {
    * @returns Array of tags with id, name, and other fields
    */
   async findTagsForSelect(searchTerm: string = '', limit: number = 200, signal?: AbortSignal): Promise<Array<{ id: string; name: string; sort_name?: string; favorite?: boolean; description?: string; aliases?: string[]; image_path?: string; parents?: Array<{ id: string; name: string }> }>> {
-    const query = `query FindTagsForSelect($filter: FindFilterType, $tag_filter: TagFilterType, $ids: [ID!]) {
-      findTags(filter: $filter, tag_filter: $tag_filter, ids: $ids) {
-        count
-        tags {
-          id
-          name
-          sort_name
-          favorite
-          description
-          aliases
-          image_path
-          parents {
-            id
-            name
-            sort_name
-          }
-        }
-      }
-    }`;
-
     const variables = {
       filter: {
         q: searchTerm,
         sort: 'name',
-        direction: 'ASC',
+        direction: 'ASC' as const,
         page: 1,
         per_page: limit,
       },
-      tag_filter: {},
+      tag_filter: {} as TagFilterInput,
       ids: null as string[] | null,
     };
 
@@ -2532,20 +2449,20 @@ export class StashAPI {
         try {
           // Note: Plugin API client may not support abort signal in query options
           // If signal is aborted, we'll catch it in the error handler
-          const result = await client.query({ query: query as any, variables });
+          const result = await client.query<FindTagsExtendedResponse>({ query: queries.FIND_TAGS_FOR_SELECT, variables });
           if (signal?.aborted) {
             return [];
           }
           return result.data?.findTags?.tags || [];
-        } catch (err: any) {
-          if (err.name === 'AbortError' || signal?.aborted) {
+        } catch (err: unknown) {
+          if (isAbortError(err) || signal?.aborted) {
             return [];
           }
           console.error('StashAPI: Failed to find tags for select', {
             error: err,
-            message: err?.message,
-            graphQLErrors: err?.graphQLErrors,
-            networkError: err?.networkError,
+            message: err instanceof Error ? err.message : 'Unknown error',
+            graphQLErrors: (err as { graphQLErrors?: unknown }).graphQLErrors,
+            networkError: (err as { networkError?: unknown }).networkError,
             searchTerm,
           });
           throw err;
@@ -2558,7 +2475,7 @@ export class StashAPI {
           'Content-Type': 'application/json',
           ...(this.apiKey && { ApiKey: this.apiKey }),
         },
-        body: JSON.stringify({ query, variables }),
+        body: JSON.stringify({ query: queries.FIND_TAGS_FOR_SELECT, variables }),
         signal,
       });
 
@@ -2566,14 +2483,14 @@ export class StashAPI {
         throw new Error(`GraphQL request failed: ${response.status}`);
       }
 
-      const data = await response.json();
+      const data = await response.json() as GraphQLResponse<FindTagsExtendedResponse>;
       if (data.errors) {
         throw new Error(`GraphQL errors: ${JSON.stringify(data.errors)}`);
       }
 
       return data.data?.findTags?.tags || [];
-    } catch (error: any) {
-      if (error.name === 'AbortError' || signal?.aborted) {
+    } catch (error: unknown) {
+      if (isAbortError(error) || signal?.aborted) {
         return [];
       }
       console.error('StashAPI: Failed to find tags for select', error);
@@ -2714,8 +2631,8 @@ export class StashAPI {
       if (signal?.aborted) return [];
 
       if (this.pluginApi?.GQL?.client) {
-        const result = await this.pluginApi.GQL.client.query({
-          query: query as any,
+        const result = await this.pluginApi.GQL.client.query<FindSceneMarkerTagsResponse>({
+          query: queries.FIND_SCENE_MARKER_TAGS,
           variables: { id: sceneId },
         });
         if (signal?.aborted) return [];
@@ -2747,14 +2664,14 @@ export class StashAPI {
             'Content-Type': 'application/json',
             ...(this.apiKey && { 'ApiKey': this.apiKey }),
           },
-          body: JSON.stringify({ query, variables: { id: sceneId } }),
+          body: JSON.stringify({ query: queries.FIND_SCENE_MARKER_TAGS, variables: { id: sceneId } }),
           signal,
         });
 
         if (signal?.aborted) return [];
         if (!response.ok) return [];
 
-        const data = await response.json();
+        const data = await response.json() as GraphQLResponse<FindSceneMarkerTagsResponse>;
         if (signal?.aborted) return [];
         if (data.errors) {
           console.warn('StashAPI: GraphQL errors fetching scene marker tags', data.errors);
