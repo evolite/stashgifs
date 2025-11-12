@@ -22,7 +22,6 @@ import {
   GetSavedMarkerFiltersResponse,
   GetSavedFilterResponse,
   CheckTagsHaveMarkersResponse,
-  CheckPerformerHasMarkersResponse,
   FindSceneMarkerTagsResponse,
   TagCreateResponse,
   SceneMarkerUpdateResponse,
@@ -336,165 +335,6 @@ export class StashAPI {
     }
 
     return out as SceneMarkerFilterInput;
-  }
-
-  /**
-   * Batch check which tags have at least one marker
-   * Returns a Set of tag IDs that have markers
-   */
-  private async batchCheckTagsHaveMarkers(tagIds: number[]): Promise<Set<number>> {
-    if (tagIds.length === 0) return new Set();
-    
-    // Check cache first
-    const results = new Set<number>();
-    const uncachedIds: number[] = [];
-    for (const tagId of tagIds) {
-      if (this.tagsWithMarkersCache.has(tagId)) {
-        // Get to update access order (move to most recently used)
-        this.tagsWithMarkersCache.get(tagId);
-        results.add(tagId);
-      } else {
-        uncachedIds.push(tagId);
-      }
-    }
-    
-    if (uncachedIds.length === 0) return results;
-    
-    const sceneMarkerFilter: SceneMarkerFilterInput = {
-      tags: { 
-        value: tagIds.map(id => String(id)), 
-        modifier: 'INCLUDES' 
-      }
-    };
-    
-    try {
-      const result = await this.gqlClient.query<CheckTagsHaveMarkersResponse>({
-        query: queries.CHECK_TAGS_HAVE_MARKERS,
-        variables: { scene_marker_filter: sceneMarkerFilter }
-      });
-      const count = result.data?.findSceneMarkers?.count || 0;
-        // If count > 0, at least one tag has markers, but we need to check individually
-        // For efficiency, we'll check in smaller batches
-        if (count === 0) return results; // Return cached results
-        
-        // Check each tag individually (in parallel batches of 5, with multiple batches in parallel)
-        const batchSize = 5;
-        const maxConcurrentBatches = 3; // Process up to 3 batches concurrently
-        const batches: number[][] = [];
-        for (let i = 0; i < uncachedIds.length; i += batchSize) {
-          batches.push(uncachedIds.slice(i, i + batchSize));
-        }
-        
-        // Process batches with concurrency limit
-        for (let i = 0; i < batches.length; i += maxConcurrentBatches) {
-          const concurrentBatches = batches.slice(i, i + maxConcurrentBatches);
-          const batchResults = await Promise.all(
-            concurrentBatches.map(async (batch) => {
-              const batchChecks = await Promise.all(
-                batch.map(async (tagId) => {
-                  const batchFilter: SceneMarkerFilterInput = { 
-                    tags: { 
-                      value: [String(tagId)], 
-                      modifier: 'INCLUDES' 
-                    } 
-                  };
-                  try {
-                    const batchResult = await this.gqlClient.query<CheckTagsHaveMarkersResponse>({
-                      query: queries.CHECK_TAG_HAS_MARKERS,
-                      variables: { scene_marker_filter: batchFilter }
-                    });
-                    return (batchResult.data?.findSceneMarkers?.count ?? 0) > 0 ? tagId : null;
-                  } catch {
-                    return null;
-                  }
-                })
-              );
-              return batchChecks;
-            })
-          );
-          
-          // Process results from all concurrent batches
-          batchResults.flat().forEach(id => { 
-            if (id !== null) {
-              results.add(id);
-              this.tagsWithMarkersCache.set(id, true); // Cache positive results
-            }
-          });
-        }
-        return results;
-    } catch (e) {
-      console.warn('batchCheckTagsHaveMarkers failed', e);
-      return results; // Return cached results even if new checks fail
-    }
-  }
-
-  /**
-   * Batch check which performers have at least one marker
-   * Returns a Set of performer IDs that have markers
-   */
-  private async batchCheckPerformersHaveMarkers(performerIds: number[]): Promise<Set<number>> {
-    if (performerIds.length === 0) return new Set();
-    
-    // Check cache first
-    const results = new Set<number>();
-    const uncachedIds: number[] = [];
-    for (const performerId of performerIds) {
-      if (this.performersWithMarkersCache.has(performerId)) {
-        // Get to update access order (move to most recently used)
-        this.performersWithMarkersCache.get(performerId);
-        results.add(performerId);
-      } else {
-        uncachedIds.push(performerId);
-      }
-    }
-    
-    if (uncachedIds.length === 0) return results;
-    
-    // Check each performer individually (in parallel batches of 5, with multiple batches in parallel)
-    const batchSize = 5;
-    const maxConcurrentBatches = 3; // Process up to 3 batches concurrently
-    const batches: number[][] = [];
-    for (let i = 0; i < uncachedIds.length; i += batchSize) {
-      batches.push(uncachedIds.slice(i, i + batchSize));
-    }
-    
-    // Process batches with concurrency limit
-    for (let i = 0; i < batches.length; i += maxConcurrentBatches) {
-      const concurrentBatches = batches.slice(i, i + maxConcurrentBatches);
-      const batchResults = await Promise.all(
-        concurrentBatches.map(async (batch) => {
-          const batchChecks = await Promise.all(
-            batch.map(async (performerId) => {
-              const sceneMarkerFilter: SceneMarkerFilterInput = { 
-                performers: { 
-                  value: [performerId], 
-                  modifier: 'INCLUDES_ALL' 
-                } 
-              };
-              try {
-                const result = await this.gqlClient.query<CheckPerformerHasMarkersResponse>({
-                  query: queries.CHECK_PERFORMER_HAS_MARKERS,
-                  variables: { scene_marker_filter: sceneMarkerFilter }
-                });
-                return (result.data?.findSceneMarkers?.count ?? 0) > 0 ? performerId : null;
-              } catch {
-                return null;
-              }
-            })
-          );
-          return batchChecks;
-        })
-      );
-      
-      // Process results from all concurrent batches
-      batchResults.flat().forEach(id => { 
-        if (id !== null) {
-          results.add(id);
-          this.performersWithMarkersCache.set(id, true); // Cache positive results
-        }
-      });
-    }
-    return results;
   }
 
   /**
@@ -951,138 +791,6 @@ export class StashAPI {
         
         return markers;
       }
-
-      // Fallback (should not be needed with centralized client, but kept for safety)
-      // Build filter - start with saved filter criteria if available, then allow manual overrides
-      const filter: FindFilterInput = {
-        per_page: limit,
-        page: page,
-      };
-      // If saved filter exists, start with its find_filter criteria
-      if (savedFilterCriteria !== null && savedFilterCriteria!.find_filter) {
-        Object.assign(filter, savedFilterCriteria!.find_filter);
-      }
-      // Manual query overrides saved filter query (if user typed something)
-      const queryValue = filters?.query;
-      if (queryValue !== undefined && typeof queryValue === 'string' && queryValue!.trim() !== '') {
-        filter.q = queryValue;
-        console.log('[StashAPI] Applying query filter (fallback):', { query: queryValue });
-      }
-      // Override page with our calculated random page
-      filter.page = page;
-      filter.per_page = limit;
-      // Use random sorting for better randomization (even when filters are active)
-      // This randomizes the order of filtered results
-      filter.sort = `random_${Math.floor(Math.random() * 1000000)}`;
-
-      // Build scene_marker_filter - start with saved filter object_filter if available
-      let sceneMarkerFilterRaw: Record<string, unknown> = {};
-      if (savedFilterCriteria !== null && savedFilterCriteria!.object_filter) {
-        sceneMarkerFilterRaw = { ...(savedFilterCriteria!.object_filter as Record<string, unknown>) };
-      }
-      const sceneMarkerFilter = this.normalizeMarkerFilter(sceneMarkerFilterRaw);
-      
-      // If a saved filter is active, ONLY use its criteria (don't combine with manual filters)
-      // Otherwise, apply manual tag filters (primary_tags or tags)
-      if (filters !== undefined && filters !== null && !filters!.savedFilterId) {
-        // Use tags if provided, otherwise fall back to primary_tags
-        const tagFilter = filters!.tags || filters!.primary_tags;
-        if (tagFilter !== undefined && Array.isArray(tagFilter) && tagFilter!.length > 0) {
-          const tagIds = tagFilter!
-            .map((v) => parseInt(String(v), 10))
-            .filter((n) => !Number.isNaN(n));
-          if (tagIds.length > 0) {
-                // SceneMarkerFilterType tags filter requires: value (array of strings), excludes, modifier, depth
-                // For single tag: use INCLUDES_ALL (works the same as INCLUDES for single tag)
-                // For multiple tags: use INCLUDES (OR logic) to find markers with ANY of the tags
-                // (INCLUDES_ALL would require ALL tags to be present, which is usually not what we want)
-                sceneMarkerFilter.tags = {
-                  value: tagIds.map(id => String(id)), // Array of strings, not numbers
-                  excludes: [],
-                  modifier: tagIds.length === 1 ? 'INCLUDES_ALL' : 'INCLUDES', // INCLUDES for multiple tags (OR logic)
-                  depth: 0
-                };
-                console.log('[StashAPI] Applying tags filter (fallback):', { 
-                  tagIds: tagIds.map(id => String(id)), 
-                  modifier: tagIds.length === 1 ? 'INCLUDES_ALL' : 'INCLUDES',
-                  reason: tagIds.length > 1 ? 'Multiple tags - using INCLUDES (OR logic)' : 'Single tag - using INCLUDES_ALL'
-                });
-              } else {
-            console.warn('Scene marker tags must be numeric IDs; ignoring provided values', { tagFilter });
-          }
-        }
-      }
-      // Filter by performers using the correct field name
-      if (filters !== undefined && filters !== null && !filters!.savedFilterId && filters!.performers !== undefined && Array.isArray(filters!.performers) && filters!.performers!.length > 0) {
-        const performerIds = filters!.performers!
-          .map((v) => parseInt(String(v), 10))
-          .filter((n) => !Number.isNaN(n));
-        if (performerIds.length > 0) {
-                // IMPORTANT: value must be an array of numbers, not strings
-                // Use INCLUDES for single performer, INCLUDES_ALL for multiple
-                sceneMarkerFilter.performers = { 
-                  value: performerIds, // Array of numbers
-                  modifier: performerIds.length > 1 ? 'INCLUDES_ALL' : 'INCLUDES' 
-                };
-          console.log('[StashAPI] Applying performer filter:', { performerIds, modifier: performerIds.length > 1 ? 'INCLUDES_ALL' : 'INCLUDES' });
-        }
-      }
-
-      const variables = { 
-        filter,
-        scene_marker_filter: Object.keys(sceneMarkerFilter).length > 0 ? sceneMarkerFilter : {}
-      };
-
-      const result = await this.gqlClient.query<FindSceneMarkersResponse>({
-        query: queries.FIND_SCENE_MARKERS,
-        variables,
-        signal,
-      });
-
-      if (signal?.aborted) return [];
-      
-      const responseData = result.data?.findSceneMarkers;
-      let markers = responseData?.scene_markers || [];
-      if ((responseData?.count ?? 0) > 0 && markers.length === 0) {
-        console.warn('[StashAPI] Count > 0 but no markers returned - possible page calculation issue');
-        // If count > 0 but no markers, try page 1 instead
-        if (filter.page !== 1) {
-          if (signal?.aborted) return [];
-          filter.page = 1;
-          const retryResponse = await fetch(`${this.baseUrl}/graphql`, {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              ...(this.apiKey && { 'ApiKey': this.apiKey }),
-            },
-            body: JSON.stringify({
-              query: queries.FIND_SCENE_MARKERS,
-              variables: {
-                filter,
-                scene_marker_filter: Object.keys(sceneMarkerFilter).length > 0 ? sceneMarkerFilter : {}
-              },
-            }),
-            signal,
-          });
-          if (signal?.aborted) return [];
-          if (retryResponse.ok) {
-            const retryData = await retryResponse.json() as GraphQLResponse<FindSceneMarkersResponse>;
-            if (signal?.aborted) return [];
-            if (!retryData.errors) {
-              markers = retryData.data?.findSceneMarkers?.scene_markers || [];
-            }
-          }
-        }
-      }
-      
-      if (signal?.aborted) return [];
-      
-      // Filter to scenes with less than 5 markers when shuffle mode is enabled
-      if (filters?.shuffleMode && markers.length > 0) {
-        markers = this.filterScenesByMarkerCount(markers, 5);
-      }
-      
-      return markers;
     } catch (e: any) {
       // Ignore AbortError - it's expected when cancelling
       if (e.name === 'AbortError' || signal?.aborted) {
@@ -1090,205 +798,6 @@ export class StashAPI {
       }
       console.error('Error fetching scene markers:', e);
       return [];
-    }
-  }
-
-  /**
-   * Fetch scene markers from Stash using REST API endpoint
-   * Uses /scenes/markers endpoint with query parameters for filtering and sorting
-   * This is the primary method - GraphQL is kept as fallback
-   */
-  async fetchSceneMarkersREST(filters?: FilterOptions, signal?: AbortSignal): Promise<SceneMarker[]> {
-    // Check if already aborted
-    if (signal?.aborted) return [];
-    
-    // In shuffle mode, query scenes directly to include scenes with 0 markers
-    if (filters?.shuffleMode) {
-      return this.fetchScenesForShuffle(filters, signal);
-    }
-
-    try {
-      const limit = filters?.limit || 32;
-      const perPage = limit;
-      
-      // Build query parameters
-      const params = new URLSearchParams();
-      
-      // Random sorting - generate random sort key
-      // Always use random sorting for better randomization
-      const randomSortKey = Math.floor(Math.random() * 1000000);
-      params.set('sortby', `random_${randomSortKey}`);
-      params.set('sortdir', 'desc');
-      params.set('perPage', perPage.toString());
-      
-      // Handle tag filtering - prioritize primary_tags over tags
-      // Use primary_tags if available, otherwise fall back to tags
-      const tagFilter = filters?.primary_tags || filters?.tags;
-      if (tagFilter && tagFilter.length > 0) {
-        const tagIds = tagFilter
-          .map((v) => String(v)) // Keep as strings to match GraphQL format
-          .filter((id) => id && id.trim().length > 0);
-        
-        if (tagIds.length > 0) {
-          // Build filter criteria in REST API format
-          // Based on GraphQL structure: tags with modifier, value (array of string IDs), depth, excludes
-          // REST API format: {"type":"tags","modifier":"INCLUDES_ALL","value":{"items":[{"id":"159","label":"Ball Sucking"}],"excluded":[],"depth":0}}
-          // But we can also try the simpler format that matches GraphQL more closely
-          const filterCriteria = {
-            type: 'tags',
-            modifier: tagIds.length > 1 ? 'INCLUDES_ALL' : 'INCLUDES',
-            value: {
-              items: tagIds.map(id => ({ id: String(id), label: '' })), // Label not needed for filtering by ID
-              excluded: [],
-              depth: 0
-            }
-          };
-          
-          // URL-encode the JSON filter criteria
-          // URLSearchParams will handle encoding, but we need to ensure proper format
-          const filterJson = JSON.stringify(filterCriteria);
-          params.set('c', filterJson);
-        }
-      }
-      
-      // Handle query string if provided
-      if (filters?.query && filters.query.trim() !== '') {
-        params.set('q', filters.query.trim());
-      }
-      
-      // Build the full URL
-      const url = `${this.baseUrl}/scenes/markers?${params.toString()}`;
-      
-      // Make the request
-      const response = await fetch(url, {
-        method: 'GET',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(this.apiKey && { 'ApiKey': this.apiKey }),
-        },
-        signal,
-      });
-
-      if (signal?.aborted) return [];
-      if (!response.ok) {
-        const errorText = await response.text();
-        console.error('REST API request failed', {
-          status: response.status,
-          statusText: response.statusText,
-          error: errorText
-        });
-        throw new Error(`REST API request failed: ${response.status} ${response.statusText}`);
-      }
-
-      // Check content type before parsing
-      const contentType = response.headers.get('content-type');
-      if (!contentType || !contentType.includes('application/json')) {
-        const text = await response.text();
-        console.warn('REST API returned non-JSON response, falling back to GraphQL', {
-          contentType,
-          preview: text.substring(0, 200)
-        });
-        throw new Error('REST API returned non-JSON response');
-      }
-
-      const data = await response.json();
-      if (signal?.aborted) return [];
-      
-      // Parse REST API response and convert to SceneMarker format
-      // The REST API response structure may vary, but typically returns an array of markers
-      // or an object with a markers/scene_markers property
-      let markers: any[] = [];
-      
-      if (Array.isArray(data)) {
-        markers = data;
-      } else if (data.scene_markers && Array.isArray(data.scene_markers)) {
-        markers = data.scene_markers;
-      } else if (data.markers && Array.isArray(data.markers)) {
-        markers = data.markers;
-      } else if (data.results && Array.isArray(data.results)) {
-        markers = data.results;
-      }
-      
-      // Convert REST API marker format to SceneMarker format
-      const sceneMarkers: SceneMarker[] = markers.map((marker: any) => {
-        // Handle different possible REST API response formats
-        const markerId = marker.id || marker.marker_id;
-        const sceneId = marker.scene?.id || marker.scene_id;
-        const sceneData = marker.scene || {};
-        
-        return {
-          id: String(markerId),
-          title: marker.title || marker.name || '',
-          seconds: marker.seconds || marker.start_time || 0,
-          end_seconds: marker.end_seconds || marker.end_time,
-          stream: marker.stream || marker.stream_url,
-          preview: marker.preview || marker.preview_url,
-          primary_tag: marker.primary_tag ? {
-            id: String(marker.primary_tag.id || marker.primary_tag.tag_id),
-            name: marker.primary_tag.name || marker.primary_tag.tag_name || ''
-          } : undefined,
-          tags: (marker.tags || []).map((tag: any) => ({
-            id: String(tag.id || tag.tag_id),
-            name: tag.name || tag.tag_name || ''
-          })),
-          scene: {
-            id: String(sceneId),
-            title: sceneData.title,
-            date: sceneData.date,
-            details: sceneData.details,
-            url: sceneData.url,
-            rating100: sceneData.rating100 || sceneData.rating,
-            o_counter: sceneData.o_counter || sceneData.oCounter,
-            studio: sceneData.studio ? {
-              id: String(sceneData.studio.id || sceneData.studio.studio_id),
-              name: sceneData.studio.name || sceneData.studio.studio_name || ''
-            } : undefined,
-            performers: (sceneData.performers || []).map((perf: any) => ({
-              id: String(perf.id || perf.performer_id),
-              name: perf.name || perf.performer_name || '',
-              image_path: perf.image_path || perf.imagePath
-            })),
-            tags: (sceneData.tags || []).map((tag: any) => ({
-              id: String(tag.id || tag.tag_id),
-              name: tag.name || tag.tag_name || ''
-            })),
-            files: (sceneData.files || []).map((file: any) => ({
-              id: String(file.id || file.file_id),
-              path: file.path || file.file_path || '',
-              size: file.size,
-              duration: file.duration,
-              video_codec: file.video_codec || file.videoCodec,
-              audio_codec: file.audio_codec || file.audioCodec,
-              width: file.width,
-              height: file.height,
-              bit_rate: file.bit_rate || file.bitRate
-            })),
-            paths: sceneData.paths ? {
-              screenshot: sceneData.paths.screenshot,
-              preview: sceneData.paths.preview,
-              stream: sceneData.paths.stream,
-              webp: sceneData.paths.webp,
-              vtt: sceneData.paths.vtt
-            } : undefined,
-            sceneStreams: sceneData.sceneStreams || sceneData.scene_streams || []
-          }
-        };
-      });
-      
-      // Filter to scenes with less than 5 markers when shuffle mode is enabled
-      if (filters?.shuffleMode && sceneMarkers.length > 0) {
-        return this.filterScenesByMarkerCount(sceneMarkers, 5);
-      }
-      
-      return sceneMarkers;
-    } catch (e: any) {
-      // Ignore AbortError - it's expected when cancelling
-      if (e.name === 'AbortError' || signal?.aborted) {
-        return [];
-      }
-      console.warn('REST API request failed, falling back to GraphQL:', e);
-      // Fallback to GraphQL method if REST API fails
-      return this.fetchSceneMarkers(filters, signal);
     }
   }
 
@@ -1656,25 +1165,10 @@ export class StashAPI {
    */
   async addTagToScene(sceneId: string, tagId: string): Promise<void> {
     // First get current scene tags
-    const query = `query FindScene($id: ID!) {
-      findScene(id: $id) {
-        id
-        tags {
-          id
-        }
-      }
-    }`;
-
-    const mutation = `mutation SceneUpdate($input: SceneUpdateInput!) {
-      sceneUpdate(input: $input) {
-        id
-      }
-    }`;
-
     try {
       // Get current tags
       const result = await this.gqlClient.query<FindSceneResponse>({
-        query: query,
+        query: queries.FIND_SCENE_MINIMAL,
         variables: { id: sceneId },
       });
       const currentTags: string[] = (result.data?.findScene?.tags || []).map((t: { id: string }) => t.id);
@@ -1754,25 +1248,10 @@ export class StashAPI {
    */
   async removeTagFromScene(sceneId: string, tagId: string): Promise<void> {
     // First get current scene tags
-    const query = `query FindScene($id: ID!) {
-      findScene(id: $id) {
-        id
-        tags {
-          id
-        }
-      }
-    }`;
-
-    const mutation = `mutation SceneUpdate($input: SceneUpdateInput!) {
-      sceneUpdate(input: $input) {
-        id
-      }
-    }`;
-
     try {
       // Get current tags
       const result = await this.gqlClient.query<FindSceneResponse>({
-        query: query,
+        query: queries.FIND_SCENE_MINIMAL,
         variables: { id: sceneId },
       });
       const currentTags: string[] = (result.data?.findScene?.tags || []).map((t: { id: string }) => t.id);
@@ -1788,7 +1267,7 @@ export class StashAPI {
       };
 
       await this.gqlClient.mutate<SceneUpdateResponse>({
-        mutation: mutation,
+        mutation: mutations.SCENE_UPDATE,
         variables,
       });
     } catch (error) {
@@ -1804,13 +1283,6 @@ export class StashAPI {
    * @returns The updated o count and history
    */
   async incrementOCount(sceneId: string, times?: string[]): Promise<{ count: number; history: string[] }> {
-    const mutation = `mutation SceneAddO($id: ID!, $times: [Timestamp!]) {
-      sceneAddO(id: $id, times: $times) {
-        count
-        history
-      }
-    }`;
-
     const variables = {
       id: sceneId,
       times: times || undefined
@@ -1921,42 +1393,6 @@ export class StashAPI {
     endSeconds?: number | null,
     tagIds: string[] = []
   ): Promise<{ id: string; title: string; seconds: number; end_seconds?: number; stream?: string; preview?: string; scene: any; primary_tag: { id: string; name: string }; tags: Array<{ id: string; name: string }> }> {
-    const mutation = `mutation SceneMarkerCreate($title: String!, $seconds: Float!, $end_seconds: Float, $scene_id: ID!, $primary_tag_id: ID!, $tag_ids: [ID!] = []) {
-      sceneMarkerCreate(
-        input: {title: $title, seconds: $seconds, end_seconds: $end_seconds, scene_id: $scene_id, primary_tag_id: $primary_tag_id, tag_ids: $tag_ids}
-      ) {
-        id
-        title
-        seconds
-        end_seconds
-        stream
-        preview
-        screenshot
-        scene {
-          id
-          title
-          files {
-            width
-            height
-            path
-          }
-          performers {
-            id
-            name
-            image_path
-          }
-        }
-        primary_tag {
-          id
-          name
-        }
-        tags {
-          id
-          name
-        }
-      }
-    }`;
-
     const variables = {
       title,
       seconds,

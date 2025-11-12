@@ -22,7 +22,6 @@ interface VisibilityEntry {
   pendingVisibilityPlay: boolean;
   isUnloaded: boolean;
   hoverHandlers?: HoverHandlers;
-  manuallyPaused: boolean; // Track if user manually paused this video
 }
 
 type VideoState = 'loading' | 'ready' | 'playing' | 'paused';
@@ -48,8 +47,6 @@ export class VisibilityManager {
   private touchedPostId?: string; // Track which post is currently touched (separate from hover for mobile)
   private isHDMode: boolean = false; // Track HD mode for more aggressive unloading
   private manuallyStartedVideos: Set<string> = new Set(); // Track videos that were manually started by user
-  private systemPausingVideos: Set<string> = new Set(); // Track videos being paused by system (to distinguish from manual pauses)
-  private periodicCheckInterval?: ReturnType<typeof setInterval>; // Interval for periodic visibility check
   // Cache for getBoundingClientRect results per frame to avoid layout thrashing
   private rectCache: Map<HTMLElement, DOMRect> = new Map();
   private rectCacheFrame: number = 0;
@@ -118,11 +115,6 @@ export class VisibilityManager {
     
     // Set up scroll listener for exclusive audio re-evaluation
     this.setupAudioFocusTracking();
-    
-    // Start periodic check if autoplay is enabled
-    if (this.options.autoPlay) {
-      this.startPeriodicCheck();
-    }
   }
 
   /**
@@ -332,7 +324,6 @@ export class VisibilityManager {
       isVisible: false,
       pendingVisibilityPlay: false,
       isUnloaded: false,
-      manuallyPaused: false,
     });
 
     // Set up hover/touch handlers for unmuting
@@ -365,8 +356,6 @@ export class VisibilityManager {
         this.videoStates.set(postId, 'playing');
         this.touchActive(postId);
         this.debugLog('state-playing', { postId });
-        // Clear manuallyPaused flag when video starts playing
-        entry.manuallyPaused = false;
         // Track if this was a manual play (not from hover)
         // If video is playing but wasn't triggered by hover, mark as manual
         if (!entry.pendingVisibilityPlay && !this.activeVideos.has(postId) && this.hoveredPostId !== postId) {
@@ -377,18 +366,7 @@ export class VisibilityManager {
         this.activeVideos.delete(postId);
         // Remove from manually started set when paused
         this.manuallyStartedVideos.delete(postId);
-        
-        // Detect manual pause: if video is paused, still visible, and we didn't just pause it ourselves,
-        // then it was likely manually paused by the user
-        if (entry.isVisible && !this.systemPausingVideos.has(postId) && this.options.autoPlay) {
-          entry.manuallyPaused = true;
-          this.debugLog('manual-pause-detected', { postId });
-        } else if (!entry.isVisible) {
-          // Clear manuallyPaused when video becomes non-visible (so it can autoplay next time)
-          entry.manuallyPaused = false;
-        }
-        
-        this.debugLog('state-paused', { postId, manuallyPaused: entry.manuallyPaused });
+        this.debugLog('state-paused', { postId });
       }
     });
 
@@ -409,8 +387,8 @@ export class VisibilityManager {
     player.setMuted(true);
     
     // Autoplay when player is registered if visible and autoplay is enabled
-    // Skip if any video is hovered (hover has priority)
-    if (entry.isVisible && this.options.autoPlay && (!this.hoveredPostId || this.hoveredPostId === postId)) {
+    // In non-HD mode, don't check hover state - autoplay should work regardless
+    if (entry.isVisible && this.options.autoPlay) {
       this.requestPlaybackIfReady(postId, entry, 'register');
     }
     
@@ -484,8 +462,7 @@ export class VisibilityManager {
       } else if (entry.pendingVisibilityPlay) {
         // If not hovered but pending, check if we should use autoplay or hover-based play
         // In non-HD mode (autoplay enabled), use autoplay instead of hover-based play
-        // Skip if any video is hovered (hover has priority)
-        if (this.options.autoPlay && entry.isVisible && (!this.hoveredPostId || this.hoveredPostId === postId)) {
+        if (this.options.autoPlay && entry.isVisible) {
           // Use autoplay for non-HD mode when visible
           this.requestPlaybackIfReady(postId, entry, 'ready');
         } else {
@@ -498,9 +475,8 @@ export class VisibilityManager {
       }
     }
     // Also handle autoplay if enabled and visible (for non-HD mode)
-    // Skip if any video is hovered (hover has priority)
-    // Use entry.isVisible which may have been updated above
-    if (entry && entry.isVisible && this.options.autoPlay && !entry.pendingVisibilityPlay && !entry.manuallyPaused && (!this.hoveredPostId || this.hoveredPostId === postId)) {
+    // In non-HD mode, don't check hover state - autoplay should work regardless
+    if (entry && entry.isVisible && this.options.autoPlay && !entry.pendingVisibilityPlay) {
       this.requestPlaybackIfReady(postId, entry, 'ready');
     }
   }
@@ -563,12 +539,6 @@ export class VisibilityManager {
    */
   setAutoPlay(enabled: boolean): void {
     this.options.autoPlay = !!enabled;
-    // Start/stop periodic check based on autoplay state
-    if (enabled) {
-      this.startPeriodicCheck();
-    } else {
-      this.stopPeriodicCheck();
-    }
   }
 
   /**
@@ -620,10 +590,6 @@ export class VisibilityManager {
 
       visibilityChanged = true;
       visibilityEntry.isVisible = isVisible;
-      // Clear manuallyPaused when video becomes non-visible (so it can autoplay next time)
-      if (!isVisible) {
-        visibilityEntry.manuallyPaused = false;
-      }
       // Set pendingVisibilityPlay based on visibility if autoplay is enabled
       visibilityEntry.pendingVisibilityPlay = isVisible && this.options.autoPlay;
 
@@ -647,8 +613,8 @@ export class VisibilityManager {
             return;
           }
           // Autoplay when entering viewport (if enabled)
-          // Skip if any video is hovered (hover has priority)
-          if (this.options.autoPlay && (!this.hoveredPostId || this.hoveredPostId === postId)) {
+          // In non-HD mode, don't check hover state - autoplay should work regardless
+          if (this.options.autoPlay) {
             this.requestPlaybackIfReady(postId, currentEntry, 'observer');
           }
         } else {
@@ -656,8 +622,8 @@ export class VisibilityManager {
           if (stillActuallyVisible) {
             currentEntry.isVisible = true;
             // Autoplay when re-entering viewport (if enabled)
-            // Skip if any video is hovered (hover has priority)
-            if (this.options.autoPlay && (!this.hoveredPostId || this.hoveredPostId === postId)) {
+            // In non-HD mode, don't check hover state - autoplay should work regardless
+            if (this.options.autoPlay) {
               this.requestPlaybackIfReady(postId, currentEntry, 'observer');
             }
             return;
@@ -710,8 +676,8 @@ export class VisibilityManager {
 
   private handlePostEnteredViewport(postId: string, entry: VisibilityEntry): void {
     // Autoplay when entering viewport (if enabled)
-    // Skip if any video is hovered (hover has priority)
-    if (this.options.autoPlay && (!this.hoveredPostId || this.hoveredPostId === postId)) {
+    // In non-HD mode, don't check hover state - autoplay should work regardless
+    if (this.options.autoPlay) {
       this.requestPlaybackIfReady(postId, entry, 'observer');
     }
   }
@@ -782,18 +748,9 @@ export class VisibilityManager {
     this.cancelPlaybackRetry(postId);
     entry.pendingVisibilityPlay = false;
 
-    // Mark that we're pausing this video (system pause, not manual)
-    this.systemPausingVideos.add(postId);
-    
     if (entry.player) {
       entry.player.pause();
     }
-
-    // Clear the system pause flag after a short delay
-    // This allows the state change listener to distinguish manual vs system pauses
-    setTimeout(() => {
-      this.systemPausingVideos.delete(postId);
-    }, 100);
 
     this.activeVideos.delete(postId);
     this.videoStates.set(postId, 'paused');
@@ -808,14 +765,9 @@ export class VisibilityManager {
       return;
     }
 
-    // CRITICAL: Respect user intent - never autoplay if user manually paused
-    if (currentEntry.manuallyPaused) {
-      this.debugLog('play-abort-manually-paused', { postId, origin });
-      return;
-    }
-
-    // Hover has priority: don't start autoplay if any video is hovered (unless this is the hovered video)
-    if (this.hoveredPostId && this.hoveredPostId !== postId) {
+    // Hover has priority in HD mode: don't start autoplay if any video is hovered (unless this is the hovered video)
+    // In non-HD mode (autoPlay: true), allow autoplay even if another video is hovered
+    if (!this.options.autoPlay && this.hoveredPostId && this.hoveredPostId !== postId) {
       this.debugLog('play-abort-hover-active', { postId, origin, hoveredId: this.hoveredPostId });
       return;
     }
@@ -992,116 +944,24 @@ export class VisibilityManager {
       return;
     }
 
-    // Get the entry for the incoming video
-    const incomingEntry = this.entries.get(postId);
-    if (!incomingEntry || !incomingEntry.isVisible) {
-      // If incoming video is not visible, don't enforce concurrency
-      // (it will be handled when it becomes visible)
+    if (this.activeVideos.size < this.options.maxConcurrent) {
       return;
     }
 
-    // Count how many visible videos are currently playing
-    const visiblePlayingVideos: string[] = [];
-    const nonVisiblePlayingVideos: Array<{ postId: string; entry: VisibilityEntry; distance: number; lastVisibleTime: number }> = [];
-    
-    for (const activeId of this.activeVideos) {
-      const entry = this.entries.get(activeId);
-      if (!entry || !entry.player || !entry.player.isPlaying()) {
-        continue;
-      }
-      
-      if (entry.isVisible) {
-        visiblePlayingVideos.push(activeId);
-      } else {
-        // Calculate distance from viewport for prioritization
-        const rect = this.getCachedRect(entry.element);
-        const viewportHeight = window.innerHeight;
-        const viewportWidth = window.innerWidth;
-        
-        let distance = 0;
-        if (rect.bottom < 0) {
-          distance = Math.abs(rect.bottom);
-        } else if (rect.top > viewportHeight) {
-          distance = rect.top - viewportHeight;
-        } else if (rect.right < 0) {
-          distance = Math.abs(rect.right);
-        } else if (rect.left > viewportWidth) {
-          distance = rect.left - viewportWidth;
-        }
-        
-        const lastVisibleTime = this.visibilityStability.get(activeId) || 0;
-        nonVisiblePlayingVideos.push({ postId: activeId, entry, distance, lastVisibleTime });
-      }
-    }
-
-    // Grant playback to all visible videos - if we're adding a visible video,
-    // we need to ensure there's room for it
-    const totalPlaying = visiblePlayingVideos.length + nonVisiblePlayingVideos.length;
-    
-    // If we're within the limit, no need to pause anything
-    if (totalPlaying < this.options.maxConcurrent) {
-      return;
-    }
-
-    // We need to pause some videos. Prioritize keeping visible videos playing.
-    // First, pause non-visible videos, starting with those furthest from viewport
-    // or those that have been non-visible longest
-    nonVisiblePlayingVideos.sort((a, b) => {
-      // First sort by distance (furthest first)
-      if (Math.abs(a.distance - b.distance) > 10) {
-        return b.distance - a.distance;
-      }
-      // Then by time non-visible (longest first)
-      return a.lastVisibleTime - b.lastVisibleTime;
+    const active = Array.from(this.activeVideos);
+    let candidate = active.find((id) => {
+      if (id === postId) return false;
+      const entry = this.entries.get(id);
+      return entry ? !entry.isVisible : true;
     });
 
-    let needToPause = totalPlaying - this.options.maxConcurrent + 1; // +1 for the incoming video
-    let pausedCount = 0;
-
-    for (const { postId: candidateId } of nonVisiblePlayingVideos) {
-      if (pausedCount >= needToPause) {
-        break;
-      }
-      // Don't pause manually paused videos
-      const candidateEntry = this.entries.get(candidateId);
-      if (candidateEntry && !candidateEntry.manuallyPaused) {
-        this.debugLog('concurrency-evict-non-visible', { pausedId: candidateId, incoming: postId, distance: nonVisiblePlayingVideos.find(v => v.postId === candidateId)?.distance });
-        this.pauseVideo(candidateId);
-        pausedCount++;
-      }
+    if (!candidate) {
+      return;
     }
 
-    // If we still need to pause more and there are visible videos exceeding the limit,
-    // we might need to pause some visible videos, but only if absolutely necessary
-    // (This should be rare - ideally we never pause visible videos)
-    if (pausedCount < needToPause && visiblePlayingVideos.length > 0) {
-      // Sort visible videos by distance from center (furthest from center first)
-      const viewportCenterY = window.innerHeight / 2;
-      const viewportCenterX = window.innerWidth / 2;
-      
-      const visibleVideosWithDistance = visiblePlayingVideos.map(id => {
-        const entry = this.entries.get(id);
-        if (!entry) return null;
-        const rect = this.getCachedRect(entry.element);
-        const centerY = rect.top + rect.height / 2;
-        const centerX = rect.left + rect.width / 2;
-        const distance = Math.hypot(centerX - viewportCenterX, centerY - viewportCenterY);
-        return { postId: id, entry, distance };
-      }).filter((v): v is { postId: string; entry: VisibilityEntry; distance: number } => v !== null);
-      
-      visibleVideosWithDistance.sort((a, b) => b.distance - a.distance);
-      
-      for (const { postId: candidateId, entry: candidateEntry } of visibleVideosWithDistance) {
-        if (pausedCount >= needToPause) {
-          break;
-        }
-        // Don't pause manually paused videos or the incoming video
-        if (candidateId !== postId && !candidateEntry.manuallyPaused) {
-          this.debugLog('concurrency-evict-visible', { pausedId: candidateId, incoming: postId, distance: visibleVideosWithDistance.find(v => v.postId === candidateId)?.distance });
-          this.pauseVideo(candidateId);
-          pausedCount++;
-        }
-      }
+    if (candidate) {
+      this.debugLog('concurrency-evict', { pausedId: candidate, incoming: postId });
+      this.pauseVideo(candidate);
     }
   }
 
@@ -1165,78 +1025,6 @@ export class VisibilityManager {
     }
   }
 
-  /**
-   * Periodic check to ensure all visible videos are playing (self-healing mechanism)
-   * This catches cases where videos become visible but didn't trigger playback
-   * Respects user intent (manuallyPaused flag) to avoid fighting with user
-   */
-  private periodicVisibilityCheck(): void {
-    if (!this.options.autoPlay) {
-      return; // Only run when autoplay is enabled
-    }
-
-    for (const [postId, entry] of this.entries.entries()) {
-      if (!entry.isVisible || !entry.player) {
-        continue;
-      }
-
-      // CRITICAL: Respect user intent - never autoplay if user manually paused
-      if (entry.manuallyPaused) {
-        continue;
-      }
-
-      // Skip if video is already playing
-      if (entry.player.isPlaying()) {
-        continue;
-      }
-
-      // Skip if video is still loading
-      const state = this.videoStates.get(postId);
-      if (state === 'loading') {
-        continue;
-      }
-
-      // Skip if any video is hovered (hover has priority)
-      if (this.hoveredPostId && this.hoveredPostId !== postId) {
-        continue;
-      }
-
-      // Video is visible, not manually paused, not playing, and ready - request playback
-      this.debugLog('periodic-check-trigger-play', { postId, state });
-      this.requestPlaybackIfReady(postId, entry, 'retry');
-    }
-  }
-
-  /**
-   * Start periodic visibility check (for non-HD autoplay robustness)
-   */
-  private startPeriodicCheck(): void {
-    if (this.periodicCheckInterval) {
-      return; // Already started
-    }
-
-    if (!this.options.autoPlay) {
-      return; // Only start when autoplay is enabled
-    }
-
-    // Run periodic check every 500ms
-    this.periodicCheckInterval = setInterval(() => {
-      this.periodicVisibilityCheck();
-    }, 500);
-
-    this.debugLog('periodic-check-started', { interval: 500 });
-  }
-
-  /**
-   * Stop periodic visibility check
-   */
-  private stopPeriodicCheck(): void {
-    if (this.periodicCheckInterval) {
-      clearInterval(this.periodicCheckInterval);
-      this.periodicCheckInterval = undefined;
-      this.debugLog('periodic-check-stopped', {});
-    }
-  }
 
   /**
    * Cleanup
@@ -1272,9 +1060,6 @@ export class VisibilityManager {
       this.audioFocusCleanup();
       this.audioFocusCleanup = undefined;
     }
-    
-    // Stop periodic check
-    this.stopPeriodicCheck();
     
     this.observer.disconnect();
     for (const entry of this.entries.values()) {

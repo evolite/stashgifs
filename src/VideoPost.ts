@@ -47,6 +47,7 @@ const HQ_SVG_FILLED = `<svg viewBox="0 0 24 24" width="20" height="20" fill="cur
 const PLAY_SVG = '<svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor" aria-hidden="true"><path d="M8 5v14l11-7z"/></svg>';
 
 const MARKER_SVG = '<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>';
+const ADD_TAG_SVG = '<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>';
 
 const STAR_SVG = `<svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor" aria-hidden="true" focusable="false">
   <path d="M12 17.27L18.18 21l-1.64-7.03L22 9.24l-7.19-.62L12 2 9.19 8.62 2 9.24l5.46 4.73L5.82 21z"/>
@@ -67,6 +68,7 @@ export class VideoPost {
   private visibilityManager?: VisibilityManager;
   private heartButton?: HTMLElement;
   private markerButton?: HTMLElement;
+  private addTagButton?: HTMLElement;
   private oCountButton?: HTMLElement;
   private hqButton?: HTMLElement;
   private playButton?: HTMLElement;
@@ -89,9 +91,12 @@ export class VideoPost {
   private markerDialogRecentTags?: HTMLElement;
   private markerDialogCreateButton?: HTMLButtonElement;
   private isMarkerDialogOpen: boolean = false;
+  private isAddTagMode: boolean = false;
   private selectedTagId?: string;
   private selectedTagName?: string;
   private autocompleteDebounceTimer?: ReturnType<typeof setTimeout>;
+  private tagSearchLoadingTimer?: ReturnType<typeof setTimeout>;
+  private isTagSearchLoading: boolean = false;
   private hasCreatedMarker: boolean = false; // Track if marker has been created for this scene
   private videoLoadingIndicator?: HTMLElement;
   private cachedStarButtonWidth?: number; // Cache star button width (doesn't change)
@@ -215,6 +220,17 @@ export class VideoPost {
    */
   private getPosterUrl(): string | undefined {
     const m = this.data.marker;
+    // Skip synthetic markers - they don't have screenshots in Stash
+    const markerId = m?.id;
+    if (markerId && typeof markerId === 'string' && markerId.startsWith('synthetic-')) {
+      // For synthetic markers, use scene preview/webp/screenshot as fallback
+      const p = m?.scene?.paths?.preview || m?.scene?.paths?.webp || m?.scene?.paths?.screenshot;
+      if (!p) return undefined;
+      const baseUrl = toAbsoluteUrl(p);
+      if (!baseUrl) return undefined;
+      const separator = baseUrl.includes('?') ? '&' : '?';
+      return `${baseUrl}${separator}t=${Date.now()}`;
+    }
     // Prefer preloaded poster from batch prefetch (commit parity)
     const cached = posterPreloader.getPosterForMarker(m);
     if (cached) return cached;
@@ -583,17 +599,28 @@ export class VideoPost {
     // But if marker was already created, show heart button instead
     if (this.useShuffleMode) {
       if (this.hasCreatedMarker && this.favoritesManager) {
-        // Marker was created, show heart button instead
+        // Marker was created, show heart button and "+" button
         const heartBtn = this.createHeartButton();
         buttonGroup.appendChild(heartBtn);
+        if (this.api && this.isRealMarker()) {
+          const addTagBtn = this.createAddTagButton();
+          buttonGroup.appendChild(addTagBtn);
+        }
       } else if (this.api) {
         // Show marker button to create marker
         const markerBtn = this.createMarkerButton();
         buttonGroup.appendChild(markerBtn);
       }
-    } else if (this.favoritesManager) {
-      const heartBtn = this.createHeartButton();
-      buttonGroup.appendChild(heartBtn);
+    } else {
+      // Non-shuffle mode: show heart and "+" buttons for real markers
+      if (this.favoritesManager) {
+        const heartBtn = this.createHeartButton();
+        buttonGroup.appendChild(heartBtn);
+      }
+      if (this.api && this.isRealMarker()) {
+        const addTagBtn = this.createAddTagButton();
+        buttonGroup.appendChild(addTagBtn);
+      }
     }
 
     if (this.api) {
@@ -801,6 +828,43 @@ export class VideoPost {
   }
 
   /**
+   * Create add tag button for adding tags to existing markers
+   */
+  private createAddTagButton(): HTMLElement {
+    const addTagBtn = document.createElement('button');
+    addTagBtn.className = 'icon-btn icon-btn--add-tag';
+    addTagBtn.type = 'button';
+    addTagBtn.setAttribute('aria-label', 'Add tag');
+    addTagBtn.title = 'Add tag to marker';
+    this.applyIconButtonStyles(addTagBtn);
+    addTagBtn.style.padding = '0';
+    addTagBtn.innerHTML = ADD_TAG_SVG;
+
+    const clickHandler = (e: Event) => {
+      e.preventDefault();
+      e.stopPropagation();
+      this.openAddTagDialog();
+    };
+
+    addTagBtn.addEventListener('click', clickHandler);
+    this.addHoverEffect(addTagBtn);
+    this.addTagButton = addTagBtn;
+    return addTagBtn;
+  }
+
+  /**
+   * Check if marker has a real ID (not synthetic)
+   */
+  private isRealMarker(): boolean {
+    const markerId = this.data.marker?.id;
+    if (!markerId) return false;
+    if (typeof markerId === 'string' && markerId.startsWith('synthetic-')) {
+      return false;
+    }
+    return true;
+  }
+
+  /**
    * Replace marker button with heart button after marker creation
    */
   private replaceMarkerButtonWithHeart(): void {
@@ -813,6 +877,17 @@ export class VideoPost {
     // Create and add heart button in the same position (first button)
     const heartBtn = this.createHeartButton();
     this.buttonGroup.insertBefore(heartBtn, this.buttonGroup.firstChild);
+
+    // Also add "+" button for adding tags
+    if (this.api && this.isRealMarker()) {
+      const addTagBtn = this.createAddTagButton();
+      // Insert after heart button
+      if (this.buttonGroup.firstChild) {
+        this.buttonGroup.insertBefore(addTagBtn, this.buttonGroup.firstChild.nextSibling);
+      } else {
+        this.buttonGroup.appendChild(addTagBtn);
+      }
+    }
 
     // Check favorite status to ensure heart button shows correct state
     this.checkFavoriteStatus();
@@ -2105,6 +2180,7 @@ export class VideoPost {
 
     // Title
     const title = document.createElement('div');
+    title.id = 'marker-dialog-title';
     title.textContent = 'Create Marker';
     title.style.fontSize = '16px';
     title.style.fontWeight = '600';
@@ -2139,7 +2215,11 @@ export class VideoPost {
     input.addEventListener('keydown', (e) => {
       if (e.key === 'Enter' && this.selectedTagId && this.markerDialogCreateButton && !this.markerDialogCreateButton.disabled) {
         e.preventDefault();
-        void this.createMarker();
+        if (this.isAddTagMode) {
+          void this.addTagToMarker();
+        } else {
+          void this.createMarker();
+        }
       } else if (e.key === 'Escape') {
         e.preventDefault();
         this.closeMarkerDialog();
@@ -2209,6 +2289,7 @@ export class VideoPost {
 
     const createBtn = document.createElement('button');
     createBtn.type = 'button';
+    createBtn.id = 'marker-dialog-action-button';
     createBtn.textContent = 'Create';
     createBtn.disabled = true;
     createBtn.style.padding = '8px 16px';
@@ -2220,7 +2301,11 @@ export class VideoPost {
     createBtn.style.cursor = 'not-allowed';
     createBtn.style.transition = 'all 0.2s ease';
     createBtn.addEventListener('click', () => {
-      void this.createMarker();
+      if (this.isAddTagMode) {
+        void this.addTagToMarker();
+      } else {
+        void this.createMarker();
+      }
     });
     this.markerDialogCreateButton = createBtn;
     buttons.appendChild(createBtn);
@@ -2233,25 +2318,35 @@ export class VideoPost {
   /**
    * Open marker dialog
    */
-  private openMarkerDialog(): void {
+  private openMarkerDialog(mode: 'create' | 'add' = 'create'): void {
     if (!this.markerDialog) {
-      if (!this.markerButton) return;
+      // Find button group from either marker button or add tag button
+      const buttonGroup = (this.markerButton || this.addTagButton)?.parentElement;
+      if (!buttonGroup) return;
       const dialog = this.createMarkerDialog();
-      // Append to buttonGroup (parent of markerButton) and ensure it has position relative
-      const buttonGroup = this.markerButton.parentElement;
-      if (buttonGroup) {
-        buttonGroup.style.position = 'relative';
-        buttonGroup.appendChild(dialog);
-      }
+      buttonGroup.style.position = 'relative';
+      buttonGroup.appendChild(dialog);
     }
     if (this.isMarkerDialogOpen) return;
 
+    this.isAddTagMode = mode === 'add';
     this.isMarkerDialogOpen = true;
     this.selectedTagId = undefined;
     this.selectedTagName = undefined;
     if (this.markerDialogInput) {
       this.markerDialogInput.value = '';
     }
+    
+    // Update dialog title and button text based on mode
+    const title = this.markerDialog?.querySelector('#marker-dialog-title');
+    const actionButton = this.markerDialog?.querySelector('#marker-dialog-action-button') as HTMLButtonElement;
+    if (title) {
+      title.textContent = this.isAddTagMode ? 'Add Tag' : 'Create Marker';
+    }
+    if (actionButton) {
+      actionButton.textContent = this.isAddTagMode ? 'Add' : 'Create';
+    }
+    
     this.updateMarkerDialogState();
     this.loadRecentTags();
 
@@ -2279,6 +2374,17 @@ export class VideoPost {
   private closeMarkerDialog(): void {
     if (!this.isMarkerDialogOpen) return;
     this.isMarkerDialogOpen = false;
+
+    // Clean up loading state and timers
+    if (this.autocompleteDebounceTimer) {
+      clearTimeout(this.autocompleteDebounceTimer);
+      this.autocompleteDebounceTimer = undefined;
+    }
+    if (this.tagSearchLoadingTimer) {
+      clearTimeout(this.tagSearchLoadingTimer);
+      this.tagSearchLoadingTimer = undefined;
+    }
+    this.clearTagSuggestionsLoading();
 
     if (this.markerDialog) {
       this.markerDialog.style.opacity = '0';
@@ -2336,11 +2442,18 @@ export class VideoPost {
     this.selectedTagName = undefined;
     this.updateMarkerDialogState();
 
+    // Clear any existing timers
     if (this.autocompleteDebounceTimer) {
       clearTimeout(this.autocompleteDebounceTimer);
     }
+    if (this.tagSearchLoadingTimer) {
+      clearTimeout(this.tagSearchLoadingTimer);
+      this.tagSearchLoadingTimer = undefined;
+    }
 
     if (searchTerm.length === 0) {
+      // Clear loading state and hide suggestions
+      this.clearTagSuggestionsLoading();
       if (this.markerDialogSuggestions) {
         this.markerDialogSuggestions.style.display = 'none';
       }
@@ -2353,17 +2466,95 @@ export class VideoPost {
   }
 
   /**
+   * Show loading skeleton in tag suggestions dropdown
+   */
+  private showTagSuggestionsLoading(): void {
+    if (!this.markerDialogSuggestions || this.isTagSearchLoading) return;
+
+    this.isTagSearchLoading = true;
+    this.markerDialogSuggestions.innerHTML = '';
+    this.markerDialogSuggestions.style.display = 'block';
+
+    // Create 4 skeleton suggestion items
+    for (let i = 0; i < 4; i++) {
+      const skeletonItem = document.createElement('div');
+      skeletonItem.setAttribute('data-tag-suggestion-skeleton', 'true');
+      skeletonItem.style.width = '100%';
+      skeletonItem.style.padding = '10px 12px';
+      skeletonItem.style.display = 'flex';
+      skeletonItem.style.alignItems = 'center';
+      
+      const skeletonText = document.createElement('div');
+      skeletonText.className = 'chip-skeleton';
+      skeletonText.setAttribute('data-tag-suggestion-skeleton', 'true');
+      skeletonText.style.height = '16px';
+      skeletonText.style.borderRadius = '4px';
+      skeletonText.style.flex = '1';
+      
+      // Vary width for more natural look
+      const widths = [120, 140, 100, 130];
+      skeletonText.style.width = `${widths[i % widths.length]}px`;
+      
+      skeletonItem.appendChild(skeletonText);
+      this.markerDialogSuggestions.appendChild(skeletonItem);
+    }
+  }
+
+  /**
+   * Clear loading skeleton from tag suggestions dropdown
+   */
+  private clearTagSuggestionsLoading(): void {
+    if (!this.markerDialogSuggestions) return;
+
+    // Remove all skeleton items
+    const skeletonItems = Array.from(this.markerDialogSuggestions.querySelectorAll('[data-tag-suggestion-skeleton="true"]'));
+    skeletonItems.forEach((item) => {
+      if (item.parentNode) {
+        item.parentNode.removeChild(item);
+      }
+    });
+
+    this.isTagSearchLoading = false;
+  }
+
+  /**
    * Search tags for marker creation (using faster searchMarkerTags API)
    */
   private async searchTagsForMarker(searchTerm: string): Promise<void> {
     if (!this.api || !this.markerDialogSuggestions) return;
 
+    // Clear any existing loading state from previous search
+    this.clearTagSuggestionsLoading();
+
+    // Show loading skeleton if search takes longer than 200ms
+    this.tagSearchLoadingTimer = setTimeout(() => {
+      if (!this.isTagSearchLoading) {
+        this.showTagSuggestionsLoading();
+      }
+    }, 200);
+
     try {
       // Use searchMarkerTags which is much faster than findTagsForSelect
       const tags = await this.api.searchMarkerTags(searchTerm, 20);
+      
+      // Clear loading timer if it hasn't fired yet
+      if (this.tagSearchLoadingTimer) {
+        clearTimeout(this.tagSearchLoadingTimer);
+        this.tagSearchLoadingTimer = undefined;
+      }
+      
+      // Clear any loading skeletons that were shown
+      this.clearTagSuggestionsLoading();
+      
       this.displayTagSuggestions(tags);
     } catch (error) {
       console.error('Failed to search tags', error);
+      // Clear loading on error
+      if (this.tagSearchLoadingTimer) {
+        clearTimeout(this.tagSearchLoadingTimer);
+        this.tagSearchLoadingTimer = undefined;
+      }
+      this.clearTagSuggestionsLoading();
     }
   }
 
@@ -2372,6 +2563,9 @@ export class VideoPost {
    */
   private displayTagSuggestions(tags: Array<{ id: string; name: string }>): void {
     if (!this.markerDialogSuggestions) return;
+
+    // Clear any loading skeletons first
+    this.clearTagSuggestionsLoading();
 
     this.markerDialogSuggestions.innerHTML = '';
     this.markerDialogSuggestions.style.display = tags.length > 0 ? 'block' : 'none';
@@ -2641,6 +2835,67 @@ export class VideoPost {
       this.markerDialogCreateButton.textContent = 'Create';
       this.markerDialogCreateButton.style.opacity = '1';
       // Videos will resume naturally via visibility manager when they become visible again
+    }
+  }
+
+  /**
+   * Open add tag dialog
+   */
+  private openAddTagDialog(): void {
+    this.openMarkerDialog('add');
+  }
+
+  /**
+   * Add tag to existing marker
+   */
+  private async addTagToMarker(): Promise<void> {
+    if (!this.api || !this.selectedTagId || !this.selectedTagName) return;
+    if (!this.markerDialogCreateButton) return;
+
+    // Validate marker has real ID (not synthetic)
+    if (!this.isRealMarker()) {
+      showToast('Cannot add tag to synthetic marker. Please create the marker first.');
+      return;
+    }
+
+    this.markerDialogCreateButton.disabled = true;
+    this.markerDialogCreateButton.textContent = 'Adding...';
+    this.markerDialogCreateButton.style.opacity = '0.6';
+
+    try {
+      // Check if tag is already added
+      const currentTagIds = (this.data.marker.tags || []).map(t => t.id);
+      if (currentTagIds.includes(this.selectedTagId)) {
+        showToast(`Tag "${this.selectedTagName}" is already added to this marker.`);
+        this.markerDialogCreateButton.disabled = false;
+        this.markerDialogCreateButton.textContent = 'Add';
+        this.markerDialogCreateButton.style.opacity = '1';
+        return;
+      }
+
+      // Add tag to marker
+      await this.api.addTagToMarker(this.data.marker, this.selectedTagId);
+
+      // Update local marker tags
+      if (!this.data.marker.tags) {
+        this.data.marker.tags = [];
+      }
+      
+      // Add tag to local data (we already have the name from selectedTagName)
+      this.data.marker.tags.push({ id: this.selectedTagId, name: this.selectedTagName });
+
+      showToast(`Tag "${this.selectedTagName}" added to marker`);
+      
+      // Refresh header to show new tag chip
+      this.refreshHeader();
+      
+      this.closeMarkerDialog();
+    } catch (error) {
+      console.error('Failed to add tag to marker', error);
+      showToast('Failed to add tag. Please try again.');
+      this.markerDialogCreateButton.disabled = false;
+      this.markerDialogCreateButton.textContent = 'Add';
+      this.markerDialogCreateButton.style.opacity = '1';
     }
   }
 

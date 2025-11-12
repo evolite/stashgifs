@@ -937,6 +937,12 @@ export class FeedContainer {
       
       setShuffleToggleVisualState();
       
+      // Show header if entering random discovery mode (it should never fade in this mode)
+      if (this.shuffleMode > 0 && this.headerBar) {
+        this.headerBar.style.transform = 'translateY(0)';
+        this.headerBar.style.opacity = '1';
+      }
+      
       // If shuffle is enabled (mode 1 or 2), reload the feed
       if (this.shuffleMode > 0) {
         // Clear current posts
@@ -1047,7 +1053,8 @@ export class FeedContainer {
       const disabled = this.shuffleMode > 0;
       // Use readOnly so clicks can disable random mode
       (queryInput as HTMLInputElement).readOnly = disabled;
-      queryInput.style.opacity = disabled ? '0.6' : '1';
+      // Keep opacity at 1 in both modes for consistent appearance
+      queryInput.style.opacity = '1';
       // Adjust left padding to accommodate left helper when random is active
       queryInput.style.paddingLeft = this.shuffleMode > 0 ? '180px' : '14px';
       // Hide deprecated right pill (no longer used)
@@ -1992,7 +1999,12 @@ export class FeedContainer {
         const clickedInsideSearch = searchArea.contains(e.target as Node);
         const clickedInsideSuggestions = suggestions.contains(e.target as Node);
         
-        if (isSuggestionsVisible && !clickedInsideSearch && !clickedInsideSuggestions) {
+        // Don't close if clicking on header control buttons (HD toggle, shuffle, volume, etc.)
+        const target = e.target as HTMLElement;
+        const clickedOnHeaderButton = target.closest('button') && 
+          (target.closest('.feed-header-bar') || target.closest('header'));
+        
+        if (isSuggestionsVisible && !clickedInsideSearch && !clickedInsideSuggestions && !clickedOnHeaderButton) {
           this.closeSuggestions();
         }
       }, 0);
@@ -4369,6 +4381,16 @@ export class FeedContainer {
   private setupScrollHandler(): void {
     let lastScrollY = window.scrollY;
     let isHeaderHidden = false;
+    
+    // Store reference to isHeaderHidden so we can access it from other methods
+    (this as any).__isHeaderHidden = () => isHeaderHidden;
+    (this as any).__setHeaderHidden = (val: boolean) => { isHeaderHidden = val; };
+    (this as any).__showHeader = () => {
+      if (this.headerBar) {
+        this.headerBar.style.transform = 'translateY(0)';
+        isHeaderHidden = false;
+      }
+    };
 
     // Initialize scroll tracking
     this.lastScrollTop = window.scrollY || document.documentElement.scrollTop;
@@ -4416,6 +4438,22 @@ export class FeedContainer {
       // Don't hide/show header if suggestions overlay is open
       const suggestions = document.querySelector('.feed-filters__suggestions') as HTMLElement;
       if (suggestions && suggestions.style.display !== 'none' && suggestions.style.display !== '') {
+        return;
+      }
+
+      // Don't hide/show header if in random discovery mode
+      // Also ensure header is visible if it was previously hidden
+      if (this.shuffleMode > 0) {
+        if (this.headerBar) {
+          const currentTransform = this.headerBar.style.transform;
+          // If header is hidden (transform is not translateY(0)), show it
+          if (currentTransform && currentTransform !== 'translateY(0)' && currentTransform !== '') {
+            this.headerBar.style.transform = 'translateY(0)';
+            isHeaderHidden = false;
+          }
+          // Ensure opacity is always 1 in random discovery mode
+          this.headerBar.style.opacity = '1';
+        }
         return;
       }
 

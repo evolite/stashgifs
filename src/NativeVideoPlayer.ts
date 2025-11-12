@@ -1235,10 +1235,9 @@ export class NativeVideoPlayer {
       // iOS Safari: Use webkitEnterFullscreen on video element
       if (hasWebkitFullscreen(this.videoElement)) {
         const element = this.videoElement as ElementWebkitFullscreen;
-        const webkitEnterFullscreen = element.webkitEnterFullscreen;
-        if (webkitEnterFullscreen) {
+        if (element.webkitEnterFullscreen) {
           try {
-            webkitEnterFullscreen();
+            element.webkitEnterFullscreen();
             // State will be updated via webkitbeginfullscreen event
           } catch (error) {
             console.error('Failed to enter fullscreen on iOS', error);
@@ -1257,17 +1256,17 @@ export class NativeVideoPlayer {
       } else if (hasWebkitFullscreen(this.videoElement)) {
         const element = this.videoElement as ElementWebkitFullscreen;
         if (element.webkitRequestFullscreen) {
-          videoRequestFullscreen = element.webkitRequestFullscreen.bind(this.videoElement);
+          videoRequestFullscreen = () => element.webkitRequestFullscreen!();
         }
       } else if (hasMozFullscreen(this.videoElement)) {
         const element = this.videoElement as ElementMozFullscreen;
         if (element.mozRequestFullscreen) {
-          videoRequestFullscreen = element.mozRequestFullscreen.bind(this.videoElement);
+          videoRequestFullscreen = () => element.mozRequestFullscreen!();
         }
       } else if (hasMsFullscreen(this.videoElement)) {
         const element = this.videoElement as ElementMsFullscreen;
         if (element.msRequestFullscreen) {
-          videoRequestFullscreen = element.msRequestFullscreen.bind(this.videoElement);
+          videoRequestFullscreen = () => element.msRequestFullscreen!();
         }
       }
 

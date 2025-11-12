@@ -20,11 +20,13 @@ class PosterPreloader {
     const sceneId = marker?.scene?.id;
     if (!markerId || !sceneId) return undefined;
     // Skip screenshot requests for synthetic markers (shuffle/random mode)
-    if (typeof markerId === 'string' && markerId.startsWith('synthetic-')) return undefined;
+    // Convert to string to handle both string and number IDs, then check for synthetic prefix
+    const markerIdStr = String(markerId);
+    if (markerIdStr.startsWith('synthetic-')) return undefined;
     // Path-style endpoint; assume same-origin
     // Add cache-busting timestamp to prevent 304 responses with empty/corrupted cache
     const timestamp = Date.now();
-    const path = `/scene/${sceneId}/scene_marker/${markerId}/screenshot?t=${timestamp}`;
+    const path = `/scene/${sceneId}/scene_marker/${markerIdStr}/screenshot?t=${timestamp}`;
     return toAbsoluteUrl(path);
   }
 
@@ -37,19 +39,21 @@ class PosterPreloader {
     for (const marker of slice) {
       const id = marker?.id;
       if (!id) continue;
-      if (this.cache.has(id) || this.inflight.has(id)) continue;
+      // Convert to string to handle both string and number IDs
+      const idStr = String(id);
+      if (this.cache.has(idStr) || this.inflight.has(idStr)) continue;
       const url = this.buildMarkerScreenshotUrl(marker);
       if (!url) continue;
-      this.inflight.add(id);
+      this.inflight.add(idStr);
       // Use Image to warm cache; store on load
       const img = new Image();
       img.onload = () => {
-        this.cache.set(id, url);
-        this.inflight.delete(id);
+        this.cache.set(idStr, url);
+        this.inflight.delete(idStr);
       };
       img.onerror = () => {
         // Keep silent; just drop inflight and don't cache failures
-        this.inflight.delete(id);
+        this.inflight.delete(idStr);
       };
       img.src = url;
     }
@@ -61,7 +65,11 @@ class PosterPreloader {
   getPosterForMarker(marker: SceneMarker): string | undefined {
     const id = marker?.id;
     if (!id) return undefined;
-    return this.cache.get(id);
+    // Never return cached URLs for synthetic markers (they don't exist in Stash)
+    // Convert to string to handle both string and number IDs
+    const idStr = String(id);
+    if (idStr.startsWith('synthetic-')) return undefined;
+    return this.cache.get(idStr);
   }
 }
 
