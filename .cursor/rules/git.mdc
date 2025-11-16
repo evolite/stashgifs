@@ -1,0 +1,4 @@
+---
+alwaysApply: true
+---
+// Cursor Rule: All git commands must be executed from within the root of this project directory. Do not run git commands from subdirectories.

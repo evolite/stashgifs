@@ -40,9 +40,15 @@ function init(): void {
 
     // Get settings from localStorage or use defaults
     const savedSettings = localStorage.getItem('stashgifs-settings');
-    const settings: Partial<FeedSettings> = savedSettings
-      ? JSON.parse(savedSettings)
-      : {};
+    let settings: Partial<FeedSettings> = {};
+    if (savedSettings) {
+      try {
+        settings = JSON.parse(savedSettings) as Partial<FeedSettings>;
+      } catch (error) {
+        console.warn('Failed to parse saved settings, using defaults', error);
+        settings = {};
+      }
+    }
 
     // Create feed
     const feed = new FeedContainer(appContainer, api, settings);

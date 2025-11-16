@@ -1,0 +1,11 @@
+---
+alwaysApply: true
+---
+// Cursor Rule: All build, packaging, and deploy commands **must** be run from within the root of this project directory.
+
+// Packaging: When packaging the project, always invoke the `package.ps1` script at the project root. This script **requires** a parameter specifying the version type to increment: `major`, `minor`, or `bug`. Only use these values when building packages. Do **not** use other packaging methods or scripts.
+
+// Building: To build the project code, use `npm run build` from within the project directory.
+
+// Deploy and Test: After building (and optionally packaging), **always** run the `deploy.ps1` script (also at the project root). This script is the only supported way to deploy and test your code in this environment. Do **not** start the code any other way.
+

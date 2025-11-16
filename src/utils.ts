@@ -5,37 +5,37 @@
 /**
  * Throttle function calls
  */
-export function throttle<T extends (...args: any[]) => any>(
+export function throttle<T extends (...args: never[]) => unknown>(
   func: T,
   delay: number
-): (...args: Parameters<T>) => void {
+): T {
   let lastCall = 0;
-  return function (this: any, ...args: Parameters<T>) {
+  return ((...args: Parameters<T>) => {
     const now = Date.now();
     if (now - lastCall >= delay) {
       lastCall = now;
-      func.apply(this, args);
+      func(...args);
     }
-  };
+  }) as T;
 }
 
 /**
  * Debounce function calls
  */
-export function debounce<T extends (...args: any[]) => any>(
+export function debounce<T extends (...args: never[]) => unknown>(
   func: T,
   delay: number
-): (...args: Parameters<T>) => void {
+): T {
   let timeoutId: number | null = null;
-  return function (this: any, ...args: Parameters<T>) {
+  return ((...args: Parameters<T>) => {
     if (timeoutId !== null) {
       clearTimeout(timeoutId);
     }
     timeoutId = window.setTimeout(() => {
-      func.apply(this, args);
+      func(...args);
       timeoutId = null;
     }, delay);
-  };
+  }) as T;
 }
 
 /**

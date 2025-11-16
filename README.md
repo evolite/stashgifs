@@ -1,114 +1,49 @@
-# StashGifs
+# StashGifs 🎬
 
-A Social Media-style vertical feed for browsing Stash scene markers. Scroll through your markers like GIFs.
+Turn your Stash scene markers into an endless scroll of looping GIFs. It's like TikTok, but for your favorite moments.
 
-## Quick Start
+## What's This All About?
 
-Install via Stash's plugin system using the `index.yml` file.
+Ever wish you could just scroll through your scene markers like you're doom-scrolling social media? Well, now you can! StashGifs transforms your markers into a vertical feed of auto-playing videos that loop endlessly. Just keep scrolling and let the algorithm (okay, it's random) serve you the good stuff.
 
-## Features
+## Getting Started
 
-- **Vertical scrolling feed** - Browse markers like a social media feed, looping videos
-- **Auto-play videos** - Videos play automatically as you scroll (HD videos play on hover)
-- **Saved filters** - Quick access to your saved marker filters
-- **Random content** - Fresh mix every time you load
-- **Favorites** - Heart markers to save them (adds "StashGifs Favorite" tag)
-- **O-count tracking** - Track and increment o-counts
-- **HD mode** - Switch to full scene video with audio
-- **Random scene player** - Watch random scenes and add markers if you like them
-- **Add markers** - Create new markers directly from scenes
-- **Mobile friendly** - Works great on touch devices
-- **Fullscreen support** - Watch in fullscreen
+Install it via Stash's plugin system using the `index.yml` file. That's it. You're ready to scroll.
 
-## Controls
+## The Good Stuff ✨
 
-**Navigation:**
-- **Performer chips** - Click any performer chip to filter the feed to show only markers with that performer
-- **Tag chips** - Click any tag chip to filter the feed to show only markers with that tag
+Scroll through your markers like a social feed. Videos auto-play as you browse (HD videos wait for you to hover). Click performer or tag chips to filter on the fly. Every load gives you a fresh random mix. Heart your favorites, track o-counts, rate with stars, or jump into full HD mode with audio. Feeling adventurous? Use the random scene player to discover new content and add markers on the spot. Works great on mobile too!
 
-**Search bar:**
-- Click to open full-screen search dropdown
-- Select trending tags or saved filters
-- Search automatically matches related tags (e.g., "finger" finds "fingers", "finger - pov")
-- Click search bar again to clear and start fresh
+## How to Use It
 
-**Card buttons:**
-- ❤️ **Heart** - Favorite/unfavorite (adds tag in Stash)
-- 💦 **O-count** - Increment scene o-count
-- ⭐ **Star** - Set rating (0-10 stars)
-- **HD** - Switch to full scene video with audio
-- 📌 **Marker** - Add a new marker at current timestamp (In random mode)
-- **+** **Add Tag** - Add a additonal  tag to a marker
-- ▶️ **Play** - Open scene in Stash at marker timestamp
+**The Feed:**
+- Click any performer or tag chip to filter instantly
+- Search bar opens a full-screen dropdown with trending tags and saved filters
+- Search is smart—type "finger" and it'll find "fingers", "finger - pov", etc.
 
-**Video controls:**
-- Play/pause, seek,, fullscreen
+**On Each Card:**
+- ❤️ Heart it to favorite (adds a tag in Stash)
+- 💦 Increment the o-count
+- ⭐ Rate it (0-10 stars)
+- **HD** Switch to full scene with audio
+- 📌 Add a marker at the current timestamp (in random mode)
+- **+** Add more tags
+- ▶️ Open in Stash at the marker timestamp
 
-## Development
+**Video Controls:**
+- Play/pause, seek, fullscreen—you know the drill
+
+## For Developers 👨‍💻
 
 ```bash
-npm install    # Install dependencies
-npm run build  # Compile TypeScript
+npm install    # Get the dependencies
+npm run build  # Build it
 ```
 
-## Ollama ROCm Setup (AMD GPU Support)
+## AMD GPU Setup (Optional)
 
-This repository includes scripts to configure Ollama to use AMD ROCm for GPU acceleration on Windows, specifically for AMD Radeon GPUs like the RX 9070 XT.
-
-### Prerequisites
-
-- Ollama installed (download from https://ollama.com/download)
-- AMD GPU with ROCm support (RX 9070 XT, RX 7900 XT, etc.)
-- AMD HIP SDK or ROCm binaries (see below)
-
-### Setup Instructions
-
-1. **Install AMD HIP SDK** (if not already installed):
-   - Download from: https://www.amd.com/en/developer/resources/rocm-hub/rocm-installation.html
-   - Or use pre-built ROCm binaries for Windows
-
-2. **Run the setup script**:
-   ```powershell
-   .\setup-ollama-rocm.ps1
-   ```
-   
-   The script will:
-   - Detect your Ollama installation
-   - Search for ROCm/HIP SDK binaries
-   - Copy ROCm DLLs to Ollama's directory
-   - Configure environment variables (ROCM_PATH, HIP_PATH, HSA_OVERRIDE_GFX_VERSION)
-
-3. **Verify the setup**:
-   ```powershell
-   .\verify-ollama-gpu.ps1
-   ```
-
-4. **Test GPU acceleration**:
-   ```powershell
-   # Restart your terminal to load new environment variables
-   ollama pull llama3.2
-   ollama run llama3.2
-   ```
-   
-   Monitor GPU usage in Task Manager > Performance > GPU to confirm the GPU is being used.
-
-### Troubleshooting
-
-- **No ROCm DLLs found**: Install AMD HIP SDK and run the setup script again
-- **GPU not being used**: 
-  - Check GPU drivers are up to date
-  - Verify HSA_OVERRIDE_GFX_VERSION is set (11.0.0 for RX 9070 XT)
-  - Ensure ROCm DLLs are in `%LOCALAPPDATA%\Programs\Ollama\lib\ollama\rocm\`
-- **Environment variables not working**: Restart your terminal/PowerShell after running the setup script
-
-### Script Parameters
-
-The setup script accepts optional parameters:
-
-```powershell
-.\setup-ollama-rocm.ps1 -RocmPath "C:\Path\To\ROCm" -OllamaPath "C:\Path\To\Ollama"
-```
+Got an AMD GPU? There are scripts here to help Ollama use it for GPU acceleration. Check out the setup scripts if you're into that kind of thing.
 
 ## Credits
 
-Idea from [Stash TV](https://discourse.stashapp.cc/t/stash-tv/3627).
+Inspired by [Stash TV](https://discourse.stashapp.cc/t/stash-tv/3627). Thanks for the idea! 🎉

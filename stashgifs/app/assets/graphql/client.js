@@ -495,12 +495,12 @@ export class GraphQLClient {
                 cacheKey = JSON.stringify(obj);
             }
             catch {
-                cacheKey = `simple:${objKeys.sort().join(',')}`;
+                cacheKey = `simple:${objKeys.sort((a, b) => a.localeCompare(b)).join(',')}`;
             }
         }
         else {
             // For complex objects, use sorted keys
-            cacheKey = `complex:${objKeys.sort().join(',')}`;
+            cacheKey = `complex:${objKeys.sort((a, b) => a.localeCompare(b)).join(',')}`;
         }
         // Check cache first
         const cached = this.keyCache.get(cacheKey);
@@ -572,7 +572,7 @@ export class GraphQLClient {
             return obj.map(item => this._sortObjectKeys(item, depth + 1));
         }
         const sorted = {};
-        const keys = Object.keys(obj).sort();
+        const keys = Object.keys(obj).sort((a, b) => a.localeCompare(b));
         // For objects with many keys, limit processing to prevent performance issues
         const MAX_KEYS = 100;
         const keysToProcess = keys.length > MAX_KEYS ? keys.slice(0, MAX_KEYS) : keys;

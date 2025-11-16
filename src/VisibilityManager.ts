@@ -880,7 +880,9 @@ export class VisibilityManager {
         this.debugLog('play-failed', { postId, origin, attempt, error });
         
         // Check if this is a load failure (not just playback failure)
-        const errorObj = error as { errorType?: string } | null;
+        const errorObj = error && typeof error === 'object' && 'errorType' in error 
+          ? error as { errorType?: string }
+          : null;
         const isLoadFailure = errorObj?.errorType === 'timeout' || 
                              errorObj?.errorType === 'network' || 
                              errorObj?.errorType === 'play' ||
@@ -907,7 +909,10 @@ export class VisibilityManager {
       }
     };
 
-    perform().catch(() => {});
+    // Intentionally ignore errors - errors are handled within perform() function
+    perform().catch(() => {
+      // Errors are handled within perform() function
+    });
   }
 
   private computeRetryDelay(isMobile: boolean, attempt: number): number {
@@ -1422,7 +1427,9 @@ export class VisibilityManager {
       }
     }).catch((error: unknown) => {
       // If play fails, check if it's a load failure
-      const errorObj = error as { errorType?: string } | null;
+      const errorObj = error && typeof error === 'object' && 'errorType' in error 
+        ? error as { errorType?: string }
+        : null;
       const isLoadFailure = errorObj?.errorType === 'timeout' ||
                            errorObj?.errorType === 'network' ||
                            errorObj?.errorType === 'play' ||

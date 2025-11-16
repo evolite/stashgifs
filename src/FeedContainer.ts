@@ -9,7 +9,7 @@ import { VideoPost } from './VideoPost.js';
 import { NativeVideoPlayer } from './NativeVideoPlayer.js';
 import { VisibilityManager } from './VisibilityManager.js';
 import { FavoritesManager } from './FavoritesManager.js';
-import { throttle, debounce, isValidMediaUrl, detectDeviceCapabilities, DeviceCapabilities, isStandaloneNavigator } from './utils.js';
+import { debounce, isValidMediaUrl, detectDeviceCapabilities, DeviceCapabilities, isStandaloneNavigator } from './utils.js';
 import { posterPreloader } from './PosterPreloader.js';
 
 const DEFAULT_SETTINGS: FeedSettings = {
@@ -24,13 +24,23 @@ const DEFAULT_SETTINGS: FeedSettings = {
   backgroundPreloadEnabled: true,
   backgroundPreloadDelay: 150, // ms, delay between videos
   backgroundPreloadFastScrollDelay: 400, // ms, delay during fast scrolling
-  backgroundPreloadScrollVelocityThreshold: 2.0, // pixels/ms, threshold for fast scroll detection
+  backgroundPreloadScrollVelocityThreshold: 2, // pixels/ms, threshold for fast scroll detection
 };
 
+/**
+ * Debug interface for FeedContainer (for extension/debugging purposes)
+ */
+interface FeedContainerDebug {
+  __isHeaderHidden?: () => boolean;
+  __setHeaderHidden?: (val: boolean) => void;
+  __showHeader?: () => void;
+  _mobileLoadTimeout?: ReturnType<typeof setTimeout> | null;
+}
+
 export class FeedContainer {
-  private container: HTMLElement;
+  private readonly container: HTMLElement;
   private scrollContainer: HTMLElement;
-  private api: StashAPI;
+  private readonly api: StashAPI;
   private visibilityManager: VisibilityManager;
   private favoritesManager: FavoritesManager;
   private posts: Map<string, VideoPost>;
@@ -54,23 +64,23 @@ export class FeedContainer {
   private eagerPreloadedPosts: Set<string>;
   private eagerPreloadScheduled: boolean = false;
   private eagerPreloadHandle?: number;
-  private readonly eagerPreloadCount: number;
-  private readonly maxSimultaneousPreloads: number;
-  private readonly isMobileDevice: boolean;
+  private eagerPreloadCount: number;
+  private maxSimultaneousPreloads: number;
+  private isMobileDevice: boolean;
   private preloadedTags: Array<{ id: string; name: string }> = [];
   private preloadedPerformers: Array<{ id: string; name: string; image_path?: string }> = [];
   private isPreloading: boolean = false;
   private backgroundPreloadActive: boolean = false;
   private backgroundPreloadHandle?: number;
   private backgroundPreloadPriorityQueue: string[] = [];
-  private activePreloadPosts: Set<string> = new Set();
+  private readonly activePreloadPosts: Set<string> = new Set();
   private lastScrollTop: number = 0;
   private lastScrollTime: number = 0;
   private scrollVelocity: number = 0;
   private currentlyPreloadingCount: number = 0;
   private mobilePreloadQueue: string[] = [];
   private mobilePreloadActive: boolean = false;
-  private readonly initialLoadLimit: number; // Set in constructor based on device
+  private initialLoadLimit: number; // Set in constructor based on device
   private readonly subsequentLoadLimit: number = 12; // Load 12 items on subsequent loads (reduced from 20)
   private placeholderAnimationInterval?: ReturnType<typeof setInterval>; // For scrolling placeholder animation
   private savedFiltersCache: Array<{ id: string; name: string }> = [];
@@ -81,7 +91,7 @@ export class FeedContainer {
   private useHDMode: boolean = false;
   private useVolumeMode: boolean = false;
   private shuffleMode: number = 0; // 0 = off, 1 = shuffle with markers only, 2 = shuffle all (including no markers)
-  private loadObservers: Map<string, IntersectionObserver> = new Map(); // Track load observers for cleanup
+  private readonly loadObservers: Map<string, IntersectionObserver> = new Map(); // Track load observers for cleanup
   private deviceCapabilities: DeviceCapabilities; // Device capabilities for adaptive quality
   private shuffleToggle?: HTMLElement; // Reference to shuffle toggle button
 
@@ -89,7 +99,48 @@ export class FeedContainer {
     this.container = container;
     this.api = api || new StashAPI();
     this.settings = { ...DEFAULT_SETTINGS, ...settings };
+    // Initialize properties that will be set in methods
+    this.scrollContainer = null!; // Will be set in initializeContainers
+    this.visibilityManager = null!; // Will be set in initializeManagers
+    this.favoritesManager = null!; // Will be set in initializeManagers
+    this.posts = new Map();
+    this.postOrder = [];
+    this.eagerPreloadedPosts = new Set();
+    this.eagerPreloadCount = 0;
+    this.maxSimultaneousPreloads = 0;
+    this.isMobileDevice = false;
+    this.initialLoadLimit = 0;
+    this.deviceCapabilities = null!; // Will be set in initializeDeviceConfiguration
 
+    this.initializeDeviceConfiguration();
+    this.initializeContainers();
+    this.loadUserPreferences();
+    
+    // Create header bar with unified search
+    this.createHeaderBar();
+    
+    this.initializePostsContainer();
+    this.initializeManagers();
+
+    // Setup scroll handler
+    this.setupScrollHandler();
+    
+    // Setup infinite scroll
+    this.setupInfiniteScroll();
+    // Render filter bottom sheet UI
+    this.renderFilterSheet();
+    
+    // Unlock autoplay on mobile after first user interaction
+    this.unlockMobileAutoplay();
+
+    // Defer suggestion preload until after initial videos load to avoid competing for bandwidth
+    // Will be triggered lazily when user opens filter dropdown or after initial load completes
+  }
+
+  /**
+   * Initialize device detection and configuration
+   */
+  private initializeDeviceConfiguration(): void {
     const userAgent = typeof navigator !== 'undefined' ? navigator.userAgent : '';
     this.isMobileDevice = /iPhone|iPad|iPod|Android/i.test(userAgent);
     
@@ -105,15 +156,21 @@ export class FeedContainer {
       this.settings.backgroundPreloadDelay = 80;
       this.settings.backgroundPreloadFastScrollDelay = 200;
     }
+    
     this.posts = new Map();
     this.postOrder = [];
     this.eagerPreloadedPosts = new Set();
     
     // Detect device capabilities for adaptive media quality
     this.deviceCapabilities = detectDeviceCapabilities();
+  }
 
+  /**
+   * Initialize scroll and posts containers
+   */
+  private initializeContainers(): void {
     // Check if container structure already exists (from initial HTML skeleton)
-    let existingScrollContainer = this.container.querySelector('.feed-scroll-container') as HTMLElement;
+    const existingScrollContainer = this.container.querySelector('.feed-scroll-container') as HTMLElement;
     if (existingScrollContainer) {
       this.scrollContainer = existingScrollContainer;
     } else {
@@ -122,39 +179,14 @@ export class FeedContainer {
       this.scrollContainer.className = 'feed-scroll-container';
       this.container.appendChild(this.scrollContainer);
     }
-    
-    // Load HD mode preference (default OFF -> marker previews) BEFORE rendering header/toggle
-    try {
-      const savedHD = localStorage.getItem('stashgifs-useHDMode');
-      this.useHDMode = savedHD === 'true' ? true : false;
-    } catch {
-      this.useHDMode = false;
-    }
-    // Load shuffle mode preference (0 = off, 1 = markers only, 2 = all)
-    try {
-      const savedShuffle = localStorage.getItem('stashgifs-shuffleMode');
-      if (savedShuffle !== null) {
-        const parsed = parseInt(savedShuffle, 10);
-        if (!isNaN(parsed) && parsed >= 0 && parsed <= 2) {
-          this.shuffleMode = parsed;
-        }
-      }
-    } catch {
-      this.shuffleMode = 0;
-    }
-    // Load volume mode preference (default OFF -> all videos muted)
-    try {
-      const savedVolumeMode = localStorage.getItem('stashgifs-useVolumeMode');
-      this.useVolumeMode = savedVolumeMode === 'true' ? true : false;
-    } catch {
-      this.useVolumeMode = false;
-    }
-    
-    // Create header bar with unified search
-    this.createHeaderBar();
-    
+  }
+
+  /**
+   * Initialize posts container
+   */
+  private initializePostsContainer(): void {
     // Check if posts container already exists
-    let existingPostsContainer = this.scrollContainer.querySelector('.feed-posts') as HTMLElement;
+    const existingPostsContainer = this.scrollContainer.querySelector('.feed-posts') as HTMLElement;
     if (existingPostsContainer) {
       this.postsContainer = existingPostsContainer;
     } else {
@@ -163,7 +195,71 @@ export class FeedContainer {
       this.postsContainer.className = 'feed-posts';
       this.scrollContainer.appendChild(this.postsContainer);
     }
+  }
 
+  /**
+   * Load user preferences from localStorage
+   */
+  private loadUserPreferences(): void {
+    this.useHDMode = this.loadHDModePreference();
+    this.shuffleMode = this.loadShuffleModePreference();
+    this.useVolumeMode = this.loadVolumeModePreference();
+  }
+
+  /**
+   * Load HD mode preference from localStorage
+   */
+  private loadHDModePreference(): boolean {
+    try {
+      const savedHD = localStorage.getItem('stashgifs-useHDMode');
+      return savedHD === 'true';
+    } catch {
+      return false;
+    }
+  }
+
+  /**
+   * Load shuffle mode preference from localStorage
+   */
+  private loadShuffleModePreference(): number {
+    try {
+      const savedShuffle = localStorage.getItem('stashgifs-shuffleMode');
+      if (savedShuffle === null) {
+        return 0;
+      }
+      const parsed = Number.parseInt(savedShuffle, 10);
+      if (this.isValidShuffleMode(parsed)) {
+        return parsed;
+      }
+      return 0;
+    } catch {
+      return 0;
+    }
+  }
+
+  /**
+   * Check if shuffle mode value is valid
+   */
+  private isValidShuffleMode(value: number): boolean {
+    return !Number.isNaN(value) && value >= 0 && value <= 2;
+  }
+
+  /**
+   * Load volume mode preference from localStorage
+   */
+  private loadVolumeModePreference(): boolean {
+    try {
+      const savedVolumeMode = localStorage.getItem('stashgifs-useVolumeMode');
+      return savedVolumeMode === 'true';
+    } catch {
+      return false;
+    }
+  }
+
+  /**
+   * Initialize visibility and favorites managers
+   */
+  private initializeManagers(): void {
     // Initialize visibility manager
     // Enable autoplay for non-HD mode (viewport-based), disable for HD mode (hover-based only)
     this.visibilityManager = new VisibilityManager({
@@ -182,20 +278,6 @@ export class FeedContainer {
 
     // Initialize favorites manager
     this.favoritesManager = new FavoritesManager(this.api);
-
-    // Setup scroll handler
-    this.setupScrollHandler();
-    
-    // Setup infinite scroll
-    this.setupInfiniteScroll();
-    // Render filter bottom sheet UI
-    this.renderFilterSheet();
-    
-    // Unlock autoplay on mobile after first user interaction
-    this.unlockMobileAutoplay();
-
-    // Defer suggestion preload until after initial videos load to avoid competing for bandwidth
-    // Will be triggered lazily when user opens filter dropdown or after initial load completes
   }
   
   /**
@@ -243,18 +325,16 @@ export class FeedContainer {
       } finally {
         // Clean up after a short delay
         setTimeout(() => {
-          if (dummyVideo.parentNode) {
-            dummyVideo.parentNode.removeChild(dummyVideo);
-          }
+          dummyVideo.remove();
         }, 1000);
       }
     };
     
     // Unlock on any user interaction
     const events = ['touchstart', 'touchend', 'click', 'scroll', 'touchmove'];
-    events.forEach(event => {
+    for (const event of events) {
       document.addEventListener(event, unlock, { once: true, passive: true });
-    });
+    }
   }
 
   /**
@@ -263,16 +343,16 @@ export class FeedContainer {
   private closeSuggestions(): void {
     // Find all suggestion overlays (there might be multiple instances)
     const suggestions = document.querySelectorAll('.feed-filters__suggestions');
-    suggestions.forEach((suggestion) => {
+    for (const suggestion of suggestions) {
       const el = suggestion as HTMLElement;
       // Hide panel first to prevent any flash of old content
       el.style.display = 'none';
       // Clear all content while hidden to ensure panel is empty when it opens next time
       // Use removeChild for better performance than innerHTML
       while (el.firstChild) {
-        el.removeChild(el.firstChild);
+        el.firstChild.remove();
       }
-    });
+    }
     
     this.unlockBodyScroll();
     
@@ -281,6 +361,252 @@ export class FeedContainer {
     if (!this.isPreloading) {
       this.preloadSuggestions().catch((e) => console.warn('Failed to refresh suggestions cache', e));
     }
+  }
+
+  /**
+   * Show random mode notice in suggestions panel
+   */
+  private showRandomModeNotice(suggestions: HTMLElement): void {
+    suggestions.style.display = 'flex';
+    this.lockBodyScroll();
+    while (suggestions.firstChild) {
+      suggestions.firstChild.remove();
+    }
+    const container = document.createElement('div');
+    container.style.display = 'flex';
+    container.style.justifyContent = 'center';
+    container.style.alignItems = 'center';
+    container.style.padding = '16px';
+    container.style.width = '100%';
+    const notice = document.createElement('div');
+    notice.textContent = 'Random mode active — search disabled';
+    notice.style.padding = '8px 12px';
+    notice.style.borderRadius = '999px';
+    notice.style.background = 'rgba(255,255,255,0.08)';
+    notice.style.border = '1px solid rgba(255,255,255,0.12)';
+    notice.style.color = 'rgba(255,255,255,0.85)';
+    notice.style.fontSize = '13px';
+    container.appendChild(notice);
+    suggestions.appendChild(container);
+  }
+
+  /**
+   * Create section label element
+   */
+  private createSectionLabel(label: string, uppercase: boolean = false): HTMLElement {
+    const el = document.createElement('div');
+    el.textContent = uppercase ? label.toUpperCase() : label;
+    el.style.width = '100%';
+    el.style.fontSize = uppercase ? '11px' : '15px';
+    el.style.fontWeight = uppercase ? '600' : '500';
+    el.style.letterSpacing = uppercase ? '0.5px' : 'normal';
+    el.style.textTransform = uppercase ? 'uppercase' : 'none';
+    el.style.color = uppercase ? 'rgba(255,255,255,0.6)' : '#FFFFFF';
+    return el;
+  }
+
+  /**
+   * Create pill button element
+   */
+  private createPillButton(label: string, onSelect: () => void | Promise<void>): HTMLElement {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.textContent = label;
+    button.style.display = 'inline-flex';
+    button.style.alignItems = 'center';
+    button.style.justifyContent = 'center';
+    button.style.padding = '8px 14px';
+    button.style.borderRadius = '999px';
+    button.style.border = '1px solid rgba(255,255,255,0.12)';
+    button.style.background = 'rgba(255,255,255,0.08)';
+    button.style.color = '#FFFFFF';
+    button.style.cursor = 'pointer';
+    button.style.fontSize = '14px';
+    button.style.fontWeight = '500';
+    button.style.transition = 'background 0.2s ease';
+    button.addEventListener('mouseenter', () => {
+      button.style.background = 'rgba(255,255,255,0.12)';
+    });
+    button.addEventListener('mouseleave', () => {
+      button.style.background = 'rgba(255,255,255,0.08)';
+    });
+    button.addEventListener('click', (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      Promise.resolve(onSelect()).catch((error) => console.error('Suggestion selection failed', error));
+    });
+    return button;
+  }
+
+  /**
+   * Create list button element
+   */
+  private createListButton(
+    label: string,
+    onSelect: () => void | Promise<void>,
+    options: { subtitle?: string; leadingText?: string; leadingImage?: string } = {}
+  ): HTMLElement {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.style.width = '100%';
+    button.style.display = 'flex';
+    button.style.alignItems = 'center';
+    button.style.gap = '12px';
+    button.style.padding = '12px';
+    button.style.borderRadius = '12px';
+    button.style.border = 'none';
+    button.style.background = 'transparent';
+    button.style.cursor = 'pointer';
+    button.style.textAlign = 'left';
+    button.style.transition = 'background 0.2s ease';
+    button.addEventListener('mouseenter', () => {
+      button.style.background = 'rgba(255,255,255,0.08)';
+    });
+    button.addEventListener('mouseleave', () => {
+      button.style.background = 'transparent';
+    });
+
+    if (options.leadingText || options.leadingImage) {
+      const leading = document.createElement('div');
+      leading.style.width = '36px';
+      leading.style.height = '36px';
+      leading.style.borderRadius = '50%';
+      leading.style.background = 'rgba(255,255,255,0.1)';
+      leading.style.display = 'flex';
+      leading.style.alignItems = 'center';
+      leading.style.justifyContent = 'center';
+      leading.style.fontSize = '16px';
+      leading.style.fontWeight = '600';
+      leading.style.color = 'rgba(255,255,255,0.85)';
+      leading.style.flexShrink = '0';
+      leading.style.overflow = 'hidden';
+
+      if (options.leadingImage) {
+        const img = document.createElement('img');
+        img.src = options.leadingImage;
+        img.alt = label;
+        img.style.width = '100%';
+        img.style.height = '100%';
+        img.style.objectFit = 'cover';
+        leading.appendChild(img);
+      } else if (options.leadingText) {
+        leading.textContent = options.leadingText;
+      }
+
+      button.appendChild(leading);
+    }
+
+    const textContainer = document.createElement('div');
+    textContainer.style.display = 'flex';
+    textContainer.style.flexDirection = 'column';
+    textContainer.style.gap = options.subtitle ? '2px' : '0';
+    textContainer.style.flex = '1';
+
+    const title = document.createElement('div');
+    title.textContent = label;
+    title.style.fontSize = '15px';
+    title.style.fontWeight = '500';
+    title.style.color = '#FFFFFF';
+    textContainer.appendChild(title);
+
+    if (options.subtitle) {
+      const subtitle = document.createElement('div');
+      subtitle.textContent = options.subtitle;
+      subtitle.style.fontSize = '12px';
+      subtitle.style.color = 'rgba(255,255,255,0.6)';
+      textContainer.appendChild(subtitle);
+    }
+
+    button.appendChild(textContainer);
+
+    button.addEventListener('click', (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      Promise.resolve(onSelect()).catch((error) => console.error('Suggestion selection failed', error));
+    });
+
+    return button;
+  }
+
+  /**
+   * Append empty state message
+   */
+  private appendEmptyState(target: HTMLElement, message: string): void {
+    const emptyState = document.createElement('div');
+    emptyState.style.padding = '12px';
+    emptyState.style.borderRadius = '10px';
+    emptyState.style.background = 'rgba(255,255,255,0.04)';
+    emptyState.style.color = 'rgba(255,255,255,0.7)';
+    emptyState.style.fontSize = '14px';
+    emptyState.style.textAlign = 'center';
+    emptyState.textContent = message;
+    target.appendChild(emptyState);
+  }
+
+  /**
+   * Calculate alignment offset for suggestions
+   */
+  private calculateAlignmentOffset(container: HTMLElement, horizontalPadding: number): number {
+    const searchInput = this.container.querySelector('.feed-filters__input') as HTMLElement;
+    if (searchInput) {
+      const searchRect = searchInput.getBoundingClientRect();
+      const containerRect = container.getBoundingClientRect();
+      return searchRect.left - containerRect.left - horizontalPadding;
+    }
+    // Fallback: approximate alignment (header padding + logo + gap - filter padding)
+    const headerPadding = 12;
+    const logoWidth = 120; // Approximate logo width
+    const headerGap = 12;
+    return headerPadding + logoWidth + headerGap - horizontalPadding;
+  }
+
+  /**
+   * Create loading skeleton section
+   */
+  private createLoadingSkeletons(): HTMLElement {
+    const loadingSection = document.createElement('div');
+    loadingSection.style.display = 'flex';
+    loadingSection.style.flexDirection = 'column';
+    loadingSection.style.gap = '8px';
+    loadingSection.appendChild(this.createSectionLabel('Suggested Tags'));
+    
+    // Create 6 skeleton placeholders that match the list button style
+    for (let i = 0; i < 6; i++) {
+      const skeletonButton = document.createElement('div');
+      skeletonButton.style.width = '100%';
+      skeletonButton.style.display = 'flex';
+      skeletonButton.style.alignItems = 'center';
+      skeletonButton.style.gap = '12px';
+      skeletonButton.style.padding = '12px';
+      skeletonButton.style.borderRadius = '12px';
+      skeletonButton.style.background = 'transparent';
+      
+      // Leading circle skeleton
+      const leadingSkeleton = document.createElement('div');
+      leadingSkeleton.className = 'chip-skeleton';
+      leadingSkeleton.dataset.suggestionSkeleton = 'true';
+      leadingSkeleton.style.width = '36px';
+      leadingSkeleton.style.height = '36px';
+      leadingSkeleton.style.borderRadius = '50%';
+      leadingSkeleton.style.flexShrink = '0';
+      
+      // Text skeleton
+      const textSkeleton = document.createElement('div');
+      textSkeleton.className = 'chip-skeleton';
+      textSkeleton.dataset.suggestionSkeleton = 'true';
+      textSkeleton.style.height = '16px';
+      textSkeleton.style.borderRadius = '4px';
+      textSkeleton.style.flex = '1';
+      // Vary width for more natural look
+      const widths = [120, 140, 100, 130, 110, 150];
+      textSkeleton.style.width = `${widths[i % widths.length]}px`;
+      
+      skeletonButton.appendChild(leadingSkeleton);
+      skeletonButton.appendChild(textSkeleton);
+      loadingSection.appendChild(skeletonButton);
+    }
+    
+    return loadingSection;
   }
 
   /**
@@ -296,9 +622,9 @@ export class FeedContainer {
     header.style.position = 'sticky';
     
     // Detect if we're in mobile Safari standalone/app mode
-    const nav = window.navigator;
+    const nav = globalThis.navigator;
     const isStandalone = (isStandaloneNavigator(nav) && nav.standalone) || 
-                         window.matchMedia('(display-mode: standalone)').matches;
+                         globalThis.matchMedia('(display-mode: standalone)').matches;
     const isIOS = /iPhone|iPad|iPod/i.test(navigator.userAgent);
     
     // On mobile Safari app mode, position header right below the notch
@@ -392,13 +718,13 @@ export class FeedContainer {
       // Set flag in sessionStorage to scroll to top on reload
       sessionStorage.setItem('stashgifs-scroll-to-top', 'true');
       // Scroll to top immediately (no smooth behavior)
-      window.scrollTo(0, 0);
+      globalThis.scrollTo(0, 0);
       // Also scroll any internal container
       if (this.scrollContainer) {
         this.scrollContainer.scrollTop = 0;
       }
       // Reload the page
-      window.location.reload();
+      globalThis.location.reload();
     });
     
     // ensure smoother animation
@@ -531,9 +857,7 @@ export class FeedContainer {
       
       setTimeout(() => {
         // Remove old text
-        if (placeholderText && placeholderText.parentNode) {
-          placeholderText.parentNode.removeChild(placeholderText);
-        }
+        placeholderText?.remove();
         
         // Move to next placeholder
         currentPlaceholderIndex = (currentPlaceholderIndex + 1) % dynamicPlaceholders.length;
@@ -599,7 +923,7 @@ export class FeedContainer {
     randomLeftIcon.style.lineHeight = '20px';
     randomLeftIcon.style.pointerEvents = 'none';
     const randomLeftIconSpan = document.createElement('span');
-    randomLeftIconSpan.innerHTML = '<svg viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" width=\"16\" height=\"16\"><path d=\"M16 3h5v5M21 3l-5 5\"/><path d=\"M4 20l5-5m0 0l5 5m-5-5h3\"/><path d=\"M4 4l7 7\"/></svg>';
+    randomLeftIconSpan.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="16" height="16"><path d="M16 3h5v5M21 3l-5 5"/><path d="M4 20l5-5m0 0l5 5m-5-5h3"/><path d="M4 4l7 7"/></svg>';
     const randomLeftText = document.createElement('span');
     randomLeftText.textContent = 'Discovering randomly';
     randomLeftIcon.appendChild(randomLeftIconSpan);
@@ -782,7 +1106,7 @@ export class FeedContainer {
       
       // Do a full page refresh to reload the entire site with the new HD setting
       // This ensures a clean state and proper initialization
-      window.location.reload();
+      globalThis.location.reload();
     };
     hdToggle.addEventListener('click', (e) => {
       e.preventDefault();
@@ -956,34 +1280,22 @@ export class FeedContainer {
         this.headerBar.style.opacity = '1';
       }
       
-      // If shuffle is enabled (mode 1 or 2), reload the feed
-      if (this.shuffleMode > 0) {
-        // Clear current posts
-        this.clearPosts();
-        
-        // Clear posts container
-        if (this.postsContainer) {
-          this.postsContainer.innerHTML = '';
-        }
-        
-        // Reset pagination
-        this.currentPage = 1;
-        this.hasMore = true;
-        this.isLoading = false;
-        
-        // Reload videos with current filters
-        await this.loadVideos(this.currentFilters, false, undefined, true);
-      } else {
-        // When turning off shuffle, reload to show normal markers
-        this.clearPosts();
-        if (this.postsContainer) {
-          this.postsContainer.innerHTML = '';
-        }
-        this.currentPage = 1;
-        this.hasMore = true;
-        this.isLoading = false;
-        await this.loadVideos(this.currentFilters, false, undefined, true);
+      // Reload the feed when shuffle mode changes
+      // Clear current posts
+      this.clearPosts();
+      
+      // Clear posts container
+      if (this.postsContainer) {
+        this.postsContainer.innerHTML = '';
       }
+      
+      // Reset pagination
+      this.currentPage = 1;
+      this.hasMore = true;
+      this.isLoading = false;
+      
+      // Reload videos with current filters
+      await this.loadVideos(this.currentFilters, false, undefined, true);
     };
     
     shuffleToggle.addEventListener('click', (e) => {
@@ -1065,7 +1377,9 @@ export class FeedContainer {
       // Disable search input in random mode
       const disabled = this.shuffleMode > 0;
       // Use readOnly so clicks can disable random mode
-      (queryInput as HTMLInputElement).readOnly = disabled;
+      if (queryInput instanceof HTMLInputElement) {
+        queryInput.readOnly = disabled;
+      }
       // Keep opacity at 1 in both modes for consistent appearance
       queryInput.style.opacity = '1';
       // Adjust left padding to accommodate left helper when random is active
@@ -1108,31 +1422,13 @@ export class FeedContainer {
     const fetchAndShowSuggestions = async (text: string, forceShow: boolean = false) => {
       // In random mode, disable suggestions entirely and show notice
       if (this.shuffleMode > 0) {
-        suggestions.style.display = 'flex';
-        this.lockBodyScroll();
-        while (suggestions.firstChild) suggestions.removeChild(suggestions.firstChild);
-        const container = document.createElement('div');
-        container.style.display = 'flex';
-        container.style.justifyContent = 'center';
-        container.style.alignItems = 'center';
-        container.style.padding = '16px';
-        container.style.width = '100%';
-        const notice = document.createElement('div');
-        notice.textContent = 'Random mode active — search disabled';
-        notice.style.padding = '8px 12px';
-        notice.style.borderRadius = '999px';
-        notice.style.background = 'rgba(255,255,255,0.08)';
-        notice.style.border = '1px solid rgba(255,255,255,0.12)';
-        notice.style.color = 'rgba(255,255,255,0.85)';
-        notice.style.fontSize = '13px';
-        container.appendChild(notice);
-        suggestions.appendChild(container);
+        this.showRandomModeNotice(suggestions);
         return;
       }
       const trimmedText = text.trim();
       const requestId = ++suggestionsRequestId;
       const showDefault = forceShow || trimmedText.length === 0 || trimmedText.length < 2;
-      const isMobileViewport = window.innerWidth <= 768;
+      const isMobileViewport = globalThis.innerWidth <= 768;
       const maxContentWidth = isMobileViewport ? '100%' : '640px';
       const horizontalPadding = isMobileViewport ? 16 : 24;
       const topPadding = 0;
@@ -1150,153 +1446,12 @@ export class FeedContainer {
         this.lockBodyScroll();
       };
 
-      const createSectionLabel = (label: string, uppercase: boolean = false) => {
-        const el = document.createElement('div');
-        el.textContent = uppercase ? label.toUpperCase() : label;
-        el.style.width = '100%';
-        el.style.fontSize = uppercase ? '11px' : '15px';
-        el.style.fontWeight = uppercase ? '600' : '500';
-        el.style.letterSpacing = uppercase ? '0.5px' : 'normal';
-        el.style.textTransform = uppercase ? 'uppercase' : 'none';
-        el.style.color = uppercase ? 'rgba(255,255,255,0.6)' : '#FFFFFF';
-        return el;
-      };
-
-      const createPillButton = (label: string, onSelect: () => void | Promise<void>) => {
-        const button = document.createElement('button');
-        button.type = 'button';
-        button.textContent = label;
-        button.style.display = 'inline-flex';
-        button.style.alignItems = 'center';
-        button.style.justifyContent = 'center';
-        button.style.padding = '8px 14px';
-        button.style.borderRadius = '999px';
-        button.style.border = '1px solid rgba(255,255,255,0.12)';
-        button.style.background = 'rgba(255,255,255,0.08)';
-        button.style.color = '#FFFFFF';
-        button.style.cursor = 'pointer';
-        button.style.fontSize = '14px';
-        button.style.fontWeight = '500';
-        button.style.transition = 'background 0.2s ease';
-        button.addEventListener('mouseenter', () => {
-          button.style.background = 'rgba(255,255,255,0.12)';
-        });
-        button.addEventListener('mouseleave', () => {
-          button.style.background = 'rgba(255,255,255,0.08)';
-        });
-        button.addEventListener('click', (event) => {
-          event.preventDefault();
-          event.stopPropagation();
-          Promise.resolve(onSelect()).catch((error) => console.error('Suggestion selection failed', error));
-        });
-        return button;
-      };
-
-      const createListButton = (
-        label: string,
-        onSelect: () => void | Promise<void>,
-        options: { subtitle?: string; leadingText?: string; leadingImage?: string } = {}
-      ) => {
-        const button = document.createElement('button');
-        button.type = 'button';
-        button.style.width = '100%';
-        button.style.display = 'flex';
-        button.style.alignItems = 'center';
-        button.style.gap = '12px';
-        button.style.padding = '12px';
-        button.style.borderRadius = '12px';
-        button.style.border = 'none';
-        button.style.background = 'transparent';
-        button.style.cursor = 'pointer';
-        button.style.textAlign = 'left';
-        button.style.transition = 'background 0.2s ease';
-        button.addEventListener('mouseenter', () => {
-          button.style.background = 'rgba(255,255,255,0.08)';
-        });
-        button.addEventListener('mouseleave', () => {
-          button.style.background = 'transparent';
-        });
-
-        if (options.leadingText || options.leadingImage) {
-          const leading = document.createElement('div');
-          leading.style.width = '36px';
-          leading.style.height = '36px';
-          leading.style.borderRadius = '50%';
-          leading.style.background = 'rgba(255,255,255,0.1)';
-          leading.style.display = 'flex';
-          leading.style.alignItems = 'center';
-          leading.style.justifyContent = 'center';
-          leading.style.fontSize = '16px';
-          leading.style.fontWeight = '600';
-          leading.style.color = 'rgba(255,255,255,0.85)';
-          leading.style.flexShrink = '0';
-          leading.style.overflow = 'hidden';
-
-          if (options.leadingImage) {
-            const img = document.createElement('img');
-            img.src = options.leadingImage;
-            img.alt = label;
-            img.style.width = '100%';
-            img.style.height = '100%';
-            img.style.objectFit = 'cover';
-            leading.appendChild(img);
-          } else if (options.leadingText) {
-            leading.textContent = options.leadingText;
-          }
-
-          button.appendChild(leading);
-        }
-
-        const textContainer = document.createElement('div');
-        textContainer.style.display = 'flex';
-        textContainer.style.flexDirection = 'column';
-        textContainer.style.gap = options.subtitle ? '2px' : '0';
-        textContainer.style.flex = '1';
-
-        const title = document.createElement('div');
-        title.textContent = label;
-        title.style.fontSize = '15px';
-        title.style.fontWeight = '500';
-        title.style.color = '#FFFFFF';
-        textContainer.appendChild(title);
-
-        if (options.subtitle) {
-          const subtitle = document.createElement('div');
-          subtitle.textContent = options.subtitle;
-          subtitle.style.fontSize = '12px';
-          subtitle.style.color = 'rgba(255,255,255,0.6)';
-          textContainer.appendChild(subtitle);
-        }
-
-        button.appendChild(textContainer);
-
-        button.addEventListener('click', (event) => {
-          event.preventDefault();
-          event.stopPropagation();
-          Promise.resolve(onSelect()).catch((error) => console.error('Suggestion selection failed', error));
-        });
-
-        return button;
-      };
-
-      const appendEmptyState = (target: HTMLElement, message: string) => {
-        const emptyState = document.createElement('div');
-        emptyState.style.padding = '12px';
-        emptyState.style.borderRadius = '10px';
-        emptyState.style.background = 'rgba(255,255,255,0.04)';
-        emptyState.style.color = 'rgba(255,255,255,0.7)';
-        emptyState.style.fontSize = '14px';
-        emptyState.style.textAlign = 'center';
-        emptyState.textContent = message;
-        target.appendChild(emptyState);
-      };
-
       // Clear any existing containers BEFORE showing panel to prevent flash of old content
       // Hide panel first, clear while hidden, then show with new content
       // Check again after clearing to ensure we're still the latest request
       suggestions.style.display = 'none';
       while (suggestions.firstChild) {
-        suggestions.removeChild(suggestions.firstChild);
+        suggestions.firstChild.remove();
       }
       
       // Critical check: if another request started during clearing, abort now
@@ -1332,7 +1487,7 @@ export class FeedContainer {
       if (showDefault) {
         // Clear container efficiently
         while (container.firstChild) {
-          container.removeChild(container.firstChild);
+          container.firstChild.remove();
         }
 
         // Playback & Shuffle options (moved from header into popup)
@@ -1444,14 +1599,14 @@ export class FeedContainer {
         filtersSection.style.flexDirection = 'column';
         filtersSection.style.gap = '12px';
         filtersSection.style.marginLeft = `${alignmentOffset}px`; // Align with search bar
-        filtersSection.appendChild(createSectionLabel('Saved Filters', true));
+        filtersSection.appendChild(this.createSectionLabel('Saved Filters', true));
 
         const pillRow = document.createElement('div');
         pillRow.style.display = 'flex';
         pillRow.style.flexWrap = 'wrap';
         pillRow.style.gap = '8px';
 
-        pillRow.appendChild(createPillButton('Favorites', async () => {
+        pillRow.appendChild(this.createPillButton('Favorites', async () => {
             if (this.shuffleMode > 0) return;
             this.selectedSavedFilter = undefined;
             this.selectedPerformerId = undefined;
@@ -1459,7 +1614,7 @@ export class FeedContainer {
             try {
               const favoriteTag = await this.api.findTagByName('StashGifs Favorite');
               if (favoriteTag) {
-                this.selectedTagId = parseInt(favoriteTag.id, 10);
+                this.selectedTagId = Number.parseInt(favoriteTag.id, 10);
                 this.selectedTagName = 'Favorites';
               } else {
                 this.selectedTagId = undefined;
@@ -1476,8 +1631,8 @@ export class FeedContainer {
         }));
 
         // Show saved filters from cache
-        this.savedFiltersCache.forEach((filter) => {
-          pillRow.appendChild(createPillButton(filter.name, () => {
+        for (const filter of this.savedFiltersCache) {
+          pillRow.appendChild(this.createPillButton(filter.name, () => {
             if (this.shuffleMode > 0) return;
             this.selectedSavedFilter = { id: filter.id, name: filter.name };
                 this.selectedTagId = undefined;
@@ -1489,7 +1644,7 @@ export class FeedContainer {
             this.currentFilters = { savedFilterId: filter.id, limit: this.initialLoadLimit, offset: 0 };
                 this.loadVideos(this.currentFilters, false).catch((e) => console.error('Apply saved filter failed', e));
           }));
-        });
+        }
 
         filtersSection.appendChild(pillRow);
         container.appendChild(filtersSection);
@@ -1507,7 +1662,7 @@ export class FeedContainer {
           loadingSection.style.display = 'flex';
           loadingSection.style.flexDirection = 'column';
           loadingSection.style.gap = '8px';
-          loadingSection.appendChild(createSectionLabel('Suggested Tags'));
+          loadingSection.appendChild(this.createSectionLabel('Suggested Tags'));
           
           // Create 6 skeleton placeholders that match the list button style
           for (let i = 0; i < 6; i++) {
@@ -1523,7 +1678,7 @@ export class FeedContainer {
             // Leading circle skeleton
             const leadingSkeleton = document.createElement('div');
             leadingSkeleton.className = 'chip-skeleton';
-            leadingSkeleton.setAttribute('data-suggestion-skeleton', 'true');
+            leadingSkeleton.dataset.suggestionSkeleton = 'true';
             leadingSkeleton.style.width = '36px';
             leadingSkeleton.style.height = '36px';
             leadingSkeleton.style.borderRadius = '50%';
@@ -1532,7 +1687,7 @@ export class FeedContainer {
             // Text skeleton
             const textSkeleton = document.createElement('div');
             textSkeleton.className = 'chip-skeleton';
-            textSkeleton.setAttribute('data-suggestion-skeleton', 'true');
+            textSkeleton.dataset.suggestionSkeleton = 'true';
             textSkeleton.style.height = '16px';
             textSkeleton.style.borderRadius = '4px';
             textSkeleton.style.flex = '1';
@@ -1588,16 +1743,13 @@ export class FeedContainer {
         // Remove loading section if it was shown
         if (loadingSectionCreated && loadingSection) {
           const section: HTMLElement = loadingSection;
-          const parent = section.parentNode;
-          if (parent) {
-            parent.removeChild(section);
-          }
+          section.remove();
         }
 
         // Use freshly fetched tags instead of cached data
         const availableTags = freshTags
               .filter((tag) => {
-                const tagId = parseInt(tag.id, 10);
+                const tagId = Number.parseInt(tag.id, 10);
             return !Number.isNaN(tagId) && this.selectedTagId !== tagId;
               })
               .slice(0, 3);
@@ -1608,29 +1760,29 @@ export class FeedContainer {
           tagsSection.style.flexDirection = 'column';
           tagsSection.style.gap = '8px';
           tagsSection.style.marginLeft = `${alignmentOffset}px`; // Align with search bar
-          tagsSection.appendChild(createSectionLabel('Suggested Tags'));
-          availableTags.forEach((tag) => {
+          tagsSection.appendChild(this.createSectionLabel('Suggested Tags'));
+          for (const tag of availableTags) {
             tagsSection.appendChild(
-              createListButton(tag.name, () => {
+              this.createListButton(tag.name, () => {
                 if (this.shuffleMode > 0) return;
                 this.selectedSavedFilter = undefined;
                 this.selectedPerformerId = undefined;
                 this.selectedPerformerName = undefined;
-                this.selectedTagId = parseInt(tag.id, 10);
+                this.selectedTagId = Number.parseInt(tag.id, 10);
                 this.selectedTagName = tag.name;
                 this.closeSuggestions();
                 updateSearchBarDisplay();
                 apply();
               }, { leadingText: '#' })
             );
-          });
+          }
           container.appendChild(tagsSection);
         }
 
         // Use freshly fetched performers instead of cached data
         const availablePerformers = freshPerformers
           .filter((performer) => {
-            const performerId = parseInt(performer.id, 10);
+            const performerId = Number.parseInt(performer.id, 10);
             return !Number.isNaN(performerId) && this.selectedPerformerId !== performerId;
           })
           .slice(0, 3);
@@ -1641,14 +1793,16 @@ export class FeedContainer {
           performersSection.style.flexDirection = 'column';
           performersSection.style.gap = '8px';
           performersSection.style.marginLeft = `${alignmentOffset}px`; // Align with search bar
-          performersSection.appendChild(createSectionLabel('Suggested Performers'));
-          availablePerformers.forEach((performer) => {
-                const performerId = parseInt(performer.id, 10);
+          performersSection.appendChild(this.createSectionLabel('Suggested Performers'));
+          for (const performer of availablePerformers) {
+                const performerId = Number.parseInt(performer.id, 10);
             const imageSrc = performer.image_path
-              ? (performer.image_path.startsWith('http') ? performer.image_path : `${window.location.origin}${performer.image_path}`)
+              ? (performer.image_path.startsWith('http')
+                  ? performer.image_path
+                  : `${globalThis.location.origin}${performer.image_path}`)
               : undefined;
             performersSection.appendChild(
-              createListButton(
+              this.createListButton(
                 performer.name,
                 () => {
                 if (this.shuffleMode > 0) return;
@@ -1664,12 +1818,12 @@ export class FeedContainer {
                 { leadingImage: imageSrc, leadingText: imageSrc ? undefined : performer.name.charAt(0).toUpperCase() }
               )
             );
-          });
+          }
           container.appendChild(performersSection);
         }
 
         if (container.children.length === 0) {
-          appendEmptyState(container, 'No suggestions available yet.');
+          this.appendEmptyState(container, 'No suggestions available yet.');
         }
 
         suggestions.scrollTop = 0;
@@ -1726,10 +1880,10 @@ export class FeedContainer {
         savedSection.style.flexDirection = 'column';
         savedSection.style.gap = '8px';
         savedSection.style.marginLeft = `${alignmentOffsetForResults}px`; // Align with search bar
-        savedSection.appendChild(createSectionLabel('Matching Saved Filters'));
-        matchingSavedFilters.forEach((filter) => {
+        savedSection.appendChild(this.createSectionLabel('Matching Saved Filters'));
+        for (const filter of matchingSavedFilters) {
           savedSection.appendChild(
-            createListButton(filter.name, () => {
+            this.createListButton(filter.name, () => {
               this.selectedSavedFilter = { id: filter.id, name: filter.name };
           this.selectedTagId = undefined;
           this.selectedTagName = undefined;
@@ -1741,7 +1895,7 @@ export class FeedContainer {
               this.loadVideos(this.currentFilters, false).catch((e) => console.error('Apply saved filter failed', e));
             })
           );
-        });
+        }
         container.appendChild(savedSection);
       }
 
@@ -1763,7 +1917,7 @@ export class FeedContainer {
 
       const filteredTags = tagItems
         .filter((tag) => {
-          const tagId = parseInt(tag.id, 10);
+          const tagId = Number.parseInt(tag.id, 10);
           return !Number.isNaN(tagId) && this.selectedTagId !== tagId;
         })
         .slice(0, 20);
@@ -1774,27 +1928,27 @@ export class FeedContainer {
         tagsSection.style.flexDirection = 'column';
         tagsSection.style.gap = '8px';
         tagsSection.style.marginLeft = `${alignmentOffsetForResults}px`; // Align with search bar
-        tagsSection.appendChild(createSectionLabel('Tags'));
-        filteredTags.forEach((tag) => {
+        tagsSection.appendChild(this.createSectionLabel('Tags'));
+        for (const tag of filteredTags) {
           tagsSection.appendChild(
-            createListButton(tag.name, () => {
+            this.createListButton(tag.name, () => {
           this.selectedSavedFilter = undefined;
           this.selectedPerformerId = undefined;
           this.selectedPerformerName = undefined;
-              this.selectedTagId = parseInt(tag.id, 10);
+              this.selectedTagId = Number.parseInt(tag.id, 10);
           this.selectedTagName = tag.name;
           this.closeSuggestions();
           updateSearchBarDisplay();
           apply();
             }, { leadingText: '#' })
           );
-        });
+        }
         container.appendChild(tagsSection);
       }
 
       const filteredPerformers = performerItems
         .filter((performer) => {
-          const performerId = parseInt(performer.id, 10);
+          const performerId = Number.parseInt(performer.id, 10);
           return !Number.isNaN(performerId) && this.selectedPerformerId !== performerId;
         })
         .slice(0, 20);
@@ -1805,14 +1959,16 @@ export class FeedContainer {
         performersSection.style.flexDirection = 'column';
         performersSection.style.gap = '8px';
         performersSection.style.marginLeft = `${alignmentOffsetForResults}px`; // Align with search bar
-        performersSection.appendChild(createSectionLabel('Performers'));
-        filteredPerformers.forEach((performer) => {
-          const performerId = parseInt(performer.id, 10);
+        performersSection.appendChild(this.createSectionLabel('Performers'));
+        for (const performer of filteredPerformers) {
+          const performerId = Number.parseInt(performer.id, 10);
           const imageSrc = performer.image_path
-            ? (performer.image_path.startsWith('http') ? performer.image_path : `${window.location.origin}${performer.image_path}`)
+            ? (performer.image_path.startsWith('http')
+                ? performer.image_path
+                : `${globalThis.location.origin}${performer.image_path}`)
             : undefined;
           performersSection.appendChild(
-            createListButton(
+            this.createListButton(
               performer.name,
               () => {
             this.selectedSavedFilter = undefined;
@@ -1827,20 +1983,24 @@ export class FeedContainer {
               { leadingImage: imageSrc, leadingText: imageSrc ? undefined : performer.name.charAt(0).toUpperCase() }
             )
           );
-        });
+        }
         container.appendChild(performersSection);
       }
 
 
       if (container.children.length === 0) {
-        appendEmptyState(container, `No matches found for "${trimmedText}".`);
+        this.appendEmptyState(container, `No matches found for "${trimmedText}".`);
       }
 
       suggestions.scrollTop = 0;
       return;
     };
     
-    queryInput.addEventListener('keydown', (e) => { if ((e as KeyboardEvent).key === 'Enter') apply(); });
+    queryInput.addEventListener('keydown', (e) => { 
+      if (e instanceof KeyboardEvent && e.key === 'Enter') {
+        apply();
+      }
+    });
     
     // Handle focus and show suggestions
     let focusHandled = false;
@@ -2000,7 +2160,7 @@ export class FeedContainer {
       }
       
       // Defer the check to next tick to ensure overlay state is updated
-      clickHandlerTimeout = window.setTimeout(() => {
+      clickHandlerTimeout = globalThis.setTimeout(() => {
         // Check if suggestions are visible
         const isSuggestionsVisible = suggestions.style.display !== 'none';
         
@@ -2039,7 +2199,7 @@ export class FeedContainer {
     // Apply filters
     this.applyFilters();
     // Scroll to top
-    window.scrollTo({ top: 0, behavior: 'smooth' });
+    globalThis.scrollTo({ top: 0, behavior: 'smooth' });
   }
 
   /**
@@ -2058,7 +2218,7 @@ export class FeedContainer {
     // Apply filters
     this.applyFilters();
     // Scroll to top
-    window.scrollTo({ top: 0, behavior: 'smooth' });
+    globalThis.scrollTo({ top: 0, behavior: 'smooth' });
   }
 
   /**
@@ -2069,7 +2229,7 @@ export class FeedContainer {
     // Determine current text input if available (used only when no explicit selection)
     let q: string | undefined = undefined;
     const activeEl = document.activeElement as HTMLElement | null;
-    if (activeEl && activeEl.classList && activeEl.classList.contains('feed-filters__input')) {
+    if (activeEl?.classList?.contains('feed-filters__input')) {
       const input = activeEl as HTMLInputElement;
       q = input.value?.trim() || undefined;
     }
@@ -2116,11 +2276,11 @@ export class FeedContainer {
       try {
         // Try exact tag match first
         const exactTag = await this.api.findTagByName(q);
-        if ((loadSignal as any)?.aborted) return;
+        if (loadSignal?.aborted) return;
         if (exactTag) {
           tags = [String(exactTag.id)];
           this.selectedTagName = exactTag.name;
-          this.selectedTagId = parseInt(exactTag.id, 10);
+          this.selectedTagId = Number.parseInt(exactTag.id, 10);
         } else {
           // If no exact tag match, try performer search
           const matchingPerformers = await this.api.searchPerformers(q, 10, loadSignal);
@@ -2128,7 +2288,7 @@ export class FeedContainer {
           if (matchingPerformers && matchingPerformers.length > 0 && matchingPerformers[0]) {
             performers = [String(matchingPerformers[0].id)];
             this.selectedPerformerName = matchingPerformers[0].name;
-            this.selectedPerformerId = parseInt(String(matchingPerformers[0].id), 10);
+            this.selectedPerformerId = Number.parseInt(String(matchingPerformers[0].id), 10);
           } else {
             queryValue = q;
           }
@@ -2167,7 +2327,7 @@ export class FeedContainer {
         queryInput.value = '';
       }
       // Hide animated helper/placeholder immediately (without triggering suggestions)
-      const ph = document.getElementById('feed-search-placeholder') as HTMLElement | null;
+      const ph = document.getElementById('feed-search-placeholder');
       if (ph) {
         ph.style.display = 'none';
       }
@@ -2234,7 +2394,7 @@ export class FeedContainer {
     injectHideScrollbarCSS();
 
     // Utility: current scrollbar width (accounts for OS/overlay differences)
-    const getScrollbarWidth = (): number => Math.max(0, window.innerWidth - document.documentElement.clientWidth);
+    const getScrollbarWidth = (): number => Math.max(0, globalThis.innerWidth - document.documentElement.clientWidth);
 
     const bar = document.createElement('div');
     bar.className = 'feed-filters';
@@ -2392,11 +2552,13 @@ export class FeedContainer {
     const apply = () => {
       // Clear suggestions when applying a search
       while (suggestions.firstChild) {
-        suggestions.removeChild(suggestions.firstChild);
+        suggestions.firstChild.remove();
       }
       suggestions.style.display = 'none';
-      this.applyCurrentSearch().catch((e: any) => {
-        if (e?.name !== 'AbortError') console.error('Apply filters failed', e);
+      this.applyCurrentSearch().catch((e: unknown) => {
+        if (!(e instanceof Error && e.name === 'AbortError')) {
+          console.error('Apply filters failed', e);
+        }
       });
     };
 
@@ -2414,7 +2576,7 @@ export class FeedContainer {
           try {
             const favoriteTag = await this.api.findTagByName('StashGifs Favorite');
             if (favoriteTag) {
-              this.selectedTagId = parseInt(favoriteTag.id, 10);
+              this.selectedTagId = Number.parseInt(favoriteTag.id, 10);
               this.selectedTagName = 'Favorites';
             } else {
               console.error('Favorite tag not found');
@@ -2444,7 +2606,7 @@ export class FeedContainer {
       updateSearchBarDisplay();
       apply();
     });
-    queryInput.addEventListener('keydown', (e) => { if ((e as KeyboardEvent).key === 'Enter') apply(); });
+    queryInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') apply(); });
 
     // Debounced suggestions with proper debouncing
     let suggestPage = 1;
@@ -2501,7 +2663,7 @@ export class FeedContainer {
       
       // Clear suggestions immediately to prevent showing old content
       while (suggestions.firstChild) {
-        suggestions.removeChild(suggestions.firstChild);
+        suggestions.firstChild.remove();
       }
       // Show suggestions if we have text (2+ chars) OR if forced (on focus)
       if (!trimmedText || trimmedText.length < 2) {
@@ -2523,7 +2685,7 @@ export class FeedContainer {
             label.style.marginBottom = '6px';
             suggestions.appendChild(label);
             
-            this.savedFiltersCache.forEach((f) => {
+            for (const f of this.savedFiltersCache) {
               const chip = document.createElement('button');
               chip.textContent = f.name;
               chip.className = 'suggest-chip';
@@ -2545,7 +2707,7 @@ export class FeedContainer {
                 apply();
               });
               suggestions.appendChild(chip);
-            });
+            }
             
             // Add divider before tags/performers
             const divider = document.createElement('div');
@@ -2569,7 +2731,7 @@ export class FeedContainer {
             for (let i = 0; i < 6; i++) {
               const skeletonChip = document.createElement('div');
               skeletonChip.className = 'chip-skeleton';
-              skeletonChip.setAttribute('data-suggestion-skeleton', 'true');
+              skeletonChip.dataset.suggestionSkeleton = 'true';
               skeletonChip.style.display = 'inline-block';
               skeletonChip.style.padding = '6px 10px';
               skeletonChip.style.borderRadius = '999px';
@@ -2609,17 +2771,14 @@ export class FeedContainer {
           if (loadingContainerCreated) {
             // Remove all skeleton chips we created (identified by data attribute)
             const skeletonChips = Array.from(suggestions.querySelectorAll('[data-suggestion-skeleton="true"]'));
-            skeletonChips.forEach((chip) => {
-              const parent = chip.parentNode;
-              if (parent) {
-                parent.removeChild(chip);
-              }
-            });
+            for (const chip of skeletonChips) {
+              chip.remove();
+            }
           }
           
           // Display tags
-          tags.forEach((tag) => {
-            if (this.selectedTagId === parseInt(tag.id, 10)) return;
+          for (const tag of tags) {
+            if (this.selectedTagId === Number.parseInt(tag.id, 10)) continue;
             const chip = document.createElement('button');
             chip.textContent = tag.name;
             chip.className = 'suggest-chip';
@@ -2632,7 +2791,7 @@ export class FeedContainer {
             chip.addEventListener('click', () => {
               this.selectedSavedFilter = undefined;
               savedSelect.value = '';
-              const tagId = parseInt(tag.id, 10);
+              const tagId = Number.parseInt(tag.id, 10);
               this.selectedTagId = tagId;
               this.selectedTagName = tag.name;
               updateSearchBarDisplay();
@@ -2640,7 +2799,7 @@ export class FeedContainer {
               fetchSuggestions('', 1, true);
             });
             suggestions.appendChild(chip);
-          });
+          }
           
           // Display performers if any
           if (performers.length > 0) {
@@ -2652,8 +2811,8 @@ export class FeedContainer {
               divider.style.margin = '6px 0';
               suggestions.appendChild(divider);
             }
-            performers.forEach((performer) => {
-              if (this.selectedPerformerId === parseInt(performer.id, 10)) return;
+            for (const performer of performers) {
+              if (this.selectedPerformerId === Number.parseInt(performer.id, 10)) continue;
               const chip = document.createElement('button');
               chip.textContent = performer.name;
               chip.className = 'suggest-chip';
@@ -2666,7 +2825,7 @@ export class FeedContainer {
               chip.addEventListener('click', () => {
                 this.selectedSavedFilter = undefined;
                 savedSelect.value = '';
-                const performerId = parseInt(performer.id, 10);
+                const performerId = Number.parseInt(performer.id, 10);
                 this.selectedPerformerId = performerId;
                 this.selectedPerformerName = performer.name;
                 updateSearchBarDisplay();
@@ -2674,7 +2833,7 @@ export class FeedContainer {
                 fetchSuggestions('', 1, true);
               });
               suggestions.appendChild(chip);
-            });
+            }
           }
           
           suggestions.style.display = suggestions.children.length > 0 ? 'flex' : 'none';
@@ -2693,10 +2852,10 @@ export class FeedContainer {
       if (signal.aborted) return;
 
       // Render as chips
-      items.forEach((tag) => {
-        if (this.selectedTagId === parseInt(tag.id, 10)) return;
+      for (const tag of items) {
+        if (this.selectedTagId === Number.parseInt(tag.id, 10)) continue;
         // Skip StashGifs Favorite and StashGifs Marker tags (internal plugin tags)
-        if (tag.name === 'StashGifs Favorite' || tag.name === 'StashGifs Marker') return;
+        if (tag.name === 'StashGifs Favorite' || tag.name === 'StashGifs Marker') continue;
         const chip = document.createElement('button');
         chip.textContent = tag.name;
         chip.className = 'suggest-chip';
@@ -2713,7 +2872,7 @@ export class FeedContainer {
           // Selecting a tag clears any saved filter to avoid conflicts
           this.selectedSavedFilter = undefined;
           savedSelect.value = '';
-          const tagId = parseInt(tag.id, 10);
+          const tagId = Number.parseInt(tag.id, 10);
           this.selectedTagId = tagId;
           this.selectedTagName = tag.name;
           updateSearchBarDisplay();
@@ -2722,7 +2881,7 @@ export class FeedContainer {
           fetchSuggestions(trimmedText, 1, false);
         });
         suggestions.appendChild(chip);
-      });
+      }
 
       // Simple heuristic for more results (if we filled the page)
       suggestHasMore = items.length >= pageSize;
@@ -2741,7 +2900,7 @@ export class FeedContainer {
         label.style.width = '100%';
         label.style.marginTop = '6px';
         suggestions.appendChild(label);
-        matchingSaved.forEach((f) => {
+        for (const f of matchingSaved) {
           const chip = document.createElement('button');
           chip.textContent = f.name;
           chip.className = 'suggest-chip';
@@ -2766,11 +2925,11 @@ export class FeedContainer {
             apply();
           });
           suggestions.appendChild(chip);
-        });
+        }
       }
 
       // Add/load more button
-      const existingMore = suggestions.querySelector('[data-more="1"]') as HTMLElement | null;
+      const existingMore = suggestions.querySelector('[data-more="1"]');
       if (existingMore) existingMore.remove();
       if (suggestHasMore) {
         const more = document.createElement('button');
@@ -2789,8 +2948,8 @@ export class FeedContainer {
           // Use the same signal for consistency
           const next = await this.api.searchMarkerTags(trimmedText, pageSize, signal);
           if (signal.aborted) return;
-          next.forEach((tag) => {
-            if (this.selectedTagId === parseInt(tag.id, 10)) return;
+          for (const tag of next) {
+            if (this.selectedTagId === Number.parseInt(tag.id, 10)) continue;
             const chip = document.createElement('button');
             chip.textContent = tag.name;
             chip.className = 'suggest-chip';
@@ -2803,7 +2962,7 @@ export class FeedContainer {
             chip.addEventListener('click', () => {
               this.selectedSavedFilter = undefined;
               savedSelect.value = '';
-              const tagId = parseInt(tag.id, 10);
+              const tagId = Number.parseInt(tag.id, 10);
               this.selectedTagId = tagId;
               this.selectedTagName = tag.name;
               updateSearchBarDisplay();
@@ -2812,7 +2971,7 @@ export class FeedContainer {
               fetchSuggestions(trimmedText, 1, false);
             });
             suggestions.appendChild(chip);
-          });
+          }
           // If fewer than page size returned, hide more
           if (next.length < pageSize) {
             more.remove();
@@ -2821,7 +2980,7 @@ export class FeedContainer {
         suggestions.appendChild(more);
       }
 
-      suggestions.style.display = (items.length || (matchingSaved && matchingSaved.length)) ? 'flex' : 'none';
+      suggestions.style.display = (items.length || matchingSaved?.length) ? 'flex' : 'none';
     };
 
     // Prevent clicks on input from bubbling to document click handler
@@ -2880,7 +3039,7 @@ export class FeedContainer {
     this.container.appendChild(bar);
 
     // Responsive layout helpers
-    const isMobile = () => window.matchMedia('(max-width: 700px)').matches;
+    const isMobile = () => globalThis.matchMedia('(max-width: 700px)').matches;
     const setDesktopLayout = () => {
       // half-screen top sheet on desktop, avoid covering scrollbar
       const sbw = getScrollbarWidth();
@@ -2928,8 +3087,8 @@ export class FeedContainer {
     const applyLayout = () => {
       if (isMobile()) setMobileLayout(); else setDesktopLayout();
       // hide clear button and saved dropdown on mobile for a unified UI
-      (clearBtn as HTMLButtonElement).style.display = isMobile() ? 'none' : 'inline-flex';
-      (savedSelect as HTMLSelectElement).style.display = isMobile() ? 'none' : 'block';
+      clearBtn.style.display = isMobile() ? 'none' : 'inline-flex';
+      savedSelect.style.display = isMobile() ? 'none' : 'block';
     };
     applyLayout();
 
@@ -2956,7 +3115,7 @@ export class FeedContainer {
       // Load saved filters lazily when panel opens
       loadSavedFilters().catch((e) => console.warn('Failed to load saved filters on open', e));
       // Focus input for quick typing on mobile
-      (queryInput as HTMLInputElement).focus();
+      queryInput.focus();
     };
     const closePanel = () => {
       sheetOpen = false;
@@ -2969,10 +3128,10 @@ export class FeedContainer {
     };
     // Backdrop/keyboard close and responsive resize
     backdrop.addEventListener('click', closePanel);
-    window.addEventListener('keydown', (e) => {
-      if ((e as KeyboardEvent).key === 'Escape') closePanel();
+    globalThis.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') closePanel();
     });
-    window.addEventListener('resize', () => {
+    globalThis.addEventListener('resize', () => {
       const wasOpen = sheetOpen;
       applyLayout();
       if (wasOpen) {
@@ -2993,9 +3152,9 @@ export class FeedContainer {
     
     // Defer suggestion preloading significantly to avoid competing with initial load
     // Wait 10 seconds on mobile, 5 seconds on desktop to ensure initial content is loaded first
-    if (typeof window !== 'undefined') {
+    if (globalThis.window !== undefined) {
       const suggestionDelay = this.isMobileDevice ? 10000 : 5000;
-      window.setTimeout(() => {
+      globalThis.setTimeout(() => {
         this.preloadSuggestions().catch((e) => console.warn('Preload suggestions failed', e));
       }, suggestionDelay);
     }
@@ -3159,9 +3318,7 @@ export class FeedContainer {
         }
         
         // Add to fragment for batch insertion
-        if (!fragment) {
-          fragment = document.createDocumentFragment();
-        }
+        fragment ??= document.createDocumentFragment();
         if (postContainer) {
           fragment.appendChild(postContainer);
           fragmentPostCount++;
@@ -3215,10 +3372,11 @@ export class FeedContainer {
       // Update infinite scroll trigger position - must be done BEFORE isLoading is set to false
       // This ensures the trigger is moved to the new bottom before the observer can fire again
       this.updateInfiniteScrollTrigger();
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Error loading scene markers:', error);
       if (!append) {
-        this.showError(`Failed to load scene markers: ${error.message || 'Unknown error'}`);
+        const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+        this.showError(`Failed to load scene markers: ${errorMessage}`);
       }
       this.hideSkeletonLoaders();
     } finally {
@@ -3290,7 +3448,7 @@ export class FeedContainer {
    * Clean up all active load observers
    */
   private cleanupLoadObservers(): void {
-    for (const [postId, observer] of this.loadObservers.entries()) {
+    for (const [, observer] of this.loadObservers.entries()) {
       observer.disconnect();
     }
     this.loadObservers.clear();
@@ -3316,7 +3474,7 @@ export class FeedContainer {
    * Stop video elements that are currently loading
    */
   private stopLoadingVideos(): void {
-    for (const [postId, post] of this.posts.entries()) {
+    for (const [, post] of this.posts.entries()) {
       const player = post.getPlayer();
       if (player) {
         const videoElement = player.getVideoElement();
@@ -3415,6 +3573,7 @@ export class FeedContainer {
       this.shuffleMode > 0,
       () => this.cancelAllPendingRequests() // Callback to cancel requests during marker creation
     );
+    post.initialize();
     this.posts.set(marker.id, post);
     this.postOrder.push(marker.id);
 
@@ -3577,13 +3736,13 @@ export class FeedContainer {
     const rootMargin = this.isMobileDevice ? '50px' : '200px';
     this.scrollObserver = new IntersectionObserver(
       (entries) => {
-        entries.forEach((entry) => {
+        for (const entry of entries) {
           if (entry.isIntersecting && !this.isLoading && this.hasMore) {
             this.loadVideos(undefined, true).catch((error) => {
               console.error('Error loading more markers:', error);
             });
           }
-        });
+        }
       },
       {
         root: null, // Use viewport (window) as root
@@ -3662,14 +3821,17 @@ export class FeedContainer {
       };
       
       // Start playing attempt (don't await to allow parallel attempts)
-      tryPlay().catch(() => {});
+      // Intentionally ignore errors - errors are handled within tryPlay()
+      tryPlay().catch(() => {
+        // Errors are handled within tryPlay() function
+      });
     }
   }
 
   private shouldEnableVisibilityDebug(): boolean {
     try {
-      if (typeof window !== 'undefined' && typeof window.localStorage !== 'undefined') {
-        return window.localStorage.getItem('stashgifs-visibility-debug') === '1';
+      if (globalThis.window !== undefined && globalThis.localStorage !== undefined) {
+        return globalThis.localStorage.getItem('stashgifs-visibility-debug') === '1';
       }
     } catch {
       // Ignore storage errors
@@ -3688,13 +3850,13 @@ export class FeedContainer {
       this.runEagerPreload();
     };
 
-    if (typeof window === 'undefined') {
+    if (globalThis.window === undefined) {
       execute();
       return;
     }
 
     this.eagerPreloadScheduled = true;
-    this.eagerPreloadHandle = window.setTimeout(execute, 32);
+    this.eagerPreloadHandle = globalThis.setTimeout(execute, 32);
   }
 
   private runEagerPreload(): void {
@@ -3756,8 +3918,8 @@ export class FeedContainer {
       return;
     }
 
-    if (typeof window !== 'undefined') {
-      window.clearTimeout(this.eagerPreloadHandle);
+    if (globalThis.window !== undefined) {
+      globalThis.clearTimeout(this.eagerPreloadHandle);
     }
 
     this.eagerPreloadHandle = undefined;
@@ -3782,7 +3944,7 @@ export class FeedContainer {
         return 0;
       }
     }
-    const viewportHeight = window.innerHeight;
+    const viewportHeight = globalThis.innerHeight;
     const viewportTop = 0;
     const viewportBottom = viewportHeight;
 
@@ -3863,7 +4025,7 @@ export class FeedContainer {
    * Calculate delay based on scroll velocity
    */
   private getPreloadDelay(): number {
-    const threshold = this.settings.backgroundPreloadScrollVelocityThreshold ?? 2.0;
+    const threshold = this.settings.backgroundPreloadScrollVelocityThreshold ?? 2;
     const normalDelay = this.settings.backgroundPreloadDelay ?? 150;
     const fastScrollDelay = this.settings.backgroundPreloadFastScrollDelay ?? 400;
 
@@ -3904,8 +4066,8 @@ export class FeedContainer {
 
     const readinessTimeout = 5000;
     const scheduleTimeout = (cb: () => void, delay: number) => {
-      if (typeof window !== 'undefined' && typeof window.setTimeout === 'function') {
-        window.setTimeout(cb, delay);
+      if (globalThis.window !== undefined && typeof globalThis.setTimeout === 'function') {
+        globalThis.setTimeout(cb, delay);
       } else {
         setTimeout(cb, delay);
       }
@@ -3944,7 +4106,7 @@ export class FeedContainer {
     // Check if we've reached max concurrent preloads
     if (this.currentlyPreloadingCount >= this.maxSimultaneousPreloads) {
       // Retry after a short delay
-      window.setTimeout(() => {
+      globalThis.setTimeout(() => {
         this.processMobilePreloadQueue();
       }, 100);
       return;
@@ -3993,7 +4155,7 @@ export class FeedContainer {
     // Add delay between queue items on mobile to space out requests
     const delay = this.isMobileDevice ? 150 : 0;
     if (delay > 0) {
-      window.setTimeout(() => {
+      globalThis.setTimeout(() => {
         this.processMobilePreloadQueue();
       }, delay);
     } else {
@@ -4010,8 +4172,8 @@ export class FeedContainer {
     
     const container = post.getContainer();
     const rect = container.getBoundingClientRect();
-    const viewportHeight = window.innerHeight;
-    const viewportWidth = window.innerWidth;
+    const viewportHeight = globalThis.innerHeight;
+    const viewportWidth = globalThis.innerWidth;
     const margin = 500; // Consider posts within 500px as "near" viewport
     
     return rect.bottom > -margin && 
@@ -4052,7 +4214,7 @@ export class FeedContainer {
     if (this.shouldThrottlePreloading()) {
       // Schedule next attempt after delay
       const delay = this.getPreloadDelay();
-      this.backgroundPreloadHandle = window.setTimeout(() => {
+      this.backgroundPreloadHandle = globalThis.setTimeout(() => {
         this.preloadNextVideo();
       }, delay);
       return;
@@ -4106,7 +4268,7 @@ export class FeedContainer {
 
     // Schedule next preload
     const delay = this.getPreloadDelay();
-    this.backgroundPreloadHandle = window.setTimeout(() => {
+    this.backgroundPreloadHandle = globalThis.setTimeout(() => {
       this.preloadNextVideo();
     }, delay);
   }
@@ -4135,7 +4297,7 @@ export class FeedContainer {
 
     // Start preloading after a short delay
     const delay = this.getPreloadDelay();
-    this.backgroundPreloadHandle = window.setTimeout(() => {
+    this.backgroundPreloadHandle = globalThis.setTimeout(() => {
       this.preloadNextVideo();
     }, delay);
   }
@@ -4146,7 +4308,7 @@ export class FeedContainer {
   private stopBackgroundPreloading(): void {
     this.backgroundPreloadActive = false;
     if (this.backgroundPreloadHandle) {
-      window.clearTimeout(this.backgroundPreloadHandle);
+      globalThis.clearTimeout(this.backgroundPreloadHandle);
       this.backgroundPreloadHandle = undefined;
     }
   }
@@ -4163,8 +4325,8 @@ export class FeedContainer {
     
     // Only enforce maximum if we significantly exceed limit
     if (this.posts.size > maxPostsInMemory * 1.5) {
-      const viewportTop = window.scrollY || window.pageYOffset;
-      const viewportBottom = viewportTop + window.innerHeight;
+      const viewportTop = globalThis.scrollY || globalThis.pageYOffset;
+      const viewportBottom = viewportTop + globalThis.innerHeight;
       
       // Calculate distance for each post
       const postsWithDistance: Array<{ postId: string; distance: number; isVisible: boolean }> = [];
@@ -4207,7 +4369,7 @@ export class FeedContainer {
       // 1000px in HD mode, 1500px in normal mode (much less aggressive)
       const cleanupDistance = this.useHDMode ? 1000 : 1500;
       for (const { postId, distance, isVisible } of postsWithDistance) {
-        if (!isVisible && distance > cleanupDistance && !postsToRemove.find(p => p.postId === postId)) {
+        if (!isVisible && distance > cleanupDistance && !postsToRemove.some(p => p.postId === postId)) {
           // Only add if we won't remove too many posts
           if (this.posts.size - postsToRemove.length > minPostsToKeep) {
             postsToRemove.push({ postId, distance, isVisible });
@@ -4306,14 +4468,14 @@ export class FeedContainer {
     const viewportBottom = viewportTop + window.innerHeight;
     // Unload videos that are more than 100px from viewport
     // Same threshold for both HD and normal mode
-    const unloadDistance = this.useHDMode ? 100 : 100;
+    const unloadDistance = 100;
     
     // Also limit concurrent loaded videos to prevent memory buildup
     const maxLoadedVideos = this.useHDMode ? 2 : 3;
     let loadedVideoCount = 0;
     
     // First pass: count loaded videos in viewport
-    for (const [postId, post] of this.posts.entries()) {
+    for (const [, post] of this.posts.entries()) {
       const container = post.getContainer();
       const rect = container.getBoundingClientRect();
       const elementTop = viewportTop + rect.top;
@@ -4331,7 +4493,7 @@ export class FeedContainer {
     }
     
     // Second pass: unload videos that are far from viewport
-    for (const [postId, post] of this.posts.entries()) {
+    for (const [, post] of this.posts.entries()) {
       const container = post.getContainer();
       const rect = container.getBoundingClientRect();
       const elementTop = viewportTop + rect.top;
@@ -4366,13 +4528,14 @@ export class FeedContainer {
    * Handles header hide/show based on scroll direction and tracks scroll velocity
    */
   private setupScrollHandler(): void {
-    let lastScrollY = window.scrollY;
+    let lastScrollY = globalThis.scrollY;
     let isHeaderHidden = false;
     
-    // Store reference to isHeaderHidden so we can access it from other methods
-    (this as any).__isHeaderHidden = () => isHeaderHidden;
-    (this as any).__setHeaderHidden = (val: boolean) => { isHeaderHidden = val; };
-    (this as any).__showHeader = () => {
+    // Store reference to isHeaderHidden so we can access it from other methods (for debugging/extension)
+    const debugThis = this as FeedContainer & FeedContainerDebug;
+    debugThis.__isHeaderHidden = () => isHeaderHidden;
+    debugThis.__setHeaderHidden = (val: boolean) => { isHeaderHidden = val; };
+    debugThis.__showHeader = () => {
       if (this.headerBar) {
         this.headerBar.style.transform = 'translateY(0)';
         isHeaderHidden = false;
@@ -4380,13 +4543,13 @@ export class FeedContainer {
     };
 
     // Initialize scroll tracking
-    this.lastScrollTop = window.scrollY || document.documentElement.scrollTop;
+    this.lastScrollTop = globalThis.scrollY || document.documentElement.scrollTop;
     this.lastScrollTime = Date.now();
 
     const handleScroll = () => {
       // Update scroll velocity for background preloading
       const now = Date.now();
-      const currentScrollY = window.scrollY || document.documentElement.scrollTop;
+      const currentScrollY = globalThis.scrollY || document.documentElement.scrollTop;
       const timeDelta = now - this.lastScrollTime;
       
       if (timeDelta > 0) {
@@ -4408,7 +4571,7 @@ export class FeedContainer {
       
       // Stop background preloading when scrolling fast to prevent memory buildup
       // Fast scroll threshold: 3 pixels/ms (very fast scrolling)
-      const fastScrollThreshold = 3.0;
+      const fastScrollThreshold = 3;
       if (this.scrollVelocity > fastScrollThreshold) {
         if (this.backgroundPreloadActive) {
           this.stopBackgroundPreloading();
@@ -4473,7 +4636,7 @@ export class FeedContainer {
     };
 
     // Use passive listener for better performance
-    window.addEventListener('scroll', handleScroll, { passive: true });
+    globalThis.addEventListener('scroll', handleScroll, { passive: true });
 
     // Listen for page visibility changes to pause/resume preloading
     document.addEventListener('visibilitychange', () => {
@@ -4498,7 +4661,7 @@ export class FeedContainer {
     }
     body.dataset.scrollLock = 'true';
     // Preserve layout when scrollbar disappears
-    const scrollbarWidth = window.innerWidth - document.documentElement.clientWidth;
+    const scrollbarWidth = globalThis.innerWidth - document.documentElement.clientWidth;
     if (scrollbarWidth > 0) {
       body.style.paddingRight = `${scrollbarWidth}px`;
     }
@@ -4548,11 +4711,11 @@ export class FeedContainer {
    */
   private showSkeletonLoaders(): void {
     // Check for existing skeleton loaders in the HTML (from initial page load)
-    const existingSkeletons = Array.from(this.postsContainer.querySelectorAll('.video-post-skeleton')) as HTMLElement[];
+    const existingSkeletons = Array.from(this.postsContainer.querySelectorAll('.video-post-skeleton'));
     
     if (existingSkeletons.length > 0) {
       // Reuse existing skeletons from HTML
-      this.skeletonLoaders = existingSkeletons;
+      this.skeletonLoaders = existingSkeletons as HTMLElement[];
       
       // If we need more skeletons than exist, create additional ones
       const skeletonCount = this.initialLoadLimit;
@@ -4567,11 +4730,9 @@ export class FeedContainer {
         // If we have too many, remove the excess
         const excess = existingSkeletons.slice(skeletonCount);
         for (const skeleton of excess) {
-          if (skeleton.parentNode) {
-            skeleton.parentNode.removeChild(skeleton);
-          }
+          skeleton.remove();
         }
-        this.skeletonLoaders = existingSkeletons.slice(0, skeletonCount);
+        this.skeletonLoaders = existingSkeletons.slice(0, skeletonCount) as HTMLElement[];
       }
     } else {
       // No existing skeletons, create new ones
@@ -4660,9 +4821,7 @@ export class FeedContainer {
    */
   private hideSkeletonLoaders(): void {
     for (const skeleton of this.skeletonLoaders) {
-      if (skeleton.parentNode) {
-        skeleton.parentNode.removeChild(skeleton);
-      }
+      skeleton.remove();
     }
     this.skeletonLoaders = [];
   }
@@ -4673,9 +4832,7 @@ export class FeedContainer {
   private removeSkeletonLoader(): void {
     if (this.skeletonLoaders.length > 0) {
       const skeleton = this.skeletonLoaders.shift();
-      if (skeleton && skeleton.parentNode) {
-        skeleton.parentNode.removeChild(skeleton);
-      }
+      skeleton?.remove();
     }
   }
 
@@ -4766,9 +4923,10 @@ export class FeedContainer {
     this.cancelAllPendingRequests();
 
     // Clear mobile load timeout
-    if ((this as any)._mobileLoadTimeout) {
-      clearTimeout((this as any)._mobileLoadTimeout);
-      (this as any)._mobileLoadTimeout = null;
+    const debugThis = this as FeedContainer & FeedContainerDebug;
+    if (debugThis._mobileLoadTimeout) {
+      clearTimeout(debugThis._mobileLoadTimeout);
+      debugThis._mobileLoadTimeout = null;
     }
     
     // Clean up all load observers

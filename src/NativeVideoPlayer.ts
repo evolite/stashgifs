@@ -319,7 +319,10 @@ export class NativeVideoPlayer {
           this.videoElement.currentTime = 0;
           // Continue playing if it was playing
           if (!this.videoElement.paused) {
-            this.videoElement.play().catch(() => {});
+            // Intentionally ignore play() errors - browser will handle autoplay restrictions
+            this.videoElement.play().catch(() => {
+              // Browser handles autoplay restrictions silently
+            });
           }
         }
       });
@@ -1618,7 +1621,10 @@ export class NativeVideoPlayer {
         if (this.videoElement.currentTime >= this.originalEndTime!) {
           this.videoElement.currentTime = 0;
           if (!this.videoElement.paused) {
-            this.videoElement.play().catch(() => {});
+            // Intentionally ignore play() errors - browser will handle autoplay restrictions
+            this.videoElement.play().catch(() => {
+              // Browser handles autoplay restrictions silently
+            });
           }
         }
       });

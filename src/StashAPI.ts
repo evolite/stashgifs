@@ -123,9 +123,12 @@ class LRUCache<K, V> {
   }
 }
 
+// Constants for random sorting
+const RANDOM_SORT_MULTIPLIER = 1000000;
+
 export class StashAPI {
   private baseUrl: string;
-  private apiKey?: string
+  private apiKey?: string;
   // Cache for tags/performers that have markers (to avoid repeated checks)
   // Using LRU cache to track access order and intelligently evict least recently used
   private tagsWithMarkersCache: LRUCache<number, boolean>;
@@ -389,7 +392,7 @@ export class StashAPI {
       filter.q = term.trim();
     } else {
       // When no search term, use random sorting to get a diverse assortment
-      filter.sort = `random_${Math.floor(Math.random() * 1000000)}`;
+      filter.sort = `random_${Math.floor(Math.random() * RANDOM_SORT_MULTIPLIER)}`;
     }
     
     // Filter tags based on whether actively searching or getting suggestions
@@ -489,7 +492,7 @@ export class StashAPI {
       filter.q = term.trim();
     } else {
       // When no search term, use random sorting to get a diverse assortment
-      filter.sort = `random_${Math.floor(Math.random() * 1000000)}`;
+      filter.sort = `random_${Math.floor(Math.random() * RANDOM_SORT_MULTIPLIER)}`;
     }
     
     // Filter to only performers with at least 1 scene (for autocompletion)
@@ -520,9 +523,9 @@ export class StashAPI {
       
       // Return performers (already randomly sorted by GraphQL when no search term)
       return performers.slice(0, limit);
-    } catch (e: any) {
+    } catch (e: unknown) {
       // Ignore AbortError - it's expected when cancelling
-      if (e.name === 'AbortError' || signal?.aborted) {
+      if ((e instanceof Error && e.name === 'AbortError') || signal?.aborted) {
         return [];
       }
       console.warn('searchPerformers failed', e);
@@ -697,11 +700,11 @@ export class StashAPI {
         filter.per_page = limit;
         // Use random sorting for better randomization (even when filters are active)
         // This randomizes the order of filtered results
-        filter.sort = `random_${Math.floor(Math.random() * 1000000)}`;
+        filter.sort = `random_${Math.floor(Math.random() * RANDOM_SORT_MULTIPLIER)}`;
 
         // Build scene_marker_filter - start with saved filter object_filter if available
-        const sceneMarkerFilterRaw: any = savedFilterCriteria?.object_filter ? { ...savedFilterCriteria.object_filter } : {};
-        const sceneMarkerFilter: any = this.normalizeMarkerFilter(sceneMarkerFilterRaw);
+        const sceneMarkerFilterRaw: SceneMarkerFilterInput | Record<string, unknown> = savedFilterCriteria?.object_filter ? { ...savedFilterCriteria.object_filter } : {};
+        const sceneMarkerFilter: SceneMarkerFilterInput = this.normalizeMarkerFilter(sceneMarkerFilterRaw);
         
         // If a saved filter is active, ONLY use its criteria (don't combine with manual filters)
         // Otherwise, apply manual tag filters (only tags - primary_tags is deprecated)
@@ -790,9 +793,9 @@ export class StashAPI {
         
         return markers;
       }
-    } catch (e: any) {
+    } catch (e: unknown) {
       // Ignore AbortError - it's expected when cancelling
-      if (e.name === 'AbortError' || signal?.aborted) {
+      if ((e instanceof Error && e.name === 'AbortError') || signal?.aborted) {
         return [];
       }
       console.error('Error fetching scene markers:', e);
@@ -1070,9 +1073,9 @@ export class StashAPI {
         variables,
       });
       return result.data?.tagCreate || null;
-    } catch (error: any) {
+    } catch (error: unknown) {
       // If tag already exists, try to find it
-      const errorMessage = error?.message || '';
+      const errorMessage = error instanceof Error ? error.message : String(error);
       if (errorMessage.includes('already exists') || errorMessage.includes('duplicate')) {
         console.warn(`StashAPI: Tag "${tagName}" already exists, attempting to find it`, error);
         // Try to find the existing tag
@@ -1402,7 +1405,7 @@ export class StashAPI {
     title: string = '',
     endSeconds?: number | null,
     tagIds: string[] = []
-  ): Promise<{ id: string; title: string; seconds: number; end_seconds?: number; stream?: string; preview?: string; scene: any; primary_tag: { id: string; name: string }; tags: Array<{ id: string; name: string }> }> {
+  ): Promise<{ id: string; title: string; seconds: number; end_seconds?: number; stream?: string; preview?: string; scene: { id: string; title?: string; files?: Array<{ width?: number; height?: number; path?: string }>; performers?: Array<{ id: string; name: string; image_path?: string }> } | Scene; primary_tag: { id: string; name: string }; tags: Array<{ id: string; name: string }> }> {
     const variables = {
       title,
       seconds,

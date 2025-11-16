@@ -3,7 +3,7 @@
  * Individual video post card in the feed
  */
 
-import { VideoPostData } from './types.js';
+import { VideoPostData, Scene } from './types.js';
 import { NativeVideoPlayer } from './NativeVideoPlayer.js';
 import { FavoritesManager } from './FavoritesManager.js';
 import { StashAPI } from './StashAPI.js';
@@ -151,7 +151,13 @@ export class VideoPost {
     this.ratingResizeHandler = throttle(() => this.syncRatingDialogLayout(), RESIZE_THROTTLE_MS);
 
     this.render();
-    this.checkFavoriteStatus();
+  }
+
+  /**
+   * Initialize asynchronous operations after construction
+   */
+  public async initialize(): Promise<void> {
+    await this.checkFavoriteStatus();
   }
 
   /**
@@ -2034,7 +2040,14 @@ export class VideoPost {
     if (this.player.hasLoadError()) {
       const errorType = this.player.getLoadErrorType();
       const error = new Error(`Video load failed: ${errorType || 'unknown'}`);
-      (error as any).errorType = errorType;
+      // Add errorType property for error handling
+      if (errorType) {
+        Object.defineProperty(error, 'errorType', {
+          value: errorType,
+          writable: false,
+          enumerable: true,
+        });
+      }
       this.handleLoadError(error);
     }
   }
@@ -2174,7 +2187,11 @@ export class VideoPost {
     dialog.style.maxWidth = 'calc(100vw - 32px)';
     dialog.style.background = 'rgba(28, 28, 30, 0.98)';
     dialog.style.backdropFilter = 'blur(20px) saturate(180%)';
-    (dialog.style as any).webkitBackdropFilter = 'blur(20px) saturate(180%)';
+    // WebKit-specific backdrop filter for Safari compatibility
+    const webkitStyle = dialog.style as CSSStyleDeclaration & { webkitBackdropFilter?: string };
+    if ('webkitBackdropFilter' in dialog.style) {
+      webkitStyle.webkitBackdropFilter = 'blur(20px) saturate(180%)';
+    }
     dialog.style.border = '1px solid rgba(255, 255, 255, 0.12)';
     dialog.style.borderRadius = '12px';
     dialog.style.padding = '16px';
@@ -2668,7 +2685,13 @@ export class VideoPost {
       const stored = localStorage.getItem('stashgifs-recent-marker-tags');
       if (!stored) return;
 
-      const recentTags: Array<{ id: string; name: string }> = JSON.parse(stored);
+      let recentTags: Array<{ id: string; name: string }> = [];
+      try {
+        recentTags = JSON.parse(stored) as Array<{ id: string; name: string }>;
+      } catch (error) {
+        console.warn('Failed to parse recent tags from localStorage', error);
+        return;
+      }
       this.markerDialogRecentTags.innerHTML = '';
 
       if (recentTags.length === 0) {
@@ -2730,7 +2753,15 @@ export class VideoPost {
   private addToRecentTags(tagId: string, tagName: string): void {
     try {
       const stored = localStorage.getItem('stashgifs-recent-marker-tags');
-      let recentTags: Array<{ id: string; name: string }> = stored ? JSON.parse(stored) : [];
+      let recentTags: Array<{ id: string; name: string }> = [];
+      if (stored) {
+        try {
+          recentTags = JSON.parse(stored) as Array<{ id: string; name: string }>;
+        } catch (error) {
+          console.warn('Failed to parse recent tags from localStorage', error);
+          recentTags = [];
+        }
+      }
 
       // Remove if already exists
       recentTags = recentTags.filter(t => t.id !== tagId);
@@ -2824,7 +2855,14 @@ export class VideoPost {
           scene: {
             ...existingScene, // Preserve existing scene data
             ...createdMarker.scene, // Merge in any new scene data from the response
-          },
+            // Ensure files array matches SceneFile type if present
+            files: createdMarker.scene.files ? createdMarker.scene.files.map((f: { width?: number; height?: number; path?: string }) => ({
+              id: '', // GraphQL response doesn't include file id
+              path: f.path || '',
+              width: f.width,
+              height: f.height,
+            })) : existingScene.files,
+          } as Scene,
         };
       }
 
