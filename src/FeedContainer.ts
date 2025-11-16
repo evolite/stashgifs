@@ -141,7 +141,7 @@ export class FeedContainer {
    * Initialize device detection and configuration
    */
   private initializeDeviceConfiguration(): void {
-    const userAgent = typeof navigator !== 'undefined' ? navigator.userAgent : '';
+    const userAgent = typeof navigator === 'undefined' ? '' : navigator.userAgent;
     this.isMobileDevice = /iPhone|iPad|iPod|Android/i.test(userAgent);
     
     // Mobile: reduce initial load for faster perceived performance
@@ -322,6 +322,7 @@ export class FeedContainer {
         }, 100);
       } catch (e) {
         // Autoplay unlock failed, user will need to interact
+        console.debug('Autoplay unlock failed, user will need to interact', e);
       } finally {
         // Clean up after a short delay
         setTimeout(() => {
@@ -610,73 +611,816 @@ export class FeedContainer {
   }
 
   /**
-   * Create top header bar with unified search
+   * Create playback controls section (HD toggle and Random positions)
    */
-  private createHeaderBar(): void {
-    // Saved filters will be loaded lazily when filter dropdown opens
-    let savedFiltersCache: Array<{ id: string; name: string }> = [];
+  private createPlaybackControlsSection(
+    container: HTMLElement,
+    alignmentOffset: number,
+    onHDToggleClick: () => void,
+    updateSearchBarDisplay: () => void
+  ): void {
+    const playbackSection = document.createElement('div');
+    playbackSection.style.display = 'flex';
+    playbackSection.style.flexDirection = 'row';
+    playbackSection.style.alignItems = 'center';
+    playbackSection.style.gap = '8px';
+    playbackSection.style.flexWrap = 'wrap';
+    playbackSection.style.marginLeft = `${alignmentOffset}px`;
 
+    // HD toggle button
+    const hdBtn = document.createElement('button');
+    hdBtn.type = 'button';
+    hdBtn.textContent = this.useHDMode ? 'HD Video: On' : 'HD Video: Off';
+    hdBtn.style.padding = '10px 12px';
+    hdBtn.style.borderRadius = '10px';
+    hdBtn.style.border = '1px solid rgba(255,255,255,0.12)';
+    hdBtn.style.background = this.useHDMode ? 'rgba(76, 175, 80, 0.25)' : 'rgba(28, 28, 30, 0.95)';
+    hdBtn.style.color = this.useHDMode ? '#C8E6C9' : 'rgba(255,255,255,0.85)';
+    hdBtn.style.cursor = 'pointer';
+    hdBtn.style.display = 'inline-flex';
+    hdBtn.style.alignItems = 'center';
+
+    // Random positions toggle
+    const randomBtn = document.createElement('button');
+    randomBtn.type = 'button';
+    const setRandomBtnState = () => {
+      const isOn = this.shuffleMode > 0;
+      randomBtn.textContent = isOn ? 'Random Positions: On' : 'Random Positions: Off';
+      randomBtn.style.background = isOn ? 'rgba(33, 150, 243, 0.25)' : 'rgba(28, 28, 30, 0.95)';
+      randomBtn.style.color = isOn ? '#BBDEFB' : 'rgba(255,255,255,0.85)';
+    };
+    randomBtn.style.padding = '10px 12px';
+    randomBtn.style.borderRadius = '10px';
+    randomBtn.style.border = '1px solid rgba(255,255,255,0.12)';
+    randomBtn.style.cursor = 'pointer';
+    randomBtn.style.display = 'inline-flex';
+    randomBtn.style.alignItems = 'center';
+    setRandomBtnState();
+
+    const updateButtonStates = () => {
+      hdBtn.textContent = this.useHDMode ? 'HD Video: On' : 'HD Video: Off';
+      hdBtn.style.background = this.useHDMode ? 'rgba(76, 175, 80, 0.25)' : 'rgba(28, 28, 30, 0.95)';
+      hdBtn.style.color = this.useHDMode ? '#C8E6C9' : 'rgba(255,255,255,0.85)';
+      setRandomBtnState();
+    };
+
+    hdBtn.addEventListener('click', () => {
+      onHDToggleClick();
+      updateButtonStates();
+    });
+
+    randomBtn.addEventListener('click', async () => {
+      const willBeOn = this.shuffleMode === 0;
+      if (willBeOn && !this.useHDMode) {
+        onHDToggleClick();
+      }
+      this.shuffleMode = this.shuffleMode > 0 ? 0 : 1;
+      try { localStorage.setItem('stashgifs-shuffleMode', String(this.shuffleMode)); } catch {}
+      updateButtonStates();
+      updateSearchBarDisplay();
+      this.clearPosts();
+      if (this.postsContainer) this.postsContainer.innerHTML = '';
+      this.currentPage = 1;
+      this.hasMore = true;
+      this.isLoading = false;
+      await this.loadVideos(this.currentFilters, false, undefined, true);
+    });
+
+    playbackSection.appendChild(hdBtn);
+    playbackSection.appendChild(randomBtn);
+    container.appendChild(playbackSection);
+  }
+
+  /**
+   * Create saved filters section
+   */
+  private createSavedFiltersSection(
+    container: HTMLElement,
+    alignmentOffset: number,
+    updateSearchBarDisplay: () => void,
+    apply: () => Promise<void>
+  ): void {
+    const filtersSection = document.createElement('div');
+    filtersSection.style.display = 'flex';
+    filtersSection.style.flexDirection = 'column';
+    filtersSection.style.gap = '12px';
+    filtersSection.style.marginLeft = `${alignmentOffset}px`;
+    filtersSection.appendChild(this.createSectionLabel('Saved Filters', true));
+
+    const pillRow = document.createElement('div');
+    pillRow.style.display = 'flex';
+    pillRow.style.flexWrap = 'wrap';
+    pillRow.style.gap = '8px';
+
+    pillRow.appendChild(this.createPillButton('Favorites', async () => {
+      if (this.shuffleMode > 0) return;
+      this.selectedSavedFilter = undefined;
+      this.selectedPerformerId = undefined;
+      this.selectedPerformerName = undefined;
+      try {
+        const favoriteTag = await this.api.findTagByName('StashGifs Favorite');
+        if (favoriteTag) {
+          this.selectedTagId = Number.parseInt(favoriteTag.id, 10);
+          this.selectedTagName = 'Favorites';
+        } else {
+          this.selectedTagId = undefined;
+          this.selectedTagName = undefined;
+        }
+      } catch (error) {
+        console.error('Failed to load favorite tag', error);
+        this.selectedTagId = undefined;
+        this.selectedTagName = undefined;
+      }
+      this.closeSuggestions();
+      updateSearchBarDisplay();
+      apply();
+    }));
+
+    for (const filter of this.savedFiltersCache) {
+      pillRow.appendChild(this.createPillButton(filter.name, () => {
+        if (this.shuffleMode > 0) return;
+        this.selectedSavedFilter = { id: filter.id, name: filter.name };
+        this.selectedTagId = undefined;
+        this.selectedTagName = undefined;
+        this.selectedPerformerId = undefined;
+        this.selectedPerformerName = undefined;
+        this.closeSuggestions();
+        updateSearchBarDisplay();
+        this.currentFilters = { savedFilterId: filter.id, limit: this.initialLoadLimit, offset: 0 };
+        this.loadVideos(this.currentFilters, false).catch((e) => console.error('Apply saved filter failed', e));
+      }));
+    }
+
+    filtersSection.appendChild(pillRow);
+    container.appendChild(filtersSection);
+  }
+
+  /**
+   * Create tags section
+   */
+  private createTagsSection(
+    container: HTMLElement,
+    tags: Array<{ id: string; name: string }>,
+    alignmentOffset: number,
+    updateSearchBarDisplay: () => void,
+    apply: () => Promise<void>,
+    label: string = 'Tags'
+  ): void {
+    if (tags.length === 0) return;
+
+    const tagsSection = document.createElement('div');
+    tagsSection.style.display = 'flex';
+    tagsSection.style.flexDirection = 'column';
+    tagsSection.style.gap = '8px';
+    tagsSection.style.marginLeft = `${alignmentOffset}px`;
+    tagsSection.appendChild(this.createSectionLabel(label));
+
+    for (const tag of tags) {
+      tagsSection.appendChild(
+        this.createListButton(tag.name, () => {
+          if (this.shuffleMode > 0) return;
+          this.selectedSavedFilter = undefined;
+          this.selectedPerformerId = undefined;
+          this.selectedPerformerName = undefined;
+          this.selectedTagId = Number.parseInt(tag.id, 10);
+          this.selectedTagName = tag.name;
+          this.closeSuggestions();
+          updateSearchBarDisplay();
+          apply();
+        }, { leadingText: '#' })
+      );
+    }
+    container.appendChild(tagsSection);
+  }
+
+  /**
+   * Create performers section
+   */
+  private createPerformersSection(
+    container: HTMLElement,
+    performers: Array<{ id: string; name: string; image_path?: string }>,
+    alignmentOffset: number,
+    updateSearchBarDisplay: () => void,
+    apply: () => Promise<void>,
+    label: string = 'Performers'
+  ): void {
+    if (performers.length === 0) return;
+
+    const performersSection = document.createElement('div');
+    performersSection.style.display = 'flex';
+    performersSection.style.flexDirection = 'column';
+    performersSection.style.gap = '8px';
+    performersSection.style.marginLeft = `${alignmentOffset}px`;
+    performersSection.appendChild(this.createSectionLabel(label));
+
+    for (const performer of performers) {
+      const performerId = Number.parseInt(performer.id, 10);
+      let imageSrc: string | undefined;
+      if (performer.image_path) {
+        imageSrc = performer.image_path.startsWith('http')
+          ? performer.image_path
+          : `${globalThis.location.origin}${performer.image_path}`;
+      }
+      performersSection.appendChild(
+        this.createListButton(
+          performer.name,
+          () => {
+            if (this.shuffleMode > 0) return;
+            this.selectedSavedFilter = undefined;
+            this.selectedTagId = undefined;
+            this.selectedTagName = undefined;
+            this.selectedPerformerId = performerId;
+            this.selectedPerformerName = performer.name;
+            this.closeSuggestions();
+            updateSearchBarDisplay();
+            apply();
+          },
+          { leadingImage: imageSrc, leadingText: imageSrc ? undefined : performer.name.charAt(0).toUpperCase() }
+        )
+      );
+    }
+    container.appendChild(performersSection);
+  }
+
+  /**
+   * Render default suggestions view
+   */
+  private async renderDefaultSuggestionsView(
+    container: HTMLElement,
+    suggestions: HTMLElement,
+    horizontalPadding: number,
+    ensureLatest: () => boolean,
+    onHDToggleClick: () => void,
+    updateSearchBarDisplay: () => void,
+    apply: () => Promise<void>
+  ): Promise<void> {
+    while (container.firstChild) {
+      container.firstChild.remove();
+    }
+
+    const alignmentOffset = this.calculateAlignmentOffset(container, horizontalPadding);
+
+    this.createPlaybackControlsSection(container, alignmentOffset, onHDToggleClick, updateSearchBarDisplay);
+
+    await this.loadSavedFiltersIfNeeded();
+    if (!ensureLatest()) return;
+
+    this.createSavedFiltersSection(container, alignmentOffset, updateSearchBarDisplay, apply);
+
+    let loadingSection: HTMLElement | null = null;
+    let loadingTimeout: ReturnType<typeof setTimeout> | null = null;
+    let loadingSectionCreated = false;
+
+    const showLoadingSkeletons = () => {
+      if (loadingSectionCreated) return;
+      loadingSectionCreated = true;
+      loadingSection = this.createLoadingSkeletons();
+      container.appendChild(loadingSection);
+    };
+
+    suggestions.style.display = 'flex';
+    this.lockBodyScroll();
+
+    loadingTimeout = setTimeout(() => {
+      if (!ensureLatest()) return;
+      showLoadingSkeletons();
+    }, 200);
+
+    let freshTags: Array<{ id: string; name: string }> = [];
+    let freshPerformers: Array<{ id: string; name: string; image_path?: string }> = [];
+
+    try {
+      [freshTags, freshPerformers] = await Promise.all([
+        this.api.searchMarkerTags('', 3),
+        this.api.searchPerformers('', 3)
+      ]);
+      if (!ensureLatest()) return;
+      this.preloadedTags = freshTags;
+      this.preloadedPerformers = freshPerformers;
+    } catch (error) {
+      console.warn('Failed to fetch suggestions', error);
+      if (!ensureLatest()) return;
+    }
+
+    if (loadingTimeout) {
+      clearTimeout(loadingTimeout);
+      loadingTimeout = null;
+    }
+
+    if (loadingSectionCreated && loadingSection) {
+      const section: HTMLElement = loadingSection;
+      section.remove();
+    }
+
+    const availableTags = freshTags
+      .filter((tag) => {
+        const tagId = Number.parseInt(tag.id, 10);
+        return !Number.isNaN(tagId) && this.selectedTagId !== tagId;
+      })
+      .slice(0, 3);
+
+    this.createTagsSection(container, availableTags, alignmentOffset, updateSearchBarDisplay, apply, 'Suggested Tags');
+
+    const availablePerformers = freshPerformers
+      .filter((performer) => {
+        const performerId = Number.parseInt(performer.id, 10);
+        return !Number.isNaN(performerId) && this.selectedPerformerId !== performerId;
+      })
+      .slice(0, 3);
+
+    this.createPerformersSection(container, availablePerformers, alignmentOffset, updateSearchBarDisplay, apply, 'Suggested Performers');
+
+    if (container.children.length === 0) {
+      this.appendEmptyState(container, 'No suggestions available yet.');
+    }
+
+    suggestions.scrollTop = 0;
+  }
+
+  /**
+   * Render search results view
+   */
+  private async renderSearchResultsView(
+    container: HTMLElement,
+    suggestions: HTMLElement,
+    trimmedText: string,
+    horizontalPadding: number,
+    ensureLatest: () => boolean,
+    updateSearchBarDisplay: () => void,
+    apply: () => Promise<void>
+  ): Promise<void> {
+    container.innerHTML = '';
+
+    if (this.shuffleMode > 0) {
+      container.innerHTML = '';
+      const banner = document.createElement('div');
+      banner.style.display = 'flex';
+      banner.style.justifyContent = 'center';
+      banner.style.alignItems = 'center';
+      banner.style.padding = '16px';
+      const notice = document.createElement('div');
+      notice.textContent = 'Random mode active — search disabled';
+      notice.style.padding = '8px 12px';
+      notice.style.borderRadius = '999px';
+      notice.style.background = 'rgba(255,255,255,0.08)';
+      notice.style.border = '1px solid rgba(255,255,255,0.12)';
+      notice.style.color = 'rgba(255,255,255,0.85)';
+      notice.style.fontSize = '13px';
+      banner.appendChild(notice);
+      container.appendChild(banner);
+      suggestions.scrollTop = 0;
+      return;
+    }
+
+    await this.loadSavedFiltersIfNeeded();
+
+    const alignmentOffsetForResults = this.calculateAlignmentOffset(container, horizontalPadding);
+
+    const matchingSavedFilters = this.savedFiltersCache
+      .filter((filter) => filter.name.toLowerCase().includes(trimmedText.toLowerCase()))
+      .slice(0, 6);
+
+    if (matchingSavedFilters.length > 0 && this.shuffleMode === 0) {
+      const savedSection = document.createElement('div');
+      savedSection.style.display = 'flex';
+      savedSection.style.flexDirection = 'column';
+      savedSection.style.gap = '8px';
+      savedSection.style.marginLeft = `${alignmentOffsetForResults}px`;
+      savedSection.appendChild(this.createSectionLabel('Matching Saved Filters'));
+      for (const filter of matchingSavedFilters) {
+        savedSection.appendChild(
+          this.createListButton(filter.name, () => {
+            this.selectedSavedFilter = { id: filter.id, name: filter.name };
+            this.selectedTagId = undefined;
+            this.selectedTagName = undefined;
+            this.selectedPerformerId = undefined;
+            this.selectedPerformerName = undefined;
+            this.closeSuggestions();
+            updateSearchBarDisplay();
+            this.currentFilters = { savedFilterId: filter.id, limit: this.initialLoadLimit, offset: 0 };
+            this.loadVideos(this.currentFilters, false).catch((e) => console.error('Apply saved filter failed', e));
+          })
+        );
+      }
+      container.appendChild(savedSection);
+    }
+
+    let tagItems: Array<{ id: string; name: string }> = [];
+    let performerItems: Array<{ id: string; name: string; image_path?: string }> = [];
+
+    try {
+      [tagItems, performerItems] = await Promise.all([
+        this.api.searchMarkerTags(trimmedText, 20),
+        this.api.searchPerformers(trimmedText, 20)
+      ]);
+    } catch (error) {
+      console.warn('Failed to fetch search suggestions', error);
+    }
+
+    if (!ensureLatest()) return;
+
+    const filteredTags = tagItems
+      .filter((tag) => {
+        const tagId = Number.parseInt(tag.id, 10);
+        return !Number.isNaN(tagId) && this.selectedTagId !== tagId;
+      })
+      .slice(0, 20);
+
+    this.createTagsSection(container, filteredTags, alignmentOffsetForResults, updateSearchBarDisplay, apply);
+
+    const filteredPerformers = performerItems
+      .filter((performer) => {
+        const performerId = Number.parseInt(performer.id, 10);
+        return !Number.isNaN(performerId) && this.selectedPerformerId !== performerId;
+      })
+      .slice(0, 20);
+
+    this.createPerformersSection(container, filteredPerformers, alignmentOffsetForResults, updateSearchBarDisplay, apply);
+
+    if (container.children.length === 0) {
+      this.appendEmptyState(container, `No matches found for "${trimmedText}".`);
+    }
+
+    suggestions.scrollTop = 0;
+  }
+
+  /**
+   * Create a suggestion chip button
+   */
+  private createSuggestionChip(
+    text: string,
+    onClick: () => void,
+    isSelected: boolean = false
+  ): HTMLElement {
+    const chip = document.createElement('button');
+    chip.textContent = text;
+    chip.className = 'suggest-chip';
+    chip.style.padding = '6px 10px';
+    chip.style.borderRadius = '999px';
+    chip.style.border = '1px solid rgba(255,255,255,0.12)';
+    chip.style.background = isSelected ? 'rgba(255,255,255,0.1)' : 'rgba(255,255,255,0.05)';
+    chip.style.color = 'inherit';
+    chip.style.fontSize = '13px';
+    chip.style.cursor = 'pointer';
+    chip.addEventListener('mouseenter', () => { chip.style.background = 'rgba(255,255,255,0.1)'; });
+    chip.addEventListener('mouseleave', () => { chip.style.background = isSelected ? 'rgba(255,255,255,0.1)' : 'rgba(255,255,255,0.05)'; });
+    chip.addEventListener('click', onClick);
+    return chip;
+  }
+
+  /**
+   * Create a section label for suggestions
+   */
+  private createSuggestionLabel(text: string): HTMLElement {
+    const label = document.createElement('div');
+    label.textContent = text;
+    label.style.opacity = '0.75';
+    label.style.fontSize = '12px';
+    label.style.width = '100%';
+    label.style.marginBottom = '6px';
+    return label;
+  }
+
+  /**
+   * Create a divider for suggestions
+   */
+  private createSuggestionDivider(): HTMLElement {
+    const divider = document.createElement('div');
+    divider.style.width = '100%';
+    divider.style.height = '1px';
+    divider.style.background = 'rgba(255,255,255,0.08)';
+    divider.style.margin = '6px 0';
+    return divider;
+  }
+
+  /**
+   * Render saved filters as suggestion chips
+   */
+  private renderSavedFiltersSuggestions(
+    container: HTMLElement,
+    savedSelect: HTMLSelectElement,
+    updateSearchBarDisplay: () => void,
+    apply: () => Promise<void>,
+    queryInput: HTMLInputElement
+  ): void {
+    if (this.savedFiltersCache.length === 0) return;
+
+    container.appendChild(this.createSuggestionLabel('Saved Filters'));
+
+    for (const f of this.savedFiltersCache) {
+      const chip = this.createSuggestionChip(f.name, () => {
+        savedSelect.value = f.id;
+        this.selectedSavedFilter = { id: f.id, name: f.name };
+        this.selectedTagId = undefined;
+        this.selectedTagName = undefined;
+        queryInput.value = '';
+        this.closeSuggestions();
+        updateSearchBarDisplay();
+        apply();
+      });
+      container.appendChild(chip);
+    }
+  }
+
+  /**
+   * Render tags as suggestion chips
+   */
+  private renderTagsSuggestions(
+    container: HTMLElement,
+    tags: Array<{ id: string; name: string }>,
+    savedSelect: HTMLSelectElement,
+    updateSearchBarDisplay: () => void,
+    apply: () => Promise<void>,
+    refreshSuggestions: (text: string) => void,
+    trimmedText: string
+  ): void {
+    for (const tag of tags) {
+      if (this.selectedTagId === Number.parseInt(tag.id, 10)) continue;
+      if (tag.name === 'StashGifs Favorite' || tag.name === 'StashGifs Marker') continue;
+
+      const chip = this.createSuggestionChip(tag.name, () => {
+        this.selectedSavedFilter = undefined;
+        savedSelect.value = '';
+        const tagId = Number.parseInt(tag.id, 10);
+        this.selectedTagId = tagId;
+        this.selectedTagName = tag.name;
+        updateSearchBarDisplay();
+        apply();
+        refreshSuggestions(trimmedText);
+      });
+      container.appendChild(chip);
+    }
+  }
+
+  /**
+   * Render performers as suggestion chips
+   */
+  private renderPerformersSuggestions(
+    container: HTMLElement,
+    performers: Array<{ id: string; name: string; image_path?: string }>,
+    savedSelect: HTMLSelectElement,
+    updateSearchBarDisplay: () => void,
+    apply: () => Promise<void>,
+    refreshSuggestions: (text: string) => void
+  ): void {
+    if (performers.length === 0) return;
+
+    if (container.children.length > 0) {
+      container.appendChild(this.createSuggestionDivider());
+    }
+
+    for (const performer of performers) {
+      if (this.selectedPerformerId === Number.parseInt(performer.id, 10)) continue;
+
+      const chip = this.createSuggestionChip(performer.name, () => {
+        this.selectedSavedFilter = undefined;
+        savedSelect.value = '';
+        const performerId = Number.parseInt(performer.id, 10);
+        this.selectedPerformerId = performerId;
+        this.selectedPerformerName = performer.name;
+        updateSearchBarDisplay();
+        apply();
+        refreshSuggestions('');
+      });
+      container.appendChild(chip);
+    }
+  }
+
+  /**
+   * Create loading skeleton chips
+   */
+  private createLoadingSkeletonChips(container: HTMLElement): void {
+    for (let i = 0; i < 6; i++) {
+      const skeletonChip = document.createElement('div');
+      skeletonChip.className = 'chip-skeleton';
+      skeletonChip.dataset.suggestionSkeleton = 'true';
+      skeletonChip.style.display = 'inline-block';
+      skeletonChip.style.padding = '6px 10px';
+      skeletonChip.style.borderRadius = '999px';
+      skeletonChip.style.height = '28px';
+      skeletonChip.style.marginRight = '8px';
+      skeletonChip.style.marginBottom = '8px';
+      const widths = [70, 85, 65, 90, 75, 80];
+      skeletonChip.style.width = `${widths[i % widths.length]}px`;
+      container.appendChild(skeletonChip);
+    }
+  }
+
+  /**
+   * Remove loading skeleton chips
+   */
+  private removeLoadingSkeletonChips(container: HTMLElement): void {
+    const skeletonChips = Array.from(container.querySelectorAll('[data-suggestion-skeleton="true"]'));
+    for (const chip of skeletonChips) {
+      chip.remove();
+    }
+  }
+
+  /**
+   * Render default suggestions (empty text with forceShow)
+   */
+  private async renderDefaultSuggestionsChips(
+    suggestions: HTMLElement,
+    signal: AbortSignal,
+    savedSelect: HTMLSelectElement,
+    updateSearchBarDisplay: () => void,
+    apply: () => Promise<void>,
+    queryInput: HTMLInputElement,
+    refreshSuggestions: (text: string, page: number, forceShow: boolean) => void
+  ): Promise<void> {
+    await this.loadSavedFiltersIfNeeded();
+    if (signal.aborted) return;
+
+    if (this.savedFiltersCache.length > 0) {
+      this.renderSavedFiltersSuggestions(suggestions, savedSelect, updateSearchBarDisplay, apply, queryInput);
+      suggestions.appendChild(this.createSuggestionDivider());
+    }
+
+    let loadingTimeout: ReturnType<typeof setTimeout> | null = null;
+    let loadingContainerCreated = false;
+
+    const showLoadingSkeletons = () => {
+      if (loadingContainerCreated) return;
+      loadingContainerCreated = true;
+      this.createLoadingSkeletonChips(suggestions);
+    };
+
+    suggestions.style.display = 'flex';
+
+    loadingTimeout = setTimeout(() => {
+      if (signal.aborted) return;
+      showLoadingSkeletons();
+    }, 200);
+
+    const [tags, performers] = await Promise.all([
+      this.api.searchMarkerTags('', 3, signal),
+      this.api.searchPerformers('', 3, signal)
+    ]);
+    if (signal.aborted) return;
+
+    if (loadingTimeout) {
+      clearTimeout(loadingTimeout);
+      loadingTimeout = null;
+    }
+
+    if (loadingContainerCreated) {
+      this.removeLoadingSkeletonChips(suggestions);
+    }
+
+    this.renderTagsSuggestions(suggestions, tags, savedSelect, updateSearchBarDisplay, apply, (text) => refreshSuggestions(text, 1, false), '');
+    this.renderPerformersSuggestions(suggestions, performers, savedSelect, updateSearchBarDisplay, apply, (text) => refreshSuggestions(text, 1, true));
+
+    suggestions.style.display = suggestions.children.length > 0 ? 'flex' : 'none';
+  }
+
+  /**
+   * Create "More results" button
+   */
+  private createMoreResultsButton(params: {
+    container: HTMLElement;
+    trimmedText: string;
+    pageSize: number;
+    signal: AbortSignal;
+    savedSelect: HTMLSelectElement;
+    updateSearchBarDisplay: () => void;
+    apply: () => Promise<void>;
+    refreshSuggestions: (text: string, page: number, forceShow: boolean) => Promise<void>;
+    onPageIncrement: () => void;
+  }): HTMLElement {
+    const more = document.createElement('button');
+    more.dataset.more = '1';
+    more.textContent = 'More results…';
+    more.style.padding = '8px 10px';
+    more.style.borderRadius = '10px';
+    more.style.border = '1px solid rgba(255,255,255,0.12)';
+    more.style.background = 'rgba(255,255,255,0.06)';
+    more.style.cursor = 'pointer';
+    more.style.width = '100%';
+    more.style.marginTop = '4px';
+    more.addEventListener('click', async () => {
+      params.onPageIncrement();
+      const next = await this.api.searchMarkerTags(params.trimmedText, params.pageSize, params.signal);
+      if (params.signal.aborted) return;
+      this.renderTagsSuggestions(
+        params.container,
+        next,
+        params.savedSelect,
+        params.updateSearchBarDisplay,
+        params.apply,
+        (text) => { params.refreshSuggestions(text, 1, false).catch(() => {}); },
+        params.trimmedText
+      );
+      if (next.length < params.pageSize) {
+        more.remove();
+      }
+    });
+    return more;
+  }
+
+  /**
+   * Create header element with proper styling
+   */
+  private createHeaderElement(): HTMLElement {
     const header = document.createElement('div');
     this.headerBar = header;
     header.className = 'feed-header-bar';
     header.style.position = 'sticky';
     
-    // Detect if we're in mobile Safari standalone/app mode
     const nav = globalThis.navigator;
     const isStandalone = (isStandaloneNavigator(nav) && nav.standalone) || 
                          globalThis.matchMedia('(display-mode: standalone)').matches;
     const isIOS = /iPhone|iPad|iPod/i.test(navigator.userAgent);
     
-    // On mobile Safari app mode, position header right below the notch
     if (isStandalone && isIOS) {
-      // Position sticky header a bit more down when visible
       header.style.top = 'calc(env(safe-area-inset-top, 0px) * 0.7)';
-      // Add a small padding for spacing below the notch
       header.style.paddingTop = '8px';
       header.style.paddingBottom = '8px';
       header.style.paddingLeft = '12px';
       header.style.paddingRight = '12px';
     } else {
-      // Normal positioning for non-standalone
       header.style.top = '0';
       header.style.padding = '8px 12px';
     }
     
     header.style.width = '100%';
-    // Account for padding (12px left + 12px right = 24px) so inner content matches card width
     header.style.maxWidth = `${this.settings.cardMaxWidth + 24}px`;
     header.style.marginLeft = 'auto';
     header.style.marginRight = 'auto';
-    // Height should be auto to accommodate safe area padding, or fixed if not standalone
+    
     if (isStandalone && isIOS) {
-      header.style.minHeight = '72px'; // Minimum height, can grow with safe area padding
+      header.style.minHeight = '72px';
       header.style.height = 'auto';
     } else {
       header.style.height = '72px';
     }
-    header.style.zIndex = '1001'; // Higher than suggestions (1000) to stay in front
+    
+    header.style.zIndex = '1001';
     header.style.display = 'flex';
     header.style.alignItems = 'center';
     header.style.justifyContent = 'flex-start';
     header.style.transition = 'transform 0.24s var(--ease-spring, ease), opacity 0.24s var(--ease-spring, ease)';
     header.style.boxSizing = 'border-box';
     header.style.transform = 'translateY(0)';
+    header.style.willChange = 'transform, opacity';
+    
+    return header;
+  }
 
-    // Inner container - full width of header (already constrained)
+  /**
+   * Create header inner container with grid layout
+   */
+  private createHeaderInnerContainer(): HTMLElement {
     const headerInner = document.createElement('div');
     headerInner.style.display = 'grid';
-    headerInner.style.gridTemplateColumns = 'auto 1fr auto'; // Logo, search, buttons
+    headerInner.style.gridTemplateColumns = 'auto 1fr auto';
     headerInner.style.alignItems = 'center';
     headerInner.style.gap = '12px';
     headerInner.style.width = '100%';
     headerInner.style.height = '100%';
-    headerInner.style.maxWidth = `${this.settings.cardMaxWidth}px`; // Match card width exactly
-    headerInner.style.marginLeft = '0'; // Ensure no left margin
-    headerInner.style.marginRight = '0'; // Ensure no right margin
-    headerInner.style.boxSizing = 'border-box'; // Ensure consistent box model
-    headerInner.style.flex = '1 1 auto'; // Ensure it fills available space in flex container
+    headerInner.style.maxWidth = `${this.settings.cardMaxWidth}px`;
+    headerInner.style.marginLeft = '0';
+    headerInner.style.marginRight = '0';
+    headerInner.style.boxSizing = 'border-box';
+    headerInner.style.flex = '1 1 auto';
+    return headerInner;
+  }
 
-    // Logo container with transparent box
+  /**
+   * Create search area container
+   */
+  private createSearchArea(): HTMLElement {
+    const searchArea = document.createElement('div');
+    searchArea.style.position = 'relative';
+    searchArea.style.width = '100%';
+    searchArea.style.minWidth = '0';
+    searchArea.style.maxWidth = '100%';
+    searchArea.style.overflow = 'hidden';
+    searchArea.style.boxSizing = 'border-box';
+    searchArea.style.marginRight = '0';
+    return searchArea;
+  }
+
+  /**
+   * Create tag header element
+   */
+  private createTagHeader(): HTMLElement {
+    const tagHeader = document.createElement('div');
+    tagHeader.className = 'feed-filters__tag-header';
+    tagHeader.style.display = 'none';
+    tagHeader.style.padding = '12px 14px';
+    tagHeader.style.marginTop = '8px';
+    tagHeader.style.width = '100%';
+    tagHeader.style.boxSizing = 'border-box';
+    tagHeader.style.fontSize = '17px';
+    tagHeader.style.fontWeight = '600';
+    tagHeader.style.color = '#FFFFFF';
+    return tagHeader;
+  }
+
+  /**
+   * Create brand container with logo and refresh functionality
+   */
+  private createBrandContainer(headerInner: HTMLElement): HTMLElement {
     const brandContainer = document.createElement('div');
     brandContainer.style.display = 'inline-flex';
     brandContainer.style.alignItems = 'center';
@@ -689,7 +1433,16 @@ export class FeedContainer {
     brandContainer.style.transition = 'background 0.2s ease, border-color 0.2s ease, opacity 0.2s ease';
     brandContainer.title = 'Click to refresh feed';
     
-    // Hover effect on container
+    const brand = document.createElement('div');
+    brand.textContent = 'stashgifs';
+    brand.style.fontWeight = '700';
+    brand.style.letterSpacing = '0.5px';
+    brand.style.color = '#F5C518';
+    brand.style.fontSize = '17px';
+    brand.style.lineHeight = '1.2';
+    brand.style.userSelect = 'none';
+    brand.style.transition = 'opacity 0.2s ease';
+    
     brandContainer.addEventListener('mouseenter', () => {
       brandContainer.style.background = 'rgba(28, 28, 30, 0.95)';
       brandContainer.style.borderColor = 'rgba(255,255,255,0.16)';
@@ -701,86 +1454,100 @@ export class FeedContainer {
       brand.style.opacity = '1';
     });
     
-    const brand = document.createElement('div');
-    brand.textContent = 'stashgifs';
-    brand.style.fontWeight = '700';
-    brand.style.letterSpacing = '0.5px';
-    brand.style.color = '#F5C518';
-    brand.style.fontSize = '17px';
-    brand.style.lineHeight = '1.2';
-    brand.style.userSelect = 'none';
-    brand.style.transition = 'opacity 0.2s ease';
-    
-    brandContainer.appendChild(brand);
-    
-    // Click to refresh page and ensure it starts at top
     brandContainer.addEventListener('click', () => {
-      // Set flag in sessionStorage to scroll to top on reload
       sessionStorage.setItem('stashgifs-scroll-to-top', 'true');
-      // Scroll to top immediately (no smooth behavior)
       globalThis.scrollTo(0, 0);
-      // Also scroll any internal container
       if (this.scrollContainer) {
         this.scrollContainer.scrollTop = 0;
       }
-      // Reload the page
       globalThis.location.reload();
     });
     
-    // ensure smoother animation
-    header.style.willChange = 'transform, opacity';
+    brandContainer.appendChild(brand);
     headerInner.appendChild(brandContainer);
+    return brandContainer;
+  }
 
-    // Search area - constrained to grid column
-    const searchArea = document.createElement('div');
-    searchArea.style.position = 'relative';
-    searchArea.style.width = '100%';
-    searchArea.style.minWidth = '0'; // Allow grid to constrain width
-    searchArea.style.maxWidth = '100%';
-    searchArea.style.overflow = 'hidden'; // Prevent overflow beyond layout tracks
-    searchArea.style.boxSizing = 'border-box'; // Ensure padding/border included in width
-    searchArea.style.marginRight = '0'; // Ensure no right margin that could create gap
-    headerInner.appendChild(searchArea);
-
-    header.appendChild(headerInner);
-
-    // Tag header to show selected tag
-    const tagHeader = document.createElement('div');
-    tagHeader.className = 'feed-filters__tag-header';
-    tagHeader.style.display = 'none';
-    tagHeader.style.padding = '12px 14px';
-    tagHeader.style.marginTop = '8px';
-    tagHeader.style.width = '100%';
-    tagHeader.style.boxSizing = 'border-box';
-    tagHeader.style.fontSize = '17px';
-    tagHeader.style.fontWeight = '600';
-    tagHeader.style.color = '#FFFFFF';
-
-    // Create a wrapper for the input
+  /**
+   * Setup search input with placeholder animation and all related elements
+   */
+  private setupSearchInput(): {
+    inputWrapper: HTMLElement;
+    queryInput: HTMLInputElement;
+    placeholderWrapper: HTMLElement;
+    loadingSpinner: HTMLElement;
+    shuffleIndicator: HTMLElement;
+    randomLeftIcon: HTMLElement;
+    updatePlaceholderVisibility: () => void;
+  } {
     const inputWrapper = document.createElement('div');
-    inputWrapper.style.position = 'relative'; // Needed for absolute positioned placeholder
+    inputWrapper.style.position = 'relative';
     inputWrapper.style.width = '100%';
-    inputWrapper.style.minWidth = '0'; // Allow grid to constrain width
+    inputWrapper.style.minWidth = '0';
     inputWrapper.style.boxSizing = 'border-box';
-    inputWrapper.style.marginRight = '0'; // Ensure no right margin that could create gap
+    inputWrapper.style.marginRight = '0';
 
-    // Scrolling placeholder animation (like redgifs.com)
-    // Only the dynamic part animates, "Search" stays constant
-    const dynamicPlaceholders = [
-      'performers',
-      'tags',
-      'filters',
-      'favorites',
-    ];
-    
-    // Create input element first
+    const queryInput = this.createQueryInput();
+    const placeholderSetup = this.setupPlaceholderAnimation(queryInput);
+    const placeholderWrapper = placeholderSetup.placeholderWrapper;
+    const randomLeftIcon = this.createRandomLeftIcon();
+    const loadingSpinner = this.createLoadingSpinner();
+    const shuffleIndicator = this.createShuffleIndicator();
+
+    inputWrapper.appendChild(placeholderWrapper);
+    inputWrapper.appendChild(randomLeftIcon);
+    inputWrapper.appendChild(loadingSpinner);
+    inputWrapper.appendChild(shuffleIndicator);
+
+    this.setupInputEventHandlers(queryInput, placeholderWrapper, placeholderSetup);
+
+    return {
+      inputWrapper,
+      queryInput,
+      placeholderWrapper,
+      loadingSpinner,
+      shuffleIndicator,
+      randomLeftIcon,
+      updatePlaceholderVisibility: placeholderSetup.updatePlaceholderVisibility,
+    };
+  }
+
+  /**
+   * Create query input element
+   */
+  private createQueryInput(): HTMLInputElement {
     const queryInput = document.createElement('input');
     queryInput.type = 'text';
-    queryInput.placeholder = ''; // No native placeholder, we use custom
+    queryInput.placeholder = '';
     queryInput.className = 'feed-filters__input';
     queryInput.style.transition = 'background 0.2s ease, border-color 0.2s ease';
+    queryInput.style.width = '100%';
+    queryInput.style.minWidth = '0';
+    queryInput.style.height = '44px';
+    queryInput.style.padding = '0 14px';
+    queryInput.style.borderRadius = '10px';
+    queryInput.style.border = '1px solid rgba(255,255,255,0.12)';
+    queryInput.style.background = 'rgba(28, 28, 30, 0.9)';
+    queryInput.style.color = 'inherit';
+    queryInput.style.fontSize = '15px';
+    queryInput.style.lineHeight = '1.4';
+    queryInput.style.boxSizing = 'border-box';
+    queryInput.style.color = 'transparent';
+    queryInput.style.caretColor = '#FFFFFF';
+    return queryInput;
+  }
+
+  /**
+   * Setup placeholder animation
+   */
+  private setupPlaceholderAnimation(queryInput: HTMLInputElement): {
+    placeholderWrapper: HTMLElement;
+    updatePlaceholderVisibility: () => void;
+    startPlaceholderAnimation: () => void;
+    stopPlaceholderAnimation: () => void;
+  } {
+    const dynamicPlaceholders = ['performers', 'tags', 'filters', 'favorites'];
     
-    // Create a wrapper for the animated placeholder
     const placeholderWrapper = document.createElement('div');
     placeholderWrapper.id = 'feed-search-placeholder';
     placeholderWrapper.style.position = 'absolute';
@@ -788,7 +1555,7 @@ export class FeedContainer {
     placeholderWrapper.style.top = '50%';
     placeholderWrapper.style.transform = 'translateY(-50%)';
     placeholderWrapper.style.pointerEvents = 'none';
-    placeholderWrapper.style.overflow = 'visible'; // Allow overflow for sliding animation
+    placeholderWrapper.style.overflow = 'visible';
     placeholderWrapper.style.width = 'calc(100% - 28px)';
     placeholderWrapper.style.height = '20px';
     placeholderWrapper.style.color = 'rgba(255, 255, 255, 0.5)';
@@ -796,19 +1563,17 @@ export class FeedContainer {
     placeholderWrapper.style.lineHeight = '20px';
     placeholderWrapper.style.whiteSpace = 'nowrap';
     
-    // Static "Search " text
     const staticText = document.createElement('span');
     staticText.textContent = 'Search ';
     staticText.style.display = 'inline-block';
-    staticText.style.marginRight = '4px'; // Add spacing between "Search" and dynamic text
+    staticText.style.marginRight = '4px';
     
-    // Container for dynamic text with overflow hidden for sliding effect
     const dynamicContainer = document.createElement('span');
     dynamicContainer.style.display = 'inline-block';
     dynamicContainer.style.position = 'relative';
     dynamicContainer.style.overflow = 'hidden';
     dynamicContainer.style.verticalAlign = 'top';
-    dynamicContainer.style.minWidth = '80px'; // Reserve space for longest word
+    dynamicContainer.style.minWidth = '80px';
     
     let currentPlaceholderIndex = 0;
     let placeholderText: HTMLElement | null = null;
@@ -821,25 +1586,18 @@ export class FeedContainer {
       textEl.style.transform = isEntering ? 'translateX(100%)' : 'translateX(0)';
       textEl.style.opacity = isEntering ? '0' : '1';
       textEl.style.whiteSpace = 'nowrap';
-      textEl.style.fontWeight = 'bold'; // Make dynamic text bold
+      textEl.style.fontWeight = 'bold';
       return textEl;
     };
     
-    // Initialize with first placeholder
     if (dynamicPlaceholders[0]) {
       placeholderText = createPlaceholderText(dynamicPlaceholders[0]);
       dynamicContainer.appendChild(placeholderText);
     }
     
-    // Assemble placeholder: "Search " + [dynamic part]
     placeholderWrapper.appendChild(staticText);
     placeholderWrapper.appendChild(dynamicContainer);
     
-    // Hide native placeholder when we have custom animated one
-    queryInput.style.color = 'transparent';
-    queryInput.style.caretColor = '#FFFFFF'; // Show caret
-    
-    // Show custom placeholder only when input is empty and not focused
     const updatePlaceholderVisibility = () => {
       if (queryInput.value || document.activeElement === queryInput) {
         placeholderWrapper.style.display = 'none';
@@ -851,45 +1609,37 @@ export class FeedContainer {
     const updatePlaceholder = () => {
       if (!placeholderText || !dynamicContainer) return;
       
-      // Slide current text out to the left
       placeholderText.style.transform = 'translateX(-100%)';
       placeholderText.style.opacity = '0';
       
       setTimeout(() => {
-        // Remove old text
         placeholderText?.remove();
-        
-        // Move to next placeholder
         currentPlaceholderIndex = (currentPlaceholderIndex + 1) % dynamicPlaceholders.length;
-        
-        // Create new text sliding in from right
         const nextPlaceholder = dynamicPlaceholders[currentPlaceholderIndex];
         if (nextPlaceholder) {
           placeholderText = createPlaceholderText(nextPlaceholder, true);
           dynamicContainer.appendChild(placeholderText);
         }
         
-        // Trigger reflow
-        void dynamicContainer.offsetHeight;
+        // eslint-disable-next-line @typescript-eslint/no-unused-expressions
+        dynamicContainer.offsetHeight;
         
-        // Slide in
         setTimeout(() => {
           if (placeholderText) {
             placeholderText.style.transform = 'translateX(0)';
             placeholderText.style.opacity = '1';
           }
         }, 10);
-      }, 250); // Half of transition duration
+      }, 250);
     };
     
-    // Start animation when input is not focused and empty
     const startPlaceholderAnimation = () => {
       if (this.placeholderAnimationInterval) return;
       this.placeholderAnimationInterval = setInterval(() => {
         if (document.activeElement !== queryInput && !queryInput.value) {
           updatePlaceholder();
         }
-      }, 3000); // Change every 3 seconds
+      }, 3000);
     };
     
     const stopPlaceholderAnimation = () => {
@@ -899,17 +1649,54 @@ export class FeedContainer {
       }
     };
     
-    // Start animation after a short delay
     setTimeout(() => {
       if (document.activeElement !== queryInput && !queryInput.value) {
         startPlaceholderAnimation();
       }
     }, 1000);
     
-    // Add placeholder wrapper to input wrapper
-    inputWrapper.appendChild(placeholderWrapper);
+    return {
+      placeholderWrapper,
+      updatePlaceholderVisibility,
+      startPlaceholderAnimation,
+      stopPlaceholderAnimation,
+    };
+  }
 
-    // Random (shuffle) left helper to replace placeholder in random mode
+  /**
+   * Setup input event handlers for placeholder animation
+   */
+  private setupInputEventHandlers(
+    queryInput: HTMLInputElement,
+    placeholderWrapper: HTMLElement,
+    placeholderSetup: ReturnType<typeof this.setupPlaceholderAnimation>
+  ): void {
+    queryInput.addEventListener('focus', () => {
+      placeholderSetup.stopPlaceholderAnimation();
+      placeholderSetup.updatePlaceholderVisibility();
+    });
+    
+    queryInput.addEventListener('blur', () => {
+      placeholderSetup.updatePlaceholderVisibility();
+      if (!queryInput.value) {
+        setTimeout(() => placeholderSetup.startPlaceholderAnimation(), 500);
+      }
+    });
+    
+    queryInput.addEventListener('input', () => {
+      placeholderSetup.updatePlaceholderVisibility();
+      if (queryInput.value) {
+        placeholderSetup.stopPlaceholderAnimation();
+      } else {
+        setTimeout(() => placeholderSetup.startPlaceholderAnimation(), 500);
+      }
+    });
+  }
+
+  /**
+   * Create random left icon for shuffle mode
+   */
+  private createRandomLeftIcon(): HTMLElement {
     const randomLeftIcon = document.createElement('div');
     randomLeftIcon.style.position = 'absolute';
     randomLeftIcon.style.left = '14px';
@@ -922,51 +1709,21 @@ export class FeedContainer {
     randomLeftIcon.style.fontSize = '15px';
     randomLeftIcon.style.lineHeight = '20px';
     randomLeftIcon.style.pointerEvents = 'none';
+    
     const randomLeftIconSpan = document.createElement('span');
     randomLeftIconSpan.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="16" height="16"><path d="M16 3h5v5M21 3l-5 5"/><path d="M4 20l5-5m0 0l5 5m-5-5h3"/><path d="M4 4l7 7"/></svg>';
     const randomLeftText = document.createElement('span');
     randomLeftText.textContent = 'Discovering randomly';
     randomLeftIcon.appendChild(randomLeftIconSpan);
     randomLeftIcon.appendChild(randomLeftText);
-    inputWrapper.appendChild(randomLeftIcon);
     
-    // Stop animation on focus, restart on blur if empty
-    queryInput.addEventListener('focus', () => {
-      stopPlaceholderAnimation();
-      updatePlaceholderVisibility();
-    });
-    
-    queryInput.addEventListener('blur', () => {
-      updatePlaceholderVisibility();
-      if (!queryInput.value) {
-        setTimeout(() => startPlaceholderAnimation(), 500);
-      }
-    });
-    
-    // Stop animation when user types, restart when cleared
-    queryInput.addEventListener('input', () => {
-      updatePlaceholderVisibility();
-      if (queryInput.value) {
-        stopPlaceholderAnimation();
-      } else {
-        setTimeout(() => startPlaceholderAnimation(), 500);
-      }
-    });
-    queryInput.style.width = '100%';
-    queryInput.style.minWidth = '0';
-    queryInput.style.height = '44px';
-    // Normal padding now that buttons are outside
-    queryInput.style.padding = '0 14px';
-    queryInput.style.borderRadius = '10px';
-    queryInput.style.border = '1px solid rgba(255,255,255,0.12)';
-    queryInput.style.background = 'rgba(28, 28, 30, 0.9)';
-    queryInput.style.color = 'inherit';
-    queryInput.style.fontSize = '15px';
-    queryInput.style.lineHeight = '1.4';
-    queryInput.style.boxSizing = 'border-box';
-    queryInput.style.transition = 'background 0.2s ease, border-color 0.2s ease';
+    return randomLeftIcon;
+  }
 
-    // Create loading spinner for search input
+  /**
+   * Create loading spinner for search input
+   */
+  private createLoadingSpinner(): HTMLElement {
     const loadingSpinner = document.createElement('div');
     loadingSpinner.className = 'feed-search-loading';
     loadingSpinner.style.display = 'none';
@@ -981,13 +1738,17 @@ export class FeedContainer {
     loadingSpinner.style.borderRadius = '50%';
     loadingSpinner.style.animation = 'spin 0.8s linear infinite';
     loadingSpinner.style.willChange = 'transform';
-    inputWrapper.appendChild(loadingSpinner);
+    return loadingSpinner;
+  }
 
-    // Shuffle indicator (shows when random mode is active)
+  /**
+   * Create shuffle indicator element
+   */
+  private createShuffleIndicator(): HTMLElement {
     const shuffleIndicator = document.createElement('div');
     shuffleIndicator.className = 'feed-random-indicator';
     shuffleIndicator.style.position = 'absolute';
-    shuffleIndicator.style.right = '40px'; // leave space for spinner
+    shuffleIndicator.style.right = '40px';
     shuffleIndicator.style.top = '50%';
     shuffleIndicator.style.transform = 'translateY(-50%)';
     shuffleIndicator.style.display = 'none';
@@ -1000,7 +1761,7 @@ export class FeedContainer {
     shuffleIndicator.style.color = 'rgba(255,255,255,0.85)';
     shuffleIndicator.style.fontSize = '12px';
     shuffleIndicator.style.pointerEvents = 'none';
-    // SVG shuffle icon
+    
     const randomIconSvg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
     randomIconSvg.setAttribute('viewBox', '0 0 24 24');
     randomIconSvg.setAttribute('width', '14');
@@ -1016,19 +1777,50 @@ export class FeedContainer {
     shuffleText.textContent = 'Random';
     shuffleIndicator.appendChild(randomIconSvg);
     shuffleIndicator.appendChild(shuffleText);
-    inputWrapper.appendChild(shuffleIndicator);
+    
+    return shuffleIndicator;
+  }
 
-    // Buttons container (separate from search input, like logo)
+  /**
+   * Setup header buttons (HD toggle, volume toggle, shuffle toggle)
+   */
+  private setupHeaderButtons(): {
+    buttonsContainer: HTMLElement;
+    volToggle: HTMLButtonElement;
+    hdToggle: HTMLButtonElement;
+    shuffleToggle: HTMLButtonElement;
+    onHDToggleClick: () => void;
+  } {
     const buttonsContainer = document.createElement('div');
     buttonsContainer.style.display = 'inline-flex';
     buttonsContainer.style.alignItems = 'center';
     buttonsContainer.style.gap = '8px';
     buttonsContainer.style.height = '36px';
 
-    // Declare shuffle button variable early so it can be referenced in setHDToggleVisualState
-    let shuffleToggle: HTMLButtonElement | null = null;
+    const hdToggleResult = this.createHDToggleButton();
+    const hdToggle = hdToggleResult.button;
+    const onHDToggleClick = hdToggleResult.onClick;
+    const volToggle = this.createVolumeToggleButton();
+    const shuffleToggle = this.createShuffleToggleButton(hdToggle);
 
-    // HD toggle button (separate element like logo)
+    buttonsContainer.appendChild(volToggle);
+
+    return {
+      buttonsContainer,
+      volToggle,
+      hdToggle,
+      shuffleToggle,
+      onHDToggleClick,
+    };
+  }
+
+  /**
+   * Create HD toggle button
+   */
+  private createHDToggleButton(): {
+    button: HTMLButtonElement;
+    onClick: () => void;
+  } {
     const hdToggle = document.createElement('button');
     hdToggle.type = 'button';
     hdToggle.title = 'Load HD scene videos';
@@ -1051,12 +1843,11 @@ export class FeedContainer {
     hdToggle.style.transition = 'background 0.2s ease, border-color 0.2s ease, color 0.2s ease, transform 0.2s cubic-bezier(0.2, 0, 0, 1)';
     hdToggle.textContent = 'HD';
 
-    const setHDToggleVisualState = () => {
+    const setHDToggleVisualState = (shuffleToggle: HTMLButtonElement | HTMLElement | null | undefined) => {
       if (this.useHDMode) {
-        hdToggle.style.background = 'rgba(76, 175, 80, 0.25)'; // green-ish background
+        hdToggle.style.background = 'rgba(76, 175, 80, 0.25)';
         hdToggle.style.borderColor = 'rgba(76, 175, 80, 0.55)';
         hdToggle.style.color = '#C8E6C9';
-        // Show shuffle button when HD mode is enabled
         if (shuffleToggle) {
           shuffleToggle.style.display = 'inline-flex';
         }
@@ -1064,29 +1855,26 @@ export class FeedContainer {
         hdToggle.style.background = 'rgba(28, 28, 30, 0.9)';
         hdToggle.style.borderColor = 'rgba(255,255,255,0.16)';
         hdToggle.style.color = 'rgba(255,255,255,0.85)';
-        // Hide shuffle button when HD mode is disabled
         if (shuffleToggle) {
           shuffleToggle.style.display = 'none';
         }
       }
     };
-    setHDToggleVisualState();
 
     hdToggle.addEventListener('mouseenter', () => {
       hdToggle.style.background = 'rgba(28, 28, 30, 0.95)';
       hdToggle.style.borderColor = 'rgba(255,255,255,0.16)';
       hdToggle.style.opacity = '0.9';
     });
+
     hdToggle.addEventListener('mouseleave', () => {
-      setHDToggleVisualState();
+      setHDToggleVisualState(this.shuffleToggle ?? null);
       hdToggle.style.opacity = '1';
     });
 
     const onHDToggleClick = () => {
-      // Flip mode
       const newHDMode = !this.useHDMode;
       
-      // If turning off HD mode, reset shuffle mode to default (0 = off)
       if (!newHDMode && this.shuffleMode > 0) {
         this.shuffleMode = 0;
         try {
@@ -1096,25 +1884,31 @@ export class FeedContainer {
         }
       }
       
-      // Persist the new HD mode preference to localStorage
-      // This will be read when the page reloads
       try {
         localStorage.setItem('stashgifs-useHDMode', newHDMode ? 'true' : 'false');
       } catch (e) {
         console.error('Failed to save HD mode preference:', e);
       }
       
-      // Do a full page refresh to reload the entire site with the new HD setting
-      // This ensures a clean state and proper initialization
       globalThis.location.reload();
     };
+
     hdToggle.addEventListener('click', (e) => {
       e.preventDefault();
       e.stopPropagation();
       onHDToggleClick();
     });
 
-    // Volume toggle button (separate element like logo)
+    return {
+      button: hdToggle,
+      onClick: onHDToggleClick,
+    };
+  }
+
+  /**
+   * Create volume toggle button
+   */
+  private createVolumeToggleButton(): HTMLButtonElement {
     const volToggle = document.createElement('button');
     volToggle.type = 'button';
     volToggle.title = 'Play audio for focused video only';
@@ -1136,15 +1930,12 @@ export class FeedContainer {
     volToggle.style.justifyContent = 'center';
     volToggle.style.transition = 'background 0.2s ease, border-color 0.2s ease, color 0.2s ease, transform 0.2s cubic-bezier(0.2, 0, 0, 1)';
     
-    // Muted icon (using same icon as video controls)
     const mutedIcon = '<svg viewBox="0 0 24 24" fill="currentColor" width="16" height="16" style="display: block;"><path d="M16.5 12c0-1.77-1.02-3.29-2.5-4.03v2.21l2.45 2.45c.03-.2.05-.41.05-.63zm2.5 0c0 .94-.2 1.82-.54 2.64l1.51 1.51C20.63 14.91 21 13.5 21 12c0-4.28-2.99-7.86-7-8.77v2.06c2.89.86 5 3.54 5 6.71zM4.27 3L3 4.27 7.73 9H3v6h4l5 5v-6.73l4.25 4.25c-.67.52-1.42.93-2.25 1.18v2.06c1.38-.31 2.63-.95 3.69-1.81L19.73 21 21 19.73l-9-9L4.27 3zM12 4L9.91 6.09 12 8.18V4z"/></svg>';
-    
-    // Unmuted icon (using same icon as video controls)
     const unmutedIcon = '<svg viewBox="0 0 24 24" fill="currentColor" width="16" height="16" style="display: block;"><path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02zM14 3.23v2.06c2.89.86 5 3.54 5 6.71s-2.11 5.85-5 6.71v2.06c4.01-.91 7-4.49 7-8.77s-2.99-7.86-7-8.77z"/></svg>';
 
     const setVolToggleVisualState = () => {
       if (this.useVolumeMode) {
-        volToggle.style.background = 'rgba(33, 150, 243, 0.25)'; // blue-ish
+        volToggle.style.background = 'rgba(33, 150, 243, 0.25)';
         volToggle.style.borderColor = 'rgba(33, 150, 243, 0.55)';
         volToggle.style.color = '#BBDEFB';
         volToggle.innerHTML = unmutedIcon;
@@ -1155,6 +1946,7 @@ export class FeedContainer {
         volToggle.innerHTML = mutedIcon;
       }
     };
+
     setVolToggleVisualState();
 
     volToggle.addEventListener('mouseenter', () => {
@@ -1162,6 +1954,7 @@ export class FeedContainer {
       volToggle.style.borderColor = 'rgba(255,255,255,0.16)';
       volToggle.style.opacity = '0.9';
     });
+
     volToggle.addEventListener('mouseleave', () => {
       setVolToggleVisualState();
       volToggle.style.opacity = '1';
@@ -1171,28 +1964,30 @@ export class FeedContainer {
       this.useVolumeMode = !this.useVolumeMode;
       setVolToggleVisualState();
       
-      // Persist the new volume mode preference to localStorage
       try {
         localStorage.setItem('stashgifs-useVolumeMode', this.useVolumeMode ? 'true' : 'false');
       } catch (e) {
         console.error('Failed to save volume mode preference:', e);
       }
       
-      // Apply to visibility manager
       this.visibilityManager.setExclusiveAudio(this.useVolumeMode);
       this.visibilityManager.reevaluateAudioFocus();
     };
+
     volToggle.addEventListener('click', (e) => {
       e.preventDefault();
       e.stopPropagation();
       void onVolToggleClick();
     });
 
-    // Append input to wrapper
-    inputWrapper.appendChild(queryInput);
-    
-    // Shuffle button (only visible in HD mode)
-    shuffleToggle = document.createElement('button');
+    return volToggle;
+  }
+
+  /**
+   * Create shuffle toggle button
+   */
+  private createShuffleToggleButton(hdToggle: HTMLButtonElement): HTMLButtonElement {
+    const shuffleToggle = document.createElement('button');
     shuffleToggle.type = 'button';
     shuffleToggle.title = 'Toggle shuffle mode';
     shuffleToggle.setAttribute('aria-label', 'Toggle shuffle mode');
@@ -1209,7 +2004,6 @@ export class FeedContainer {
     shuffleToggle.style.justifyContent = 'center';
     shuffleToggle.style.transition = 'background 0.2s ease, border-color 0.2s ease, color 0.2s ease, transform 0.2s cubic-bezier(0.2, 0, 0, 1)';
     
-    // Icons for different states
     const shuffleIcon = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="16" height="16" style="display: block;"><path d="M16 3h5v5M21 3l-5 5M8 21H3v-5M3 16l5-5"/><path d="M21 16v-5h-5M16 21l5-5"/></svg>';
     const noMarkersIcon = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="16" height="16" style="display: block;"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/><path d="M6 6l12 12" stroke-width="2.5"/></svg>';
     
@@ -1217,28 +2011,26 @@ export class FeedContainer {
 
     const setShuffleToggleVisualState = () => {
       if (this.shuffleMode === 0) {
-        // Off state
         shuffleToggle.style.background = 'rgba(28, 28, 30, 0.9)';
         shuffleToggle.style.borderColor = 'rgba(255,255,255,0.12)';
         shuffleToggle.style.color = 'rgba(255,255,255,0.85)';
         shuffleToggle.innerHTML = shuffleIcon;
         shuffleToggle.title = 'Shuffle mode: Off';
       } else if (this.shuffleMode === 1) {
-        // Shuffle all scenes (with and without markers) - Blue/cyan color
-        shuffleToggle.style.background = 'rgba(33, 150, 243, 0.25)'; // Blue-500
+        shuffleToggle.style.background = 'rgba(33, 150, 243, 0.25)';
         shuffleToggle.style.borderColor = 'rgba(33, 150, 243, 0.65)';
-        shuffleToggle.style.color = '#64B5F6'; // Blue-300
+        shuffleToggle.style.color = '#64B5F6';
         shuffleToggle.innerHTML = shuffleIcon;
         shuffleToggle.title = 'Shuffle mode: All scenes';
       } else {
-        // Shuffle only scenes with no markers - Purple/magenta color
-        shuffleToggle.style.background = 'rgba(156, 39, 176, 0.25)'; // Purple-500
+        shuffleToggle.style.background = 'rgba(156, 39, 176, 0.25)';
         shuffleToggle.style.borderColor = 'rgba(156, 39, 176, 0.65)';
-        shuffleToggle.style.color = '#BA68C8'; // Purple-300
+        shuffleToggle.style.color = '#BA68C8';
         shuffleToggle.innerHTML = noMarkersIcon;
         shuffleToggle.title = 'Shuffle mode: Scenes with no markers';
       }
     };
+
     setShuffleToggleVisualState();
 
     shuffleToggle.addEventListener('mouseenter', () => {
@@ -1246,26 +2038,23 @@ export class FeedContainer {
         shuffleToggle.style.background = 'rgba(28, 28, 30, 0.95)';
         shuffleToggle.style.borderColor = 'rgba(255,255,255,0.16)';
       } else if (this.shuffleMode === 1) {
-        // Slightly brighter blue on hover
         shuffleToggle.style.background = 'rgba(33, 150, 243, 0.35)';
         shuffleToggle.style.borderColor = 'rgba(33, 150, 243, 0.75)';
       } else {
-        // Slightly brighter purple on hover
         shuffleToggle.style.background = 'rgba(156, 39, 176, 0.35)';
         shuffleToggle.style.borderColor = 'rgba(156, 39, 176, 0.75)';
       }
       shuffleToggle.style.opacity = '0.9';
     });
+
     shuffleToggle.addEventListener('mouseleave', () => {
       setShuffleToggleVisualState();
       shuffleToggle.style.opacity = '1';
     });
 
     const onShuffleClick = async () => {
-      // Cycle through three states: 0 (off) -> 1 (markers only) -> 2 (all) -> 0
       this.shuffleMode = (this.shuffleMode + 1) % 3;
       
-      // Save to localStorage
       try {
         localStorage.setItem('stashgifs-shuffleMode', String(this.shuffleMode));
       } catch (e) {
@@ -1274,27 +2063,21 @@ export class FeedContainer {
       
       setShuffleToggleVisualState();
       
-      // Show header if entering random discovery mode (it should never fade in this mode)
       if (this.shuffleMode > 0 && this.headerBar) {
         this.headerBar.style.transform = 'translateY(0)';
         this.headerBar.style.opacity = '1';
       }
       
-      // Reload the feed when shuffle mode changes
-      // Clear current posts
       this.clearPosts();
       
-      // Clear posts container
       if (this.postsContainer) {
         this.postsContainer.innerHTML = '';
       }
       
-      // Reset pagination
       this.currentPage = 1;
       this.hasMore = true;
       this.isLoading = false;
       
-      // Reload videos with current filters
       await this.loadVideos(this.currentFilters, false, undefined, true);
     };
     
@@ -1304,15 +2087,44 @@ export class FeedContainer {
       void onShuffleClick();
     });
 
-    // Store reference to shuffle button for visibility updates
-    // Note: This is stored as a private property, accessed via this.shuffleToggle
     this.shuffleToggle = shuffleToggle;
-    
-    // Update shuffle button visibility now that it's created
-    setHDToggleVisualState();
 
-    // Add buttons to buttons container (keep mute/volume only; move HD/Shuffle to search popup)
-    buttonsContainer.appendChild(volToggle);
+    return shuffleToggle;
+  }
+
+  /**
+   * Create top header bar with unified search
+   */
+  private createHeaderBar(): void {
+    // Saved filters will be loaded lazily when filter dropdown opens
+    let savedFiltersCache: Array<{ id: string; name: string }> = [];
+
+    const header = this.createHeaderElement();
+    const headerInner = this.createHeaderInnerContainer();
+
+    this.createBrandContainer(headerInner);
+
+    const searchArea = this.createSearchArea();
+    headerInner.appendChild(searchArea);
+    header.appendChild(headerInner);
+
+    const tagHeader = this.createTagHeader();
+
+    const inputSetup = this.setupSearchInput();
+    const inputWrapper = inputSetup.inputWrapper;
+    const queryInput = inputSetup.queryInput;
+    const placeholderWrapper = inputSetup.placeholderWrapper;
+    const loadingSpinner = inputSetup.loadingSpinner;
+    const shuffleIndicator = inputSetup.shuffleIndicator;
+    const randomLeftIcon = inputSetup.randomLeftIcon;
+    const updatePlaceholderVisibility = inputSetup.updatePlaceholderVisibility;
+
+    // Append input to wrapper
+    inputWrapper.appendChild(queryInput);
+
+    const buttonsSetup = this.setupHeaderButtons();
+    const buttonsContainer = buttonsSetup.buttonsContainer;
+    const onHDToggleClick = buttonsSetup.onHDToggleClick;
     
     // Add buttons container to header inner (third grid column)
     headerInner.appendChild(buttonsContainer);
@@ -1419,581 +2231,134 @@ export class FeedContainer {
       fetchAndShowSuggestions(text, forceShow);
     }, 150);
     
-    const fetchAndShowSuggestions = async (text: string, forceShow: boolean = false) => {
-      // In random mode, disable suggestions entirely and show notice
-      if (this.shuffleMode > 0) {
-        this.showRandomModeNotice(suggestions);
-        return;
+    const prepareSuggestionsPanel = (panel: HTMLElement, ensureLatest: () => boolean): boolean => {
+      if (!ensureLatest()) {
+        return false;
       }
-      const trimmedText = text.trim();
-      const requestId = ++suggestionsRequestId;
-      const showDefault = forceShow || trimmedText.length === 0 || trimmedText.length < 2;
+
+      panel.style.display = 'none';
+      while (panel.firstChild) {
+        panel.firstChild.remove();
+      }
+      
+      if (!ensureLatest()) {
+        return false;
+      }
+      
+      panel.style.display = 'flex';
+      this.lockBodyScroll();
+      
+      return ensureLatest();
+    };
+
+    const getViewportConfig = () => {
       const isMobileViewport = globalThis.innerWidth <= 768;
-      const maxContentWidth = isMobileViewport ? '100%' : '640px';
-      const horizontalPadding = isMobileViewport ? 16 : 24;
-      const topPadding = 0;
-
-      const ensureLatest = () => requestId === suggestionsRequestId;
-
-      // Early bailout check: if another request started, abort immediately
-      if (!ensureLatest()) {
-        return;
-      }
-
-      const ensurePanelVisible = () => {
-        // Always show the panel when fetching suggestions
-        suggestions.style.display = 'flex';
-        this.lockBodyScroll();
+      return {
+        isMobileViewport,
+        maxContentWidth: isMobileViewport ? '100%' : '640px',
+        horizontalPadding: isMobileViewport ? 16 : 24,
+        topPadding: 0,
       };
+    };
 
-      // Clear any existing containers BEFORE showing panel to prevent flash of old content
-      // Hide panel first, clear while hidden, then show with new content
-      // Check again after clearing to ensure we're still the latest request
-      suggestions.style.display = 'none';
-      while (suggestions.firstChild) {
-        suggestions.firstChild.remove();
-      }
-      
-      // Critical check: if another request started during clearing, abort now
-      if (!ensureLatest()) {
-        return;
-      }
-      
-      // Now show the panel after clearing is complete
-      ensurePanelVisible();
-      
-      // Final check before proceeding with DOM manipulation
-      if (!ensureLatest()) {
-        return;
-      }
-
+    const createSuggestionsContainer = (config: ReturnType<typeof getViewportConfig>): HTMLElement => {
       const container = document.createElement('div');
       container.style.display = 'flex';
       container.style.flexDirection = 'column';
       container.style.gap = '24px';
       container.style.width = '100%';
-      container.style.maxWidth = maxContentWidth;
+      container.style.maxWidth = config.maxContentWidth;
       container.style.margin = '0 auto';
       container.style.boxSizing = 'border-box';
-      container.style.paddingTop = `${topPadding}px`;
-      container.style.paddingLeft = `${horizontalPadding}px`;
-      container.style.paddingRight = `${horizontalPadding}px`;
-      container.style.paddingBottom = isMobileViewport ? '32px' : '48px';
+      container.style.paddingTop = `${config.topPadding}px`;
+      container.style.paddingLeft = `${config.horizontalPadding}px`;
+      container.style.paddingRight = `${config.horizontalPadding}px`;
+      container.style.paddingBottom = config.isMobileViewport ? '32px' : '48px';
       container.style.minHeight = '100%';
+      return container;
+    };
 
+    const renderDefaultSuggestions = async (
+      container: HTMLElement,
+      panel: HTMLElement,
+      horizontalPadding: number,
+      ensureLatest: () => boolean,
+      onHDToggleClick: () => void,
+      updateSearchBarDisplay: () => void,
+      apply: () => Promise<void>
+    ) => {
+      await this.renderDefaultSuggestionsView(
+        container,
+        panel,
+        horizontalPadding,
+        ensureLatest,
+        onHDToggleClick,
+        updateSearchBarDisplay,
+        apply
+      );
+    };
+
+    const renderSearchSuggestions = async (
+      container: HTMLElement,
+      panel: HTMLElement,
+      trimmedText: string,
+      horizontalPadding: number,
+      ensureLatest: () => boolean,
+      updateSearchBarDisplay: () => void,
+      apply: () => Promise<void>
+    ) => {
+      await this.renderSearchResultsView(
+        container,
+        panel,
+        trimmedText,
+        horizontalPadding,
+        ensureLatest,
+        updateSearchBarDisplay,
+        apply
+      );
+    };
+
+    const fetchAndShowSuggestions = async (text: string, forceShow: boolean = false) => {
+      if (this.shuffleMode > 0) {
+        this.showRandomModeNotice(suggestions);
+        return;
+      }
+      
+      const trimmedText = text.trim();
+      const requestId = ++suggestionsRequestId;
+      const ensureLatest = () => requestId === suggestionsRequestId;
+
+      if (!prepareSuggestionsPanel(suggestions, ensureLatest)) {
+        return;
+      }
+
+      const viewportConfig = getViewportConfig();
+      const container = createSuggestionsContainer(viewportConfig);
       suggestions.appendChild(container);
       suggestions.scrollTop = 0;
 
+      const showDefault = forceShow || trimmedText.length === 0 || trimmedText.length < 2;
       if (showDefault) {
-        // Clear container efficiently
-        while (container.firstChild) {
-          container.firstChild.remove();
-        }
-
-        // Playback & Shuffle options (moved from header into popup)
-        // Align with search bar: get actual search bar position
-        const searchInput = this.container.querySelector('.feed-filters__input') as HTMLElement;
-        let alignmentOffset = 0;
-        if (searchInput) {
-          const searchRect = searchInput.getBoundingClientRect();
-          const containerRect = container.getBoundingClientRect();
-          alignmentOffset = searchRect.left - containerRect.left - horizontalPadding;
-        } else {
-          // Fallback: approximate alignment (header padding + logo + gap - filter padding)
-          const headerPadding = 12;
-          const logoWidth = 120; // Approximate logo width
-          const headerGap = 12;
-          alignmentOffset = headerPadding + logoWidth + headerGap - horizontalPadding;
-        }
-        const playbackSection = document.createElement('div');
-        playbackSection.style.display = 'flex';
-        playbackSection.style.flexDirection = 'row';
-        playbackSection.style.alignItems = 'center';
-        playbackSection.style.gap = '8px';
-        playbackSection.style.flexWrap = 'wrap';
-        playbackSection.style.marginLeft = `${alignmentOffset}px`; // Align with search bar
-
-        // HD toggle button
-        const hdBtn = document.createElement('button');
-        hdBtn.type = 'button';
-        hdBtn.textContent = this.useHDMode ? 'HD Video: On' : 'HD Video: Off';
-        hdBtn.style.padding = '10px 12px';
-        hdBtn.style.borderRadius = '10px';
-        hdBtn.style.border = '1px solid rgba(255,255,255,0.12)';
-        hdBtn.style.background = this.useHDMode ? 'rgba(76, 175, 80, 0.25)' : 'rgba(28, 28, 30, 0.95)';
-        hdBtn.style.color = this.useHDMode ? '#C8E6C9' : 'rgba(255,255,255,0.85)';
-        hdBtn.style.cursor = 'pointer';
-        hdBtn.style.display = 'inline-flex';
-        hdBtn.style.alignItems = 'center';
-        
-        // Random positions toggle (always visible)
-        const randomBtn = document.createElement('button');
-        randomBtn.type = 'button';
-        const setRandomBtnState = () => {
-          const isOn = this.shuffleMode > 0;
-          randomBtn.textContent = isOn ? 'Random Positions: On' : 'Random Positions: Off';
-          randomBtn.style.background = isOn ? 'rgba(33, 150, 243, 0.25)' : 'rgba(28, 28, 30, 0.95)';
-          randomBtn.style.color = isOn ? '#BBDEFB' : 'rgba(255,255,255,0.85)';
-        };
-        randomBtn.style.padding = '10px 12px';
-        randomBtn.style.borderRadius = '10px';
-        randomBtn.style.border = '1px solid rgba(255,255,255,0.12)';
-        randomBtn.style.cursor = 'pointer';
-        randomBtn.style.display = 'inline-flex';
-        randomBtn.style.alignItems = 'center';
-        setRandomBtnState();
-
-        // Helper function to update both button states
-        const updateButtonStates = () => {
-          hdBtn.textContent = this.useHDMode ? 'HD Video: On' : 'HD Video: Off';
-          hdBtn.style.background = this.useHDMode ? 'rgba(76, 175, 80, 0.25)' : 'rgba(28, 28, 30, 0.95)';
-          hdBtn.style.color = this.useHDMode ? '#C8E6C9' : 'rgba(255,255,255,0.85)';
-          setRandomBtnState();
-        };
-
-        hdBtn.addEventListener('click', () => {
-          // Toggle HD mode with existing logic
-          onHDToggleClick();
-          // Update both button states
-          updateButtonStates();
-        });
-
-        randomBtn.addEventListener('click', async () => {
-          // Check if we're turning Random Positions ON (before toggling)
-          const willBeOn = this.shuffleMode === 0;
-          
-          // If turning ON and HD mode is off, enable HD mode first
-          if (willBeOn && !this.useHDMode) {
-            onHDToggleClick();
-          }
-          
-          // Toggle shuffleMode between 0 (off) and 1 (on) for random positions
-          this.shuffleMode = this.shuffleMode > 0 ? 0 : 1;
-          try { localStorage.setItem('stashgifs-shuffleMode', String(this.shuffleMode)); } catch {}
-          
-          // Update both button states
-          updateButtonStates();
-          updateSearchBarDisplay();
-          
-          // Apply changes
-          this.clearPosts();
-          if (this.postsContainer) this.postsContainer.innerHTML = '';
-          this.currentPage = 1;
-          this.hasMore = true;
-          this.isLoading = false;
-          await this.loadVideos(this.currentFilters, false, undefined, true);
-        });
-
-        playbackSection.appendChild(hdBtn);
-        playbackSection.appendChild(randomBtn);
-        container.appendChild(playbackSection);
-
-        // Show saved filters from cache immediately (no loading needed)
-        await this.loadSavedFiltersIfNeeded();
-        if (!ensureLatest()) {
-          return;
-        }
-
-        const filtersSection = document.createElement('div');
-        filtersSection.style.display = 'flex';
-        filtersSection.style.flexDirection = 'column';
-        filtersSection.style.gap = '12px';
-        filtersSection.style.marginLeft = `${alignmentOffset}px`; // Align with search bar
-        filtersSection.appendChild(this.createSectionLabel('Saved Filters', true));
-
-        const pillRow = document.createElement('div');
-        pillRow.style.display = 'flex';
-        pillRow.style.flexWrap = 'wrap';
-        pillRow.style.gap = '8px';
-
-        pillRow.appendChild(this.createPillButton('Favorites', async () => {
-            if (this.shuffleMode > 0) return;
-            this.selectedSavedFilter = undefined;
-            this.selectedPerformerId = undefined;
-            this.selectedPerformerName = undefined;
-            try {
-              const favoriteTag = await this.api.findTagByName('StashGifs Favorite');
-              if (favoriteTag) {
-                this.selectedTagId = Number.parseInt(favoriteTag.id, 10);
-                this.selectedTagName = 'Favorites';
-              } else {
-                this.selectedTagId = undefined;
-                this.selectedTagName = undefined;
-              }
-            } catch (error) {
-              console.error('Failed to load favorite tag', error);
-              this.selectedTagId = undefined;
-              this.selectedTagName = undefined;
-            }
-            this.closeSuggestions();
-            updateSearchBarDisplay();
-            apply();
-        }));
-
-        // Show saved filters from cache
-        for (const filter of this.savedFiltersCache) {
-          pillRow.appendChild(this.createPillButton(filter.name, () => {
-            if (this.shuffleMode > 0) return;
-            this.selectedSavedFilter = { id: filter.id, name: filter.name };
-                this.selectedTagId = undefined;
-                this.selectedTagName = undefined;
-                this.selectedPerformerId = undefined;
-                this.selectedPerformerName = undefined;
-                this.closeSuggestions();
-                updateSearchBarDisplay();
-            this.currentFilters = { savedFilterId: filter.id, limit: this.initialLoadLimit, offset: 0 };
-                this.loadVideos(this.currentFilters, false).catch((e) => console.error('Apply saved filter failed', e));
-          }));
-        }
-
-        filtersSection.appendChild(pillRow);
-        container.appendChild(filtersSection);
-
-        // Prepare loading animation section (only show if fetch takes > 200ms)
-        let loadingSection: HTMLElement | null = null;
-        let loadingTimeout: ReturnType<typeof setTimeout> | null = null;
-        let loadingSectionCreated = false;
-        
-        const showLoadingSkeletons = () => {
-          if (loadingSectionCreated) return; // Already shown
-          loadingSectionCreated = true;
-          
-          loadingSection = document.createElement('div');
-          loadingSection.style.display = 'flex';
-          loadingSection.style.flexDirection = 'column';
-          loadingSection.style.gap = '8px';
-          loadingSection.appendChild(this.createSectionLabel('Suggested Tags'));
-          
-          // Create 6 skeleton placeholders that match the list button style
-          for (let i = 0; i < 6; i++) {
-            const skeletonButton = document.createElement('div');
-            skeletonButton.style.width = '100%';
-            skeletonButton.style.display = 'flex';
-            skeletonButton.style.alignItems = 'center';
-            skeletonButton.style.gap = '12px';
-            skeletonButton.style.padding = '12px';
-            skeletonButton.style.borderRadius = '12px';
-            skeletonButton.style.background = 'transparent';
-            
-            // Leading circle skeleton
-            const leadingSkeleton = document.createElement('div');
-            leadingSkeleton.className = 'chip-skeleton';
-            leadingSkeleton.dataset.suggestionSkeleton = 'true';
-            leadingSkeleton.style.width = '36px';
-            leadingSkeleton.style.height = '36px';
-            leadingSkeleton.style.borderRadius = '50%';
-            leadingSkeleton.style.flexShrink = '0';
-            
-            // Text skeleton
-            const textSkeleton = document.createElement('div');
-            textSkeleton.className = 'chip-skeleton';
-            textSkeleton.dataset.suggestionSkeleton = 'true';
-            textSkeleton.style.height = '16px';
-            textSkeleton.style.borderRadius = '4px';
-            textSkeleton.style.flex = '1';
-            // Vary width for more natural look
-            const widths = [120, 140, 100, 130, 110, 150];
-            textSkeleton.style.width = `${widths[i % widths.length]}px`;
-            
-            skeletonButton.appendChild(leadingSkeleton);
-            skeletonButton.appendChild(textSkeleton);
-            loadingSection.appendChild(skeletonButton);
-          }
-          
-          container.appendChild(loadingSection);
-        };
-        
-        // Ensure panel is visible with saved filters
-        ensurePanelVisible();
-
-        // Start timeout to show loading skeletons after 200ms
-        loadingTimeout = setTimeout(() => {
-          if (!ensureLatest()) return;
-          showLoadingSkeletons();
-        }, 200);
-
-        // Fetch fresh tags and performers (always fetch, no cache for empty terms)
-        let freshTags: Array<{ id: string; name: string }> = [];
-        let freshPerformers: Array<{ id: string; name: string; image_path?: string }> = [];
-        
-        try {
-          [freshTags, freshPerformers] = await Promise.all([
-            this.api.searchMarkerTags('', 3),
-            this.api.searchPerformers('', 3)
-          ]);
-          if (!ensureLatest()) {
-            return;
-          }
-          // Update cache for preload feature, but use fresh data for display
-          this.preloadedTags = freshTags;
-          this.preloadedPerformers = freshPerformers;
-        } catch (error) {
-          console.warn('Failed to fetch suggestions', error);
-          if (!ensureLatest()) {
-            return;
-          }
-        }
-
-        // Clear timeout if fetch completed quickly
-        if (loadingTimeout) {
-          clearTimeout(loadingTimeout);
-          loadingTimeout = null;
-        }
-
-        // Remove loading section if it was shown
-        if (loadingSectionCreated && loadingSection) {
-          const section: HTMLElement = loadingSection;
-          section.remove();
-        }
-
-        // Use freshly fetched tags instead of cached data
-        const availableTags = freshTags
-              .filter((tag) => {
-                const tagId = Number.parseInt(tag.id, 10);
-            return !Number.isNaN(tagId) && this.selectedTagId !== tagId;
-              })
-              .slice(0, 3);
-            
-        if (availableTags.length > 0) {
-          const tagsSection = document.createElement('div');
-          tagsSection.style.display = 'flex';
-          tagsSection.style.flexDirection = 'column';
-          tagsSection.style.gap = '8px';
-          tagsSection.style.marginLeft = `${alignmentOffset}px`; // Align with search bar
-          tagsSection.appendChild(this.createSectionLabel('Suggested Tags'));
-          for (const tag of availableTags) {
-            tagsSection.appendChild(
-              this.createListButton(tag.name, () => {
-                if (this.shuffleMode > 0) return;
-                this.selectedSavedFilter = undefined;
-                this.selectedPerformerId = undefined;
-                this.selectedPerformerName = undefined;
-                this.selectedTagId = Number.parseInt(tag.id, 10);
-                this.selectedTagName = tag.name;
-                this.closeSuggestions();
-                updateSearchBarDisplay();
-                apply();
-              }, { leadingText: '#' })
-            );
-          }
-          container.appendChild(tagsSection);
-        }
-
-        // Use freshly fetched performers instead of cached data
-        const availablePerformers = freshPerformers
-          .filter((performer) => {
-            const performerId = Number.parseInt(performer.id, 10);
-            return !Number.isNaN(performerId) && this.selectedPerformerId !== performerId;
-          })
-          .slice(0, 3);
-
-        if (availablePerformers.length > 0) {
-          const performersSection = document.createElement('div');
-          performersSection.style.display = 'flex';
-          performersSection.style.flexDirection = 'column';
-          performersSection.style.gap = '8px';
-          performersSection.style.marginLeft = `${alignmentOffset}px`; // Align with search bar
-          performersSection.appendChild(this.createSectionLabel('Suggested Performers'));
-          for (const performer of availablePerformers) {
-                const performerId = Number.parseInt(performer.id, 10);
-            const imageSrc = performer.image_path
-              ? (performer.image_path.startsWith('http')
-                  ? performer.image_path
-                  : `${globalThis.location.origin}${performer.image_path}`)
-              : undefined;
-            performersSection.appendChild(
-              this.createListButton(
-                performer.name,
-                () => {
-                if (this.shuffleMode > 0) return;
-                this.selectedSavedFilter = undefined;
-                this.selectedTagId = undefined;
-                this.selectedTagName = undefined;
-                this.selectedPerformerId = performerId;
-                this.selectedPerformerName = performer.name;
-                this.closeSuggestions();
-                updateSearchBarDisplay();
-                apply();
-                },
-                { leadingImage: imageSrc, leadingText: imageSrc ? undefined : performer.name.charAt(0).toUpperCase() }
-              )
-            );
-          }
-          container.appendChild(performersSection);
-        }
-
-        if (container.children.length === 0) {
-          this.appendEmptyState(container, 'No suggestions available yet.');
-        }
-
-        suggestions.scrollTop = 0;
-        return;
-      }
-      
-      container.innerHTML = '';
-
-      // If random mode is on, short-circuit and show notice
-      if (this.shuffleMode > 0) {
-        container.innerHTML = '';
-        const banner = document.createElement('div');
-        banner.style.display = 'flex';
-        banner.style.justifyContent = 'center';
-        banner.style.alignItems = 'center';
-        banner.style.padding = '16px';
-        const notice = document.createElement('div');
-        notice.textContent = 'Random mode active — search disabled';
-        notice.style.padding = '8px 12px';
-        notice.style.borderRadius = '999px';
-        notice.style.background = 'rgba(255,255,255,0.08)';
-        notice.style.border = '1px solid rgba(255,255,255,0.12)';
-        notice.style.color = 'rgba(255,255,255,0.85)';
-        notice.style.fontSize = '13px';
-        banner.appendChild(notice);
-        container.appendChild(banner);
-        suggestions.scrollTop = 0;
-        return;
-      }
-      // Load saved filters if needed
-      await this.loadSavedFiltersIfNeeded();
-      
-      // Calculate alignment for search results path (used by all sections)
-      const searchInputForResults = this.container.querySelector('.feed-filters__input') as HTMLElement;
-      let alignmentOffsetForResults = 0;
-      if (searchInputForResults) {
-        const searchRectForResults = searchInputForResults.getBoundingClientRect();
-        const containerRectForResults = container.getBoundingClientRect();
-        alignmentOffsetForResults = searchRectForResults.left - containerRectForResults.left - horizontalPadding;
+        await renderDefaultSuggestions(
+          container,
+          suggestions,
+          viewportConfig.horizontalPadding,
+          ensureLatest,
+          onHDToggleClick,
+          updateSearchBarDisplay,
+          apply
+        );
       } else {
-        const headerPaddingForResults = 12;
-        const logoWidthForResults = 120;
-        const headerGapForResults = 12;
-        alignmentOffsetForResults = headerPaddingForResults + logoWidthForResults + headerGapForResults - horizontalPadding;
+        await renderSearchSuggestions(
+          container,
+          suggestions,
+          trimmedText,
+          viewportConfig.horizontalPadding,
+          ensureLatest,
+          updateSearchBarDisplay,
+          apply
+        );
       }
-      
-      const matchingSavedFilters = this.savedFiltersCache
-        .filter((filter) => filter.name.toLowerCase().includes(trimmedText.toLowerCase()))
-        .slice(0, 6);
-
-      if (matchingSavedFilters.length > 0 && this.shuffleMode === 0) {
-        const savedSection = document.createElement('div');
-        savedSection.style.display = 'flex';
-        savedSection.style.flexDirection = 'column';
-        savedSection.style.gap = '8px';
-        savedSection.style.marginLeft = `${alignmentOffsetForResults}px`; // Align with search bar
-        savedSection.appendChild(this.createSectionLabel('Matching Saved Filters'));
-        for (const filter of matchingSavedFilters) {
-          savedSection.appendChild(
-            this.createListButton(filter.name, () => {
-              this.selectedSavedFilter = { id: filter.id, name: filter.name };
-          this.selectedTagId = undefined;
-          this.selectedTagName = undefined;
-              this.selectedPerformerId = undefined;
-              this.selectedPerformerName = undefined;
-          this.closeSuggestions();
-          updateSearchBarDisplay();
-              this.currentFilters = { savedFilterId: filter.id, limit: this.initialLoadLimit, offset: 0 };
-              this.loadVideos(this.currentFilters, false).catch((e) => console.error('Apply saved filter failed', e));
-            })
-          );
-        }
-        container.appendChild(savedSection);
-      }
-
-      let tagItems: Array<{ id: string; name: string }> = [];
-      let performerItems: Array<{ id: string; name: string; image_path?: string }> = [];
-
-      try {
-        [tagItems, performerItems] = await Promise.all([
-          this.api.searchMarkerTags(trimmedText, 20),
-          this.api.searchPerformers(trimmedText, 20)
-        ]);
-      } catch (error) {
-        console.warn('Failed to fetch search suggestions', error);
-      }
-
-      if (!ensureLatest()) {
-        return;
-      }
-
-      const filteredTags = tagItems
-        .filter((tag) => {
-          const tagId = Number.parseInt(tag.id, 10);
-          return !Number.isNaN(tagId) && this.selectedTagId !== tagId;
-        })
-        .slice(0, 20);
-
-      if (filteredTags.length > 0) {
-        const tagsSection = document.createElement('div');
-        tagsSection.style.display = 'flex';
-        tagsSection.style.flexDirection = 'column';
-        tagsSection.style.gap = '8px';
-        tagsSection.style.marginLeft = `${alignmentOffsetForResults}px`; // Align with search bar
-        tagsSection.appendChild(this.createSectionLabel('Tags'));
-        for (const tag of filteredTags) {
-          tagsSection.appendChild(
-            this.createListButton(tag.name, () => {
-          this.selectedSavedFilter = undefined;
-          this.selectedPerformerId = undefined;
-          this.selectedPerformerName = undefined;
-              this.selectedTagId = Number.parseInt(tag.id, 10);
-          this.selectedTagName = tag.name;
-          this.closeSuggestions();
-          updateSearchBarDisplay();
-          apply();
-            }, { leadingText: '#' })
-          );
-        }
-        container.appendChild(tagsSection);
-      }
-
-      const filteredPerformers = performerItems
-        .filter((performer) => {
-          const performerId = Number.parseInt(performer.id, 10);
-          return !Number.isNaN(performerId) && this.selectedPerformerId !== performerId;
-        })
-        .slice(0, 20);
-
-      if (filteredPerformers.length > 0) {
-        const performersSection = document.createElement('div');
-        performersSection.style.display = 'flex';
-        performersSection.style.flexDirection = 'column';
-        performersSection.style.gap = '8px';
-        performersSection.style.marginLeft = `${alignmentOffsetForResults}px`; // Align with search bar
-        performersSection.appendChild(this.createSectionLabel('Performers'));
-        for (const performer of filteredPerformers) {
-          const performerId = Number.parseInt(performer.id, 10);
-          const imageSrc = performer.image_path
-            ? (performer.image_path.startsWith('http')
-                ? performer.image_path
-                : `${globalThis.location.origin}${performer.image_path}`)
-            : undefined;
-          performersSection.appendChild(
-            this.createListButton(
-              performer.name,
-              () => {
-            this.selectedSavedFilter = undefined;
-                this.selectedTagId = undefined;
-                this.selectedTagName = undefined;
-                this.selectedPerformerId = performerId;
-                this.selectedPerformerName = performer.name;
-            this.closeSuggestions();
-            updateSearchBarDisplay();
-            apply();
-              },
-              { leadingImage: imageSrc, leadingText: imageSrc ? undefined : performer.name.charAt(0).toUpperCase() }
-            )
-          );
-        }
-        container.appendChild(performersSection);
-      }
-
-
-      if (container.children.length === 0) {
-        this.appendEmptyState(container, `No matches found for "${trimmedText}".`);
-      }
-
-      suggestions.scrollTop = 0;
-      return;
     };
     
     queryInput.addEventListener('keydown', (e) => { 
@@ -2021,106 +2386,78 @@ export class FeedContainer {
       }
     };
 
-    const handleFocus = () => {
-      // If click handler already processed this, skip to prevent duplicate calls
-      if (clickHandled) {
-        clickHandled = false; // Reset for next interaction
-        return;
+    const focusInputSafely = (input: HTMLInputElement) => {
+      try {
+        input.focus({ preventScroll: true } as FocusOptions);
+      } catch {
+        input.focus();
       }
-      if (focusHandled) return;
-      focusHandled = true;
-      
-      // If random mode is active, disable it when engaging search
-      void disableRandomIfActive();
-      
-      // Ensure background suggestions stay fresh
-      this.preloadSuggestions().catch((e) => console.warn('Suggestion preload refresh failed', e));
-      
-      queryInput.style.background = 'rgba(28, 28, 30, 0.95)';
-      queryInput.style.borderColor = 'rgba(255,255,255,0.16)';
-      // Clear and reset when focusing on search bar for fresh search
+    };
+
+    const clearSearchSelection = () => {
       this.selectedTagId = undefined;
       this.selectedTagName = undefined;
       this.selectedPerformerId = undefined;
       this.selectedPerformerName = undefined;
       this.selectedSavedFilter = undefined;
+    };
+
+    const prepareSearchForInput = () => {
+      void disableRandomIfActive();
+      this.preloadSuggestions().catch((e) => console.warn('Suggestion preload refresh failed', e));
+      queryInput.style.background = 'rgba(28, 28, 30, 0.95)';
+      queryInput.style.borderColor = 'rgba(255,255,255,0.16)';
+      clearSearchSelection();
       queryInput.value = '';
-      
       fetchAndShowSuggestions('', true);
+    };
+
+    const handleFocus = () => {
+      if (clickHandled) {
+        clickHandled = false;
+        return;
+      }
+      if (focusHandled) return;
+      focusHandled = true;
       
-      // Reset flag after a short delay
+      prepareSearchForInput();
       setTimeout(() => { focusHandled = false; }, 100);
+    };
+
+    const handleMobileClick = (e: MouseEvent) => {
+      e.stopPropagation();
+      if (document.activeElement !== queryInput) {
+        focusInputSafely(queryInput);
+      }
+      if (!focusHandled) {
+        clickHandled = true;
+        prepareSearchForInput();
+      }
+    };
+
+    const handleDesktopClick = (e: MouseEvent) => {
+      e.stopPropagation();
+      clickHandled = true;
+      focusInputSafely(queryInput);
+      prepareSearchForInput();
+      setTimeout(() => { clickHandled = false; }, 100);
+    };
+
+    const handleMobileTouchEnd = (e: TouchEvent) => {
+      e.stopPropagation();
+      focusInputSafely(queryInput);
+      void disableRandomIfActive();
+      handleFocus();
     };
     
     // Detect mobile device
     const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
     
     if (isMobile) {
-      // Mobile: use touchend for immediate focus response
-      queryInput.addEventListener('touchend', (e) => {
-        e.stopPropagation();
-        // Ensure focus without scrolling jump
-        try {
-          queryInput.focus({ preventScroll: true } as FocusOptions);
-        } catch {
-          queryInput.focus();
-        }
-        // Disable random mode on interaction
-        void disableRandomIfActive();
-        handleFocus();
-      }, { passive: false });
-      
-      // Click handler as fallback (shouldn't fire if touchend worked, but keep for compatibility)
-      queryInput.addEventListener('click', (e) => {
-        e.stopPropagation();
-        // Focus might already be handled by touchend, but ensure it's focused
-        if (document.activeElement !== queryInput) {
-          try {
-            queryInput.focus({ preventScroll: true } as FocusOptions);
-          } catch {
-            queryInput.focus();
-          }
-        }
-        if (!focusHandled) {
-          clickHandled = true; // Mark that click handled it to prevent focus handler from duplicating
-          // Clear and reset when clicking on search bar for fresh search (same as focus handler)
-          // Disable random mode on interaction
-          void disableRandomIfActive();
-          this.selectedTagId = undefined;
-          this.selectedTagName = undefined;
-          this.selectedPerformerId = undefined;
-          this.selectedPerformerName = undefined;
-          this.selectedSavedFilter = undefined;
-          queryInput.value = '';
-          fetchAndShowSuggestions('', true);
-        }
-      });
+      queryInput.addEventListener('touchend', handleMobileTouchEnd, { passive: false });
+      queryInput.addEventListener('click', handleMobileClick);
     } else {
-      // Desktop: use click and focus handlers
-      queryInput.addEventListener('click', (e) => {
-        e.stopPropagation();
-        // Mark that click is handling this to prevent focus handler from duplicating
-        // Set this synchronously IMMEDIATELY to prevent race condition
-        clickHandled = true;
-        // Ensure focus without scrolling jump
-        try {
-          queryInput.focus({ preventScroll: true } as FocusOptions);
-        } catch {
-          queryInput.focus();
-        }
-        // Disable random mode on interaction
-        void disableRandomIfActive();
-        // Clear and reset when clicking on search bar for fresh search (same as focus handler)
-        this.selectedTagId = undefined;
-        this.selectedTagName = undefined;
-        this.selectedPerformerId = undefined;
-        this.selectedPerformerName = undefined;
-        this.selectedSavedFilter = undefined;
-        queryInput.value = '';
-        fetchAndShowSuggestions('', true);
-        // Reset flag after a delay to allow focus handler to work on next interaction
-        setTimeout(() => { clickHandled = false; }, 100);
-      });
+      queryInput.addEventListener('click', handleDesktopClick);
     }
     
     queryInput.addEventListener('focus', handleFocus);
@@ -2222,80 +2559,140 @@ export class FeedContainer {
   }
 
   /**
+   * Get current query text from active input element
+   */
+  private getCurrentQueryFromInput(): string | undefined {
+    const activeEl = document.activeElement as HTMLElement | null;
+    if (activeEl?.classList?.contains('feed-filters__input')) {
+      const input = activeEl as HTMLInputElement;
+      return input.value?.trim() || undefined;
+    }
+    return undefined;
+  }
+
+  /**
+   * Handle random mode filter application
+   */
+  private async applyRandomModeFilters(loadSignal?: AbortSignal): Promise<void> {
+    const newFilters: FilterOptions = {
+      limit: this.initialLoadLimit,
+      offset: 0,
+      shuffleMode: true,
+      includeScenesWithoutMarkers: this.shuffleMode === 2,
+    };
+    this.currentFilters = newFilters;
+    await this.loadVideos(newFilters, false, loadSignal, true);
+  }
+
+  /**
+   * Build filter values from selected performer
+   */
+  private buildPerformerFilters(): { performers: string[] } {
+    return {
+      performers: [String(this.selectedPerformerId)],
+    };
+  }
+
+  /**
+   * Build filter values from selected tag
+   */
+  private async buildTagFilters(loadSignal?: AbortSignal): Promise<{ tags?: string[] }> {
+    if (this.selectedTagId) {
+      return {
+        tags: [String(this.selectedTagId)],
+      };
+    }
+    
+    if (this.selectedTagName) {
+      try {
+        const exactTag = await this.api.findTagByName(this.selectedTagName);
+        if (loadSignal?.aborted) {
+          return {};
+        }
+        if (exactTag) {
+          return {
+            tags: [String(exactTag.id)],
+          };
+        }
+      } catch {
+        // If tag lookup fails, don't set tags filter
+      }
+    }
+    
+    return {};
+  }
+
+  /**
+   * Resolve query text to tag or performer, or use as plain query
+   */
+  private async resolveQueryToFilters(
+    q: string,
+    loadSignal?: AbortSignal
+  ): Promise<{ tags?: string[]; performers?: string[]; queryValue?: string }> {
+    try {
+      const exactTag = await this.api.findTagByName(q);
+      if (loadSignal?.aborted) {
+        return {};
+      }
+      
+      if (exactTag) {
+        this.selectedTagName = exactTag.name;
+        this.selectedTagId = Number.parseInt(exactTag.id, 10);
+        return {
+          tags: [String(exactTag.id)],
+        };
+      }
+      
+      const matchingPerformers = await this.api.searchPerformers(q, 10, loadSignal);
+      if (loadSignal?.aborted) {
+        return {};
+      }
+      
+      if (matchingPerformers && matchingPerformers.length > 0 && matchingPerformers[0]) {
+        this.selectedPerformerName = matchingPerformers[0].name;
+        this.selectedPerformerId = Number.parseInt(String(matchingPerformers[0].id), 10);
+        return {
+          performers: [String(matchingPerformers[0].id)],
+        };
+      }
+      
+      return {
+        queryValue: q,
+      };
+    } catch {
+      return {
+        queryValue: q,
+      };
+    }
+  }
+
+  /**
    * Apply current search across UIs using unified logic
    * Resolves selectedTagName to tag IDs, tries performer by name, or falls back to plain text.
    */
   private async applyCurrentSearch(loadSignal?: AbortSignal): Promise<void> {
-    // Determine current text input if available (used only when no explicit selection)
-    let q: string | undefined = undefined;
-    const activeEl = document.activeElement as HTMLElement | null;
-    if (activeEl?.classList?.contains('feed-filters__input')) {
-      const input = activeEl as HTMLInputElement;
-      q = input.value?.trim() || undefined;
-    }
+    const q = this.getCurrentQueryFromInput();
 
-    // In random mode we ignore search/tag resolution and just (re)load with random settings
     if (this.shuffleMode > 0) {
-      const newFilters: FilterOptions = {
-        limit: this.initialLoadLimit,
-        offset: 0,
-        shuffleMode: true,
-        includeScenesWithoutMarkers: this.shuffleMode === 2,
-      };
-      this.currentFilters = newFilters;
-      await this.loadVideos(newFilters, false, loadSignal, true);
+      await this.applyRandomModeFilters(loadSignal);
       return;
     }
 
-    // Build filters similar to header bar robust logic
     let queryValue: string | undefined = undefined;
     let tags: string[] | undefined = undefined;
     let performers: string[] | undefined = undefined;
 
     if (this.selectedPerformerId) {
-      // Use performer ID for filtering
-      performers = [String(this.selectedPerformerId)];
+      const filters = this.buildPerformerFilters();
+      performers = filters.performers;
     } else if (this.selectedTagId || this.selectedTagName) {
-      // Use tag filtering - always use tags filter (checks tags array, which includes primary tag)
-      if (this.selectedTagId) {
-        // Use exact tag ID if available
-        tags = [String(this.selectedTagId)];
-      } else if (this.selectedTagName) {
-        // Use exact tag name matching - no fuzzy search
-        try {
-          const exactTag = await this.api.findTagByName(this.selectedTagName);
-          if (loadSignal?.aborted) return;
-          if (exactTag) {
-            tags = [String(exactTag.id)];
-          }
-        } catch {
-          // If tag lookup fails, don't set tags filter
-        }
-      }
+      const filters = await this.buildTagFilters(loadSignal);
+      tags = filters.tags;
     } else if (q && !this.selectedSavedFilter) {
-      try {
-        // Try exact tag match first
-        const exactTag = await this.api.findTagByName(q);
-        if (loadSignal?.aborted) return;
-        if (exactTag) {
-          tags = [String(exactTag.id)];
-          this.selectedTagName = exactTag.name;
-          this.selectedTagId = Number.parseInt(exactTag.id, 10);
-        } else {
-          // If no exact tag match, try performer search
-          const matchingPerformers = await this.api.searchPerformers(q, 10, loadSignal);
-          if (loadSignal?.aborted) return;
-          if (matchingPerformers && matchingPerformers.length > 0 && matchingPerformers[0]) {
-            performers = [String(matchingPerformers[0].id)];
-            this.selectedPerformerName = matchingPerformers[0].name;
-            this.selectedPerformerId = Number.parseInt(String(matchingPerformers[0].id), 10);
-          } else {
-            queryValue = q;
-          }
-        }
-      } catch {
-        queryValue = q;
-      }
+      const resolvedFilters = await this.resolveQueryToFilters(q, loadSignal);
+      tags = resolvedFilters.tags;
+      performers = resolvedFilters.performers;
+      queryValue = resolvedFilters.queryValue;
     }
 
     const newFilters: FilterOptions = {
@@ -2311,68 +2708,82 @@ export class FeedContainer {
   }
 
   /**
-   * Apply current filters and update UI
+   * Update query input display with current selection
    */
-  private async applyFilters(): Promise<void> {
-    // Find the search input and update its display
+  private updateQueryInputDisplay(): void {
     const queryInput = this.container.querySelector('.feed-filters__input') as HTMLInputElement;
-    if (queryInput) {
-      if (this.selectedTagName) {
-        queryInput.value = this.selectedTagName;
-      } else if (this.selectedPerformerName) {
-        queryInput.value = this.selectedPerformerName;
-      } else if (this.selectedSavedFilter) {
-        queryInput.value = this.selectedSavedFilter.name;
-      } else {
-        queryInput.value = '';
-      }
-      // Hide animated helper/placeholder immediately (without triggering suggestions)
-      const ph = document.getElementById('feed-search-placeholder');
-      if (ph) {
-        ph.style.display = 'none';
-      }
+    if (!queryInput) {
+      return;
     }
 
-    // Apply the filters using the same logic as in createHeaderBar
-    // Check performer first to ensure it takes priority
-    let queryValue: string | undefined = undefined;
-    let tags: string[] | undefined = undefined;
-    let performers: string[] | undefined = undefined;
+    if (this.selectedTagName) {
+      queryInput.value = this.selectedTagName;
+    } else if (this.selectedPerformerName) {
+      queryInput.value = this.selectedPerformerName;
+    } else if (this.selectedSavedFilter) {
+      queryInput.value = this.selectedSavedFilter.name;
+    } else {
+      queryInput.value = '';
+    }
 
+    const ph = document.getElementById('feed-search-placeholder');
+    if (ph) {
+      ph.style.display = 'none';
+    }
+  }
+
+  /**
+   * Build filter values for applyFilters (with fallback tag ID logic)
+   */
+  private async buildFiltersForApply(): Promise<{ tags?: string[]; performers?: string[] }> {
     if (this.selectedPerformerId) {
-      // Use performer ID for filtering
-      performers = [String(this.selectedPerformerId)];
-    } else if (this.selectedTagId || this.selectedTagName) {
-      // Use tag filtering - always use tags filter (checks tags array, which includes primary tag)
+      return {
+        performers: [String(this.selectedPerformerId)],
+      };
+    }
+
+    if (this.selectedTagId || this.selectedTagName) {
       if (this.selectedTagId) {
-        // Use exact tag ID if available
-        tags = [String(this.selectedTagId)];
-      } else if (this.selectedTagName) {
-        // Use exact tag name matching - no fuzzy search
+        return {
+          tags: [String(this.selectedTagId)],
+        };
+      }
+
+      if (this.selectedTagName) {
         try {
           const exactTag = await this.api.findTagByName(this.selectedTagName);
           if (exactTag) {
-            tags = [String(exactTag.id)];
-          } else {
-            // Fallback: use the selected tag ID if no matches found
-            if (this.selectedTagId) {
-              tags = [String(this.selectedTagId)];
-            }
+            return {
+              tags: [String(exactTag.id)],
+            };
           }
         } catch (error) {
           console.error('Failed to find exact tag', error);
-          // Fallback: use the selected tag ID
-          if (this.selectedTagId) {
-            tags = [String(this.selectedTagId)];
-          }
+        }
+
+        if (this.selectedTagId) {
+          return {
+            tags: [String(this.selectedTagId)],
+          };
         }
       }
     }
+
+    return {};
+  }
+
+  /**
+   * Apply current filters and update UI
+   */
+  private async applyFilters(): Promise<void> {
+    this.updateQueryInputDisplay();
+
+    const filterValues = await this.buildFiltersForApply();
     
     const newFilters: FilterOptions = {
-      query: queryValue,
-      tags: tags,
-      performers: performers,
+      query: undefined,
+      tags: filterValues.tags,
+      performers: filterValues.performers,
       savedFilterId: this.selectedSavedFilter?.id || undefined,
       limit: this.initialLoadLimit,
       offset: 0,
@@ -2549,13 +2960,13 @@ export class FeedContainer {
     clearSvg.appendChild(path1);
     clearBtn.appendChild(clearSvg);
 
-    const apply = () => {
+    const apply = async () => {
       // Clear suggestions when applying a search
       while (suggestions.firstChild) {
         suggestions.firstChild.remove();
       }
       suggestions.style.display = 'none';
-      this.applyCurrentSearch().catch((e: unknown) => {
+      await this.applyCurrentSearch().catch((e: unknown) => {
         if (!(e instanceof Error && e.name === 'AbortError')) {
           console.error('Apply filters failed', e);
         }
@@ -2665,178 +3076,19 @@ export class FeedContainer {
       while (suggestions.firstChild) {
         suggestions.firstChild.remove();
       }
+      
       // Show suggestions if we have text (2+ chars) OR if forced (on focus)
       if (!trimmedText || trimmedText.length < 2) {
         if (forceShow) {
-          // On focus with empty text, show saved filters from cache immediately, then fetch fresh tags/performers
-          // (Suggestions already cleared at function start)
-          
-          // Show saved filters from cache immediately (no loading needed)
-          await this.loadSavedFiltersIfNeeded();
-          if (signal.aborted) return;
-          
-          if (this.savedFiltersCache.length > 0) {
-            // Saved filters label
-            const label = document.createElement('div');
-            label.textContent = 'Saved Filters';
-            label.style.opacity = '0.75';
-            label.style.fontSize = '12px';
-            label.style.width = '100%';
-            label.style.marginBottom = '6px';
-            suggestions.appendChild(label);
-            
-            for (const f of this.savedFiltersCache) {
-              const chip = document.createElement('button');
-              chip.textContent = f.name;
-              chip.className = 'suggest-chip';
-              chip.style.padding = '6px 10px';
-              chip.style.borderRadius = '999px';
-              chip.style.border = '1px solid rgba(255,255,255,0.12)';
-              chip.style.color = 'inherit';
-              chip.style.fontSize = '13px';
-              chip.style.cursor = 'pointer';
-              chip.addEventListener('click', () => {
-                savedSelect.value = f.id;
-                this.selectedSavedFilter = { id: f.id, name: f.name };
-                // Clear tag selections when applying a saved filter
-                this.selectedTagId = undefined;
-                this.selectedTagName = undefined;
-                queryInput.value = '';
-                this.closeSuggestions();
-                updateSearchBarDisplay();
-                apply();
-              });
-              suggestions.appendChild(chip);
-            }
-            
-            // Add divider before tags/performers
-            const divider = document.createElement('div');
-            divider.style.width = '100%';
-            divider.style.height = '1px';
-            divider.style.background = 'rgba(255,255,255,0.08)';
-            divider.style.margin = '6px 0';
-            suggestions.appendChild(divider);
-          }
-          
-          // Prepare loading animation (only show if fetch takes > 200ms)
-          let loadingContainer: HTMLElement | null = null;
-          let loadingTimeout: ReturnType<typeof setTimeout> | null = null;
-          let loadingContainerCreated = false;
-          
-          const showLoadingSkeletons = () => {
-            if (loadingContainerCreated) return; // Already shown
-            loadingContainerCreated = true;
-            
-            // Create 6 skeleton chip placeholders that match the chip style
-            for (let i = 0; i < 6; i++) {
-              const skeletonChip = document.createElement('div');
-              skeletonChip.className = 'chip-skeleton';
-              skeletonChip.dataset.suggestionSkeleton = 'true';
-              skeletonChip.style.display = 'inline-block';
-              skeletonChip.style.padding = '6px 10px';
-              skeletonChip.style.borderRadius = '999px';
-              skeletonChip.style.height = '28px';
-              skeletonChip.style.marginRight = '8px';
-              skeletonChip.style.marginBottom = '8px';
-              // Vary width for more natural look
-              const widths = [70, 85, 65, 90, 75, 80];
-              skeletonChip.style.width = `${widths[i % widths.length]}px`;
-              
-              suggestions.appendChild(skeletonChip);
-            }
-          };
-          
-          suggestions.style.display = 'flex';
-          
-          // Start timeout to show loading skeletons after 200ms
-          loadingTimeout = setTimeout(() => {
-            if (signal.aborted) return;
-            showLoadingSkeletons();
-          }, 200);
-          
-          // Fetch fresh tags and performers (always fetch, no cache for empty terms)
-          const [tags, performers] = await Promise.all([
-            this.api.searchMarkerTags('', 3, signal),
-            this.api.searchPerformers('', 3, signal)
-          ]);
-          if (signal.aborted) return;
-          
-          // Clear timeout if fetch completed quickly
-          if (loadingTimeout) {
-            clearTimeout(loadingTimeout);
-            loadingTimeout = null;
-          }
-          
-          // Remove loading skeletons if they were shown
-          if (loadingContainerCreated) {
-            // Remove all skeleton chips we created (identified by data attribute)
-            const skeletonChips = Array.from(suggestions.querySelectorAll('[data-suggestion-skeleton="true"]'));
-            for (const chip of skeletonChips) {
-              chip.remove();
-            }
-          }
-          
-          // Display tags
-          for (const tag of tags) {
-            if (this.selectedTagId === Number.parseInt(tag.id, 10)) continue;
-            const chip = document.createElement('button');
-            chip.textContent = tag.name;
-            chip.className = 'suggest-chip';
-            chip.style.padding = '6px 10px';
-            chip.style.borderRadius = '999px';
-            chip.style.border = '1px solid rgba(255,255,255,0.12)';
-            chip.style.color = 'inherit';
-            chip.style.fontSize = '13px';
-            chip.style.cursor = 'pointer';
-            chip.addEventListener('click', () => {
-              this.selectedSavedFilter = undefined;
-              savedSelect.value = '';
-              const tagId = Number.parseInt(tag.id, 10);
-              this.selectedTagId = tagId;
-              this.selectedTagName = tag.name;
-              updateSearchBarDisplay();
-              apply();
-              fetchSuggestions('', 1, true);
-            });
-            suggestions.appendChild(chip);
-          }
-          
-          // Display performers if any
-          if (performers.length > 0) {
-            if (tags.length) {
-              const divider = document.createElement('div');
-              divider.style.width = '100%';
-              divider.style.height = '1px';
-              divider.style.background = 'rgba(255,255,255,0.08)';
-              divider.style.margin = '6px 0';
-              suggestions.appendChild(divider);
-            }
-            for (const performer of performers) {
-              if (this.selectedPerformerId === Number.parseInt(performer.id, 10)) continue;
-              const chip = document.createElement('button');
-              chip.textContent = performer.name;
-              chip.className = 'suggest-chip';
-              chip.style.padding = '6px 10px';
-              chip.style.borderRadius = '999px';
-              chip.style.border = '1px solid rgba(255,255,255,0.12)';
-              chip.style.color = 'inherit';
-              chip.style.fontSize = '13px';
-              chip.style.cursor = 'pointer';
-              chip.addEventListener('click', () => {
-                this.selectedSavedFilter = undefined;
-                savedSelect.value = '';
-                const performerId = Number.parseInt(performer.id, 10);
-                this.selectedPerformerId = performerId;
-                this.selectedPerformerName = performer.name;
-                updateSearchBarDisplay();
-                apply();
-                fetchSuggestions('', 1, true);
-              });
-              suggestions.appendChild(chip);
-            }
-          }
-          
-          suggestions.style.display = suggestions.children.length > 0 ? 'flex' : 'none';
+          await this.renderDefaultSuggestionsChips(
+            suggestions,
+            signal,
+            savedSelect,
+            updateSearchBarDisplay,
+            apply,
+            queryInput,
+            fetchSuggestions
+          );
         } else {
           this.closeSuggestions();
         }
@@ -2851,72 +3103,23 @@ export class FeedContainer {
       const items = await this.api.searchMarkerTags(trimmedText, pageSize, signal);
       if (signal.aborted) return;
 
-      // Render as chips
-      for (const tag of items) {
-        if (this.selectedTagId === Number.parseInt(tag.id, 10)) continue;
-        // Skip StashGifs Favorite and StashGifs Marker tags (internal plugin tags)
-        if (tag.name === 'StashGifs Favorite' || tag.name === 'StashGifs Marker') continue;
-        const chip = document.createElement('button');
-        chip.textContent = tag.name;
-        chip.className = 'suggest-chip';
-        chip.style.padding = '6px 10px';
-        chip.style.borderRadius = '999px';
-        chip.style.border = '1px solid rgba(255,255,255,0.12)';
-        chip.style.background = 'rgba(255,255,255,0.05)';
-        chip.style.color = 'inherit';
-        chip.style.fontSize = '13px';
-        chip.style.cursor = 'pointer';
-        chip.addEventListener('mouseenter', () => { chip.style.background = 'rgba(255,255,255,0.1)'; });
-        chip.addEventListener('mouseleave', () => { chip.style.background = 'rgba(255,255,255,0.05)'; });
-        chip.addEventListener('click', () => {
-          // Selecting a tag clears any saved filter to avoid conflicts
-          this.selectedSavedFilter = undefined;
-          savedSelect.value = '';
-          const tagId = Number.parseInt(tag.id, 10);
-          this.selectedTagId = tagId;
-          this.selectedTagName = tag.name;
-          updateSearchBarDisplay();
-          apply();
-          // Refresh suggestions to remove the newly selected tag and keep menu open
-          fetchSuggestions(trimmedText, 1, false);
-        });
-        suggestions.appendChild(chip);
-      }
+      // Render tags as chips
+      this.renderTagsSuggestions(suggestions, items, savedSelect, updateSearchBarDisplay, apply, (text) => fetchSuggestions(text, 1, false), trimmedText);
 
       // Simple heuristic for more results (if we filled the page)
       suggestHasMore = items.length >= pageSize;
 
       // Also surface matching saved filters as chips (unified UX)
       const term = trimmedText.toLowerCase();
-      // Load saved filters if needed
       await this.loadSavedFiltersIfNeeded();
       if (signal.aborted) return;
       const matchingSaved = this.savedFiltersCache.filter((f) => f.name.toLowerCase().includes(term));
       if (matchingSaved.length) {
-        const label = document.createElement('div');
-        label.textContent = 'Saved Filters';
-        label.style.opacity = '0.75';
-        label.style.fontSize = '12px';
-        label.style.width = '100%';
-        label.style.marginTop = '6px';
-        suggestions.appendChild(label);
+        suggestions.appendChild(this.createSuggestionLabel('Saved Filters'));
         for (const f of matchingSaved) {
-          const chip = document.createElement('button');
-          chip.textContent = f.name;
-          chip.className = 'suggest-chip';
-          chip.style.padding = '6px 10px';
-          chip.style.borderRadius = '999px';
-          chip.style.border = '1px solid rgba(255,255,255,0.12)';
-          chip.style.background = 'rgba(255,255,255,0.05)';
-          chip.style.color = 'inherit';
-          chip.style.fontSize = '13px';
-          chip.style.cursor = 'pointer';
-          chip.addEventListener('mouseenter', () => { chip.style.background = 'rgba(255,255,255,0.1)'; });
-          chip.addEventListener('mouseleave', () => { chip.style.background = 'rgba(255,255,255,0.05)'; });
-          chip.addEventListener('click', () => {
+          const chip = this.createSuggestionChip(f.name, () => {
             savedSelect.value = f.id;
             this.selectedSavedFilter = { id: f.id, name: f.name };
-            // Clear tag selections when applying a saved filter
             this.selectedTagId = undefined;
             this.selectedTagName = undefined;
             queryInput.value = '';
@@ -2932,50 +3135,16 @@ export class FeedContainer {
       const existingMore = suggestions.querySelector('[data-more="1"]');
       if (existingMore) existingMore.remove();
       if (suggestHasMore) {
-        const more = document.createElement('button');
-        more.dataset.more = '1';
-        more.textContent = 'More results…';
-        more.style.padding = '8px 10px';
-        more.style.borderRadius = '10px';
-        more.style.border = '1px solid rgba(255,255,255,0.12)';
-        more.style.background = 'rgba(255,255,255,0.06)';
-        more.style.cursor = 'pointer';
-        more.style.width = '100%';
-        more.style.marginTop = '4px';
-        more.addEventListener('click', async () => {
-          suggestPage += 1;
-          // Fetch next page and append
-          // Use the same signal for consistency
-          const next = await this.api.searchMarkerTags(trimmedText, pageSize, signal);
-          if (signal.aborted) return;
-          for (const tag of next) {
-            if (this.selectedTagId === Number.parseInt(tag.id, 10)) continue;
-            const chip = document.createElement('button');
-            chip.textContent = tag.name;
-            chip.className = 'suggest-chip';
-            chip.style.padding = '6px 10px';
-            chip.style.borderRadius = '999px';
-            chip.style.border = '1px solid rgba(255,255,255,0.12)';
-            chip.style.color = 'inherit';
-            chip.style.fontSize = '13px';
-            chip.style.cursor = 'pointer';
-            chip.addEventListener('click', () => {
-              this.selectedSavedFilter = undefined;
-              savedSelect.value = '';
-              const tagId = Number.parseInt(tag.id, 10);
-              this.selectedTagId = tagId;
-              this.selectedTagName = tag.name;
-              updateSearchBarDisplay();
-              apply();
-              // Refresh suggestions to remove the newly selected tag
-              fetchSuggestions(trimmedText, 1, false);
-            });
-            suggestions.appendChild(chip);
-          }
-          // If fewer than page size returned, hide more
-          if (next.length < pageSize) {
-            more.remove();
-          }
+        const more = this.createMoreResultsButton({
+          container: suggestions,
+          trimmedText,
+          pageSize,
+          signal,
+          savedSelect,
+          updateSearchBarDisplay,
+          apply,
+          refreshSuggestions: fetchSuggestions,
+          onPageIncrement: () => { suggestPage += 1; }
         });
         suggestions.appendChild(more);
       }
@@ -3189,205 +3358,317 @@ export class FeedContainer {
   }
 
   /**
-   * Load scene markers from Stash
+   * Prepare for loading videos (setup abort controller, check loading state)
    */
-  async loadVideos(filters?: FilterOptions, append: boolean = false, signal?: AbortSignal, force: boolean = false): Promise<void> {
-    // Always cancel previous loadVideos queries (including append operations) to prevent overload
+  private prepareLoadVideos(signal?: AbortSignal): AbortSignal {
     if (this.activeLoadVideosAbortController) {
       this.activeLoadVideosAbortController.abort();
-      // Clean up all active load observers from previous operation
       this.cleanupLoadObservers();
-      // Stop any video elements that are loading
       this.stopLoadingVideos();
     }
-    // Create new AbortController if no signal provided
     if (!signal) {
       this.activeLoadVideosAbortController = new AbortController();
       signal = this.activeLoadVideosAbortController.signal;
     }
-    
-    // Skip loading check if force is true (used for HD toggle reloads)
-    if (!force && this.isLoading) {
+    return signal;
+  }
+
+  /**
+   * Calculate pagination parameters
+   */
+  private calculatePaginationParams(
+    filters: FilterOptions,
+    append: boolean
+  ): { limit: number; offset: number; page: number } {
+    const page = append ? this.currentPage + 1 : 1;
+    const limit = append ? this.subsequentLoadLimit : (filters.limit || this.initialLoadLimit);
+    let offset = 0;
+    if (append && page > 1) {
+      offset = this.initialLoadLimit + (page - 2) * this.subsequentLoadLimit;
+    }
+    return { limit, offset, page };
+  }
+
+  /**
+   * Process fetched markers (update state, check limits)
+   */
+  private processFetchedMarkers(
+    markers: SceneMarker[],
+    append: boolean,
+    expectedLimit: number
+  ): void {
+    if (append) {
+      this.markers.push(...markers);
+    } else {
+      this.markers = markers;
+      this.clearPosts();
+    }
+
+    if (markers.length === 0) {
+      this.hasMore = false;
       return;
     }
 
+    if (markers.length < expectedLimit) {
+      this.hasMore = false;
+    }
+  }
+
+  /**
+   * Check if signal is aborted and handle cleanup
+   */
+  private checkAbortAndCleanupRender(signal?: AbortSignal): boolean {
+    return this.checkAbortAndCleanup(signal);
+  }
+
+  /**
+   * Process a single marker and add to fragment
+   */
+  private async processMarkerForRender(
+    marker: SceneMarker | undefined,
+    fragment: DocumentFragment | null,
+    signal?: AbortSignal
+  ): Promise<{ fragment: DocumentFragment; postContainer: HTMLElement | null }> {
+    if (!marker) {
+      return { fragment: fragment ?? document.createDocumentFragment(), postContainer: null };
+    }
+
+    const postContainer = await this.createPost(marker, signal);
+    const currentFragment = fragment ?? document.createDocumentFragment();
+    
+    if (postContainer) {
+      currentFragment.appendChild(postContainer);
+    }
+
+    return { fragment: currentFragment, postContainer };
+  }
+
+  /**
+   * Remove skeleton loader if needed
+   */
+  private removeSkeletonIfNeeded(append: boolean, index: number): void {
+    if (!append && index < this.getSkeletonCount()) {
+      this.removeSkeletonLoader();
+    }
+  }
+
+  /**
+   * Check if fragment should be inserted into DOM
+   */
+  private shouldInsertFragment(index: number, renderChunkSize: number, markersLength: number): boolean {
+    return (index + 1) % renderChunkSize === 0 || index === markersLength - 1;
+  }
+
+  /**
+   * Insert fragment into DOM at appropriate position
+   */
+  private insertFragment(fragment: DocumentFragment, fragmentPostCount: number): void {
+    if (fragmentPostCount === 0) {
+      return;
+    }
+
+    if (this.loadMoreTrigger && this.loadMoreTrigger.parentNode === this.postsContainer) {
+      this.postsContainer.insertBefore(fragment, this.loadMoreTrigger);
+    } else {
+      this.postsContainer.appendChild(fragment);
+    }
+  }
+
+  /**
+   * Wait for render delay if not last item
+   */
+  private async waitForRenderDelay(index: number, markersLength: number, renderDelay: number): Promise<void> {
+    if (index < markersLength - 1) {
+      await new Promise(resolve => setTimeout(resolve, renderDelay));
+    }
+  }
+
+  /**
+   * Render posts progressively in chunks
+   */
+  private async renderPostsProgressively(
+    markers: SceneMarker[],
+    append: boolean,
+    signal: AbortSignal | undefined,
+    renderChunkSize: number,
+    renderDelay: number
+  ): Promise<void> {
+    let fragment: DocumentFragment | null = null;
+    let fragmentPostCount = 0;
+
+    for (let i = 0; i < markers.length; i++) {
+      if (this.checkAbortAndCleanupRender(signal)) {
+        return;
+      }
+
+      const marker = markers[i];
+      const result = await this.processMarkerForRender(marker, fragment, signal);
+      fragment = result.fragment;
+      
+      if (result.postContainer) {
+        fragmentPostCount++;
+      }
+
+      this.removeSkeletonIfNeeded(append, i);
+
+      if (this.shouldInsertFragment(i, renderChunkSize, markers.length) && fragment && fragmentPostCount > 0) {
+        this.insertFragment(fragment, fragmentPostCount);
+        fragment = null;
+        fragmentPostCount = 0;
+
+        await this.waitForRenderDelay(i, markers.length, renderDelay);
+      }
+    }
+  }
+
+  /**
+   * Initialize load state for video loading
+   */
+  private initializeLoadState(append: boolean): void {
     this.isLoading = true;
     if (!append) {
-      // Show skeleton loaders immediately for better perceived performance
       this.showSkeletonLoaders();
       this.currentPage = 1;
       this.hasMore = true;
     }
+  }
+
+  /**
+   * Check if load should be aborted and handle cleanup
+   */
+  private checkAbortAndCleanup(signal?: AbortSignal): boolean {
+    if (signal?.aborted) {
+      this.isLoading = false;
+      this.hideSkeletonLoaders();
+      return true;
+    }
+    return false;
+  }
+
+  /**
+   * Fetch scene markers from API
+   */
+  private async fetchMarkersForLoad(
+    currentFilters: FilterOptions,
+    limit: number,
+    offset: number,
+    signal?: AbortSignal
+  ): Promise<SceneMarker[]> {
+    return await this.api.fetchSceneMarkers({
+      ...currentFilters,
+      limit,
+      offset,
+      shuffleMode: this.shuffleMode > 0,
+      includeScenesWithoutMarkers: this.shuffleMode === 2,
+    }, signal);
+  }
+
+  /**
+   * Prefetch poster images for markers
+   */
+  private prefetchPosters(markers: SceneMarker[], append: boolean, currentFilters: FilterOptions): void {
+    try {
+      const prefetchCount = append ? this.subsequentLoadLimit : (currentFilters.limit || this.initialLoadLimit);
+      posterPreloader.prefetchForMarkers(markers, prefetchCount);
+    } catch (e) {
+      console.warn('Poster prefetch failed', e);
+    }
+  }
+
+  /**
+   * Handle empty markers result
+   */
+  private handleEmptyMarkers(append: boolean): void {
+    if (!append) {
+      this.showError('No scene markers found. Try adjusting your filters.');
+    }
+    this.hideSkeletonLoaders();
+  }
+
+  /**
+   * Finalize load state after rendering
+   */
+  private finalizeLoadState(append: boolean, page: number): void {
+    if (append) {
+      this.currentPage = page;
+    }
+
+    if (!append) {
+      this.hideSkeletonLoaders();
+    }
+
+    this.updateInfiniteScrollTrigger();
+  }
+
+  /**
+   * Handle load error
+   */
+  private handleLoadError(error: unknown, append: boolean): void {
+    console.error('Error loading scene markers:', error);
+    if (!append) {
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      this.showError(`Failed to load scene markers: ${errorMessage}`);
+    }
+    this.hideSkeletonLoaders();
+  }
+
+  /**
+   * Defer setting isLoading to false to prevent rapid successive loads
+   */
+  private deferLoadingComplete(): void {
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        this.isLoading = false;
+      });
+    });
+  }
+
+  async loadVideos(filters?: FilterOptions, append: boolean = false, signal?: AbortSignal, force: boolean = false): Promise<void> {
+    signal = this.prepareLoadVideos(signal);
+
+    if (!force && this.isLoading) {
+      return;
+    }
+
+    this.initializeLoadState(append);
 
     try {
       const currentFilters = filters || this.currentFilters || {};
-      const page = append ? this.currentPage + 1 : 1;
-      
-      
-      // Load fewer items on initial load for faster page load, more on subsequent loads
-      const limit = append ? this.subsequentLoadLimit : (currentFilters.limit || this.initialLoadLimit);
-      
-      // Calculate offset: page 1 = 0, page 2 = initialLoadLimit, page 3+ = initialLoadLimit + (page-2) * subsequentLoadLimit
-      let offset = 0;
-      if (append && page > 1) {
-        offset = this.initialLoadLimit + (page - 2) * this.subsequentLoadLimit;
-      }
-      
-      // Check if aborted before fetching
-      if (signal?.aborted) {
-        this.isLoading = false;
-        this.hideSkeletonLoaders();
-        return;
-      }
-      
-      const markers = await this.api.fetchSceneMarkers({
-        ...currentFilters,
-        limit,
-        offset,
-        shuffleMode: this.shuffleMode > 0,
-        includeScenesWithoutMarkers: this.shuffleMode === 2, // Mode 2: only scenes with no markers
-      }, signal);
-      
-      // Check if aborted after fetching
-      if (signal?.aborted) {
-        this.isLoading = false;
-        this.hideSkeletonLoaders();
-        return;
-      }
-      
-      // Markers are fetched with random sorting from GraphQL API
+      const { limit, offset, page } = this.calculatePaginationParams(currentFilters, append);
 
-      
-      if (!append) {
-        this.markers = markers;
-        this.clearPosts();
-      } else {
-        this.markers.push(...markers);
+      if (this.checkAbortAndCleanup(signal)) {
+        return;
       }
+
+      const markers = await this.fetchMarkersForLoad(currentFilters, limit, offset, signal);
+
+      if (this.checkAbortAndCleanup(signal)) {
+        return;
+      }
+
+      const expectedLimit = append ? this.subsequentLoadLimit : (currentFilters.limit || this.initialLoadLimit);
+      this.processFetchedMarkers(markers, append, expectedLimit);
 
       if (markers.length === 0) {
-        if (!append) {
-          this.showError('No scene markers found. Try adjusting your filters.');
-        }
-        this.hasMore = false;
-        this.hideSkeletonLoaders();
+        this.handleEmptyMarkers(append);
         return;
       }
 
-      // Check if we got fewer results than requested (means no more pages)
-      const expectedLimit = append ? this.subsequentLoadLimit : (currentFilters.limit || this.initialLoadLimit);
-      if (markers.length < expectedLimit) {
-        this.hasMore = false;
-      }
+      this.prefetchPosters(markers, append, currentFilters);
 
-      // Prefetch poster screenshots for the first batch before rendering, non-blocking
-      try {
-        // Prefetch a reasonable number; align with initial load size on first page, smaller when appending
-        const prefetchCount = append ? this.subsequentLoadLimit : (currentFilters.limit || this.initialLoadLimit);
-        posterPreloader.prefetchForMarkers(markers, prefetchCount);
-      } catch (e) {
-        // Non-fatal
-        console.warn('Poster prefetch failed', e);
-      }
+      const renderChunkSize = 6;
+      const renderDelay = 8;
+      await this.renderPostsProgressively(markers, append, signal, renderChunkSize, renderDelay);
 
-      // Create posts progressively - render immediately as each post is ready
-      // This provides instant visual feedback instead of waiting for all posts
-      // Use DocumentFragment for batch DOM insertions to reduce layout thrashing
-      const renderChunkSize = 6; // Render 6 posts at a time (increased from 3 for better performance)
-      const renderDelay = 8; // Reduced delay for faster rendering (8ms instead of 16ms)
-      
-      let fragment: DocumentFragment | null = null;
-      let fragmentPostCount = 0;
-      
-      for (let i = 0; i < markers.length; i++) {
-        if (signal?.aborted) {
-          this.isLoading = false;
-          this.hideSkeletonLoaders();
-          return;
-        }
-        
-        // Create post (returns container element)
-        // Pass abort signal to allow cleanup if aborted during creation
-        const marker = markers[i];
-        if (!marker) continue;
-        const postContainer = await this.createPost(marker, signal);
-        
-        // Remove one skeleton loader as each real post is added
-        if (!append && i < this.getSkeletonCount()) {
-          this.removeSkeletonLoader();
-        }
-        
-        // Add to fragment for batch insertion
-        fragment ??= document.createDocumentFragment();
-        if (postContainer) {
-          fragment.appendChild(postContainer);
-          fragmentPostCount++;
-        }
-        
-        // Insert fragment when chunk is complete or at end
-        const shouldInsert = (i + 1) % renderChunkSize === 0 || i === markers.length - 1;
-        if (shouldInsert && fragment && fragmentPostCount > 0) {
-          // If loadMoreTrigger exists, insert before it to keep trigger at the end
-          if (this.loadMoreTrigger && this.loadMoreTrigger.parentNode === this.postsContainer) {
-            this.postsContainer.insertBefore(fragment, this.loadMoreTrigger);
-          } else {
-            this.postsContainer.appendChild(fragment);
-          }
-          fragment = null;
-          fragmentPostCount = 0;
-          
-          // Small delay between chunks to prevent blocking the main thread
-          if (i < markers.length - 1) {
-            await new Promise(resolve => setTimeout(resolve, renderDelay));
-          }
-        }
-      }
-      
-      // Check if aborted after creating posts
-      if (signal?.aborted) {
-        this.isLoading = false;
-        this.hideSkeletonLoaders();
+      if (this.checkAbortAndCleanup(signal)) {
         return;
       }
 
-      if (append) {
-        this.currentPage = page;
-      }
-
-      // Initial autoplay disabled - using hover-based autoplay instead
-      // Videos will play when user hovers over them
-      // if (!append && page === 1) {
-      //   window.setTimeout(() => {
-      //     this.autoplayInitial(2).catch((e) => console.warn('Autoplay initial failed', e));
-      //   }, 500);
-      // }
-      // Suggestion preloading is handled in init() with longer delay
-      // Background preloading disabled - videos load on-demand when close to viewport (50px) or on click
-
-      // Hide skeleton loaders after all posts are rendered
-      if (!append) {
-        this.hideSkeletonLoaders();
-      }
-      
-      // Update infinite scroll trigger position - must be done BEFORE isLoading is set to false
-      // This ensures the trigger is moved to the new bottom before the observer can fire again
-      this.updateInfiniteScrollTrigger();
+      this.finalizeLoadState(append, page);
     } catch (error: unknown) {
-      console.error('Error loading scene markers:', error);
-      if (!append) {
-        const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-        this.showError(`Failed to load scene markers: ${errorMessage}`);
-      }
-      this.hideSkeletonLoaders();
+      this.handleLoadError(error, append);
     } finally {
-      // Defer setting isLoading to false to ensure trigger has moved and observer won't fire immediately
-      // This prevents the "machine-gun" effect where multiple loads fire in rapid succession
-      // Use double requestAnimationFrame to ensure DOM update is complete
-      requestAnimationFrame(() => {
-        requestAnimationFrame(() => {
-          this.isLoading = false;
-        });
-      });
+      this.deferLoadingComplete();
     }
   }
 
@@ -3486,6 +3767,7 @@ export class FeedContainer {
             videoElement.load(); // This cancels the network request
           } catch (e) {
             // Ignore errors when stopping video
+            console.debug('Error stopping video', e);
           }
         }
       }
@@ -3499,65 +3781,95 @@ export class FeedContainer {
    * Returns the post container element for batch DOM insertion
    */
   private async createPost(marker: SceneMarker, signal?: AbortSignal): Promise<HTMLElement | null> {
-    // Choose video source based on HD toggle
+    const safeVideoUrl = this.getVideoUrlForPost(marker);
+    if (!safeVideoUrl || !this.isVideoCodecSupported(marker, safeVideoUrl)) {
+      return null;
+    }
+
+    const postContainer = this.createPostContainer();
+    const startTime = this.calculateStartTime(marker);
+    const post = this.createVideoPostInstance(postContainer, marker, safeVideoUrl, startTime);
+    
+    this.posts.set(marker.id, post);
+    this.postOrder.push(marker.id);
+    this.visibilityManager.observePost(postContainer, marker.id);
+
+    if (signal?.aborted) {
+      return null;
+    }
+
+    this.setupLazyLoading(postContainer, post, marker, safeVideoUrl, signal);
+    return postContainer;
+  }
+
+  /**
+   * Get video URL for post based on HD mode
+   */
+  private getVideoUrlForPost(marker: SceneMarker): string | undefined {
     const selectedUrl = this.useHDMode
       ? this.api.getVideoUrl(marker.scene)
       : this.api.getMarkerVideoUrl(marker);
-    const videoUrl = selectedUrl;
-    const safeVideoUrl = isValidMediaUrl(videoUrl) ? videoUrl : undefined;
     
-    // Skip creating post if no valid video URL is available
-    if (!safeVideoUrl) {
+    if (!isValidMediaUrl(selectedUrl)) {
       console.warn('FeedContainer: Skipping post creation - no valid video URL', {
         markerId: marker.id,
         markerTitle: marker.title,
-        videoUrl,
+        videoUrl: selectedUrl,
       });
-      return null;
+      return undefined;
     }
     
-    // Check if browser supports the video codec/format
-    // Skip unsupported codecs (HEVC, Matroska, etc.) to avoid showing broken content
-    if (!this.isVideoCodecSupported(marker, safeVideoUrl)) {
-      // Silently skip - don't log to avoid console spam
-      return null;
-    }
+    return selectedUrl;
+  }
 
+  /**
+   * Create post container element
+   */
+  private createPostContainer(): HTMLElement {
     const postContainer = document.createElement('article');
     postContainer.className = 'video-post-wrapper';
+    return postContainer;
+  }
 
-    // When shuffle mode is enabled and we're in HD mode (loading full scene videos),
-    // randomize the start time instead of using the marker's specific timestamp
-    // For non-HD marker videos, don't set startTime - marker clips are pre-rendered and should start at beginning
-    let startTime: number | undefined = undefined;
-    if (this.useHDMode) {
-      // Only set startTime for HD mode (full scene videos)
-      if (this.shuffleMode > 0) {
-        // Randomize start time when shuffle mode is enabled
-        // Try to get video duration from scene files to calculate random start time
-        const sceneDuration = marker.scene?.files?.[0]?.duration;
-        if (sceneDuration && sceneDuration > 0) {
-          // Randomize start time within the video (leave some buffer at the end)
-          // Use 90% of duration to avoid starting too close to the end
-          const maxStartTime = Math.floor(sceneDuration * 0.9);
-          
-          // Simple random start without checking proximity to existing markers
-          startTime = Math.floor(Math.random() * maxStartTime);
-        } else {
-          // If duration not available, start at beginning (0) instead of using marker.seconds
-          // This prevents the conflict where both marker timestamp and random timestamp are used
-          startTime = 0;
-        }
-      } else {
-        // HD mode but not shuffle - use marker's timestamp
-        startTime = marker.seconds;
-      }
+  /**
+   * Calculate start time for video based on HD mode and shuffle mode
+   */
+  private calculateStartTime(marker: SceneMarker): number | undefined {
+    if (!this.useHDMode) {
+      return undefined; // Marker videos are pre-rendered clips
     }
-    // For non-HD mode, startTime remains undefined - marker videos are pre-rendered clips
 
+    if (this.shuffleMode > 0) {
+      return this.calculateRandomStartTime(marker);
+    }
+
+    return marker.seconds;
+  }
+
+  /**
+   * Calculate random start time for shuffle mode
+   */
+  private calculateRandomStartTime(marker: SceneMarker): number {
+    const sceneDuration = marker.scene?.files?.[0]?.duration;
+    if (sceneDuration && sceneDuration > 0) {
+      const maxStartTime = Math.floor(sceneDuration * 0.9);
+      return Math.floor(Math.random() * maxStartTime);
+    }
+    return 0;
+  }
+
+  /**
+   * Create VideoPost instance
+   */
+  private createVideoPostInstance(
+    postContainer: HTMLElement,
+    marker: SceneMarker,
+    safeVideoUrl: string,
+    startTime: number | undefined
+  ): VideoPost {
     const postData: VideoPostData = {
       marker,
-      videoUrl: safeVideoUrl, // Use safeVideoUrl instead of potentially invalid videoUrl
+      videoUrl: safeVideoUrl,
       startTime: startTime,
       endTime: marker.end_seconds,
     };
@@ -3571,110 +3883,112 @@ export class FeedContainer {
       (performerId, performerName) => this.handlePerformerChipClick(performerId, performerName),
       (tagId, tagName) => this.handleTagChipClick(tagId, tagName),
       this.shuffleMode > 0,
-      () => this.cancelAllPendingRequests() // Callback to cancel requests during marker creation
+      () => this.cancelAllPendingRequests()
     );
+    
     post.initialize();
-    this.posts.set(marker.id, post);
-    this.postOrder.push(marker.id);
-
-    // If HD mode is enabled at feed level, reflect this on the card's HD icon
+    
     if (this.useHDMode) {
       post.setHQMode(true);
     }
-
-    // Don't append to DOM here - return container for batch insertion
-    // Caller will handle DOM insertion using DocumentFragment
-
-    // Observe for visibility
-    this.visibilityManager.observePost(postContainer, marker.id);
-
-
-    // Check if aborted before setting up observers
-    if (signal?.aborted) {
-      return null;
-    }
-
-    // Load video only when very close to viewport (lazy loading)
-    // Use device capabilities to determine optimal loading distance
-    if (safeVideoUrl) {
-      // Adaptive lazy loading based on device capabilities
-      // Low-end devices: load closer (25px), high-end: load earlier (100px)
-      const lazyLoadDistance = this.deviceCapabilities.availableRAM < 2048 ? '25px' : 
-                              this.deviceCapabilities.isHighEnd ? '100px' : '50px';
-      
-      if (this.isMobileDevice) {
-        // On mobile: only load when very close - conserve bandwidth and memory
-        const rootMargin = lazyLoadDistance;
-        const loadObserver = new IntersectionObserver(
-          (entries) => {
-            for (const entry of entries) {
-              if (entry.isIntersecting) {
-                // Check if aborted before loading
-                if (signal?.aborted) {
-                  loadObserver.disconnect();
-                  this.loadObservers.delete(marker.id);
-                  return;
-                }
-                const player = post.preload();
-                if (player) {
-                  this.visibilityManager.registerPlayer(marker.id, player);
-                }
-                loadObserver.disconnect();
-                this.loadObservers.delete(marker.id);
-              }
-            }
-          },
-          { rootMargin, threshold: 0 }
-        );
-        // Track observer for cleanup
-        this.loadObservers.set(marker.id, loadObserver);
-        loadObserver.observe(postContainer);
-        return postContainer;
-      }
-
-      // Desktop: load based on device capabilities and HD mode
-      // High-end devices can load earlier, low-end should wait
-      const rootMargin = this.useHDMode 
-        ? lazyLoadDistance // HD mode: load closer to conserve bandwidth
-        : (this.deviceCapabilities.isHighEnd ? '200px' : '100px'); // Non-HD: load earlier on high-end devices
-      
-      // Use Intersection Observer to load video when very close to viewport
-      const loadObserver = new IntersectionObserver(
-        (entries) => {
-          for (const entry of entries) {
-            if (entry.isIntersecting) {
-              // Check if aborted before loading
-              if (signal?.aborted) {
-                loadObserver.disconnect();
-                this.loadObservers.delete(marker.id);
-                return;
-              }
-              // Load the player
-              const player = post.preload();
-              if (player) {
-                // Register player immediately - VisibilityManager will wait for ready state
-                this.visibilityManager.registerPlayer(marker.id, player);
-                // Don't play here - let VisibilityManager handle it based on visibility
-              } else {
-                console.warn('FeedContainer: Player not created', { markerId: marker.id });
-              }
-              loadObserver.disconnect();
-              this.loadObservers.delete(marker.id);
-            }
-          }
-        },
-        { rootMargin, threshold: 0 } // Load when very close to viewport
-      );
-      // Track observer for cleanup
-      this.loadObservers.set(marker.id, loadObserver);
-      loadObserver.observe(postContainer);
-    } else {
-      console.warn('FeedContainer: No video URL for marker', { markerId: marker.id });
-    }
-    // Eager preload disabled - videos load on-demand via Intersection Observer
     
-    // Return container for batch DOM insertion
-    return postContainer;
+    return post;
+  }
+
+  /**
+   * Setup lazy loading for video post
+   */
+  private setupLazyLoading(
+    postContainer: HTMLElement,
+    post: VideoPost,
+    marker: SceneMarker,
+    safeVideoUrl: string,
+    signal?: AbortSignal
+  ): void {
+    const lazyLoadDistance = this.getLazyLoadDistance();
+    const rootMargin = this.isMobileDevice 
+      ? lazyLoadDistance 
+      : this.getDesktopRootMargin(lazyLoadDistance);
+    
+    this.createLazyLoadObserver(postContainer, post, marker, rootMargin, signal);
+  }
+
+  /**
+   * Get lazy load distance based on device capabilities
+   */
+  private getLazyLoadDistance(): string {
+    if (this.deviceCapabilities.availableRAM < 2048) {
+      return '25px';
+    }
+    if (this.deviceCapabilities.isHighEnd) {
+      return '100px';
+    }
+    return '50px';
+  }
+
+  /**
+   * Get root margin for desktop lazy loading
+   */
+  private getDesktopRootMargin(lazyLoadDistance: string): string {
+    if (this.useHDMode) {
+      return lazyLoadDistance;
+    }
+    if (this.deviceCapabilities.isHighEnd) {
+      return '200px';
+    }
+    return '100px';
+  }
+
+  /**
+   * Create and setup intersection observer for lazy loading
+   */
+  private createLazyLoadObserver(
+    postContainer: HTMLElement,
+    post: VideoPost,
+    marker: SceneMarker,
+    rootMargin: string,
+    signal?: AbortSignal
+  ): void {
+    const loadObserver = new IntersectionObserver(
+      (entries) => {
+        for (const entry of entries) {
+          if (entry.isIntersecting) {
+            this.handleVideoLoad(entry, post, marker, loadObserver, signal);
+          }
+        }
+      },
+      { rootMargin, threshold: 0 }
+    );
+    
+    this.loadObservers.set(marker.id, loadObserver);
+    loadObserver.observe(postContainer);
+  }
+
+  /**
+   * Handle video loading when intersection observer triggers
+   */
+  private handleVideoLoad(
+    entry: IntersectionObserverEntry,
+    post: VideoPost,
+    marker: SceneMarker,
+    loadObserver: IntersectionObserver,
+    signal?: AbortSignal
+  ): void {
+    if (signal?.aborted) {
+      loadObserver.disconnect();
+      this.loadObservers.delete(marker.id);
+      return;
+    }
+    
+    const player = post.preload();
+    if (player) {
+      this.visibilityManager.registerPlayer(marker.id, player);
+    } else {
+      console.warn('FeedContainer: Player not created', { markerId: marker.id });
+    }
+    
+    loadObserver.disconnect();
+    this.loadObservers.delete(marker.id);
   }
 
 
@@ -4324,114 +4638,174 @@ export class FeedContainer {
     const maxPostsInMemory = this.useHDMode ? 15 : 20;
     
     // Only enforce maximum if we significantly exceed limit
-    if (this.posts.size > maxPostsInMemory * 1.5) {
-      const viewportTop = globalThis.scrollY || globalThis.pageYOffset;
-      const viewportBottom = viewportTop + globalThis.innerHeight;
+    if (this.posts.size <= maxPostsInMemory * 1.5) {
+      return;
+    }
+
+    const postsWithDistance = this.calculatePostDistances();
+    const postsToRemove = this.determinePostsToRemove(postsWithDistance, maxPostsInMemory);
+    
+    for (const { postId } of postsToRemove) {
+      this.removePost(postId);
+    }
+    
+    this.cleanupMarkersForRemovedPosts(postsToRemove);
+  }
+
+  /**
+   * Calculate distance from viewport for each post
+   */
+  private calculatePostDistances(): Array<{ postId: string; distance: number; isVisible: boolean }> {
+    const viewportTop = globalThis.scrollY || globalThis.pageYOffset;
+    const viewportBottom = viewportTop + globalThis.innerHeight;
+    const postsWithDistance: Array<{ postId: string; distance: number; isVisible: boolean }> = [];
+    
+    for (const [postId, post] of this.posts.entries()) {
+      const container = post.getContainer();
+      const rect = container.getBoundingClientRect();
+      const elementTop = viewportTop + rect.top;
+      const elementBottom = elementTop + rect.height;
       
-      // Calculate distance for each post
-      const postsWithDistance: Array<{ postId: string; distance: number; isVisible: boolean }> = [];
+      const isVisible = elementBottom > viewportTop && elementTop < viewportBottom;
+      const distance = this.calculateDistanceFromViewport(elementTop, elementBottom, viewportTop, viewportBottom);
       
-      for (const [postId, post] of this.posts.entries()) {
-        const container = post.getContainer();
-        const rect = container.getBoundingClientRect();
-        const elementTop = viewportTop + rect.top;
-        const elementBottom = elementTop + rect.height;
-        
-        // Check if visible in viewport
-        const isVisible = elementBottom > viewportTop && elementTop < viewportBottom;
-        
-        // Calculate distance from viewport
-        let distance = 0;
-        if (elementBottom < viewportTop) {
-          distance = viewportTop - elementBottom;
-        } else if (elementTop > viewportBottom) {
-          distance = elementTop - viewportBottom;
-        }
-        
-        postsWithDistance.push({ postId, distance, isVisible });
+      postsWithDistance.push({ postId, distance, isVisible });
+    }
+    
+    // Sort by distance (furthest first), but prioritize non-visible posts
+    postsWithDistance.sort((a, b) => {
+      if (a.isVisible !== b.isVisible) {
+        return a.isVisible ? 1 : -1; // Non-visible first
       }
-      
-      // Sort by distance (furthest first), but prioritize non-visible posts
-      postsWithDistance.sort((a, b) => {
-        if (a.isVisible !== b.isVisible) {
-          return a.isVisible ? 1 : -1; // Non-visible first
-        }
-        return b.distance - a.distance; // Furthest first
-      });
-      
-      // Remove posts until we're under the limit
-      // But keep a good buffer to ensure loadMoreTrigger stays accessible
-      const minPostsToKeep = Math.max(5, maxPostsInMemory - 3); // Keep a larger buffer
-      const postsToRemove = postsWithDistance.slice(0, Math.max(0, this.posts.size - minPostsToKeep));
-      
-      // Also remove posts that are very far from viewport (even if under limit)
-      // Less aggressive: only remove posts that are very far away
-      // 1000px in HD mode, 1500px in normal mode (much less aggressive)
-      const cleanupDistance = this.useHDMode ? 1000 : 1500;
-      for (const { postId, distance, isVisible } of postsWithDistance) {
-        if (!isVisible && distance > cleanupDistance && !postsToRemove.some(p => p.postId === postId)) {
-          // Only add if we won't remove too many posts
-          if (this.posts.size - postsToRemove.length > minPostsToKeep) {
-            postsToRemove.push({ postId, distance, isVisible });
-          }
-        }
-      }
-      
-      // Remove posts
-      for (const { postId } of postsToRemove) {
-        // Cancel any pending preloads for this post
-        this.cancelPreloadIfOutOfView(postId);
-        
-        const post = this.posts.get(postId);
-        if (post) {
-          // Aggressively unload video before destroying to free memory
-          const player = post.getPlayer();
-          if (player) {
-            // Force unload even if already marked as unloaded
-            if (!player.getIsUnloaded()) {
-              player.unload();
-            }
-            // Destroy player completely to free all resources
-            player.destroy();
-          }
-          
-          // Remove from visibility manager before destroying
-          this.visibilityManager.unobservePost(postId);
-          
-          // Destroy post (removes from DOM)
-          post.destroy();
-          this.posts.delete(postId);
-          const index = this.postOrder.indexOf(postId);
-          if (index !== -1) {
-            this.postOrder.splice(index, 1);
-          }
-        }
-        
-        // Clean up load observer if exists
-        const observer = this.loadObservers.get(postId);
-        if (observer) {
-          observer.disconnect();
-          this.loadObservers.delete(postId);
-        }
-      }
-      
-      
-      // Remove markers for deleted posts to free memory
-      // This prevents the markers array from growing unbounded
-      const removedPostIds = new Set(postsToRemove.map(p => p.postId));
-      this.markers = this.markers.filter(marker => {
-        // Keep marker if its post still exists
-        return !removedPostIds.has(marker.id);
-      });
-      
-      // Force garbage collection hint by clearing any cached references
-      if (postsToRemove.length > 0) {
-        // Request browser to consider garbage collection after cleanup
-        setTimeout(() => {
-          // Small delay to let cleanup complete
-        }, 0);
+      return b.distance - a.distance; // Furthest first
+    });
+    
+    return postsWithDistance;
+  }
+
+  /**
+   * Calculate distance from viewport for an element
+   */
+  private calculateDistanceFromViewport(
+    elementTop: number,
+    elementBottom: number,
+    viewportTop: number,
+    viewportBottom: number
+  ): number {
+    if (elementBottom < viewportTop) {
+      return viewportTop - elementBottom;
+    }
+    if (elementTop > viewportBottom) {
+      return elementTop - viewportBottom;
+    }
+    return 0;
+  }
+
+  /**
+   * Determine which posts should be removed based on distance and memory limits
+   */
+  private determinePostsToRemove(
+    postsWithDistance: Array<{ postId: string; distance: number; isVisible: boolean }>,
+    maxPostsInMemory: number
+  ): Array<{ postId: string; distance: number; isVisible: boolean }> {
+    const minPostsToKeep = Math.max(5, maxPostsInMemory - 3);
+    const postsToRemove = postsWithDistance.slice(0, Math.max(0, this.posts.size - minPostsToKeep));
+    
+    // Also remove posts that are very far from viewport (even if under limit)
+    const cleanupDistance = this.useHDMode ? 1000 : 1500;
+    for (const postInfo of postsWithDistance) {
+      if (this.shouldRemoveDistantPost(postInfo, cleanupDistance, postsToRemove, minPostsToKeep)) {
+        postsToRemove.push(postInfo);
       }
     }
+    
+    return postsToRemove;
+  }
+
+  /**
+   * Check if a distant post should be removed
+   */
+  private shouldRemoveDistantPost(
+    postInfo: { postId: string; distance: number; isVisible: boolean },
+    cleanupDistance: number,
+    postsToRemove: Array<{ postId: string; distance: number; isVisible: boolean }>,
+    minPostsToKeep: number
+  ): boolean {
+    if (postInfo.isVisible || postInfo.distance <= cleanupDistance) {
+      return false;
+    }
+    if (postsToRemove.some(p => p.postId === postInfo.postId)) {
+      return false;
+    }
+    return this.posts.size - postsToRemove.length > minPostsToKeep;
+  }
+
+  /**
+   * Remove a single post and clean up all associated resources
+   */
+  private removePost(postId: string): void {
+    this.cancelPreloadIfOutOfView(postId);
+    
+    const post = this.posts.get(postId);
+    if (post) {
+      this.destroyPostPlayer(post);
+      this.visibilityManager.unobservePost(postId);
+      post.destroy();
+      this.posts.delete(postId);
+      this.removePostFromOrder(postId);
+    }
+    
+    this.cleanupLoadObserver(postId);
+  }
+
+  /**
+   * Destroy a post's video player
+   */
+  private destroyPostPlayer(post: VideoPost): void {
+    const player = post.getPlayer();
+    if (!player) {
+      return;
+    }
+    
+    if (!player.getIsUnloaded()) {
+      player.unload();
+    }
+    player.destroy();
+  }
+
+  /**
+   * Remove post ID from post order array
+   */
+  private removePostFromOrder(postId: string): void {
+    const index = this.postOrder.indexOf(postId);
+    if (index !== -1) {
+      this.postOrder.splice(index, 1);
+    }
+  }
+
+  /**
+   * Clean up load observer for a post
+   */
+  private cleanupLoadObserver(postId: string): void {
+    const observer = this.loadObservers.get(postId);
+    if (observer) {
+      observer.disconnect();
+      this.loadObservers.delete(postId);
+    }
+  }
+
+  /**
+   * Remove markers for deleted posts to free memory
+   */
+  private cleanupMarkersForRemovedPosts(
+    postsToRemove: Array<{ postId: string; distance: number; isVisible: boolean }>
+  ): void {
+    if (postsToRemove.length === 0) {
+      return;
+    }
+    
+    const removedPostIds = new Set(postsToRemove.map(p => p.postId));
+    this.markers = this.markers.filter(marker => !removedPostIds.has(marker.id));
   }
 
   /**
@@ -4466,25 +4840,23 @@ export class FeedContainer {
   private aggressiveVideoUnload(): void {
     const viewportTop = window.scrollY || window.pageYOffset;
     const viewportBottom = viewportTop + window.innerHeight;
-    // Unload videos that are more than 100px from viewport
-    // Same threshold for both HD and normal mode
     const unloadDistance = 100;
-    
-    // Also limit concurrent loaded videos to prevent memory buildup
     const maxLoadedVideos = this.useHDMode ? 2 : 3;
-    let loadedVideoCount = 0;
     
-    // First pass: count loaded videos in viewport
+    const loadedVideoCount = this.countLoadedVideosInViewport(viewportTop, viewportBottom);
+    this.unloadVideosFarFromViewport(viewportTop, viewportBottom, unloadDistance);
+    this.unloadExcessVideos(viewportTop, viewportBottom, maxLoadedVideos, loadedVideoCount);
+  }
+
+  /**
+   * Count loaded videos that are in or near the viewport
+   */
+  private countLoadedVideosInViewport(viewportTop: number, viewportBottom: number): number {
+    let loadedVideoCount = 0;
+    const viewportMargin = 200;
+    
     for (const [, post] of this.posts.entries()) {
-      const container = post.getContainer();
-      const rect = container.getBoundingClientRect();
-      const elementTop = viewportTop + rect.top;
-      const elementBottom = elementTop + rect.height;
-      
-      // Check if post is in or near viewport
-      const isNearViewport = elementBottom > viewportTop - 200 && elementTop < viewportBottom + 200;
-      
-      if (isNearViewport) {
+      if (this.isPostNearViewport(post, viewportTop, viewportBottom, viewportMargin)) {
         const player = post.getPlayer();
         if (player && !player.getIsUnloaded()) {
           loadedVideoCount++;
@@ -4492,34 +4864,240 @@ export class FeedContainer {
       }
     }
     
-    // Second pass: unload videos that are far from viewport
+    return loadedVideoCount;
+  }
+
+  /**
+   * Check if a post is near the viewport
+   */
+  private isPostNearViewport(
+    post: VideoPost,
+    viewportTop: number,
+    viewportBottom: number,
+    margin: number
+  ): boolean {
+    const container = post.getContainer();
+    const rect = container.getBoundingClientRect();
+    const elementTop = viewportTop + rect.top;
+    const elementBottom = elementTop + rect.height;
+    
+    return elementBottom > viewportTop - margin && elementTop < viewportBottom + margin;
+  }
+
+  /**
+   * Unload videos that are far from the viewport
+   */
+  private unloadVideosFarFromViewport(
+    viewportTop: number,
+    viewportBottom: number,
+    unloadDistance: number
+  ): void {
     for (const [, post] of this.posts.entries()) {
-      const container = post.getContainer();
-      const rect = container.getBoundingClientRect();
-      const elementTop = viewportTop + rect.top;
-      const elementBottom = elementTop + rect.height;
+      if (this.isPostFarFromViewport(post, viewportTop, viewportBottom, unloadDistance)) {
+        this.unloadPostVideo(post);
+      }
+    }
+  }
+
+  /**
+   * Check if a post is far from the viewport
+   */
+  private isPostFarFromViewport(
+    post: VideoPost,
+    viewportTop: number,
+    viewportBottom: number,
+    unloadDistance: number
+  ): boolean {
+    const container = post.getContainer();
+    const rect = container.getBoundingClientRect();
+    const elementTop = viewportTop + rect.top;
+    const elementBottom = elementTop + rect.height;
+    
+    const isFarAbove = elementBottom < viewportTop - unloadDistance;
+    const isFarBelow = elementTop > viewportBottom + unloadDistance;
+    
+    return isFarAbove || isFarBelow;
+  }
+
+  /**
+   * Unload excess videos when we exceed the maximum limit
+   */
+  private unloadExcessVideos(
+    viewportTop: number,
+    viewportBottom: number,
+    maxLoadedVideos: number,
+    loadedVideoCount: number
+  ): void {
+    if (loadedVideoCount <= maxLoadedVideos) {
+      return;
+    }
+    
+    for (const [, post] of this.posts.entries()) {
+      if (loadedVideoCount <= maxLoadedVideos) {
+        break;
+      }
       
-      // Check if post is outside viewport by more than unloadDistance
-      const isFarAbove = elementBottom < viewportTop - unloadDistance;
-      const isFarBelow = elementTop > viewportBottom + unloadDistance;
-      
-      if (isFarAbove || isFarBelow) {
+      if (!this.isPostImmediatelyVisible(post, viewportTop, viewportBottom)) {
         const player = post.getPlayer();
         if (player && !player.getIsUnloaded()) {
-          // Aggressively unload video to free RAM
           player.unload();
-        }
-      } else if (loadedVideoCount > maxLoadedVideos) {
-        // If we have too many loaded videos, unload ones that are not immediately visible
-        const isImmediatelyVisible = elementBottom > viewportTop && elementTop < viewportBottom;
-        if (!isImmediatelyVisible) {
-          const player = post.getPlayer();
-          if (player && !player.getIsUnloaded()) {
-            player.unload();
-            loadedVideoCount--;
-          }
+          loadedVideoCount--;
         }
       }
+    }
+  }
+
+  /**
+   * Check if a post is immediately visible in the viewport
+   */
+  private isPostImmediatelyVisible(
+    post: VideoPost,
+    viewportTop: number,
+    viewportBottom: number
+  ): boolean {
+    const container = post.getContainer();
+    const rect = container.getBoundingClientRect();
+    const elementTop = viewportTop + rect.top;
+    const elementBottom = elementTop + rect.height;
+    
+    return elementBottom > viewportTop && elementTop < viewportBottom;
+  }
+
+  /**
+   * Unload a post's video if it's loaded
+   */
+  private unloadPostVideo(post: VideoPost): void {
+    const player = post.getPlayer();
+    if (player && !player.getIsUnloaded()) {
+      player.unload();
+    }
+  }
+
+  /**
+   * Update scroll velocity for background preloading
+   */
+  private updateScrollVelocity(currentScrollY: number, timeDelta: number): void {
+    if (timeDelta > 0) {
+      const scrollDelta = Math.abs(currentScrollY - this.lastScrollTop);
+      this.scrollVelocity = scrollDelta / timeDelta; // pixels per ms
+    }
+    
+    this.lastScrollTop = currentScrollY;
+    this.lastScrollTime = Date.now();
+  }
+
+  /**
+   * Handle video unloading during scrolling
+   */
+  private handleScrollVideoUnloading(timeDelta: number): void {
+    const unloadInterval = 500;
+    if (timeDelta > unloadInterval) {
+      this.aggressiveVideoUnload();
+    }
+  }
+
+  /**
+   * Handle fast scrolling by stopping background preloading
+   */
+  private handleFastScrolling(): void {
+    const fastScrollThreshold = 3;
+    if (this.scrollVelocity > fastScrollThreshold && this.backgroundPreloadActive) {
+      this.stopBackgroundPreloading();
+    }
+  }
+
+  /**
+   * Cancel preloads for posts that have gone out of view
+   */
+  private cancelOutOfViewPreloads(): void {
+    if (this.activePreloadPosts.size === 0) {
+      return;
+    }
+    
+    for (const postId of Array.from(this.activePreloadPosts)) {
+      this.cancelPreloadIfOutOfView(postId);
+    }
+  }
+
+  /**
+   * Check if header handling should be skipped
+   */
+  private shouldSkipHeaderHandling(): boolean {
+    const suggestions = document.querySelector('.feed-filters__suggestions') as HTMLElement;
+    if (suggestions && suggestions.style.display !== 'none' && suggestions.style.display !== '') {
+      return true;
+    }
+
+    if (this.shuffleMode > 0) {
+      this.ensureHeaderVisibleInRandomMode();
+      return true;
+    }
+
+    return false;
+  }
+
+  /**
+   * Ensure header is visible in random discovery mode
+   */
+  private ensureHeaderVisibleInRandomMode(): void {
+    if (!this.headerBar) {
+      return;
+    }
+    
+    const currentTransform = this.headerBar.style.transform;
+    if (currentTransform && currentTransform !== 'translateY(0)' && currentTransform !== '') {
+      this.headerBar.style.transform = 'translateY(0)';
+    }
+    this.headerBar.style.opacity = '1';
+  }
+
+  /**
+   * Handle header visibility based on scroll direction
+   */
+  private handleHeaderVisibility(
+    currentScrollY: number,
+    lastScrollY: number,
+    isHeaderHidden: boolean
+  ): { lastScrollY: number; isHeaderHidden: boolean } {
+    const scrollDelta = currentScrollY - lastScrollY;
+    const minScrollDelta = 5;
+    
+    if (Math.abs(scrollDelta) <= minScrollDelta) {
+      return { lastScrollY: currentScrollY, isHeaderHidden };
+    }
+
+    if (scrollDelta > 0 && !isHeaderHidden && currentScrollY > 100) {
+      this.hideHeader();
+      return { lastScrollY: currentScrollY, isHeaderHidden: true };
+    }
+    
+    if (scrollDelta < 0 && isHeaderHidden) {
+      this.showHeader();
+      return { lastScrollY: currentScrollY, isHeaderHidden: false };
+    }
+
+    return { lastScrollY: currentScrollY, isHeaderHidden };
+  }
+
+  /**
+   * Hide the header by translating it up
+   */
+  private hideHeader(): void {
+    if (!this.headerBar) {
+      return;
+    }
+    
+    const headerHeight = this.headerBar.getBoundingClientRect().height;
+    const hideDistance = headerHeight + 30;
+    this.headerBar.style.transform = `translateY(-${hideDistance}px)`;
+  }
+
+  /**
+   * Show the header by translating it to normal position
+   */
+  private showHeader(): void {
+    if (this.headerBar) {
+      this.headerBar.style.transform = 'translateY(0)';
     }
   }
 
@@ -4547,92 +5125,22 @@ export class FeedContainer {
     this.lastScrollTime = Date.now();
 
     const handleScroll = () => {
-      // Update scroll velocity for background preloading
       const now = Date.now();
       const currentScrollY = globalThis.scrollY || document.documentElement.scrollTop;
       const timeDelta = now - this.lastScrollTime;
       
-      if (timeDelta > 0) {
-        const scrollDelta = Math.abs(currentScrollY - this.lastScrollTop);
-        this.scrollVelocity = scrollDelta / timeDelta; // pixels per ms
-      }
-      
-      this.lastScrollTop = currentScrollY;
-      this.lastScrollTime = now;
-      
-      // Only unload videos during scrolling (don't remove posts from DOM - too jarring)
-      // Periodically unload videos that are not visible to free RAM
-      // Less frequent to avoid performance impact (every 500ms)
-      const unloadInterval = 500;
-      if (timeDelta > unloadInterval) {
-        // Only unload videos, don't remove posts from DOM
-        this.aggressiveVideoUnload();
-      }
-      
-      // Stop background preloading when scrolling fast to prevent memory buildup
-      // Fast scroll threshold: 3 pixels/ms (very fast scrolling)
-      const fastScrollThreshold = 3;
-      if (this.scrollVelocity > fastScrollThreshold) {
-        if (this.backgroundPreloadActive) {
-          this.stopBackgroundPreloading();
-        }
-      }
-      
-      // Cancel preloads for posts that have gone out of view
-      if (this.activePreloadPosts.size > 0) {
-        for (const postId of Array.from(this.activePreloadPosts)) {
-          this.cancelPreloadIfOutOfView(postId);
-        }
-      }
+      this.updateScrollVelocity(currentScrollY, timeDelta);
+      this.handleScrollVideoUnloading(timeDelta);
+      this.handleFastScrolling();
+      this.cancelOutOfViewPreloads();
 
-      // Don't hide/show header if suggestions overlay is open
-      const suggestions = document.querySelector('.feed-filters__suggestions') as HTMLElement;
-      if (suggestions && suggestions.style.display !== 'none' && suggestions.style.display !== '') {
+      if (this.shouldSkipHeaderHandling()) {
         return;
       }
 
-      // Don't hide/show header if in random discovery mode
-      // Also ensure header is visible if it was previously hidden
-      if (this.shuffleMode > 0) {
-        if (this.headerBar) {
-          const currentTransform = this.headerBar.style.transform;
-          // If header is hidden (transform is not translateY(0)), show it
-          if (currentTransform && currentTransform !== 'translateY(0)' && currentTransform !== '') {
-            this.headerBar.style.transform = 'translateY(0)';
-            isHeaderHidden = false;
-          }
-          // Ensure opacity is always 1 in random discovery mode
-          this.headerBar.style.opacity = '1';
-        }
-        return;
-      }
-
-      const scrollDelta = currentScrollY - lastScrollY;
-
-      // Only hide/show header if scroll delta is significant enough
-      if (Math.abs(scrollDelta) > 5) {
-        if (scrollDelta > 0 && !isHeaderHidden && currentScrollY > 100) {
-          // Scrolling down - hide header
-          // Move up by full header height to completely hide it
-          if (this.headerBar) {
-            // Get the actual rendered height including all padding and safe area
-            const headerHeight = this.headerBar.getBoundingClientRect().height;
-            // Calculate the total distance needed: full height + extra buffer
-            // Use a larger buffer (30px) to absolutely guarantee it's completely hidden
-            const hideDistance = headerHeight + 30;
-            this.headerBar.style.transform = `translateY(-${hideDistance}px)`;
-            isHeaderHidden = true;
-          }
-        } else if (scrollDelta < 0 && isHeaderHidden) {
-          // Scrolling up - show header
-          if (this.headerBar) {
-            this.headerBar.style.transform = 'translateY(0)';
-            isHeaderHidden = false;
-          }
-        }
-      }
-
-      lastScrollY = currentScrollY;
+      const headerState = this.handleHeaderVisibility(currentScrollY, lastScrollY, isHeaderHidden);
+      lastScrollY = headerState.lastScrollY;
+      isHeaderHidden = headerState.isHeaderHidden;
     };
 
     // Use passive listener for better performance
