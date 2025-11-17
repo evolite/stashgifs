@@ -274,6 +274,21 @@
   will-change: scroll-position;
 }
 
+/* Image Post - distinct styling with border */
+.image-post {
+  width: 100%;
+  background: var(--color-surface);
+  border-radius: 12px;
+  overflow: hidden;
+  box-shadow: var(--shadow-subtle);
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--color-accent-weak);
+  /* Performance optimization: contain layout and paint */
+  contain: layout style paint;
+  will-change: scroll-position;
+}
+
 /* Post Header */
 .video-post__header {
   padding: var(--spacing-md) var(--spacing-base);

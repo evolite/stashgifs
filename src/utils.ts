@@ -31,7 +31,7 @@ export function debounce<T extends (...args: never[]) => unknown>(
     if (timeoutId !== null) {
       clearTimeout(timeoutId);
     }
-    timeoutId = window.setTimeout(() => {
+    timeoutId = globalThis.setTimeout(() => {
       func(...args);
       timeoutId = null;
     }, delay);
@@ -83,6 +83,37 @@ export function getAspectRatioClass(aspectRatio: number): string {
 // Removed unused generateId helper
 
 /**
+ * Check if URL is app root or origin
+ */
+function isAppRootOrOrigin(absolute: string, appRoot: string, appRootNoSlash: string): boolean {
+  if (absolute === globalThis.location.origin) return true;
+  if (absolute === appRoot || absolute === appRootNoSlash) return true;
+  return false;
+}
+
+/**
+ * Check if URL starts with app root and has no additional path
+ */
+function isAppRootPath(absolute: string, appRoot: string, appRootNoSlash: string): boolean {
+  if (!absolute.startsWith(appRoot) && !absolute.startsWith(appRootNoSlash)) return false;
+  const remainingPath = absolute.replace(appRoot, '').replace(appRootNoSlash, '');
+  return !remainingPath || remainingPath.length === 0 || remainingPath === '/';
+}
+
+/**
+ * Check if URL appears to be a valid media file
+ */
+function hasValidMediaIndicators(absolute: string): boolean {
+  const hasQueryParams = absolute.includes('?');
+  const hasFileExtension = /\.(mp4|webm|ogg|mov|avi|mkv|m3u8|ts|mpd)(\?|$|\/)/i.test(absolute);
+  
+  if (hasQueryParams || hasFileExtension) return true;
+  
+  // Allow streaming paths that might not have extensions (e.g., HLS playlists)
+  return /\/stream|\/video|\/media|\/play/i.test(absolute);
+}
+
+/**
  * Basic media URL sanity check to avoid assigning the app root as a video src
  */
 export function isValidMediaUrl(url?: string): boolean {
@@ -94,40 +125,24 @@ export function isValidMediaUrl(url?: string): boolean {
   if (trimmed.length === 0) return false;
   
   try {
-    const absolute = trimmed.startsWith('http') ? trimmed : `${window.location.origin}${trimmed}`;
-    const appRoot = `${window.location.origin}/plugin/stashgifs/assets/app/`;
-    const appRootNoSlash = `${window.location.origin}/plugin/stashgifs/assets/app`;
+    const absolute = trimmed.startsWith('http') ? trimmed : `${globalThis.location.origin}${trimmed}`;
+    const appRoot = `${globalThis.location.origin}/plugin/stashgifs/assets/app/`;
+    const appRootNoSlash = `${globalThis.location.origin}/plugin/stashgifs/assets/app`;
     
     // Reject if URL equals origin or app root (with or without trailing slash)
-    if (absolute === window.location.origin) return false;
-    if (absolute === appRoot || absolute === appRootNoSlash) return false;
+    if (isAppRootOrOrigin(absolute, appRoot, appRootNoSlash)) return false;
     
     // Reject URLs that start with app root path (more robust check)
-    if (absolute.startsWith(appRoot) || absolute.startsWith(appRootNoSlash)) {
-      // Only allow if there's additional path content after app root
-      const remainingPath = absolute.replace(appRoot, '').replace(appRootNoSlash, '');
-      if (!remainingPath || remainingPath.length === 0 || remainingPath === '/') {
-        return false;
-      }
-    }
+    if (isAppRootPath(absolute, appRoot, appRootNoSlash)) return false;
     
     // Reject URLs that end with just a slash (directory paths, not files)
-    if (absolute.endsWith('/') && absolute !== `${window.location.origin}/`) return false;
+    if (absolute.endsWith('/') && absolute !== `${globalThis.location.origin}/`) return false;
     
     // Very short paths are suspicious (must have at least some path content)
-    if (absolute.length < window.location.origin.length + 4) return false;
+    if (absolute.length < globalThis.location.origin.length + 4) return false;
     
     // Check if URL appears to be a file path (has extension or query params)
-    // Allow URLs with query parameters (e.g., streaming URLs with tokens)
-    const hasQueryParams = absolute.includes('?');
-    const hasFileExtension = /\.(mp4|webm|ogg|mov|avi|mkv|m3u8|ts|mpd)(\?|$|\/)/i.test(absolute);
-    
-    // If no query params and no file extension, it's likely not a valid media URL
-    if (!hasQueryParams && !hasFileExtension) {
-      // Allow streaming paths that might not have extensions (e.g., HLS playlists)
-      const looksLikeStreamPath = /\/stream|\/video|\/media|\/play/i.test(absolute);
-      if (!looksLikeStreamPath) return false;
-    }
+    if (!hasValidMediaIndicators(absolute)) return false;
     
     return true;
   } catch {
@@ -172,15 +187,13 @@ export function showToast(message: string, duration: number = 2000): void {
   });
 
   // Remove after duration
-  setTimeout(() => {
-    toast.style.opacity = '0';
-    toast.style.transform = 'translateX(-50%) translateY(10px)';
     setTimeout(() => {
-      if (toast.parentNode) {
-        toast.parentNode.removeChild(toast);
-      }
-    }, 300);
-  }, duration);
+      toast.style.opacity = '0';
+      toast.style.transform = 'translateX(-50%) translateY(10px)';
+      setTimeout(() => {
+        toast.remove();
+      }, 300);
+    }, duration);
 }
 
 /**
@@ -202,31 +215,28 @@ export function detectDeviceCapabilities(): DeviceCapabilities {
   const isTablet = /iPad|Android/i.test(navigator.userAgent) && !/Mobile/i.test(navigator.userAgent);
   
   // Detect high DPI display
-  const hasHighDPI = window.devicePixelRatio > 1.5;
+  const hasHighDPI = globalThis.devicePixelRatio > 1.5;
   
   // Estimate available RAM (rough heuristic)
   // Modern browsers don't expose RAM directly, so we use heuristics
-  let estimatedRAM = 2048; // Default 2GB
   // deviceMemory is an experimental API, so we need to check and cast
   const nav = navigator as Navigator & { deviceMemory?: number };
+  let estimatedRAM: number;
   if (nav.deviceMemory) {
     estimatedRAM = nav.deviceMemory * 1024; // Convert GB to MB
+  } else if (isMobile) {
+    estimatedRAM = 2048; // Most modern phones have 4-8GB, but we'll be conservative
+  } else if (isTablet) {
+    estimatedRAM = 3072; // Tablets typically have more RAM
   } else {
-    // Heuristic based on user agent and screen size
-    if (isMobile) {
-      estimatedRAM = 2048; // Most modern phones have 4-8GB, but we'll be conservative
-    } else if (isTablet) {
-      estimatedRAM = 3072; // Tablets typically have more RAM
-    } else {
-      estimatedRAM = 4096; // Desktop typically has more RAM
-    }
+    estimatedRAM = 4096; // Desktop typically has more RAM
   }
   
   // Determine if high-end device
   const isHighEnd = estimatedRAM >= 3072 && hasHighDPI;
   
   // Recommend video quality based on device capabilities
-  let recommendedQuality: '480p' | '720p' | '1080p' = '720p';
+  let recommendedQuality: '480p' | '720p' | '1080p';
   if (estimatedRAM < 2048) {
     recommendedQuality = '480p'; // Low RAM devices
   } else if (estimatedRAM >= 4096 && !isMobile) {
@@ -236,10 +246,18 @@ export function detectDeviceCapabilities(): DeviceCapabilities {
   }
   
   // Recommend thumbnail width based on viewport and DPI
-  const viewportWidth = window.innerWidth;
-  const thumbnailWidth = Math.min(
-    Math.ceil(viewportWidth * (hasHighDPI ? 1.5 : 1.0)),
-    recommendedQuality === '1080p' ? 800 : recommendedQuality === '720p' ? 600 : 400
+  const viewportWidth = globalThis.innerWidth;
+  let thumbnailWidth: number;
+  if (recommendedQuality === '1080p') {
+    thumbnailWidth = 800;
+  } else if (recommendedQuality === '720p') {
+    thumbnailWidth = 600;
+  } else {
+    thumbnailWidth = 400;
+  }
+  const finalThumbnailWidth = Math.min(
+    Math.ceil(viewportWidth * (hasHighDPI ? 1.5 : 1)),
+    thumbnailWidth
   );
   
   return {
@@ -247,7 +265,7 @@ export function detectDeviceCapabilities(): DeviceCapabilities {
     hasHighDPI,
     availableRAM: estimatedRAM,
     recommendedVideoQuality: recommendedQuality,
-    recommendedThumbnailWidth: thumbnailWidth,
+    recommendedThumbnailWidth: finalThumbnailWidth,
   };
 }
 
@@ -280,8 +298,8 @@ export function getOptimizedThumbnailUrl(baseUrl: string, maxWidth: number, maxH
 export function toAbsoluteUrl(url?: string): string | undefined {
   if (!url) return undefined;
   if (/^https?:\/\//i.test(url)) return url;
-  if (url.startsWith('/')) return `${window.location.origin}${url}`;
-  return `${window.location.origin}/${url}`;
+  if (url.startsWith('/')) return `${globalThis.location.origin}${url}`;
+  return `${globalThis.location.origin}/${url}`;
 }
 
 /**

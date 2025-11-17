@@ -9,7 +9,7 @@ import { SceneMarker } from './types.js';
 const FAVORITE_TAG_NAME = 'StashGifs Favorite';
 
 export class FavoritesManager {
-  private api: StashAPI;
+  private readonly api: StashAPI;
   private favoriteTagId: string | null = null;
   private favoriteTagPromise: Promise<string | null> | null = null;
 
@@ -20,7 +20,7 @@ export class FavoritesManager {
   /**
    * Get or create the favorite tag
    */
-  private async getFavoriteTagId(): Promise<string | null> {
+  async getFavoriteTagId(): Promise<string | null> {
     // If we already have it cached, return it
     if (this.favoriteTagId) {
       return this.favoriteTagId;

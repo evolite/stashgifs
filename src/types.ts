@@ -98,6 +98,9 @@ export interface FeedSettings {
   backgroundPreloadDelay?: number; // ms, default: 150ms delay between videos
   backgroundPreloadFastScrollDelay?: number; // ms, default: 400ms delay during fast scrolling
   backgroundPreloadScrollVelocityThreshold?: number; // pixels/ms, default: 2.0 for fast scroll detection
+  enabledFileTypes?: string[]; // File extensions to include (e.g., ['.gif', '.webm']), default: ['.gif']
+  includeImagesInFeed?: boolean; // Whether to include images in feed, default: true
+  imagesOnly?: boolean; // When true, only load images and skip videos
 }
 
 export interface VideoPostData {
@@ -115,5 +118,35 @@ export interface VideoPlayerState {
   duration: number;
   volume: number;
   isFullscreen: boolean;
+}
+
+/**
+ * Image type (simplified for feed display)
+ */
+export interface Image {
+  id: string;
+  title?: string;
+  date?: string;
+  rating100?: number;
+  o_counter?: number;
+  width?: number;
+  height?: number;
+  aspectRatio?: number;
+  paths?: {
+    thumbnail?: string;
+    preview?: string;
+    image?: string;
+  };
+  tags?: Tag[];
+  performers?: Performer[];
+}
+
+/**
+ * ImagePostData - Data structure for image posts in feed
+ */
+export interface ImagePostData {
+  image: Image;
+  imageUrl?: string;
+  aspectRatio?: number; // width/height
 }
 

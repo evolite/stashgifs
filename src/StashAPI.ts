@@ -13,12 +13,14 @@ import {
   SceneFilterInput,
   TagFilterInput,
   PerformerFilterInput,
+  ImageFilterInput,
   FindSceneMarkersResponse,
   FindScenesResponse,
   FindTagsResponse,
   FindTagsExtendedResponse,
   FindPerformersResponse,
   FindSceneResponse,
+  FindImagesResponse,
   GetSavedMarkerFiltersResponse,
   GetSavedFilterResponse,
   CheckTagsHaveMarkersResponse,
@@ -28,16 +30,17 @@ import {
   SceneMarkerCreateResponse,
   SceneUpdateResponse,
   SceneAddOResponse,
+  ImageUpdateResponse,
+  ImageIncrementOResponse,
   TagCreateInput,
   SceneMarkerUpdateInput,
   TypedGraphQLClient,
-  GraphQLResponse,
+  Image,
 } from './graphql/types.js';
 import {
   GraphQLRequestError,
   GraphQLResponseError,
   GraphQLNetworkError,
-  GraphQLAbortError,
   isAbortError,
 } from './graphql/errors.js';
 import { GraphQLClient } from './graphql/client.js';
@@ -56,7 +59,7 @@ interface StashPluginApi {
  * Uses Map to maintain insertion order (most recently accessed at end)
  */
 class LRUCache<K, V> {
-  private cache: Map<K, V>;
+  private readonly cache: Map<K, V>;
   private readonly maxSize: number;
 
   constructor(maxSize: number) {
@@ -126,26 +129,35 @@ class LRUCache<K, V> {
 // Constants for random sorting
 const RANDOM_SORT_MULTIPLIER = 1000000;
 
+/**
+ * Generate a random sort seed in the format random_<8-digit-number>
+ * Example: random_23120320
+ */
+function generateRandomSortSeed(): string {
+  const randomSeed = Math.floor(Math.random() * 100000000).toString().padStart(8, '0');
+  return `random_${randomSeed}`;
+}
+
 export class StashAPI {
-  private baseUrl: string;
-  private apiKey?: string;
+  private readonly baseUrl: string;
+  private readonly apiKey?: string;
   // Cache for tags/performers that have markers (to avoid repeated checks)
   // Using LRU cache to track access order and intelligently evict least recently used
-  private tagsWithMarkersCache: LRUCache<number, boolean>;
-  private performersWithMarkersCache: LRUCache<number, boolean>;
-  private pluginApi?: StashPluginApi;
+  private readonly tagsWithMarkersCache: LRUCache<number, boolean>;
+  private readonly performersWithMarkersCache: LRUCache<number, boolean>;
+  private readonly pluginApi?: StashPluginApi;
   // Centralized GraphQL client
-  private gqlClient: GraphQLClient;
+  private readonly gqlClient: GraphQLClient;
   // Simple cache for search results (TTL: 5 minutes)
-  private searchCache: Map<string, { data: unknown; timestamp: number }> = new Map();
+  private readonly searchCache: Map<string, { data: unknown; timestamp: number }> = new Map();
   private readonly CACHE_TTL = 5 * 60 * 1000; // 5 minutes
   private cacheCleanupInterval?: ReturnType<typeof setInterval>;
   private readonly MAX_CACHE_SIZE = 1000; // Maximum cache entries before cleanup
   private readonly MAX_TAG_CACHE_SIZE = 1000; // Maximum tag/performer cache entries (used for LRU cache)
 
   constructor(baseUrl?: string, apiKey?: string) {
-    // Get from window if available (Stash plugin context)
-    const windowWithStash = window as typeof window & {
+    // Get from globalThis if available (Stash plugin context)
+    const windowWithStash = globalThis as typeof globalThis & {
       PluginApi?: StashPluginApi;
       stash?: StashPluginApi;
     };
@@ -158,7 +170,7 @@ export class StashAPI {
       this.baseUrl = this.pluginApi.baseURL;
     } else {
       // Fallback: use current origin (for plugin context)
-      this.baseUrl = window.location.origin;
+      this.baseUrl = globalThis.location.origin;
     }
     
     this.apiKey = apiKey || this.pluginApi?.apiKey;
@@ -234,110 +246,75 @@ export class StashAPI {
     if (!input || typeof input !== 'object') return {};
     const out: Record<string, unknown> = { ...(input as Record<string, unknown>) };
 
+    const normalizedTags = this.normalizeTagField(out.tags, true);
+    if (normalizedTags) {
+      out.tags = normalizedTags;
+    } else {
+      delete out.tags;
+    }
+
+    const normalizedSceneTags = this.normalizeTagField(out.scene_tags, true);
+    if (normalizedSceneTags) {
+      out.scene_tags = normalizedSceneTags;
+    } else {
+      delete out.scene_tags;
+    }
+
+    const normalizedScenePerformers = this.normalizeTagField(out.scene_performers, false);
+    if (normalizedScenePerformers) {
+      out.scene_performers = normalizedScenePerformers;
+    } else {
+      delete out.scene_performers;
+    }
+
+    return out as SceneMarkerFilterInput;
+  }
+
+  /**
+   * Normalize a tag field (tags, scene_tags, or scene_performers)
+   * @param fieldValue The field value to normalize
+   * @param asString Whether to convert IDs to strings (true for tags/scene_tags, false for scene_performers)
+   * @returns Normalized field value or undefined if invalid
+   */
+  private normalizeTagField(fieldValue: unknown, asString: boolean): unknown {
+    if (!fieldValue) return undefined;
+
     const normalizeIdArray = (val: unknown): number[] | undefined => {
       if (!val) return undefined;
       const arr = Array.isArray(val) ? val : [val];
       const ids = arr
         .map((x) => (typeof x === 'object' && x !== null ? ((x as { id?: unknown; value?: unknown }).id ?? (x as { id?: unknown; value?: unknown }).value ?? x) : x))
-        .map((x) => parseInt(String(x), 10))
+        .map((x) => Number.parseInt(String(x), 10))
         .filter((n) => !Number.isNaN(n));
       return ids.length > 0 ? ids : undefined;
     };
 
-    // Handle tags shapes: either { value, modifier } OR an array of objects/ids
-    if (out.tags) {
-      // Case 1: array of ids/objects
-      if (Array.isArray(out.tags)) {
-        const ids = normalizeIdArray(out.tags);
-        if (ids) {
-          out.tags = { 
-            value: ids.map(id => String(id)), 
-            modifier: 'INCLUDES' 
-          } as SceneMarkerFilterInput['tags'];
-        } else {
-          delete out.tags;
-        }
-      } else if (typeof out.tags === 'object') {
-        // Case 2: { value: number[] | { items:[{id,label}], ... }, modifier? }
-        const tagsObj = out.tags as { value?: unknown; modifier?: 'INCLUDES' | 'INCLUDES_ALL' | 'EXCLUDES' };
-        let raw = tagsObj.value;
-        // Stash saved filter format: value: { items: [{id,label},...], excluded:[], depth:-1 }
-        if (raw && typeof raw === 'object' && Array.isArray((raw as { items?: unknown[] }).items)) {
-          raw = (raw as { items: unknown[] }).items;
-        }
-        const ids = normalizeIdArray(raw);
-        if (ids) {
-          out.tags = { 
-            value: ids.map(id => String(id)), 
-            modifier: tagsObj.modifier ?? 'INCLUDES' 
-          } as SceneMarkerFilterInput['tags'];
-        } else {
-          delete out.tags;
-        }
-      }
+    type TagsModifier = 'INCLUDES' | 'INCLUDES_ALL' | 'EXCLUDES';
+
+    if (Array.isArray(fieldValue)) {
+      const ids = normalizeIdArray(fieldValue);
+      if (!ids) return undefined;
+      return {
+        value: asString ? ids.map(String) : ids.map(Number),
+        modifier: 'INCLUDES' as TagsModifier
+      };
     }
 
-    // Handle scene_tags similarly
-    if (out.scene_tags) {
-      if (Array.isArray(out.scene_tags)) {
-        const ids = normalizeIdArray(out.scene_tags);
-        if (ids) {
-          out.scene_tags = { 
-            value: ids.map(id => String(id)), 
-            modifier: 'INCLUDES' 
-          } as SceneMarkerFilterInput['scene_tags'];
-        } else {
-          delete out.scene_tags;
-        }
-      } else if (typeof out.scene_tags === 'object') {
-        const sceneTagsObj = out.scene_tags as { value?: unknown; modifier?: 'INCLUDES' | 'INCLUDES_ALL' | 'EXCLUDES' };
-        let raw = sceneTagsObj.value;
-        if (raw && typeof raw === 'object' && Array.isArray((raw as { items?: unknown[] }).items)) {
-          raw = (raw as { items: unknown[] }).items;
-        }
-        const ids = normalizeIdArray(raw);
-        if (ids) {
-          out.scene_tags = { 
-            value: ids.map(id => String(id)), 
-            modifier: sceneTagsObj.modifier ?? 'INCLUDES' 
-          } as SceneMarkerFilterInput['scene_tags'];
-        } else {
-          delete out.scene_tags;
-        }
+    if (typeof fieldValue === 'object') {
+      const fieldObj = fieldValue as { value?: unknown; modifier?: TagsModifier };
+      let raw = fieldObj.value;
+      if (raw && typeof raw === 'object' && Array.isArray((raw as { items?: unknown[] }).items)) {
+        raw = (raw as { items: unknown[] }).items;
       }
+      const ids = normalizeIdArray(raw);
+      if (!ids) return undefined;
+      return {
+        value: asString ? ids.map(String) : ids.map(Number),
+        modifier: fieldObj.modifier ?? 'INCLUDES'
+      };
     }
 
-    // Handle scene_performers similarly
-    if (out.scene_performers) {
-      if (Array.isArray(out.scene_performers)) {
-        const ids = normalizeIdArray(out.scene_performers);
-        if (ids) {
-          out.scene_performers = { 
-            value: ids.map(id => Number(id)), 
-            modifier: 'INCLUDES' 
-          } as SceneMarkerFilterInput['scene_performers'];
-        } else {
-          delete out.scene_performers;
-        }
-      } else if (typeof out.scene_performers === 'object') {
-        const scenePerformersObj = out.scene_performers as { value?: unknown; modifier?: 'INCLUDES' | 'INCLUDES_ALL' | 'EXCLUDES' };
-        let raw = scenePerformersObj.value;
-        if (raw && typeof raw === 'object' && Array.isArray((raw as { items?: unknown[] }).items)) {
-          raw = (raw as { items: unknown[] }).items;
-        }
-        const ids = normalizeIdArray(raw);
-        if (ids) {
-          out.scene_performers = { 
-            value: ids.map(id => Number(id)), 
-            modifier: scenePerformersObj.modifier ?? 'INCLUDES' 
-          } as SceneMarkerFilterInput['scene_performers'];
-        } else {
-          delete out.scene_performers;
-        }
-      }
-    }
-
-    return out as SceneMarkerFilterInput;
+    return undefined;
   }
 
   /**
@@ -379,28 +356,20 @@ export class StashAPI {
    * Internal implementation of searchMarkerTags
    */
   private async _searchMarkerTags(term: string, limit: number = 10, signal?: AbortSignal): Promise<Array<{ id: string; name: string }>> {
-    // When no search term, fetch a smaller assortment for faster loading
-    // When searching, fetch more tags matching the search term
-    const fetchLimit = term && term.trim() !== '' ? limit * 3 : Math.max(limit, 20);
+    if (this.isAborted(signal)) return [];
+
+    const hasSearchTerm = term && term.trim() !== '';
+    const fetchLimit = hasSearchTerm ? limit * 3 : Math.max(limit, 20);
+    
     const filter: FindFilterInput = { 
       per_page: fetchLimit, 
-      page: 1 
+      page: 1,
+      ...(hasSearchTerm ? { q: term.trim() } : { sort: generateRandomSortSeed() })
     };
     
-    // Only add query if term is provided and not empty
-    if (term && term.trim() !== '') {
-      filter.q = term.trim();
-    } else {
-      // When no search term, use random sorting to get a diverse assortment
-      filter.sort = `random_${Math.floor(Math.random() * RANDOM_SORT_MULTIPLIER)}`;
-    }
-    
-    // Filter tags based on whether actively searching or getting suggestions
-    // When actively searching (term provided): match any tag with more than 0 markers
-    // When getting suggestions (no term): keep higher threshold for better quality suggestions
     const tag_filter: TagFilterInput = {
       marker_count: {
-        value: (term && term.trim() !== '') ? 0 : 10,
+        value: hasSearchTerm ? 0 : 10,
         modifier: 'GREATER_THAN'
       }
     };
@@ -408,35 +377,40 @@ export class StashAPI {
     const variables = { filter, tag_filter };
 
     try {
-      // Check if already aborted
-      if (signal?.aborted) return [];
-      
       const result = await this.gqlClient.query<FindTagsResponse>({
         query: queries.FIND_TAGS,
         variables,
         signal,
       });
-      // Check if aborted after query
-      if (signal?.aborted) return [];
+      
+      if (this.isAborted(signal)) return [];
+      
       const tags = result.data?.findTags?.tags ?? [];
-      
-      // Check if aborted before processing
-      if (signal?.aborted) return [];
-      
-      // Return tags (already randomly sorted by GraphQL when no search term)
       return tags.slice(0, limit);
     } catch (error: unknown) {
-      // Ignore AbortError - it's expected when cancelling
-      if (isAbortError(error) || signal?.aborted) {
+      if (isAbortError(error) || this.isAborted(signal)) {
         return [];
       }
-      // Log error for search methods (non-critical, return empty array)
-      if (error instanceof GraphQLRequestError || error instanceof GraphQLResponseError || error instanceof GraphQLNetworkError) {
-        console.warn('searchMarkerTags failed', error);
-      } else {
-        console.warn('searchMarkerTags failed', error instanceof Error ? error.message : 'Unknown error');
-      }
+      this.logSearchError('searchMarkerTags', error);
       return [];
+    }
+  }
+
+  /**
+   * Check if operation is aborted
+   */
+  private isAborted(signal?: AbortSignal): boolean {
+    return signal?.aborted ?? false;
+  }
+
+  /**
+   * Log search error with appropriate detail level
+   */
+  private logSearchError(method: string, error: unknown): void {
+    if (error instanceof GraphQLRequestError || error instanceof GraphQLResponseError || error instanceof GraphQLNetworkError) {
+      console.warn(`${method} failed`, error);
+    } else {
+      console.warn(`${method} failed`, error instanceof Error ? error.message : 'Unknown error');
     }
   }
 
@@ -479,23 +453,17 @@ export class StashAPI {
    * Internal implementation of searchPerformers
    */
   private async _searchPerformers(term: string, limit: number = 10, signal?: AbortSignal): Promise<Array<{ id: string; name: string; image_path?: string }>> {
-    // When no search term, fetch a smaller assortment for faster loading
-    // When searching, fetch more performers matching the search term
-    const fetchLimit = term && term.trim() !== '' ? limit * 3 : Math.max(limit, 20);
+    if (this.isAborted(signal)) return [];
+
+    const hasSearchTerm = term && term.trim() !== '';
+    const fetchLimit = hasSearchTerm ? limit * 3 : Math.max(limit, 20);
+    
     const filter: FindFilterInput = { 
       per_page: fetchLimit, 
-      page: 1 
+      page: 1,
+      ...(hasSearchTerm ? { q: term.trim() } : { sort: generateRandomSortSeed() })
     };
     
-    // Only add query if term is provided and not empty
-    if (term && term.trim() !== '') {
-      filter.q = term.trim();
-    } else {
-      // When no search term, use random sorting to get a diverse assortment
-      filter.sort = `random_${Math.floor(Math.random() * RANDOM_SORT_MULTIPLIER)}`;
-    }
-    
-    // Filter to only performers with at least 1 scene (for autocompletion)
     const performer_filter: PerformerFilterInput = {
       scene_count: {
         value: 0,
@@ -506,29 +474,21 @@ export class StashAPI {
     const variables = { filter, performer_filter };
 
     try {
-      // Check if already aborted
-      if (signal?.aborted) return [];
-      
       const result = await this.gqlClient.query<FindPerformersResponse>({
         query: queries.FIND_PERFORMERS,
         variables,
         signal,
       });
-      // Check if aborted after query
-      if (signal?.aborted) return [];
+      
+      if (this.isAborted(signal)) return [];
+      
       const performers = result.data?.findPerformers?.performers ?? [];
-      
-      // Check if aborted before processing
-      if (signal?.aborted) return [];
-      
-      // Return performers (already randomly sorted by GraphQL when no search term)
       return performers.slice(0, limit);
     } catch (e: unknown) {
-      // Ignore AbortError - it's expected when cancelling
-      if ((e instanceof Error && e.name === 'AbortError') || signal?.aborted) {
+      if (isAbortError(e) || this.isAborted(signal)) {
         return [];
       }
-      console.warn('searchPerformers failed', e);
+      this.logSearchError('searchPerformers', e);
       return [];
     }
   }
@@ -581,226 +541,301 @@ export class StashAPI {
    * For non-primary tags, we fetch markers and filter client-side.
    */
   async fetchSceneMarkers(filters?: FilterOptions, signal?: AbortSignal): Promise<SceneMarker[]> {
-    // Check if already aborted
-    if (signal?.aborted) return [];
+    if (this.isAborted(signal)) return [];
     
-    console.log('[StashAPI] fetchSceneMarkers called with filters:', {
-      tags: filters?.tags,
-      performers: filters?.performers,
-      query: filters?.query,
-      savedFilterId: filters?.savedFilterId,
-      shuffleMode: filters?.shuffleMode
-    });
+    // Fetching scene markers with filters
     
-    // In shuffle mode, query scenes directly to include scenes with 0 markers
     if (filters?.shuffleMode) {
       return this.fetchScenesForShuffle(filters, signal);
     }
     
-    // If a saved filter is specified, fetch its criteria first
-    let savedFilterCriteria: GetSavedFilterResponse['findSavedFilter'] = null;
-    if (filters?.savedFilterId) {
-      savedFilterCriteria = await this.getSavedFilter(filters.savedFilterId);
-      if (signal?.aborted) return [];
-    }
+    const savedFilterCriteria = await this.getSavedFilterCriteria(filters, signal);
+    if (this.isAborted(signal)) return [];
 
     try {
-      // Calculate random page if no offset specified
-      let page = filters?.offset ? Math.floor(filters.offset / (filters.limit || 20)) + 1 : 1;
       const limit = filters?.limit || 20;
+      let page = this.calculateInitialPage(limit, filters);
       
-      // Check if any filters are active (tags, saved filter, or query)
-      // Note: When tags are searched, we filter by tags but still use random sorting
-      const hasActiveFilters = !!(filters?.tags?.length || filters?.savedFilterId || (filters?.query && filters.query.trim() !== ''));
-      
-      // If we want random and no offset, get count first to calculate random page
-      // Skip random page selection when filters are active - start from page 1 instead
-      // But we still use random sorting even with tag filters (just filter the results)
-      if (!filters?.offset && !hasActiveFilters) {
-        const countFilter: FindFilterInput = { per_page: 1, page: 1 };
-        // Start with saved filter criteria if available
-        if (savedFilterCriteria?.find_filter) {
-          Object.assign(countFilter, savedFilterCriteria.find_filter);
-        }
-        // Manual query only if no saved filter OR if explicitly provided
-        if (filters?.query && filters.query.trim() !== '') {
-          countFilter.q = filters.query;
-        }
-        
-        // Normalize saved filter object_filter before using in variables
-        const countSceneFilterRaw = savedFilterCriteria?.object_filter || {};
-        const countSceneFilter = this.normalizeMarkerFilter(countSceneFilterRaw);
-        
-        // If a saved filter is active, ONLY use its criteria (don't combine with manual filters)
-        // Otherwise, apply manual tag filters (only tags - primary_tags is deprecated)
-        if (!filters?.savedFilterId) {
-          // Only use tags filter - the GraphQL tags filter checks the tags array (which includes primary tag)
-          const tagFilter = filters?.tags;
-          if (tagFilter && tagFilter.length > 0) {
-            const tagIds = tagFilter
-              .map((v) => parseInt(String(v), 10))
-              .filter((n) => !Number.isNaN(n));
-            if (tagIds.length > 0) {
-              // SceneMarkerFilterType tags filter requires: value (array of strings), excludes, modifier, depth
-              // For single tag: use INCLUDES_ALL, for multiple tags: use INCLUDES (OR logic)
-              countSceneFilter.tags = {
-                value: tagIds.map(id => String(id)), // Array of strings, not numbers
-                excludes: [],
-                modifier: tagIds.length === 1 ? 'INCLUDES_ALL' : 'INCLUDES',
-                depth: 0
-              };
-            }
-          }
-        }
-        
-        try {
-          if (signal?.aborted) return [];
-          const countResult = await this.gqlClient.query<CheckTagsHaveMarkersResponse>({
-            query: queries.GET_MARKER_COUNT,
-            variables: {
-              filter: countFilter,
-              scene_marker_filter: Object.keys(countSceneFilter).length > 0 ? countSceneFilter : {},
-            },
-            signal,
-          });
-          if (signal?.aborted) return [];
-          const totalCount = countResult.data?.findSceneMarkers?.count || 0;
-          if (totalCount > 0) {
-            const totalPages = Math.ceil(totalCount / limit);
-            page = Math.floor(Math.random() * totalPages) + 1;
-          }
-        } catch (e: unknown) {
-          if (isAbortError(e) || signal?.aborted) {
-            return [];
-          }
-          console.warn('Failed to get count for random page, using page 1', e);
-        }
+      if (!filters?.offset && !this.hasActiveFilters(filters)) {
+        page = await this.calculateRandomPage(filters, savedFilterCriteria, limit, signal);
+        if (this.isAborted(signal)) return [];
       }
 
-      // Check if aborted before main query
-      if (signal?.aborted) return [];
+      const filter = this.buildFindFilter(filters, savedFilterCriteria, page, limit);
+      const sceneMarkerFilter = this.buildSceneMarkerFilter(filters, savedFilterCriteria);
       
-      {
-        // Build filter - start with saved filter criteria if available, then allow manual overrides
-        const filter: FindFilterInput = {
-          per_page: limit,
-          page: page,
-        };
-        // If saved filter exists, start with its find_filter criteria
-        if (savedFilterCriteria?.find_filter) {
-          Object.assign(filter, savedFilterCriteria.find_filter);
-        }
-        // Manual query overrides saved filter query (if user typed something)
-        if (filters?.query && filters.query.trim() !== '') {
-          filter.q = filters.query;
-          console.log('[StashAPI] Applying query filter:', { query: filters.query });
-        }
-        // Override page with our calculated random page
-        filter.page = page;
-        filter.per_page = limit;
-        // Use random sorting for better randomization (even when filters are active)
-        // This randomizes the order of filtered results
-        filter.sort = `random_${Math.floor(Math.random() * RANDOM_SORT_MULTIPLIER)}`;
-
-        // Build scene_marker_filter - start with saved filter object_filter if available
-        const sceneMarkerFilterRaw: SceneMarkerFilterInput | Record<string, unknown> = savedFilterCriteria?.object_filter ? { ...savedFilterCriteria.object_filter } : {};
-        const sceneMarkerFilter: SceneMarkerFilterInput = this.normalizeMarkerFilter(sceneMarkerFilterRaw);
-        
-        // If a saved filter is active, ONLY use its criteria (don't combine with manual filters)
-        // Otherwise, apply manual tag filters (only tags - primary_tags is deprecated)
-        if (!filters?.savedFilterId) {
-          // Only use tags filter - the GraphQL tags filter checks the tags array (which includes primary tag)
-          const tagFilter = filters?.tags;
-          if (tagFilter && tagFilter.length > 0) {
-            const tagIds = tagFilter
-              .map((v) => parseInt(String(v), 10))
-              .filter((n) => !Number.isNaN(n));
-            if (tagIds.length > 0) {
-              // SceneMarkerFilterType tags filter requires: value (array of strings), excludes, modifier, depth
-              // For single tag: use INCLUDES_ALL (works the same as INCLUDES for single tag)
-              // For multiple tags: use INCLUDES (OR logic) to find markers with ANY of the tags
-              // (INCLUDES_ALL would require ALL tags to be present, which is usually not what we want)
-              sceneMarkerFilter.tags = {
-                value: tagIds.map(id => String(id)), // Array of strings, not numbers
-                excludes: [],
-                modifier: tagIds.length === 1 ? 'INCLUDES_ALL' : 'INCLUDES', // INCLUDES for multiple tags (OR logic)
-                depth: 0
-              };
-              console.log('[StashAPI] Applying tags filter:', { 
-                tagIds: tagIds.map(id => String(id)), 
-                modifier: tagIds.length === 1 ? 'INCLUDES_ALL' : 'INCLUDES',
-                reason: tagIds.length > 1 ? 'Multiple tags - using INCLUDES (OR logic)' : 'Single tag - using INCLUDES_ALL'
-              });
-            }
-          }
-        }
-        if (filters?.studios && filters.studios.length > 0) {
-          sceneMarkerFilter.scene_tags = { value: filters.studios, modifier: 'INCLUDES' };
-        }
-        // Filter by performers using the correct field name
-        if (filters?.performers && filters.performers.length > 0 && !filters?.savedFilterId) {
-          const performerIds = filters.performers
-            .map((v) => parseInt(String(v), 10))
-            .filter((n) => !Number.isNaN(n));
-          if (performerIds.length > 0) {
-            // IMPORTANT: value must be an array of numbers, not strings
-            // Use INCLUDES for single performer, INCLUDES_ALL for multiple
-            sceneMarkerFilter.performers = { 
-              value: performerIds, // Array of numbers
-              modifier: performerIds.length > 1 ? 'INCLUDES_ALL' : 'INCLUDES' 
-            };
-            console.log('[StashAPI] Applying performer filter (plugin):', { performerIds, modifier: performerIds.length > 1 ? 'INCLUDES_ALL' : 'INCLUDES' });
-          }
-        }
-
-        const result = await this.gqlClient.query<FindSceneMarkersResponse>({
-          query: queries.FIND_SCENE_MARKERS,
-          variables: {
-            filter,
-            scene_marker_filter: Object.keys(sceneMarkerFilter).length > 0 ? sceneMarkerFilter : {},
-          },
-          signal,
-        });
-        if (signal?.aborted) return [];
-        const responseData = result.data?.findSceneMarkers;
-        let markers = responseData?.scene_markers || [];
-        if ((responseData?.count ?? 0) > 0 && markers.length === 0) {
-          console.warn('[StashAPI] Count > 0 but no markers returned - retrying with page 1');
-          // If count > 0 but no markers, try page 1 instead
-          if (filter.page !== 1) {
-            if (signal?.aborted) return [];
-            filter.page = 1;
-            const retryResult = await this.gqlClient.query<FindSceneMarkersResponse>({
-              query: queries.FIND_SCENE_MARKERS,
-              variables: {
-                filter,
-                scene_marker_filter: Object.keys(sceneMarkerFilter).length > 0 ? sceneMarkerFilter : {},
-              },
-              signal,
-            });
-            if (signal?.aborted) return [];
-            const retryData = retryResult.data?.findSceneMarkers;
-            markers = retryData?.scene_markers || [];
-          }
-        }
-        
-        if (signal?.aborted) return [];
-        
-        // Filter to scenes with less than 5 markers when shuffle mode is enabled
-        if (filters?.shuffleMode && markers.length > 0) {
-          markers = this.filterScenesByMarkerCount(markers, 5);
-        }
-        
-        return markers;
+      const markers = await this.executeMarkerQuery(filter, sceneMarkerFilter, signal);
+      if (this.isAborted(signal)) return [];
+      
+      if (filters?.shuffleMode && markers.length > 0) {
+        return this.filterScenesByMarkerCount(markers, 5);
       }
+      
+      return markers;
     } catch (e: unknown) {
-      // Ignore AbortError - it's expected when cancelling
-      if ((e instanceof Error && e.name === 'AbortError') || signal?.aborted) {
+      if ((e instanceof Error && e.name === 'AbortError') || this.isAborted(signal)) {
         return [];
       }
       console.error('Error fetching scene markers:', e);
       return [];
     }
+  }
+
+  /**
+   * Get saved filter criteria if a saved filter ID is provided
+   */
+  private async getSavedFilterCriteria(filters?: FilterOptions, signal?: AbortSignal): Promise<GetSavedFilterResponse['findSavedFilter']> {
+    if (!filters?.savedFilterId) return null;
+    return await this.getSavedFilter(filters.savedFilterId);
+  }
+
+  /**
+   * Check if any active filters are present
+   */
+  private hasActiveFilters(filters?: FilterOptions): boolean {
+    return !!(filters?.tags?.length || filters?.savedFilterId || (filters?.query && filters.query.trim() !== ''));
+  }
+
+  /**
+   * Calculate initial page number from offset
+   */
+  private calculateInitialPage(limit: number, filters?: FilterOptions): number {
+    return filters?.offset ? Math.floor(filters.offset / limit) + 1 : 1;
+  }
+
+  /**
+   * Calculate random page for unfiltered queries
+   */
+  private async calculateRandomPage(
+    filters: FilterOptions | undefined,
+    savedFilterCriteria: GetSavedFilterResponse['findSavedFilter'],
+    limit: number,
+    signal?: AbortSignal
+  ): Promise<number> {
+    const countFilter = this.buildCountFilter(filters, savedFilterCriteria);
+    const countSceneFilter = this.buildCountSceneFilter(filters, savedFilterCriteria);
+
+    try {
+      if (this.isAborted(signal)) return 1;
+      
+      const countResult = await this.gqlClient.query<CheckTagsHaveMarkersResponse>({
+        query: queries.GET_MARKER_COUNT,
+        variables: {
+          filter: countFilter,
+          scene_marker_filter: Object.keys(countSceneFilter).length > 0 ? countSceneFilter : {},
+        },
+        signal,
+      });
+      
+      if (this.isAborted(signal)) return 1;
+      
+      const totalCount = countResult.data?.findSceneMarkers?.count || 0;
+      if (totalCount > 0) {
+        const totalPages = Math.ceil(totalCount / limit);
+        return Math.floor(Math.random() * totalPages) + 1;
+      }
+    } catch (e: unknown) {
+      if (isAbortError(e) || this.isAborted(signal)) {
+        return 1;
+      }
+      console.warn('Failed to get count for random page, using page 1', e);
+    }
+    
+    return 1;
+  }
+
+  /**
+   * Build count filter for random page calculation
+   */
+  private buildCountFilter(filters: FilterOptions | undefined, savedFilterCriteria: GetSavedFilterResponse['findSavedFilter']): FindFilterInput {
+    const countFilter: FindFilterInput = { per_page: 1, page: 1 };
+    
+    if (savedFilterCriteria?.find_filter) {
+      Object.assign(countFilter, savedFilterCriteria.find_filter);
+    }
+    
+    if (filters?.query && filters.query.trim() !== '') {
+      countFilter.q = filters.query;
+    }
+    
+    return countFilter;
+  }
+
+  /**
+   * Build count scene filter for random page calculation
+   */
+  private buildCountSceneFilter(filters: FilterOptions | undefined, savedFilterCriteria: GetSavedFilterResponse['findSavedFilter']): SceneMarkerFilterInput {
+    const countSceneFilterRaw = savedFilterCriteria?.object_filter || {};
+    const countSceneFilter = this.normalizeMarkerFilter(countSceneFilterRaw);
+    
+    if (!filters?.savedFilterId && filters?.tags && filters.tags.length > 0) {
+      const tagIds = this.parseTagIds(filters.tags);
+      if (tagIds.length > 0) {
+        countSceneFilter.tags = {
+          value: tagIds.map(String),
+          excludes: [],
+          modifier: tagIds.length === 1 ? 'INCLUDES_ALL' : 'INCLUDES',
+          depth: 0
+        };
+      }
+    }
+    
+    return countSceneFilter;
+  }
+
+  /**
+   * Parse tag IDs from filter array
+   */
+  private parseTagIds(tags: (string | number)[]): number[] {
+    return tags
+      .map((v) => Number.parseInt(String(v), 10))
+      .filter((n) => !Number.isNaN(n));
+  }
+
+  /**
+   * Build find filter for main query
+   */
+  private buildFindFilter(
+    filters: FilterOptions | undefined,
+    savedFilterCriteria: GetSavedFilterResponse['findSavedFilter'],
+    page: number,
+    limit: number
+  ): FindFilterInput {
+    const filter: FindFilterInput = {
+      per_page: limit,
+      page: page,
+      sort: generateRandomSortSeed(),
+    };
+    
+    if (savedFilterCriteria?.find_filter) {
+      Object.assign(filter, savedFilterCriteria.find_filter);
+    }
+    
+    if (filters?.query && filters.query.trim() !== '') {
+      filter.q = filters.query;
+      // Applying query filter
+    }
+    
+    filter.page = page;
+    filter.per_page = limit;
+    
+    return filter;
+  }
+
+  /**
+   * Build scene marker filter
+   */
+  private buildSceneMarkerFilter(
+    filters: FilterOptions | undefined,
+    savedFilterCriteria: GetSavedFilterResponse['findSavedFilter']
+  ): SceneMarkerFilterInput {
+    const sceneMarkerFilterRaw: SceneMarkerFilterInput | Record<string, unknown> = 
+      savedFilterCriteria?.object_filter ? { ...savedFilterCriteria.object_filter } : {};
+    const sceneMarkerFilter = this.normalizeMarkerFilter(sceneMarkerFilterRaw);
+    
+    if (!filters?.savedFilterId) {
+      this.applyTagFilter(filters, sceneMarkerFilter);
+      this.applyPerformerFilter(filters, sceneMarkerFilter);
+    }
+    
+    if (filters?.studios && filters.studios.length > 0) {
+      sceneMarkerFilter.scene_tags = { value: filters.studios, modifier: 'INCLUDES' };
+    }
+    
+    return sceneMarkerFilter;
+  }
+
+  /**
+   * Apply tag filter to scene marker filter
+   */
+  private applyTagFilter(filters: FilterOptions | undefined, sceneMarkerFilter: SceneMarkerFilterInput): void {
+    if (!filters?.tags || filters.tags.length === 0) return;
+    
+    const tagIds = this.parseTagIds(filters.tags);
+    if (tagIds.length === 0) return;
+    
+    sceneMarkerFilter.tags = {
+      value: tagIds.map(String),
+      excludes: [],
+      modifier: tagIds.length === 1 ? 'INCLUDES_ALL' : 'INCLUDES',
+      depth: 0
+    };
+    
+    // Applying tags filter
+  }
+
+  /**
+   * Apply performer filter to scene marker filter
+   */
+  private applyPerformerFilter(filters: FilterOptions | undefined, sceneMarkerFilter: SceneMarkerFilterInput): void {
+    if (!filters?.performers || filters.performers.length === 0) return;
+    
+    const performerIds = this.parseTagIds(filters.performers);
+    if (performerIds.length === 0) return;
+    
+    sceneMarkerFilter.performers = { 
+      value: performerIds,
+      modifier: performerIds.length > 1 ? 'INCLUDES_ALL' : 'INCLUDES' 
+    };
+    
+    // Applying performer filter
+  }
+
+  /**
+   * Execute marker query with retry logic
+   */
+  private async executeMarkerQuery(
+    filter: FindFilterInput,
+    sceneMarkerFilter: SceneMarkerFilterInput,
+    signal?: AbortSignal
+  ): Promise<SceneMarker[]> {
+    const result = await this.gqlClient.query<FindSceneMarkersResponse>({
+      query: queries.FIND_SCENE_MARKERS,
+      variables: {
+        filter,
+        scene_marker_filter: Object.keys(sceneMarkerFilter).length > 0 ? sceneMarkerFilter : {},
+      },
+      signal,
+    });
+    
+    if (this.isAborted(signal)) return [];
+    
+    const responseData = result.data?.findSceneMarkers;
+    let markers = responseData?.scene_markers || [];
+    
+    if ((responseData?.count ?? 0) > 0 && markers.length === 0 && filter.page !== 1) {
+      return this.retryMarkerQuery(filter, sceneMarkerFilter, signal);
+    }
+    
+    return markers;
+  }
+
+  /**
+   * Retry marker query with page 1
+   */
+  private async retryMarkerQuery(
+    filter: FindFilterInput,
+    sceneMarkerFilter: SceneMarkerFilterInput,
+    signal?: AbortSignal
+  ): Promise<SceneMarker[]> {
+    console.warn('[StashAPI] Count > 0 but no markers returned - retrying with page 1');
+    
+    if (this.isAborted(signal)) return [];
+    
+    filter.page = 1;
+    const retryResult = await this.gqlClient.query<FindSceneMarkersResponse>({
+      query: queries.FIND_SCENE_MARKERS,
+      variables: {
+        filter,
+        scene_marker_filter: Object.keys(sceneMarkerFilter).length > 0 ? sceneMarkerFilter : {},
+      },
+      signal,
+    });
+    
+    if (this.isAborted(signal)) return [];
+    
+    const retryData = retryResult.data?.findSceneMarkers;
+    return retryData?.scene_markers || [];
   }
 
   /**
@@ -814,92 +849,109 @@ export class StashAPI {
       const limit = filters?.limit || 20;
       let page = filters?.offset ? Math.floor(filters?.offset / limit) + 1 : 1;
 
-      // Calculate random page if no offset
       if (!filters?.offset) {
-        const countFilter: FindFilterInput = { per_page: 1, page: 1 };
-        let sceneFilter: SceneFilterInput | null = null;
-        
-        // Use has_markers filter based on includeScenesWithoutMarkers preference
-        // Mode 1 (includeScenesWithoutMarkers = false): All scenes (no filter)
-        // Mode 2 (includeScenesWithoutMarkers = true): Only scenes with no markers (has_markers = false)
-        if (filters?.includeScenesWithoutMarkers) {
-          // Only scenes with no markers - use string "false"
-          sceneFilter = { has_markers: 'false' };
-        }
-        // If includeScenesWithoutMarkers is false, sceneFilter stays null (no filter = all scenes)
-
-        try {
-          if (signal?.aborted) return [];
-          const countResult = await this.gqlClient.query<FindScenesResponse>({
-            query: queries.GET_SCENE_COUNT,
-            variables: { filter: countFilter, ...(sceneFilter && { scene_filter: sceneFilter }) },
-            signal,
-          });
-          if (signal?.aborted) return [];
-          const totalCount = countResult.data?.findScenes?.count || 0;
-          if (totalCount > 0) {
-            const totalPages = Math.ceil(totalCount / limit);
-            page = Math.floor(Math.random() * totalPages) + 1;
-          }
-        } catch (e: unknown) {
-          if (isAbortError(e) || signal?.aborted) {
-            return [];
-          }
-          console.warn('Failed to get scene count for shuffle, using page 1', e);
-        }
+        page = await this.calculateRandomScenePage(filters, limit, signal);
+        if (this.isAborted(signal)) return [];
       }
 
-      if (signal?.aborted) return [];
+      if (this.isAborted(signal)) return [];
 
       const filter: FindFilterInput = {
         per_page: limit,
         page: page,
-        sort: `random_${Math.floor(Math.random() * 1000000)}`,
+        sort: generateRandomSortSeed(),
       };
 
-      let sceneFilter: SceneFilterInput | null = null;
+      const sceneFilter = this.buildShuffleSceneFilter(filters);
+      const scenes = await this.fetchScenesForShuffleQuery(filter, sceneFilter, signal);
       
-      // Use has_markers filter based on includeScenesWithoutMarkers preference
-      // Mode 1 (includeScenesWithoutMarkers = false): All scenes (no filter)
-      // Mode 2 (includeScenesWithoutMarkers = true): Only scenes with no markers (has_markers = false)
-      if (filters?.includeScenesWithoutMarkers) {
-        // Only scenes with no markers - use string "false"
-        sceneFilter = { has_markers: 'false' };
-      }
-      // If includeScenesWithoutMarkers is false, sceneFilter stays null (no filter = all scenes)
+      if (this.isAborted(signal)) return [];
 
-      let scenes: Scene[] = [];
-
-      const result = await this.gqlClient.query<FindScenesResponse>({
-        query: queries.FIND_SCENES,
-        variables: { filter, ...(sceneFilter && { scene_filter: sceneFilter }) },
-        signal,
-      });
-      if (signal?.aborted) return [];
-      scenes = result.data?.findScenes?.scenes || [];
-
-      // Create synthetic markers for each scene (one per scene, starting at 0 seconds)
-      // This allows us to display scenes with 0 markers
-      // Note: Synthetic markers don't have marker stream URLs, so they won't work in non-HD mode
-      // They will only work in HD mode (which uses full scene videos)
-      const syntheticMarkers: SceneMarker[] = scenes.map((scene) => ({
-        id: `synthetic-${scene.id}-${Date.now()}-${Math.random()}`,
-        title: scene.title || 'Untitled',
-        seconds: 0, // Will be randomized in createPost when shuffle mode is active
-        stream: undefined, // No marker stream for synthetic markers - they require HD mode
-        scene: scene,
-        primary_tag: undefined,
-        tags: [],
-      }));
-
-      return syntheticMarkers;
+      return this.createSyntheticMarkers(scenes);
     } catch (e: unknown) {
-      if (isAbortError(e) || signal?.aborted) {
+      if (isAbortError(e) || this.isAborted(signal)) {
         return [];
       }
       console.error('Error fetching scenes for shuffle', e);
       return [];
     }
+  }
+
+  /**
+   * Calculate random page for shuffle mode
+   */
+  private async calculateRandomScenePage(filters: FilterOptions | undefined, limit: number, signal?: AbortSignal): Promise<number> {
+    const countFilter: FindFilterInput = { per_page: 1, page: 1 };
+    const sceneFilter = this.buildShuffleSceneFilter(filters);
+
+    try {
+      if (this.isAborted(signal)) return 1;
+      
+      const countResult = await this.gqlClient.query<FindScenesResponse>({
+        query: queries.GET_SCENE_COUNT,
+        variables: { filter: countFilter, ...(sceneFilter && { scene_filter: sceneFilter }) },
+        signal,
+      });
+      
+      if (this.isAborted(signal)) return 1;
+      
+      const totalCount = countResult.data?.findScenes?.count || 0;
+      if (totalCount > 0) {
+        const totalPages = Math.ceil(totalCount / limit);
+        return Math.floor(Math.random() * totalPages) + 1;
+      }
+    } catch (e: unknown) {
+      if (isAbortError(e) || this.isAborted(signal)) {
+        return 1;
+      }
+      console.warn('Failed to get scene count for shuffle, using page 1', e);
+    }
+    
+    return 1;
+  }
+
+  /**
+   * Build scene filter for shuffle mode
+   */
+  private buildShuffleSceneFilter(filters?: FilterOptions): SceneFilterInput | null {
+    if (filters?.includeScenesWithoutMarkers) {
+      return { has_markers: 'false' };
+    }
+    return null;
+  }
+
+  /**
+   * Fetch scenes query for shuffle mode
+   */
+  private async fetchScenesForShuffleQuery(
+    filter: FindFilterInput,
+    sceneFilter: SceneFilterInput | null,
+    signal?: AbortSignal
+  ): Promise<Scene[]> {
+    const result = await this.gqlClient.query<FindScenesResponse>({
+      query: queries.FIND_SCENES,
+      variables: { filter, ...(sceneFilter && { scene_filter: sceneFilter }) },
+      signal,
+    });
+    
+    if (this.isAborted(signal)) return [];
+    
+    return result.data?.findScenes?.scenes || [];
+  }
+
+  /**
+   * Create synthetic markers from scenes
+   */
+  private createSyntheticMarkers(scenes: Scene[]): SceneMarker[] {
+    return scenes.map((scene) => ({
+      id: `synthetic-${scene.id}-${Date.now()}-${Math.random()}`,
+      title: scene.title || 'Untitled',
+      seconds: 0,
+      stream: undefined,
+      scene: scene,
+      primary_tag: undefined,
+      tags: [],
+    }));
   }
 
   /**
@@ -944,83 +996,94 @@ export class StashAPI {
    * Get video URL for a scene marker
    */
   getMarkerVideoUrl(marker: SceneMarker): string | undefined {
-    // Use marker stream URL if available
-    if (marker.stream) {
-      // Check for empty or whitespace-only stream
-      const stream = marker.stream.trim();
-      if (!stream || stream.length === 0) {
-        // Fallback to scene stream
-        return this.getVideoUrl(marker.scene);
-      }
-      
-      let url = stream.startsWith('http') 
-        ? stream 
-        : `${this.baseUrl}${stream}`;
-      
-      // Validate URL before returning
-      if (!isValidMediaUrl(url)) {
-        // Fallback to scene stream
-        return this.getVideoUrl(marker.scene);
-      }
-      
-      // Add cache-busting to prevent 304 responses with empty/corrupted cache
-      const separator = url.includes('?') ? '&' : '?';
-      url = `${url}${separator}t=${Date.now()}`;
-      
-      return url;
+    if (!marker.stream) {
+      return this.getVideoUrl(marker.scene);
     }
-    // Fallback to scene stream
-    return this.getVideoUrl(marker.scene);
+    
+    const stream = marker.stream.trim();
+    if (!stream || stream.length === 0) {
+      return this.getVideoUrl(marker.scene);
+    }
+    
+    const url = this.buildUrl(stream);
+    if (!isValidMediaUrl(url)) {
+      return this.getVideoUrl(marker.scene);
+    }
+    
+    return this.addCacheBusting(url);
   }
 
   /**
    * Get video URL for a scene
    */
   getVideoUrl(scene: Scene): string | undefined {
-    let url: string | undefined;
+    const url = this.trySceneStreams(scene) || 
+                this.tryStreamPath(scene) || 
+                this.tryFilePath(scene);
     
-    // Prefer sceneStreams if available (often provides mp4)
-    if (scene.sceneStreams && scene.sceneStreams.length > 0) {
-      const streamUrl = scene.sceneStreams[0]?.url;
-      if (!streamUrl || streamUrl.trim().length === 0) {
-        // Try next fallback
-      } else {
-        url = streamUrl.startsWith('http') ? streamUrl : `${this.baseUrl}${streamUrl}`;
-        if (isValidMediaUrl(url)) {
-          // Add cache-busting to prevent 304 responses with empty/corrupted cache
-          const separator = url.includes('?') ? '&' : '?';
-          return `${url}${separator}t=${Date.now()}`;
-        }
-      }
+    return url ? this.addCacheBusting(url) : undefined;
+  }
+
+  /**
+   * Try to get URL from scene streams
+   */
+  private trySceneStreams(scene: Scene): string | undefined {
+    if (!scene.sceneStreams || scene.sceneStreams.length === 0) {
+      return undefined;
     }
-    // Use stream path if available, otherwise use file path
-    if (scene.paths?.stream) {
-      const streamPath = scene.paths.stream.trim();
-      if (streamPath && streamPath.length > 0) {
-        url = streamPath.startsWith('http') 
-          ? streamPath 
-          : `${this.baseUrl}${streamPath}`;
-        if (isValidMediaUrl(url)) {
-          // Add cache-busting to prevent 304 responses with empty/corrupted cache
-          const separator = url.includes('?') ? '&' : '?';
-          return `${url}${separator}t=${Date.now()}`;
-        }
-      }
+    
+    const streamUrl = scene.sceneStreams[0]?.url;
+    if (!streamUrl || streamUrl.trim().length === 0) {
+      return undefined;
     }
-    if (scene.files && scene.files.length > 0) {
-      const filePath = scene.files[0]?.path;
-      if (filePath && filePath.trim().length > 0) {
-        url = filePath.startsWith('http')
-          ? filePath
-          : `${this.baseUrl}${filePath}`;
-        if (isValidMediaUrl(url)) {
-          // Add cache-busting to prevent 304 responses with empty/corrupted cache
-          const separator = url.includes('?') ? '&' : '?';
-          return `${url}${separator}t=${Date.now()}`;
-        }
-      }
+    
+    const url = this.buildUrl(streamUrl);
+    return isValidMediaUrl(url) ? url : undefined;
+  }
+
+  /**
+   * Try to get URL from stream path
+   */
+  private tryStreamPath(scene: Scene): string | undefined {
+    const streamPath = scene.paths?.stream?.trim();
+    if (!streamPath || streamPath.length === 0) {
+      return undefined;
     }
-    return undefined;
+    
+    const url = this.buildUrl(streamPath);
+    return isValidMediaUrl(url) ? url : undefined;
+  }
+
+  /**
+   * Try to get URL from file path
+   */
+  private tryFilePath(scene: Scene): string | undefined {
+    if (!scene.files || scene.files.length === 0) {
+      return undefined;
+    }
+    
+    const filePath = scene.files[0]?.path?.trim();
+    if (!filePath || filePath.length === 0) {
+      return undefined;
+    }
+    
+    const url = this.buildUrl(filePath);
+    return isValidMediaUrl(url) ? url : undefined;
+  }
+
+  /**
+   * Build full URL from path
+   */
+  private buildUrl(path: string): string {
+    return path.startsWith('http') ? path : `${this.baseUrl}${path}`;
+  }
+
+  /**
+   * Add cache-busting parameter to URL
+   */
+  private addCacheBusting(url: string): string {
+    const separator = url.includes('?') ? '&' : '?';
+    return `${url}${separator}t=${Date.now()}`;
   }
 
 
@@ -1044,7 +1107,7 @@ export class StashAPI {
         const tag = tags[0];
         // Validate exact match (case-insensitive) - EQUALS modifier might not work as expected
         if (tag.name.toLowerCase() === tagName.toLowerCase()) {
-          console.log('[StashAPI] Found tag:', { searched: tagName, found: tag.name, id: tag.id });
+          // Found matching tag
           return tag;
         } else {
           console.warn('[StashAPI] Tag name mismatch:', { searched: tagName, found: tag.name, id: tag.id });
@@ -1169,6 +1232,44 @@ export class StashAPI {
       }
     } catch (error) {
       console.error('StashAPI: Failed to add tag to marker', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Update tags for an image
+   */
+  async updateImageTags(imageId: string, tagIds: string[]): Promise<void> {
+    try {
+      await this.gqlClient.mutate<ImageUpdateResponse>({
+        mutation: mutations.IMAGE_UPDATE,
+        variables: {
+          input: {
+            id: imageId,
+            tag_ids: tagIds,
+          },
+        },
+      });
+    } catch (error) {
+      console.error('StashAPI: Failed to update image tags', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Increment image o-counter
+   */
+  async incrementImageOCount(imageId: string): Promise<number> {
+    try {
+      const result = await this.gqlClient.mutate<ImageIncrementOResponse>({
+        mutation: mutations.IMAGE_INCREMENT_O,
+        variables: {
+          id: imageId,
+        },
+      });
+      return result.data?.imageIncrementO ?? 0;
+    } catch (error) {
+      console.error('StashAPI: Failed to increment image o-counter', error);
       throw error;
     }
   }
@@ -1440,44 +1541,167 @@ export class StashAPI {
    * Returns array of marker seconds values
    */
   async fetchSceneMarkerTags(sceneId: string, signal?: AbortSignal): Promise<number[]> {
-    // Note: sceneMarkerTags may return an array or a single object depending on Stash version
-    // We handle both cases in the parsing logic below
-
     try {
-      if (signal?.aborted) return [];
+      if (this.isAborted(signal)) return [];
 
       const result = await this.gqlClient.query<FindSceneMarkerTagsResponse>({
         query: queries.FIND_SCENE_MARKER_TAGS,
         variables: { id: sceneId },
         signal,
       });
-      if (signal?.aborted) return [];
+      
+      if (this.isAborted(signal)) return [];
       
       const sceneMarkerTags = result.data?.sceneMarkerTags;
       if (!sceneMarkerTags) {
         return [];
       }
 
-      // Extract seconds from all markers
-      // sceneMarkerTags can be an array (multiple tag groups) or a single object
-      const markerTimes: number[] = [];
-      const tagGroups = Array.isArray(sceneMarkerTags) ? sceneMarkerTags : [sceneMarkerTags];
-      
-      for (const tagGroup of tagGroups) {
-        if (tagGroup.scene_markers && Array.isArray(tagGroup.scene_markers)) {
-          for (const marker of tagGroup.scene_markers) {
-            if (typeof marker.seconds === 'number') {
-              markerTimes.push(marker.seconds);
-            }
-          }
-        }
+      return this.extractMarkerTimes(sceneMarkerTags);
+    } catch (e: unknown) {
+      if (isAbortError(e) || this.isAborted(signal)) {
+        return [];
       }
-      return markerTimes;
+      console.warn('StashAPI: Failed to fetch scene marker tags', e);
+      return [];
+    }
+  }
+
+  /**
+   * Extract marker times from scene marker tags response
+   */
+  private extractMarkerTimes(sceneMarkerTags: unknown): number[] {
+    const tagGroups = Array.isArray(sceneMarkerTags) ? sceneMarkerTags : [sceneMarkerTags];
+    const markerTimes: number[] = [];
+    
+    for (const tagGroup of tagGroups) {
+      if (this.isTagGroup(tagGroup)) {
+        const times = this.extractTimesFromTagGroup(tagGroup);
+        markerTimes.push(...times);
+      }
+    }
+    
+    return markerTimes;
+  }
+
+  /**
+   * Check if value is a tag group with scene_markers
+   */
+  private isTagGroup(value: unknown): value is { scene_markers?: Array<{ seconds?: number }> } {
+    return typeof value === 'object' && value !== null && 'scene_markers' in value;
+  }
+
+  /**
+   * Extract times from a tag group
+   */
+  private extractTimesFromTagGroup(tagGroup: { scene_markers?: Array<{ seconds?: number }> }): number[] {
+    if (!Array.isArray(tagGroup.scene_markers)) {
+      return [];
+    }
+    
+    return tagGroup.scene_markers
+      .map(marker => marker.seconds)
+      .filter((seconds): seconds is number => typeof seconds === 'number');
+  }
+
+  /**
+   * Build regex pattern from file extensions
+   * Converts ['.gif', '.webm'] to "\.(gif|webm)$" (case-insensitive)
+   */
+  private buildPathRegex(fileExtensions: string[]): string {
+    if (fileExtensions.length === 0) {
+      return String.raw`\.(gif)$`; // Default to .gif if empty
+    }
+    
+    // Strip leading dots and validate
+    const extensions = fileExtensions
+      .map(ext => ext.trim().toLowerCase().replace(/^\./, ''))
+      .filter(ext => ext.length > 0 && /^[a-z0-9]+$/i.test(ext));
+    
+    if (extensions.length === 0) {
+      return String.raw`\.(gif)$`; // Default to .gif if all invalid
+    }
+    
+    // Build regex: \.(gif|webm|mp4)$
+    return String.raw`\.(${extensions.join('|')})$`;
+  }
+
+  /**
+   * Find images with filtering by file extension, performers, and tags
+   * @param fileExtensions Array of file extensions (e.g., ['.gif', '.webm'])
+   * @param filters Optional filters for performers and tags
+   * @param limit Maximum number of images to return
+   * @param offset Offset for pagination
+   * @param signal AbortSignal for cancellation
+   */
+  async findImages(
+    fileExtensions: string[],
+    filters?: {
+      performerIds?: number[];
+      tagIds?: string[];
+    },
+    limit: number = 40,
+    offset: number = 0,
+    signal?: AbortSignal
+  ): Promise<Image[]> {
+    if (signal?.aborted) return [];
+
+    // Build regex pattern from file extensions
+    const regexPattern = this.buildPathRegex(fileExtensions);
+    
+    // Build image filter
+    const imageFilter: ImageFilterInput = {
+      path: {
+        value: regexPattern,
+        modifier: 'MATCHES_REGEX',
+      },
+    };
+
+    // Add performer filter if provided
+    if (filters?.performerIds && filters.performerIds.length > 0) {
+      imageFilter.performers = {
+        value: filters.performerIds,
+        modifier: 'INCLUDES',
+      };
+    }
+
+    // Add tag filter if provided
+    if (filters?.tagIds && filters.tagIds.length > 0) {
+      imageFilter.tags = {
+        value: filters.tagIds,
+        modifier: 'INCLUDES',
+      };
+    }
+
+    const findFilter: FindFilterInput = {
+      per_page: limit,
+      page: Math.floor(offset / limit) + 1,
+      sort: generateRandomSortSeed(),
+      direction: 'DESC',
+    };
+
+    const variables = {
+      filter: findFilter,
+      image_filter: imageFilter,
+      image_ids: null as number[] | null,
+    };
+
+    try {
+      const result = await this.gqlClient.query<FindImagesResponse>({
+        query: queries.FIND_IMAGES,
+        variables,
+        signal,
+      });
+
+      if (signal?.aborted) return [];
+
+      const images = result.data?.findImages?.images || [];
+      return images;
     } catch (e: unknown) {
       if (isAbortError(e) || signal?.aborted) {
         return [];
       }
-      console.warn('StashAPI: Failed to fetch scene marker tags', e);
+      console.error('StashAPI: Failed to find images', e);
       return [];
     }
   }

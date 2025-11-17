@@ -110,4 +110,101 @@ export const PerformerFields = `
     image_path
   }
 `;
+/**
+ * Fragment for Image fields (slim - for feed display)
+ */
+export const SlimImageData = `
+  fragment SlimImageData on Image {
+    id
+    title
+    code
+    date
+    urls
+    details
+    photographer
+    rating100
+    organized
+    o_counter
+    paths {
+      thumbnail
+      preview
+      image
+    }
+    galleries {
+      id
+      title
+      files {
+        path
+      }
+      folder {
+        path
+      }
+    }
+    studio {
+      id
+      name
+      image_path
+    }
+    tags {
+      id
+      name
+    }
+    performers {
+      id
+      name
+      gender
+      favorite
+      image_path
+    }
+    visual_files {
+      ...VisualFileData
+    }
+  }
+`;
+/**
+ * Fragment for VisualFile fields
+ */
+export const VisualFileData = `
+  fragment VisualFileData on VisualFile {
+    ... on BaseFile {
+      id
+      path
+      size
+      mod_time
+      fingerprints {
+        type
+        value
+      }
+    }
+    ... on ImageFile {
+      id
+      path
+      size
+      mod_time
+      width
+      height
+      fingerprints {
+        type
+        value
+      }
+    }
+    ... on VideoFile {
+      id
+      path
+      size
+      mod_time
+      duration
+      video_codec
+      audio_codec
+      width
+      height
+      frame_rate
+      bit_rate
+      fingerprints {
+        type
+        value
+      }
+    }
+  }
+`;
 //# sourceMappingURL=fragments.js.map

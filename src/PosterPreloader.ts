@@ -8,8 +8,8 @@ import { SceneMarker } from './types.js';
 import { toAbsoluteUrl } from './utils.js';
 
 class PosterPreloader {
-  private cache: Map<string, string> = new Map();
-  private inflight: Set<string> = new Set();
+  private readonly cache: Map<string, string> = new Map();
+  private readonly inflight: Set<string> = new Set();
 
   /**
    * Build the marker screenshot URL using scene + marker IDs.

@@ -49,24 +49,24 @@ interface CacheEntry<T> {
  * Centralized GraphQL Client
  */
 export class GraphQLClient {
-  private baseUrl: string;
-  private apiKey?: string;
-  private pluginApi?: StashPluginApi;
-  private timeout: number;
-  private maxPendingRequests: number;
-  private enableResponseCache: boolean;
-  private cacheTTL: number;
-  private enableBatching: boolean;
-  private batchDelay: number;
-  private maxBatchSize: number;
+  private readonly baseUrl: string;
+  private readonly apiKey?: string;
+  private readonly pluginApi?: StashPluginApi;
+  private readonly timeout: number;
+  private readonly maxPendingRequests: number;
+  private readonly enableResponseCache: boolean;
+  private readonly cacheTTL: number;
+  private readonly enableBatching: boolean;
+  private readonly batchDelay: number;
+  private readonly maxBatchSize: number;
   // Request deduplication - cache in-flight requests (queries only)
   // Using Map maintains insertion order for LRU eviction
-  private pendingRequests: Map<string, Promise<unknown>> = new Map();
+  private readonly pendingRequests: Map<string, Promise<unknown>> = new Map();
   // Response cache for queries
-  private responseCache: Map<string, CacheEntry<unknown>> = new Map();
+  private readonly responseCache: Map<string, CacheEntry<unknown>> = new Map();
   // Memoized request keys to avoid repeated JSON.stringify
   // Using Map with size limit instead of WeakMap for better hit rates
-  private keyCache: Map<string, string> = new Map();
+  private readonly keyCache: Map<string, string> = new Map();
   private readonly maxKeyCacheSize: number = 1000;
   // Request batching queue
   private batchQueue: Array<{
@@ -83,7 +83,7 @@ export class GraphQLClient {
 
   constructor(config: GraphQLClientConfig = {}) {
     // Get from window if available (Stash plugin context)
-    const windowWithStash = window as typeof window & {
+    const windowWithStash = globalThis.window as typeof globalThis.window & {
       PluginApi?: StashPluginApi;
       stash?: StashPluginApi;
     };
@@ -96,7 +96,7 @@ export class GraphQLClient {
       this.baseUrl = this.pluginApi.baseURL;
     } else {
       // Fallback: use current origin (for plugin context)
-      this.baseUrl = window.location.origin;
+      this.baseUrl = globalThis.location.origin;
     }
 
     this.apiKey = config.apiKey || this.pluginApi?.apiKey;
@@ -167,7 +167,7 @@ export class GraphQLClient {
         
         if (endIndex < entries.length) {
           // Use requestIdleCallback if available, otherwise setTimeout
-          if (typeof requestIdleCallback !== 'undefined') {
+          if (typeof requestIdleCallback === 'function') {
             requestIdleCallback(() => processBatch(endIndex), { timeout: 1000 });
           } else {
             setTimeout(() => processBatch(endIndex), 0);
@@ -226,8 +226,9 @@ export class GraphQLClient {
 
     // Use plugin API client if available
     if (this.pluginApi?.GQL?.client) {
+      const client = this.pluginApi.GQL.client;
       return this._executeWithPluginClient(
-        () => this.pluginApi!.GQL!.client!.query<TData, TVariables>({
+        () => client.query<TData, TVariables>({
           query,
           variables,
           signal,
@@ -260,8 +261,9 @@ export class GraphQLClient {
 
     // Use plugin API client if available
     if (this.pluginApi?.GQL?.client) {
+      const client = this.pluginApi.GQL.client;
       return this._executeWithPluginClient(
-        () => this.pluginApi!.GQL!.client!.mutate<TData, TVariables>({
+        () => client.mutate<TData, TVariables>({
           mutation,
           variables,
           signal,
@@ -468,36 +470,28 @@ export class GraphQLClient {
       // Map maintains insertion order, so first entry is oldest
       while (this.pendingRequests.size >= this.maxPendingRequests) {
         const firstKey = this.pendingRequests.keys().next().value;
-        if (firstKey !== undefined) {
-          this.pendingRequests.delete(firstKey);
-        } else {
-          break; // Safety break if Map is empty
+        if (firstKey === undefined) {
+          break;
         }
+        this.pendingRequests.delete(firstKey);
       }
     }
   }
 
   /**
-   * Internal: Execute fetch request with timeout support
-   * Checks abort only at critical points: before fetch and after async operations
+   * Setup timeout and combine with existing signal
    */
-  private async _executeFetch<TData, TVariables = Record<string, unknown>>(
-    operation: string,
-    variables?: TVariables,
-    signal?: AbortSignal
-  ): Promise<{ data?: TData; errors?: GraphQLError[] }> {
-    // Check abort before starting network request
-    this.checkAbort(signal);
-
-    // Create timeout controller if timeout is configured
+  private setupTimeoutSignal(signal?: AbortSignal): {
+    timeoutId: ReturnType<typeof setTimeout> | undefined;
+    finalSignal: AbortSignal | undefined;
+  } {
     let timeoutId: ReturnType<typeof setTimeout> | undefined;
-    let timeoutController: AbortController | undefined;
     let finalSignal: AbortSignal | undefined = signal;
 
     if (this.timeout > 0) {
-      timeoutController = new AbortController();
+      const timeoutController = new AbortController();
       timeoutId = setTimeout(() => {
-        timeoutController!.abort();
+        timeoutController.abort();
       }, this.timeout);
 
       // Combine signals if both exist
@@ -514,6 +508,43 @@ export class GraphQLClient {
         finalSignal = timeoutController.signal;
       }
     }
+
+    return { timeoutId, finalSignal };
+  }
+
+  /**
+   * Handle fetch error and convert to GraphQL error
+   */
+  private handleFetchError(error: unknown, finalSignal?: AbortSignal): never {
+    // Check for abort first
+    if (isAbortError(error) || finalSignal?.aborted) {
+      throw new GraphQLAbortError();
+    }
+    // If it's already a GraphQL error, re-throw it
+    if (error instanceof Error && 
+        (error.name === 'GraphQLRequestError' || 
+         error.name === 'GraphQLResponseError' || 
+         error.name === 'GraphQLNetworkError')) {
+      throw error;
+    }
+    // Wrap network errors
+    throw createGraphQLError(null, null, error instanceof Error ? error : new Error('Network request failed'));
+  }
+
+  /**
+   * Internal: Execute fetch request with timeout support
+   * Checks abort only at critical points: before fetch and after async operations
+   */
+  private async _executeFetch<TData, TVariables = Record<string, unknown>>(
+    operation: string,
+    variables?: TVariables,
+    signal?: AbortSignal
+  ): Promise<{ data?: TData; errors?: GraphQLError[] }> {
+    // Check abort before starting network request
+    this.checkAbort(signal);
+
+    // Setup timeout signal
+    const { timeoutId, finalSignal } = this.setupTimeoutSignal(signal);
 
     try {
       let response: Response;
@@ -532,19 +563,7 @@ export class GraphQLClient {
           cache: 'no-cache', // Force re-validation with server to avoid stale cache, but allow caching after validation
         });
       } catch (error: unknown) {
-        // Check for abort first
-        if (isAbortError(error) || finalSignal?.aborted) {
-          throw new GraphQLAbortError();
-        }
-        // If it's already a GraphQL error, re-throw it
-        if (error instanceof Error && 
-            (error.name === 'GraphQLRequestError' || 
-             error.name === 'GraphQLResponseError' || 
-             error.name === 'GraphQLNetworkError')) {
-          throw error;
-        }
-        // Wrap network errors
-        throw createGraphQLError(null, null, error instanceof Error ? error : new Error('Network request failed'));
+        this.handleFetchError(error, finalSignal);
       } finally {
         if (timeoutId) {
           clearTimeout(timeoutId);
@@ -559,10 +578,6 @@ export class GraphQLClient {
         errors: data.errors,
       };
     } catch (error: unknown) {
-      // Check for abort first
-      if (isAbortError(error) || finalSignal?.aborted) {
-        throw new GraphQLAbortError();
-      }
       // Re-throw GraphQL errors as-is
       if (error instanceof Error && 
           (error.name === 'GraphQLRequestError' || 
@@ -571,8 +586,8 @@ export class GraphQLClient {
            error.name === 'GraphQLAbortError')) {
         throw error;
       }
-      // Re-throw other errors
-      throw error;
+      // Handle other errors (including abort)
+      this.handleFetchError(error, finalSignal);
     }
   }
 
@@ -580,14 +595,17 @@ export class GraphQLClient {
    * Generate a unique request key for deduplication
    * Uses stable stringification with sorted keys to prevent collisions
    */
-  private _getRequestKey(type: 'query' | 'mutation', operation: string, variables?: Record<string, unknown> | unknown): string {
+  private _getRequestKey(type: 'query' | 'mutation', operation: string, variables?: Record<string, unknown>): string {
     // Create a stable key from operation and variables
     // Handle both typed and untyped variables
-    const varsKey = variables && typeof variables === 'object' && !Array.isArray(variables)
-      ? this._stableStringify(variables as Record<string, unknown>)
-      : variables
-      ? JSON.stringify(variables)
-      : '';
+    let varsKey: string;
+    if (variables && typeof variables === 'object' && !Array.isArray(variables)) {
+      varsKey = this._stableStringify(variables);
+    } else if (variables) {
+      varsKey = JSON.stringify(variables);
+    } else {
+      varsKey = '';
+    }
     return `${type}:${operation}:${varsKey}`;
   }
 
@@ -634,11 +652,13 @@ export class GraphQLClient {
       try {
         cacheKey = JSON.stringify(obj);
       } catch {
-        cacheKey = `simple:${objKeys.sort((a, b) => a.localeCompare(b)).join(',')}`;
+        const sortedKeys = [...objKeys].sort((a, b) => a.localeCompare(b));
+        cacheKey = `simple:${sortedKeys.join(',')}`;
       }
     } else {
       // For complex objects, use sorted keys
-      cacheKey = `complex:${objKeys.sort((a, b) => a.localeCompare(b)).join(',')}`;
+      const sortedKeys = [...objKeys].sort((a, b) => a.localeCompare(b));
+      cacheKey = `complex:${sortedKeys.join(',')}`;
     }
 
     // Check cache first
@@ -661,9 +681,13 @@ export class GraphQLClient {
       }
       this.keyCache.set(cacheKey, result);
       return result;
-    } catch (error) {
+    } catch (error: unknown) {
       // Fallback for circular references or other issues
       // Use a hash-like approach for problematic objects
+      // Error is intentionally ignored - this is a fallback for edge cases
+      if (error instanceof Error) {
+        // Silently handle - this is expected for circular references
+      }
       return `[object:${objKeys.length}]`;
     }
   }
@@ -785,7 +809,7 @@ export class GraphQLClient {
       // Add to batch queue
       this.batchQueue.push({
         operation: query,
-        variables: variables as Record<string, unknown> | undefined,
+        variables: variables,
         resolve: resolve as (value: { data?: unknown; errors?: GraphQLError[] }) => void,
         reject,
         signal,
@@ -810,6 +834,180 @@ export class GraphQLClient {
         }, this.batchDelay);
       }
     });
+  }
+
+  /**
+   * Prepare batch by removing aborted requests and combining signals
+   */
+  private prepareBatch(batch: Array<{
+    operation: string;
+    variables?: unknown;
+    resolve: (value: { data?: unknown; errors?: GraphQLError[] }) => void;
+    reject: (error: unknown) => void;
+    signal?: AbortSignal;
+  }>): {
+    activeBatch: typeof batch;
+    activeOperations: Array<{ query: string; variables: Record<string, unknown> }>;
+    combinedSignal?: AbortSignal;
+  } {
+    // Create batched request
+    const operations = batch.map((item) => ({
+      query: item.operation,
+      variables: (item.variables || {}) as Record<string, unknown>,
+    }));
+
+    // Check if any request is aborted
+    const abortedIndices = batch
+      .map((item, index) => (item.signal?.aborted ? index : -1))
+      .filter(index => index !== -1);
+
+    // Reject aborted requests
+    for (const index of abortedIndices) {
+      batch[index].reject(new GraphQLAbortError());
+    }
+
+    // Remove aborted requests from batch
+    const activeBatch = batch.filter((_, index) => !abortedIndices.includes(index));
+    const activeOperations = operations.filter((_, index) => !abortedIndices.includes(index));
+
+    // Combine abort signals if any
+    let combinedSignal: AbortSignal | undefined;
+    const signals = activeBatch.map(item => item.signal).filter((s): s is AbortSignal => s !== undefined);
+    if (signals.length > 0) {
+      const combinedController = new AbortController();
+      for (const signal of signals) {
+        if (signal.aborted) {
+          combinedController.abort();
+        } else {
+          signal.addEventListener('abort', () => combinedController.abort());
+        }
+      }
+      combinedSignal = combinedController.signal;
+    }
+
+    return { activeBatch, activeOperations, combinedSignal };
+  }
+
+  /**
+   * Parse batch response with error handling
+   */
+  private async parseBatchResponseWithErrorHandling(
+    response: Response,
+    activeOperations: Array<{ query: string; variables: Record<string, unknown> }>,
+    combinedSignal?: AbortSignal
+  ): Promise<Array<{ data?: unknown; errors?: GraphQLError[] }>> {
+    try {
+      return await this.parseBatchResponse(response, activeOperations);
+    } catch (parseError: unknown) {
+      // Check for abort first
+      if (isAbortError(parseError) || combinedSignal?.aborted) {
+        throw new GraphQLAbortError();
+      }
+      // If it's already a GraphQL error, re-throw it
+      if (parseError instanceof Error && 
+          (parseError.name === 'GraphQLRequestError' || 
+           parseError.name === 'GraphQLResponseError' || 
+           parseError.name === 'GraphQLNetworkError')) {
+        throw parseError;
+      }
+      // Wrap parse errors
+      throw createGraphQLError(
+        response,
+        null,
+        parseError instanceof Error ? parseError : new Error('Failed to parse batch response')
+      );
+    }
+  }
+
+  /**
+   * Resolve batch results to individual promises
+   */
+  private resolveBatchResults(
+    activeBatch: Array<{
+      resolve: (value: { data?: unknown; errors?: GraphQLError[] }) => void;
+      reject: (error: unknown) => void;
+      signal?: AbortSignal;
+    }>,
+    results: Array<{ data?: unknown; errors?: GraphQLError[] }>
+  ): void {
+    // Results are guaranteed to be in same order as requests
+    for (let index = 0; index < activeBatch.length; index++) {
+      const item = activeBatch[index];
+      if (item.signal?.aborted) {
+        item.reject(new GraphQLAbortError());
+      } else if (results[index]) {
+        item.resolve(results[index]);
+      } else {
+        item.reject(new Error(`Missing result at index ${index} in batch response`));
+      }
+    }
+  }
+
+  /**
+   * Reject all batch items with error
+   */
+  private rejectBatchWithError(
+    activeBatch: Array<{
+      reject: (error: unknown) => void;
+      signal?: AbortSignal;
+    }>,
+    error: unknown
+  ): void {
+    // Standardized error handling - reject all promises in the batch
+    for (const item of activeBatch) {
+      // Use standardized error handling
+      try {
+        this.handleError(error, item.signal);
+      } catch (handledError) {
+        item.reject(handledError);
+      }
+    }
+  }
+
+  /**
+   * Parse batch response and validate format
+   */
+  private async parseBatchResponse(
+    response: Response,
+    activeOperations: Array<{ query: string; variables: Record<string, unknown> }>
+  ): Promise<Array<{ data?: unknown; errors?: GraphQLError[] }>> {
+    if (!response.ok) {
+      throw createGraphQLError(response, null);
+    }
+
+    const contentType = response.headers.get('content-type');
+    if (!contentType || (!contentType.includes('application/json') && !contentType.includes('application/graphql-response+json'))) {
+      const text = await response.text();
+      throw createGraphQLError(
+        response,
+        null,
+        new Error(`Unexpected content type: ${contentType}. Response: ${text.substring(0, 200)}`)
+      );
+    }
+
+    const responseData = await response.json();
+    
+    // Validate batch response format
+    if (!Array.isArray(responseData)) {
+      throw createGraphQLError(
+        response,
+        null,
+        new Error(`Invalid batch response format: expected array, got ${typeof responseData}`)
+      );
+    }
+    
+    const results = responseData as Array<{ data?: unknown; errors?: GraphQLError[] }>;
+    
+    // Validate response length matches request length
+    if (results.length !== activeOperations.length) {
+      throw createGraphQLError(
+        response,
+        null,
+        new Error(`Batch response length mismatch: expected ${activeOperations.length}, got ${results.length}`)
+      );
+    }
+
+    return results;
   }
 
   /**
@@ -858,43 +1056,12 @@ export class GraphQLClient {
       return;
     }
 
-    // Create batched request
-    const operations = batch.map((item, index) => ({
-      query: item.operation,
-      variables: item.variables || {},
-    }));
-
-    // Check if any request is aborted
-    const abortedIndices = batch
-      .map((item, index) => (item.signal?.aborted ? index : -1))
-      .filter(index => index !== -1);
-
-    // Reject aborted requests
-    abortedIndices.forEach(index => {
-      batch[index].reject(new GraphQLAbortError());
-    });
-
-    // Remove aborted requests from batch
-    const activeBatch = batch.filter((_, index) => !abortedIndices.includes(index));
-    const activeOperations = operations.filter((_, index) => !abortedIndices.includes(index));
+    // Prepare batch (remove aborted, combine signals)
+    const { activeBatch, activeOperations, combinedSignal } = this.prepareBatch(batch);
 
     if (activeBatch.length === 0) {
+      this.batchFlushing = false;
       return;
-    }
-
-    // Combine abort signals if any
-    let combinedSignal: AbortSignal | undefined;
-    const signals = activeBatch.map(item => item.signal).filter((s): s is AbortSignal => s !== undefined);
-    if (signals.length > 0) {
-      const combinedController = new AbortController();
-      signals.forEach(signal => {
-        if (signal.aborted) {
-          combinedController.abort();
-        } else {
-          signal.addEventListener('abort', () => combinedController.abort());
-        }
-      });
-      combinedSignal = combinedController.signal;
     }
 
     try {
@@ -913,85 +1080,13 @@ export class GraphQLClient {
       });
 
       // Parse batched response
-      // Note: Batched responses may have different format, so we handle it separately
-      if (!response.ok) {
-        throw createGraphQLError(response, null);
-      }
-
-      const contentType = response.headers.get('content-type');
-      if (!contentType || (!contentType.includes('application/json') && !contentType.includes('application/graphql-response+json'))) {
-        const text = await response.text();
-        throw createGraphQLError(
-          response,
-          null,
-          new Error(`Unexpected content type: ${contentType}. Response: ${text.substring(0, 200)}`)
-        );
-      }
-
-      let results: Array<{ data?: unknown; errors?: GraphQLError[] }>;
-      try {
-        const responseData = await response.json();
-        
-        // Validate batch response format
-        if (!Array.isArray(responseData)) {
-          throw createGraphQLError(
-            response,
-            null,
-            new Error(`Invalid batch response format: expected array, got ${typeof responseData}`)
-          );
-        }
-        
-        results = responseData as Array<{ data?: unknown; errors?: GraphQLError[] }>;
-        
-        // Validate response length matches request length
-        if (results.length !== activeOperations.length) {
-          throw createGraphQLError(
-            response,
-            null,
-            new Error(`Batch response length mismatch: expected ${activeOperations.length}, got ${results.length}`)
-          );
-        }
-      } catch (parseError: unknown) {
-        // Check for abort first
-        if (isAbortError(parseError) || combinedSignal?.aborted) {
-          throw new GraphQLAbortError();
-        }
-        // If it's already a GraphQL error, re-throw it
-        if (parseError instanceof Error && 
-            (parseError.name === 'GraphQLRequestError' || 
-             parseError.name === 'GraphQLResponseError' || 
-             parseError.name === 'GraphQLNetworkError')) {
-          throw parseError;
-        }
-        // Wrap parse errors
-        throw createGraphQLError(
-          response,
-          null,
-          parseError instanceof Error ? parseError : new Error('Failed to parse batch response')
-        );
-      }
+      const results = await this.parseBatchResponseWithErrorHandling(response, activeOperations, combinedSignal);
 
       // Resolve each promise with its corresponding result
-      // Results are guaranteed to be in same order as requests
-      activeBatch.forEach((item, index) => {
-        if (item.signal?.aborted) {
-          item.reject(new GraphQLAbortError());
-        } else if (results[index]) {
-          item.resolve(results[index]);
-        } else {
-          item.reject(new Error(`Missing result at index ${index} in batch response`));
-        }
-      });
+      this.resolveBatchResults(activeBatch, results);
     } catch (error: unknown) {
       // Standardized error handling - reject all promises in the batch
-      activeBatch.forEach(item => {
-        // Use standardized error handling
-        try {
-          this.handleError(error, item.signal);
-        } catch (handledError) {
-          item.reject(handledError);
-        }
-      });
+      this.rejectBatchWithError(activeBatch, error);
     } finally {
       // Always clear flushing flag
       this.batchFlushing = false;

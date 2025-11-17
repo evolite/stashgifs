@@ -85,7 +85,7 @@ export function createGraphQLError(
   }
 
   // Check for network errors
-  if (!response || !response.ok) {
+  if (!response?.ok) {
     return new GraphQLNetworkError(
       `GraphQL request failed: ${response?.status || 'unknown'} ${response?.statusText || ''}`,
       originalError
@@ -128,9 +128,13 @@ export function handleGraphQLError(
   }
 
   // Wrap unknown errors
-  const message = context 
-    ? `${context}: ${error instanceof Error ? error.message : 'Unknown error'}`
-    : error instanceof Error ? error.message : 'Unknown error';
+  let message: string;
+  if (context) {
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    message = `${context}: ${errorMessage}`;
+  } else {
+    message = error instanceof Error ? error.message : 'Unknown error';
+  }
   
   throw new GraphQLRequestError(message);
 }

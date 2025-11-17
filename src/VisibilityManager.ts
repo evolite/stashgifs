@@ -28,13 +28,13 @@ type VideoState = 'loading' | 'ready' | 'playing' | 'paused';
 type PlaybackOrigin = 'observer' | 'ready' | 'register' | 'retry';
 
 export class VisibilityManager {
-  private observer: IntersectionObserver;
-  private entries: Map<string, VisibilityEntry>;
-  private activeVideos: Set<string>;
-  private videoStates: Map<string, VideoState>;
-  private pendingOperations: Map<string, ReturnType<typeof setTimeout>>;
-  private visibilityStability: Map<string, number>; // timestamp when visibility last changed
-  private playbackRetryHandles: Map<string, ReturnType<typeof setTimeout>>;
+  private readonly observer: IntersectionObserver;
+  private readonly entries: Map<string, VisibilityEntry>;
+  private readonly activeVideos: Set<string>;
+  private readonly videoStates: Map<string, VideoState>;
+  private readonly pendingOperations: Map<string, ReturnType<typeof setTimeout>>;
+  private readonly visibilityStability: Map<string, number>; // timestamp when visibility last changed
+  private readonly playbackRetryHandles: Map<string, ReturnType<typeof setTimeout>>;
   private debugEnabled: boolean;
   private logger?: (event: string, payload?: Record<string, unknown>) => void;
   private scrollVelocity: number = 0;
@@ -46,16 +46,16 @@ export class VisibilityManager {
   private hoveredPostId?: string; // Track which post is currently hovered/touched
   private touchedPostId?: string; // Track which post is currently touched (separate from hover for mobile)
   private isHDMode: boolean = false; // Track HD mode for more aggressive unloading
-  private manuallyStartedVideos: Set<string> = new Set(); // Track videos that were manually started by user
+  private readonly manuallyStartedVideos: Set<string> = new Set(); // Track videos that were manually started by user
   // Cache for getBoundingClientRect results per frame to avoid layout thrashing
-  private rectCache: Map<HTMLElement, DOMRect> = new Map();
+  private readonly rectCache: Map<HTMLElement, DOMRect> = new Map();
   private rectCacheFrame: number = 0;
-  private onHoverLoadRequest?: (postId: string) => void; // Callback to trigger video loading on hover
-  private hoverPlayDebounceTimers: Map<string, ReturnType<typeof setTimeout>> = new Map(); // Debounce rapid hover play attempts
-  private hoverReloadTimers: Map<string, ReturnType<typeof setTimeout>> = new Map(); // Track reload timeouts
+  private readonly onHoverLoadRequest?: (postId: string) => void; // Callback to trigger video loading on hover
+  private readonly hoverPlayDebounceTimers: Map<string, ReturnType<typeof setTimeout>> = new Map(); // Debounce rapid hover play attempts
+  private readonly hoverReloadTimers: Map<string, ReturnType<typeof setTimeout>> = new Map(); // Track reload timeouts
   private scrollCleanup?: () => void; // Cleanup function for scroll velocity tracking
   private audioFocusCleanup?: () => void; // Cleanup function for audio focus tracking
-  private options: {
+  private readonly options: {
     threshold: number;
     rootMargin: string;
     autoPlay: boolean;
@@ -78,12 +78,10 @@ export class VisibilityManager {
     const defaultRootMargin = '0px';
     
     const requestedMaxConcurrent = options?.maxConcurrent;
-    const maxConcurrent =
-      requestedMaxConcurrent === undefined
-        ? Number.POSITIVE_INFINITY
-        : requestedMaxConcurrent <= 0
-          ? Number.POSITIVE_INFINITY
-          : requestedMaxConcurrent;
+    let maxConcurrent = Number.POSITIVE_INFINITY;
+    if (requestedMaxConcurrent !== undefined && requestedMaxConcurrent > 0) {
+      maxConcurrent = requestedMaxConcurrent;
+    }
 
     this.options = {
       threshold: options?.threshold ?? 0, // Only pause when completely out of viewport
@@ -132,7 +130,7 @@ export class VisibilityManager {
       }
       
       const now = Date.now();
-      const scrollTop = window.scrollY || document.documentElement.scrollTop;
+      const scrollTop = globalThis.window.scrollY || document.documentElement.scrollTop;
       const timeDelta = now - this.lastScrollTime;
       
       if (timeDelta > 0) {
@@ -147,7 +145,7 @@ export class VisibilityManager {
     };
     
     this.lastScrollTime = Date.now();
-    this.lastScrollTop = window.scrollY || document.documentElement.scrollTop;
+    this.lastScrollTop = globalThis.window.scrollY || document.documentElement.scrollTop;
     this.scrollVelocityRafHandle = requestAnimationFrame(updateScrollVelocity);
     
     // Store cleanup function
@@ -164,7 +162,7 @@ export class VisibilityManager {
    * Set up scroll and visibility tracking for exclusive audio focus
    */
   private setupAudioFocusTracking(): void {
-    if (typeof window === 'undefined') return;
+    if (globalThis.window === undefined) return;
     
     let scrollTimeout: ReturnType<typeof setTimeout> | undefined;
     let lastAudioCheck = 0;
@@ -218,11 +216,11 @@ export class VisibilityManager {
       }
     };
     
-    window.addEventListener('scroll', handleScroll, { passive: true });
+    globalThis.window.addEventListener('scroll', handleScroll, { passive: true });
     
     // Store cleanup function
     this.audioFocusCleanup = () => {
-      window.removeEventListener('scroll', handleScroll);
+      globalThis.window.removeEventListener('scroll', handleScroll);
       stopRafCheck();
       if (scrollTimeout) {
         clearTimeout(scrollTimeout);
@@ -248,8 +246,9 @@ export class VisibilityManager {
 
   private detectDebugPreference(): boolean {
     try {
-      if (typeof window !== 'undefined' && typeof window.localStorage !== 'undefined') {
-        return window.localStorage.getItem('stashgifs-visibility-debug') === '1';
+      const localStorage = globalThis.window?.localStorage;
+      if (localStorage !== undefined) {
+        return localStorage.getItem('stashgifs-visibility-debug') === '1';
       }
     } catch (error) {
       // Ignore storage access errors (e.g., Safari private mode)
@@ -264,9 +263,8 @@ export class VisibilityManager {
     }
     if (this.logger) {
       this.logger(event, payload ?? {});
-    } else if (typeof console !== 'undefined' && console.debug) {
-      console.debug('[VisibilityManager]', event, payload ?? {});
     }
+    // Debug logging removed - use logger if needed
   }
 
   /**
@@ -441,20 +439,35 @@ export class VisibilityManager {
 
     const entry = this.entries.get(postId);
     
+    this.updateVisibilityOnReady(postId, entry);
+    this.handlePlaybackOnReady(postId, entry);
+  }
+
+  /**
+   * Update visibility state when player becomes ready
+   */
+  private updateVisibilityOnReady(postId: string, entry: VisibilityEntry | undefined): void {
+    if (!entry) return;
+    
     // Re-check visibility when player becomes ready (in case IntersectionObserver hadn't fired yet)
-    if (entry) {
-      const isCurrentlyVisible = this.isActuallyInViewport(entry.element);
-      if (isCurrentlyVisible && !entry.isVisible) {
-        // Update visibility state immediately if we detect it's actually visible
-        entry.isVisible = true;
-        entry.pendingVisibilityPlay = this.options.autoPlay;
-        this.debugLog('wait-ready-visibility-update', { postId, wasVisible: false, nowVisible: true });
-      }
+    const isCurrentlyVisible = this.isActuallyInViewport(entry.element);
+    if (isCurrentlyVisible && !entry.isVisible) {
+      // Update visibility state immediately if we detect it's actually visible
+      entry.isVisible = true;
+      entry.pendingVisibilityPlay = this.options.autoPlay;
+      this.debugLog('wait-ready-visibility-update', { postId, wasVisible: false, nowVisible: true });
     }
+  }
+
+  /**
+   * Handle playback when player becomes ready
+   */
+  private handlePlaybackOnReady(postId: string, entry: VisibilityEntry | undefined): void {
+    if (!entry) return;
     
     // Check if there's a pending hover play request OR if currently hovered
     // This ensures hover play works even if pendingVisibilityPlay was cleared
-    if (entry && (entry.pendingVisibilityPlay || this.hoveredPostId === postId)) {
+    if (entry.pendingVisibilityPlay || this.hoveredPostId === postId) {
       // Execute hover enter action (unmute + play) since player is ready now
       // Use executeHoverEnter directly since player is ready (no debounce needed)
       if (this.hoveredPostId === postId) {
@@ -465,18 +478,16 @@ export class VisibilityManager {
         if (this.options.autoPlay && entry.isVisible) {
           // Use autoplay for non-HD mode when visible
           this.requestPlaybackIfReady(postId, entry, 'ready');
-        } else {
+        } else if (this.hoveredPostId === postId) {
           // Only use hover-based play if actually hovered (shouldn't reach here if not hovered)
           // This is a fallback for edge cases
-          if (this.hoveredPostId === postId) {
-            this.executePlayOnHover(postId);
-          }
+          this.executePlayOnHover(postId);
         }
       }
     }
     // Also handle autoplay if enabled and visible (for non-HD mode)
     // In non-HD mode, don't check hover state - autoplay should work regardless
-    if (entry && entry.isVisible && this.options.autoPlay && !entry.pendingVisibilityPlay) {
+    if (entry.isVisible && this.options.autoPlay && !entry.pendingVisibilityPlay) {
       this.requestPlaybackIfReady(postId, entry, 'ready');
     }
   }
@@ -517,8 +528,8 @@ export class VisibilityManager {
    */
   private isActuallyInViewport(element: HTMLElement): boolean {
     const rect = this.getCachedRect(element);
-    const viewportHeight = window.innerHeight;
-    const viewportWidth = window.innerWidth;
+    const viewportHeight = globalThis.window.innerHeight;
+    const viewportWidth = globalThis.window.innerWidth;
     
     // Element is visible if any part intersects with the actual viewport
     return rect.bottom > 0 && 
@@ -553,7 +564,7 @@ export class VisibilityManager {
           this.activeVideos.delete(postId);
           this.cancelPlaybackRetry(postId);
           entry.pendingVisibilityPlay = false;
-        } catch (error) {
+        } catch {
           // Ignore errors when pausing
         }
       }
@@ -576,90 +587,130 @@ export class VisibilityManager {
       const visibilityEntry = this.entries.get(postId);
       if (!visibilityEntry) continue;
 
-      const wasVisible = visibilityEntry.isVisible;
-      const element = visibilityEntry.element;
-      
-      // For playing: use expanded area (with rootMargin) to start early
-      const meetsThreshold = entry.intersectionRatio >= this.options.threshold;
-      const isActuallyVisible = this.isActuallyInViewport(element);
-      const isVisible = entry.isIntersecting && meetsThreshold && isActuallyVisible;
-
-      if (isVisible === wasVisible) {
-        continue;
+      if (this.processIntersectionEntry(entry, postId, visibilityEntry)) {
+        visibilityChanged = true;
       }
-
-      visibilityChanged = true;
-      visibilityEntry.isVisible = isVisible;
-      // Set pendingVisibilityPlay based on visibility if autoplay is enabled
-      visibilityEntry.pendingVisibilityPlay = isVisible && this.options.autoPlay;
-
-      this.cancelPendingOperation(postId);
-      this.cancelPlaybackRetry(postId);
-
-      this.visibilityStability.set(postId, Date.now());
-      const delay = this.computeVisibilityDelay(isVisible);
-
-      const timeoutId = setTimeout(() => {
-        this.pendingOperations.delete(postId);
-        const currentEntry = this.entries.get(postId);
-        if (!currentEntry) {
-          return;
-        }
-
-        if (isVisible) {
-          const stillInViewport = this.isActuallyInViewport(currentEntry.element);
-          if (!currentEntry.isVisible || !stillInViewport) {
-            currentEntry.isVisible = stillInViewport;
-            return;
-          }
-          // Autoplay when entering viewport (if enabled)
-          // In non-HD mode, don't check hover state - autoplay should work regardless
-          if (this.options.autoPlay) {
-            this.requestPlaybackIfReady(postId, currentEntry, 'observer');
-          }
-        } else {
-          const stillActuallyVisible = this.isActuallyInViewport(currentEntry.element);
-          if (stillActuallyVisible) {
-            currentEntry.isVisible = true;
-            // Autoplay when re-entering viewport (if enabled)
-            // In non-HD mode, don't check hover state - autoplay should work regardless
-            if (this.options.autoPlay) {
-              this.requestPlaybackIfReady(postId, currentEntry, 'observer');
-            }
-            return;
-          }
-          if (currentEntry.isVisible) {
-            return;
-          }
-          this.handlePostExitedViewport(postId, currentEntry);
-        }
-      }, delay);
-
-      this.pendingOperations.set(postId, timeoutId);
-      this.debugLog('visibility-change', { postId, isVisible, delay, meetsThreshold, isActuallyVisible });
     }
     
-    // Re-evaluate audio focus when visibility changes
     if (visibilityChanged && this.exclusiveAudioEnabled) {
-      // Only apply audio focus if videos are already playing
-      // Don't apply during autoplay - we'll apply after play succeeds
-      // Check if any video is currently playing before applying audio focus
-      let hasPlayingVideo = false;
-      for (const [postId, entry] of this.entries) {
-        if (entry.player && entry.player.isPlaying()) {
-          hasPlayingVideo = true;
-          break;
-        }
-      }
-      
-      if (hasPlayingVideo) {
-        // Use a small delay to ensure visibility states are updated
-        setTimeout(() => {
-          this.applyExclusiveAudioFocus();
-        }, 50);
-      }
-      // If no videos are playing, don't apply audio focus yet - wait for autoplay
+      this.handleVisibilityChangeForAudio();
     }
+  }
+
+  /**
+   * Handle visibility timeout callback
+   */
+  private handleVisibilityTimeout(postId: string, isVisible: boolean): void {
+    this.pendingOperations.delete(postId);
+    const currentEntry = this.entries.get(postId);
+    if (!currentEntry) {
+      return;
+    }
+
+    if (isVisible) {
+      this.handleVisibilityEnterTimeout(postId, currentEntry);
+    } else {
+      this.handleVisibilityExitTimeout(postId, currentEntry);
+    }
+  }
+
+  /**
+   * Handle visibility enter timeout
+   */
+  private handleVisibilityEnterTimeout(postId: string, currentEntry: VisibilityEntry): void {
+    const stillInViewport = this.isActuallyInViewport(currentEntry.element);
+    if (!currentEntry.isVisible || !stillInViewport) {
+      currentEntry.isVisible = stillInViewport;
+      return;
+    }
+    // Autoplay when entering viewport (if enabled)
+    // In non-HD mode, don't check hover state - autoplay should work regardless
+    if (this.options.autoPlay) {
+      this.requestPlaybackIfReady(postId, currentEntry, 'observer');
+    }
+  }
+
+  /**
+   * Handle visibility exit timeout
+   */
+  private handleVisibilityExitTimeout(postId: string, currentEntry: VisibilityEntry): void {
+    const stillActuallyVisible = this.isActuallyInViewport(currentEntry.element);
+    if (stillActuallyVisible) {
+      currentEntry.isVisible = true;
+      // Autoplay when re-entering viewport (if enabled)
+      // In non-HD mode, don't check hover state - autoplay should work regardless
+      if (this.options.autoPlay) {
+        this.requestPlaybackIfReady(postId, currentEntry, 'observer');
+      }
+      return;
+    }
+    if (currentEntry.isVisible) {
+      return;
+    }
+    this.handlePostExitedViewport(postId, currentEntry);
+  }
+
+  /**
+   * Process a single intersection entry
+   */
+  private processIntersectionEntry(
+    entry: IntersectionObserverEntry,
+    postId: string,
+    visibilityEntry: VisibilityEntry
+  ): boolean {
+    const wasVisible = visibilityEntry.isVisible;
+    const element = visibilityEntry.element;
+    
+    // For playing: use expanded area (with rootMargin) to start early
+    const meetsThreshold = entry.intersectionRatio >= this.options.threshold;
+    const isActuallyVisible = this.isActuallyInViewport(element);
+    const isVisible = entry.isIntersecting && meetsThreshold && isActuallyVisible;
+
+    if (isVisible === wasVisible) {
+      return false;
+    }
+
+    visibilityEntry.isVisible = isVisible;
+    // Set pendingVisibilityPlay based on visibility if autoplay is enabled
+    visibilityEntry.pendingVisibilityPlay = isVisible && this.options.autoPlay;
+
+    this.cancelPendingOperation(postId);
+    this.cancelPlaybackRetry(postId);
+
+    this.visibilityStability.set(postId, Date.now());
+    const delay = this.computeVisibilityDelay(isVisible);
+
+    const timeoutId = setTimeout(() => {
+      this.handleVisibilityTimeout(postId, isVisible);
+    }, delay);
+
+    this.pendingOperations.set(postId, timeoutId);
+    this.debugLog('visibility-change', { postId, isVisible, delay, meetsThreshold, isActuallyVisible });
+    return true;
+  }
+
+  /**
+   * Handle visibility changes for audio focus
+   */
+  private handleVisibilityChangeForAudio(): void {
+    // Only apply audio focus if videos are already playing
+    // Don't apply during autoplay - we'll apply after play succeeds
+    // Check if any video is currently playing before applying audio focus
+    let hasPlayingVideo = false;
+    for (const [, entry] of this.entries) {
+      if (entry.player?.isPlaying()) {
+        hasPlayingVideo = true;
+        break;
+      }
+    }
+    
+    if (hasPlayingVideo) {
+      // Use a small delay to ensure visibility states are updated
+      setTimeout(() => {
+        this.applyExclusiveAudioFocus();
+      }, 50);
+    }
+    // If no videos are playing, don't apply audio focus yet - wait for autoplay
   }
 
   private findPostId(element: HTMLElement): string | null {
@@ -685,7 +736,7 @@ export class VisibilityManager {
   private handlePostExitedViewport(postId: string, entry: VisibilityEntry): void {
     // Double-check visibility hasn't changed back
     const currentEntry = this.entries.get(postId);
-    if (currentEntry && currentEntry.isVisible) {
+    if (currentEntry?.isVisible) {
       return; // Visibility changed back, don't pause
     }
     this.debugLog('visibility-exit', { postId });
@@ -705,8 +756,8 @@ export class VisibilityManager {
     }
 
     const rect = this.getCachedRect(entry.element);
-    const viewportHeight = window.innerHeight;
-    const viewportWidth = window.innerWidth;
+    const viewportHeight = globalThis.window.innerHeight;
+    const viewportWidth = globalThis.window.innerWidth;
     
     // Calculate distance from viewport
     let distanceFromViewport = 0;
@@ -730,7 +781,7 @@ export class VisibilityManager {
     
     // Unload threshold to save RAM: 100px in both HD and normal mode
     // This prevents 8GB+ RAM usage when scrolling
-    const unloadThreshold = this.isHDMode ? 100 : 100;
+    const unloadThreshold = 100;
     
     if (distanceFromViewport > unloadThreshold) {
       this.debugLog('unloading-video', { postId, distanceFromViewport, isHDMode: this.isHDMode });
@@ -818,7 +869,7 @@ export class VisibilityManager {
 
   private startPlaybackSequence(postId: string, origin: PlaybackOrigin, attempt: number): void {
     const entry = this.entries.get(postId);
-    if (!entry || !entry.player) {
+    if (!entry?.player) {
       return;
     }
 
@@ -836,76 +887,13 @@ export class VisibilityManager {
 
     const player = entry.player;
     const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
-    const timeout = isMobile ? 250 : 1500;
 
     const perform = async (): Promise<void> => {
       try {
-        if (this.isMobileDevice) {
-          try {
-            await player.waitForReady(1500);
-          } catch (err) {
-            this.debugLog('play-wait-ready-timeout', { postId, origin, attempt, error: err });
-          }
-          if (!entry.isVisible) {
-            this.debugLog('play-abort-after-ready-wait', { postId, origin, attempt });
-            return;
-          }
-        }
-
-        await player.waitUntilCanPlay(timeout);
-        if (!entry.isVisible) {
-          return;
-        }
-
-        this.cancelPlaybackRetry(postId);
-        // Ensure video is muted before playing (browsers require muted autoplay)
-        // We'll apply exclusive audio AFTER play succeeds
-        player.setMuted(true);
-        
-        await player.play();
-        this.touchActive(postId);
-        this.videoStates.set(postId, 'playing');
-        this.debugLog('play-success', { postId, origin, attempt });
-        
-        // After play succeeds, handle unmuting based on global mute setting
-        // If exclusive audio is ENABLED (volume mode ON), unmute the video
-        // If exclusive audio is DISABLED (global mute ON), keep video muted
-        if (this.exclusiveAudioEnabled) {
-          // Volume mode is enabled: unmute the video after play succeeds
-          // This allows audio to play since user interaction (autoplay) has occurred
-          player.setMuted(false);
-        }
-        // If exclusive audio is disabled (global mute ON), video stays muted
+        await this.waitForPlayerReadyBeforePlay(postId, player, entry);
+        await this.executePlayback(postId, player, entry, origin, attempt, isMobile);
       } catch (error: unknown) {
-        this.debugLog('play-failed', { postId, origin, attempt, error });
-        
-        // Check if this is a load failure (not just playback failure)
-        const errorObj = error && typeof error === 'object' && 'errorType' in error 
-          ? error as { errorType?: string }
-          : null;
-        const isLoadFailure = errorObj?.errorType === 'timeout' || 
-                             errorObj?.errorType === 'network' || 
-                             errorObj?.errorType === 'play' ||
-                             (entry.player && entry.player.hasLoadError());
-        
-        if (isLoadFailure) {
-          // Notify VideoPost of load failure via FeedContainer
-          // We'll handle this by checking the error and letting VideoPost handle retries
-          // For now, we'll let the existing retry logic handle it, but VideoPost will also handle it
-          this.debugLog('load-failure-detected', { postId, errorType: errorObj?.errorType });
-        }
-        
-        if (!entry.isVisible) {
-          return;
-        }
-
-        if (attempt >= 5) {
-          this.videoStates.set(postId, 'paused');
-          return;
-        }
-
-        const delay = this.computeRetryDelay(isMobile, attempt);
-        this.schedulePlaybackRetry(postId, attempt + 1, delay);
+        this.handlePlaybackError(postId, entry, error, attempt, isMobile);
       }
     };
 
@@ -913,6 +901,106 @@ export class VisibilityManager {
     perform().catch(() => {
       // Errors are handled within perform() function
     });
+  }
+
+  /**
+   * Wait for player to be ready before playing (mobile-specific)
+   */
+  private async waitForPlayerReadyBeforePlay(
+    postId: string,
+    player: NativeVideoPlayer,
+    entry: VisibilityEntry
+  ): Promise<void> {
+    if (this.isMobileDevice) {
+      try {
+        await player.waitForReady(1500);
+      } catch (err) {
+        this.debugLog('play-wait-ready-timeout', { postId, error: err });
+      }
+      if (!entry.isVisible) {
+        this.debugLog('play-abort-after-ready-wait', { postId });
+        throw new Error('Not visible after ready wait');
+      }
+    }
+  }
+
+  /**
+   * Execute playback
+   */
+  private async executePlayback(
+    postId: string,
+    player: NativeVideoPlayer,
+    entry: VisibilityEntry,
+    origin: PlaybackOrigin,
+    attempt: number,
+    isMobile: boolean
+  ): Promise<void> {
+    const timeout = isMobile ? 500 : 2000;
+    await player.waitUntilCanPlay(timeout);
+    if (!entry.isVisible) {
+      throw new Error('Not visible');
+    }
+
+    this.cancelPlaybackRetry(postId);
+    // Ensure video is muted before playing (browsers require muted autoplay)
+    // We'll apply exclusive audio AFTER play succeeds
+    player.setMuted(true);
+    
+    await player.play();
+    this.touchActive(postId);
+    this.videoStates.set(postId, 'playing');
+    this.debugLog('play-success', { postId, origin, attempt });
+    
+    // After play succeeds, handle unmuting based on global mute setting
+    // If exclusive audio is ENABLED (volume mode ON), unmute the video
+    // If exclusive audio is DISABLED (global mute ON), keep video muted
+    if (this.exclusiveAudioEnabled) {
+      // Volume mode is enabled: unmute the video after play succeeds
+      // This allows audio to play since user interaction (autoplay) has occurred
+      player.setMuted(false);
+    }
+    // If exclusive audio is disabled (global mute ON), video stays muted
+  }
+
+  /**
+   * Handle playback errors
+   */
+  private handlePlaybackError(
+    postId: string,
+    entry: VisibilityEntry,
+    error: unknown,
+    attempt: number,
+    isMobile: boolean
+  ): void {
+    this.debugLog('play-failed', { postId, attempt, error });
+    
+    // Check if this is a load failure (not just playback failure)
+    const errorObj = error && typeof error === 'object' && 'errorType' in error 
+      ? error as { errorType?: string }
+      : null;
+    const isLoadFailure = errorObj?.errorType === 'timeout' || 
+                         errorObj?.errorType === 'network' || 
+                         errorObj?.errorType === 'play' ||
+                         entry.player?.hasLoadError();
+    
+    if (isLoadFailure) {
+      // Notify VideoPost of load failure via FeedContainer
+      // We'll handle this by checking the error and letting VideoPost handle retries
+      // For now, we'll let the existing retry logic handle it, but VideoPost will also handle it
+      this.debugLog('load-failure-detected', { postId, errorType: errorObj?.errorType });
+    }
+    
+    if (!entry.isVisible) {
+      return;
+    }
+
+    if (attempt >= 5) {
+      this.videoStates.set(postId, 'paused');
+      return;
+    }
+
+    const delay = this.computeRetryDelay(isMobile, attempt);
+    this.schedulePlaybackRetry(postId, attempt + 1, delay);
   }
 
   private computeRetryDelay(isMobile: boolean, attempt: number): number {
@@ -930,7 +1018,7 @@ export class VisibilityManager {
     const handle = setTimeout(() => {
       this.playbackRetryHandles.delete(postId);
       const entry = this.entries.get(postId);
-      if (!entry || !entry.isVisible) {
+      if (!entry?.isVisible) {
         return;
       }
       this.startPlaybackSequence(postId, 'retry', nextAttempt);
@@ -1098,16 +1186,14 @@ export class VisibilityManager {
    */
   setExclusiveAudio(enabled: boolean): void {
     this.exclusiveAudioEnabled = !!enabled;
-    if (!enabled) {
+    if (enabled) {
+      this.applyExclusiveAudioFocus();
+    } else {
       // Mute all players when disabling volume mode
-      for (const [postId, entry] of this.entries) {
-        if (entry.player) {
-          entry.player.setMuted(true);
-        }
+      for (const [, entry] of this.entries) {
+        entry.player?.setMuted(true);
       }
       this.currentAudioPostId = undefined;
-    } else {
-      this.applyExclusiveAudioFocus();
     }
   }
 
@@ -1325,70 +1411,106 @@ export class VisibilityManager {
    * Execute the combined hover enter action (unmute + play)
    */
   private executeHoverEnter(postId: string): void {
+    const entry = this.validateHoverEntry(postId);
+    if (!entry) {
+      return;
+    }
+
+    this.muteOtherVideosOnHover(postId);
+
+    if (!this.isHDMode) {
+      this.handleNonHDHover(postId, entry);
+      return;
+    }
+
+    this.pauseOtherVideosOnHover(postId);
+    this.playAndUnmuteOnHover(postId, entry);
+  }
+
+  /**
+   * Validate hover entry and player
+   */
+  private validateHoverEntry(postId: string): VisibilityEntry | undefined {
     // Verify still hovered
     if (this.hoveredPostId !== postId) {
-      return;
+      return undefined;
     }
 
     const entry = this.entries.get(postId);
     if (!entry) {
-      return;
+      return undefined;
     }
 
     // Validate element is still in DOM
     if (!entry.element.isConnected) {
       this.hoveredPostId = undefined;
-      return;
+      return undefined;
     }
 
     // Check if player has a valid video element before proceeding
     if (entry.player) {
       try {
-        entry.player.getVideoElement();
+        const videoElement = entry.player.getVideoElement();
+        if (!videoElement) {
+          // Player doesn't have video element yet, skip hover actions
+          return undefined;
+        }
       } catch {
         // Player doesn't have video element yet, skip hover actions
-        return;
+        return undefined;
       }
     } else {
       // No player yet, skip hover actions
+      return undefined;
+    }
+
+    return entry;
+  }
+
+  /**
+   * Mute all other videos when hovering
+   */
+  private muteOtherVideosOnHover(postId: string): void {
+    if (!this.exclusiveAudioEnabled) {
       return;
     }
 
-    // If exclusive audio is enabled, mute all other videos first
-    if (this.exclusiveAudioEnabled && entry.player) {
-      // Mute all other videos
-      for (const [otherPostId, otherEntry] of this.entries) {
-        if (otherPostId !== postId && otherEntry.player) {
-          // Check if other player has video element before muting
-          try {
-            otherEntry.player.getVideoElement();
-            otherEntry.player.setMuted(true);
-          } catch {
-            // Player doesn't have video element yet, skip
-            continue;
-          }
+    const entry = this.entries.get(postId);
+    if (!entry?.player) {
+      return;
+    }
+
+    // Mute all other videos
+    for (const [otherPostId, otherEntry] of this.entries) {
+      if (otherPostId !== postId && otherEntry.player) {
+        // Check if other player has video element before muting
+        try {
+          otherEntry.player.getVideoElement();
+          otherEntry.player.setMuted(true);
+        } catch {
+          // Player doesn't have video element yet, skip
+          continue;
         }
       }
     }
+  }
 
-    // In non-HD mode, skip hover play/pause - let autoplay handle playback
-    // But handle audio unmuting if exclusiveAudio is enabled
-    if (!this.isHDMode) {
-      // For non-HD videos, unmute on hover if exclusiveAudio is enabled
-      // Videos are already playing via autoplay, so we can unmute immediately
-      if (this.exclusiveAudioEnabled && entry.player) {
-        entry.player.setMuted(false);
-        this.currentAudioPostId = postId;
-      }
-      return;
+  /**
+   * Handle hover in non-HD mode
+   */
+  private handleNonHDHover(postId: string, entry: VisibilityEntry): void {
+    // For non-HD videos, unmute on hover if exclusiveAudio is enabled
+    // Videos are already playing via autoplay, so we can unmute immediately
+    if (this.exclusiveAudioEnabled && entry.player) {
+      entry.player.setMuted(false);
+      this.currentAudioPostId = postId;
     }
+  }
 
-    // For HD mode, also handle play/pause on hover
-    // For autoplay to work, we need to play while muted first, then unmute after
-    // Browsers block autoplay of unmuted videos, so we must play muted, then unmute
-    // This is especially important in HD mode where videos have audio
-    
-    // Pause all other playing videos (hover takes priority)
+  /**
+   * Pause all other playing videos on hover
+   */
+  private pauseOtherVideosOnHover(postId: string): void {
     for (const [otherPostId, otherEntry] of this.entries) {
       if (otherPostId !== postId && otherEntry.player) {
         try {
@@ -1409,38 +1531,57 @@ export class VisibilityManager {
         }
       }
     }
+  }
 
+  /**
+   * Play and unmute video on hover
+   */
+  private playAndUnmuteOnHover(postId: string, entry: VisibilityEntry): void {
     // Play first while muted (browsers allow muted autoplay)
     // Then handle unmuting based on global mute setting after play succeeds
     this.executePlayOnHover(postId).then(() => {
-      // After play succeeds, handle unmuting based on global mute setting
-      // If exclusive audio is ENABLED (volume mode ON), unmute the video
-      // If exclusive audio is DISABLED (global mute ON), keep video muted
-      if (entry.player && this.hoveredPostId === postId) {
-        if (this.exclusiveAudioEnabled) {
-          // Volume mode is enabled: unmute the video
-          // Hover provides user interaction, so unmuting is allowed
-          entry.player.setMuted(false);
-          this.currentAudioPostId = postId;
-        }
-        // If exclusive audio is disabled (global mute ON), video stays muted
-      }
+      this.handleHoverPlaySuccess(postId, entry);
     }).catch((error: unknown) => {
-      // If play fails, check if it's a load failure
-      const errorObj = error && typeof error === 'object' && 'errorType' in error 
-        ? error as { errorType?: string }
-        : null;
-      const isLoadFailure = errorObj?.errorType === 'timeout' ||
-                           errorObj?.errorType === 'network' ||
-                           errorObj?.errorType === 'play' ||
-                           (entry.player && entry.player.hasLoadError());
-      
-      if (isLoadFailure) {
-        this.debugLog('load-failure-on-hover', { postId, errorType: errorObj?.errorType });
-        // VideoPost will handle the retry logic via its own error checking
-      }
-      // If play fails, don't unmute
+      this.handleHoverPlayError(postId, entry, error);
     });
+  }
+
+  /**
+   * Handle successful hover play
+   */
+  private handleHoverPlaySuccess(postId: string, entry: VisibilityEntry): void {
+    // After play succeeds, handle unmuting based on global mute setting
+    // If exclusive audio is ENABLED (volume mode ON), unmute the video
+    // If exclusive audio is DISABLED (global mute ON), keep video muted
+    if (entry.player && this.hoveredPostId === postId) {
+      if (this.exclusiveAudioEnabled) {
+        // Volume mode is enabled: unmute the video
+        // Hover provides user interaction, so unmuting is allowed
+        entry.player.setMuted(false);
+        this.currentAudioPostId = postId;
+      }
+      // If exclusive audio is disabled (global mute ON), video stays muted
+    }
+  }
+
+  /**
+   * Handle hover play error
+   */
+  private handleHoverPlayError(postId: string, entry: VisibilityEntry, error: unknown): void {
+    // If play fails, check if it's a load failure
+    const errorObj = error && typeof error === 'object' && 'errorType' in error 
+      ? error as { errorType?: string }
+      : null;
+    const isLoadFailure = errorObj?.errorType === 'timeout' ||
+                         errorObj?.errorType === 'network' ||
+                         errorObj?.errorType === 'play' ||
+                         entry.player?.hasLoadError();
+    
+    if (isLoadFailure) {
+      this.debugLog('load-failure-on-hover', { postId, errorType: errorObj?.errorType });
+      // VideoPost will handle the retry logic via its own error checking
+    }
+    // If play fails, don't unmute
   }
 
   /**
@@ -1535,7 +1676,9 @@ export class VisibilityManager {
     let playerActuallyReady = false;
     try {
       const videoElement = entry.player.getVideoElement();
-      playerActuallyReady = videoElement.readyState >= 2; // HAVE_CURRENT_DATA or higher
+      if (videoElement) {
+        playerActuallyReady = videoElement.readyState >= 2; // HAVE_CURRENT_DATA or higher
+      }
     } catch {
       // Ignore errors checking player state
     }
@@ -1586,7 +1729,7 @@ export class VisibilityManager {
     }
 
     const entry = this.entries.get(postId);
-    if (!entry || !entry.player) {
+    if (!entry?.player) {
       return;
     }
 
@@ -1621,127 +1764,166 @@ export class VisibilityManager {
     }
     
     // If a video is hovered, use that instead of center-based selection
-    // NOTE: When exclusiveAudioEnabled is true, videos should stay muted
-    // This function only manages which video is "focused" but doesn't unmute
-    if (this.hoveredPostId) {
-      const hoveredEntry = this.entries.get(this.hoveredPostId);
-      if (hoveredEntry && hoveredEntry.player) {
-        // Mute all other videos, but keep the hovered video muted too
-        // Videos should stay muted by default - only unmute via manual action or autoplay (when global mute disabled)
-        for (const [postId, entry] of this.entries) {
-          if (entry.player && postId !== this.hoveredPostId) {
-            entry.player.setMuted(true);
-          }
-        }
-        // Don't unmute the hovered video - it should stay muted
-        this.currentAudioPostId = this.hoveredPostId;
-        return;
-      }
+    if (this.handleHoveredVideoForAudio()) {
+      return;
     }
 
-    // Pick most-centered visible entry first (before muting)
-    let bestId: string | undefined;
-    let bestScore = Number.POSITIVE_INFINITY;
-    const viewportCenterY = window.innerHeight / 2;
-    const viewportCenterX = window.innerWidth / 2;
-
-    // If a specific post is requested, use it if visible
-    if (this.currentAudioPostId) {
-      const entry = this.entries.get(this.currentAudioPostId);
-      if (entry && entry.isVisible && entry.player) {
-        bestId = this.currentAudioPostId;
-      }
-    }
-
-    // Otherwise, find the most-centered visible entry
-    if (!bestId) {
-      for (const [postId, entry] of this.entries) {
-        if (!entry.isVisible || !entry.player) continue;
-        const rect = this.getCachedRect(entry.element);
-        
-        // Only consider entries that are actually in viewport
-        if (rect.bottom < 0 || rect.top > window.innerHeight) continue;
-        if (rect.right < 0 || rect.left > window.innerWidth) continue;
-        
-        const centerY = rect.top + rect.height / 2;
-        const centerX = rect.left + rect.width / 2;
-        const dy = centerY - viewportCenterY;
-        const dx = centerX - viewportCenterX;
-        const distance = Math.hypot(dx, dy);
-        
-        if (distance < bestScore) {
-          bestScore = distance;
-          bestId = postId;
-        }
-      }
-    }
-
-    // Mute all first, but preserve playing state
-    // CRITICAL: Only change mute state for videos that are ALREADY playing
-    // Don't unmute videos that aren't playing yet - they need to be muted for autoplay
-    for (const [postId, entry] of this.entries) {
-      if (entry.player) {
-        // Only change muted state if it's different to avoid unnecessary updates
-        const shouldBeMuted = postId !== bestId;
-        const isCurrentlyMuted = entry.player.getVideoElement().muted;
-        const isCurrentlyPlaying = entry.player.isPlaying();
-        
-        // CRITICAL: Only change mute state if video is already playing
-        // If video is not playing, keep it muted (required for autoplay)
-        if (!isCurrentlyPlaying) {
-          // Video is not playing - ensure it's muted for autoplay
-          if (!isCurrentlyMuted) {
-            entry.player.setMuted(true);
-          }
-          continue;
-        }
-        
-        // Video is playing - can safely change mute state
-        if (isCurrentlyMuted !== shouldBeMuted) {
-          // Don't mute a video that was manually started by the user
-          // This prevents interrupting user-initiated playback
-          if (this.manuallyStartedVideos.has(postId) && shouldBeMuted && entry.isVisible) {
-            // Skip muting manually started videos - let them play until user pauses
-            continue;
-          }
-          
-          if (shouldBeMuted && entry.isVisible) {
-            // Delay muting to avoid interrupting playback
-            setTimeout(() => {
-              const currentEntry = this.entries.get(postId);
-              if (currentEntry && currentEntry.player && currentEntry.isVisible) {
-                // Check if it's still playing and still should be muted
-                // Don't mute if it was manually started
-                if (currentEntry.player.isPlaying() && 
-                    postId !== this.currentAudioPostId &&
-                    !this.manuallyStartedVideos.has(postId)) {
-                  currentEntry.player.setMuted(true);
-                }
-              }
-            }, 100);
-            continue;
-          }
-          
-          // When exclusiveAudioEnabled is true, ALL videos should stay muted
-          // Only unmute if global mute is disabled (exclusiveAudioEnabled = false)
-          // This is handled by the autoplay/hover handlers, not here
-          // So we should only mute here, never unmute
-          if (shouldBeMuted) {
-            entry.player.setMuted(true);
-          }
-          // Don't unmute here - videos should stay muted by default
-          // Unmuting only happens via:
-          // 1. User's manual unmute button click (handled by NativeVideoPlayer)
-          // 2. Autoplay/hover handler when global mute is disabled
-        }
-      }
-    }
-
+    const bestId = this.findBestCenteredVideo();
+    this.applyMuteStateToVideos(bestId);
+    
     // Update current audio post ID
     if (bestId) {
       this.currentAudioPostId = bestId;
     } else {
       this.currentAudioPostId = undefined;
+    }
+  }
+
+  /**
+   * Handle hovered video for audio focus
+   */
+  private handleHoveredVideoForAudio(): boolean {
+    if (!this.hoveredPostId) {
+      return false;
+    }
+
+    const hoveredEntry = this.entries.get(this.hoveredPostId);
+    if (!hoveredEntry?.player) {
+      return false;
+    }
+
+    // Mute all other videos, but keep the hovered video muted too
+    // Videos should stay muted by default - only unmute via manual action or autoplay (when global mute disabled)
+    for (const [postId, entry] of this.entries) {
+      if (entry.player && postId !== this.hoveredPostId) {
+        entry.player.setMuted(true);
+      }
+    }
+    // Don't unmute the hovered video - it should stay muted
+    this.currentAudioPostId = this.hoveredPostId;
+    return true;
+  }
+
+  /**
+   * Find the best centered visible video
+   */
+  private findBestCenteredVideo(): string | undefined {
+    // If a specific post is requested, use it if visible
+    if (this.currentAudioPostId) {
+      const entry = this.entries.get(this.currentAudioPostId);
+      if (entry && entry.isVisible && entry.player) {
+        return this.currentAudioPostId;
+      }
+    }
+
+    // Otherwise, find the most-centered visible entry
+    let bestId: string | undefined;
+    let bestScore = Number.POSITIVE_INFINITY;
+    const viewportCenterY = globalThis.window.innerHeight / 2;
+    const viewportCenterX = globalThis.window.innerWidth / 2;
+
+    for (const [postId, entry] of this.entries) {
+      if (!entry.isVisible || !entry.player) continue;
+      const rect = this.getCachedRect(entry.element);
+      
+      // Only consider entries that are actually in viewport
+      if (rect.bottom < 0 || rect.top > globalThis.window.innerHeight) continue;
+      if (rect.right < 0 || rect.left > globalThis.window.innerWidth) continue;
+      
+      const centerY = rect.top + rect.height / 2;
+      const centerX = rect.left + rect.width / 2;
+      const dy = centerY - viewportCenterY;
+      const dx = centerX - viewportCenterX;
+      const distance = Math.hypot(dx, dy);
+      
+      if (distance < bestScore) {
+        bestScore = distance;
+        bestId = postId;
+      }
+    }
+
+    return bestId;
+  }
+
+  /**
+   * Apply mute state to all videos based on best centered video
+   */
+  private applyMuteStateToVideos(bestId: string | undefined): void {
+    // Mute all first, but preserve playing state
+    // CRITICAL: Only change mute state for videos that are ALREADY playing
+    // Don't unmute videos that aren't playing yet - they need to be muted for autoplay
+    for (const [postId, entry] of this.entries) {
+      if (!entry.player) continue;
+
+      const videoElement = entry.player.getVideoElement();
+      if (!videoElement) continue;
+
+      const shouldBeMuted = postId !== bestId;
+      const isCurrentlyMuted = videoElement.muted;
+      const isCurrentlyPlaying = entry.player.isPlaying();
+      
+      // CRITICAL: Only change mute state if video is already playing
+      // If video is not playing, keep it muted (required for autoplay)
+      if (!isCurrentlyPlaying) {
+        // Video is not playing - ensure it's muted for autoplay
+        if (!isCurrentlyMuted) {
+          entry.player.setMuted(true);
+        }
+        continue;
+      }
+      
+      // Video is playing - can safely change mute state
+      if (isCurrentlyMuted !== shouldBeMuted) {
+        this.updateVideoMuteState(postId, entry, shouldBeMuted);
+      }
+    }
+  }
+
+  /**
+   * Update mute state for a playing video
+   */
+  private updateVideoMuteState(postId: string, entry: VisibilityEntry, shouldBeMuted: boolean): void {
+    // Don't mute a video that was manually started by the user
+    // This prevents interrupting user-initiated playback
+    if (this.manuallyStartedVideos.has(postId) && shouldBeMuted && entry.isVisible) {
+      // Skip muting manually started videos - let them play until user pauses
+      return;
+    }
+    
+    if (shouldBeMuted && entry.isVisible) {
+      // Delay muting to avoid interrupting playback
+      setTimeout(() => {
+        this.delayedMuteVideo(postId);
+      }, 100);
+      return;
+    }
+    
+    // When exclusiveAudioEnabled is true, ALL videos should stay muted
+    // Only unmute if global mute is disabled (exclusiveAudioEnabled = false)
+    // This is handled by the autoplay/hover handlers, not here
+    // So we should only mute here, never unmute
+    if (shouldBeMuted && entry.player) {
+      entry.player.setMuted(true);
+    }
+    // Don't unmute here - videos should stay muted by default
+    // Unmuting only happens via:
+    // 1. User's manual unmute button click (handled by NativeVideoPlayer)
+    // 2. Autoplay/hover handler when global mute is disabled
+  }
+
+  /**
+   * Delayed mute video (to avoid interrupting playback)
+   */
+  private delayedMuteVideo(postId: string): void {
+    const currentEntry = this.entries.get(postId);
+    if (currentEntry?.player && currentEntry?.isVisible) {
+      // Check if it's still playing and still should be muted
+      // Don't mute if it was manually started
+      if (currentEntry.player.isPlaying() && 
+          postId !== this.currentAudioPostId &&
+          !this.manuallyStartedVideos.has(postId)) {
+        currentEntry.player.setMuted(true);
+      }
     }
   }
 }

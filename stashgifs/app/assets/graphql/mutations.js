@@ -94,4 +94,22 @@ export const SCENE_ADD_O = `
     }
   }
 `;
+/**
+ * Update an image
+ */
+export const IMAGE_UPDATE = `
+  mutation ImageUpdate($input: ImageUpdateInput!) {
+    imageUpdate(input: $input) {
+      id
+    }
+  }
+`;
+/**
+ * Increment O-count for an image
+ */
+export const IMAGE_INCREMENT_O = `
+  mutation ImageIncrementO($id: ID!) {
+    imageIncrementO(id: $id)
+  }
+`;
 //# sourceMappingURL=mutations.js.map

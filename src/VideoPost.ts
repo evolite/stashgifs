@@ -58,14 +58,24 @@ interface HoverHandlers {
   mouseleave: () => void;
 }
 
+interface VideoPostOptions {
+  favoritesManager?: FavoritesManager;
+  api?: StashAPI;
+  visibilityManager?: VisibilityManager;
+  onPerformerChipClick?: (performerId: number, performerName: string) => void;
+  onTagChipClick?: (tagId: number, tagName: string) => void;
+  useShuffleMode?: boolean;
+  onCancelRequests?: () => void;
+}
+
 export class VideoPost {
-  private container: HTMLElement;
-  private data: VideoPostData;
+  private readonly container: HTMLElement;
+  private readonly data: VideoPostData;
   private player?: NativeVideoPlayer;
   private isLoaded: boolean = false;
-  private favoritesManager?: FavoritesManager;
-  private api?: StashAPI;
-  private visibilityManager?: VisibilityManager;
+  private readonly favoritesManager?: FavoritesManager;
+  private readonly api?: StashAPI;
+  private readonly visibilityManager?: VisibilityManager;
   private heartButton?: HTMLElement;
   private markerButton?: HTMLElement;
   private addTagButton?: HTMLElement;
@@ -107,42 +117,36 @@ export class VideoPost {
   private loadErrorCheckIntervalId?: ReturnType<typeof setInterval>;
   
   // Event handlers for cleanup
-  private ratingOutsideClickHandler = (event: Event) => this.onRatingOutsideClick(event);
-  private ratingKeydownHandler = (event: KeyboardEvent) => this.onRatingKeydown(event);
-  private ratingResizeHandler: () => void;
-  private hoverHandlers: Map<HTMLElement, HoverHandlers> = new Map();
+  private readonly ratingOutsideClickHandler = (event: Event) => this.onRatingOutsideClick(event);
+  private readonly ratingKeydownHandler = (event: KeyboardEvent) => this.onRatingKeydown(event);
+  private readonly ratingResizeHandler: () => void;
+  private readonly hoverHandlers: Map<HTMLElement, HoverHandlers> = new Map();
   
   // Cached DOM elements
   private playerContainer?: HTMLElement;
   private footer?: HTMLElement;
   private buttonGroup?: HTMLElement;
 
-  private onPerformerChipClick?: (performerId: number, performerName: string) => void;
-  private onTagChipClick?: (tagId: number, tagName: string) => void;
-  private onCancelRequests?: () => void; // Callback to cancel pending requests
+  private readonly onPerformerChipClick?: (performerId: number, performerName: string) => void;
+  private readonly onTagChipClick?: (tagId: number, tagName: string) => void;
+  private readonly onCancelRequests?: () => void; // Callback to cancel pending requests
 
-  private useShuffleMode: boolean = false;
+  private readonly useShuffleMode: boolean = false;
 
   constructor(
     container: HTMLElement, 
-    data: VideoPostData, 
-    favoritesManager?: FavoritesManager, 
-    api?: StashAPI, 
-    visibilityManager?: VisibilityManager,
-    onPerformerChipClick?: (performerId: number, performerName: string) => void,
-    onTagChipClick?: (tagId: number, tagName: string) => void,
-    useShuffleMode?: boolean,
-    onCancelRequests?: () => void
+    data: VideoPostData,
+    options: VideoPostOptions = {}
   ) {
     this.container = container;
     this.data = data;
-    this.favoritesManager = favoritesManager;
-    this.api = api;
-    this.visibilityManager = visibilityManager;
-    this.onPerformerChipClick = onPerformerChipClick;
-    this.onTagChipClick = onTagChipClick;
-    this.useShuffleMode = useShuffleMode || false;
-    this.onCancelRequests = onCancelRequests;
+    this.favoritesManager = options.favoritesManager;
+    this.api = options.api;
+    this.visibilityManager = options.visibilityManager;
+    this.onPerformerChipClick = options.onPerformerChipClick;
+    this.onTagChipClick = options.onTagChipClick;
+    this.useShuffleMode = options.useShuffleMode || false;
+    this.onCancelRequests = options.onCancelRequests;
     this.oCount = this.data.marker.scene.o_counter || 0;
     this.ratingValue = this.convertRating100ToStars(this.data.marker.scene.rating100);
     this.hasRating = typeof this.data.marker.scene.rating100 === 'number' && !Number.isNaN(this.data.marker.scene.rating100);
@@ -168,7 +172,7 @@ export class VideoPost {
     this.container.dataset.postId = this.data.marker.id;
     // Clear container efficiently
     while (this.container.firstChild) {
-      this.container.removeChild(this.container.firstChild);
+      this.container.firstChild.remove();
     }
 
     // Header with performers and tags
@@ -199,7 +203,7 @@ export class VideoPost {
     let aspectRatioClass = 'aspect-16-9';
     if (this.data.marker.scene.files && this.data.marker.scene.files.length > 0) {
       const file = this.data.marker.scene.files[0];
-      if (file && file.width && file.height) {
+      if (file?.width && file?.height) {
         const ratio = calculateAspectRatio(file.width, file.height);
         aspectRatioClass = getAspectRatioClass(ratio);
       }
@@ -290,61 +294,79 @@ export class VideoPost {
     // Add tag chips: show all tags from the tags array
     // Skip in shuffle mode UNLESS a marker has been created (to show the assigned tag)
     if (!this.useShuffleMode || this.hasCreatedMarker) {
-      if (this.data.marker.tags && this.data.marker.tags.length > 0) {
-        // Create a set to track displayed tags and ensure no duplicates
-        const displayedTagIds = new Set<string>();
-        
-        // First, add primary tag if it exists and is valid (but skip if it's the Favorite or Marker tag)
-        if (this.data.marker.primary_tag && 
-            this.data.marker.primary_tag.id && 
-            this.data.marker.primary_tag.name &&
-            this.data.marker.primary_tag.name !== FAVORITE_TAG_NAME &&
-            this.data.marker.primary_tag.name !== MARKER_TAG_NAME) {
-          const chip = this.createTagChip(this.data.marker.primary_tag);
-          chips.appendChild(chip);
-          displayedTagIds.add(this.data.marker.primary_tag.id);
-        }
-        
-        // Then, add all other tags from the tags array
-        for (const tag of this.data.marker.tags) {
-          // Skip if tag is invalid or already displayed
-          if (!tag || !tag.id || !tag.name || displayedTagIds.has(tag.id)) {
-            continue;
-          }
-          
-          // Skip if this tag is the same as the primary tag
-          if (this.data.marker.primary_tag && 
-              this.data.marker.primary_tag.id === tag.id) {
-            continue;
-          }
-          
-          // Skip the StashGifs Favorite tag (already represented by heart button)
-          if (tag.name === FAVORITE_TAG_NAME) {
-            continue;
-          }
-          
-          // Skip the StashGifs Marker tag (internal tag for plugin-created markers)
-          if (tag.name === MARKER_TAG_NAME) {
-            continue;
-          }
-          
-          const chip = this.createTagChip(tag);
-          chips.appendChild(chip);
-          displayedTagIds.add(tag.id);
-        }
-      } else if (this.data.marker.primary_tag && 
-                 this.data.marker.primary_tag.id && 
-                 this.data.marker.primary_tag.name &&
-                 this.data.marker.primary_tag.name !== FAVORITE_TAG_NAME &&
-                 this.data.marker.primary_tag.name !== MARKER_TAG_NAME) {
-        // Fallback: if tags array is empty but primary tag exists, show it (unless it's Favorite tag)
-        const chip = this.createTagChip(this.data.marker.primary_tag);
-        chips.appendChild(chip);
-      }
+      this.addTagChips(chips);
     }
 
     header.appendChild(chips);
     return header;
+  }
+
+  /**
+   * Check if a tag should be skipped (internal tags or duplicates)
+   */
+  private shouldSkipTag(tag: { id?: string; name?: string } | null | undefined, displayedTagIds: Set<string>): boolean {
+    if (!tag?.id || !tag?.name || displayedTagIds.has(tag.id)) {
+      return true;
+    }
+    
+    // Skip if this tag is the same as the primary tag
+    if (this.data.marker.primary_tag?.id === tag.id) {
+      return true;
+    }
+    
+    // Skip the StashGifs Favorite tag (already represented by heart button)
+    if (tag.name === FAVORITE_TAG_NAME) {
+      return true;
+    }
+    
+    // Skip the StashGifs Marker tag (internal tag for plugin-created markers)
+    if (tag.name === MARKER_TAG_NAME) {
+      return true;
+    }
+    
+    return false;
+  }
+
+  /**
+   * Add primary tag chip if valid
+   */
+  private addPrimaryTagChip(chips: HTMLElement, displayedTagIds: Set<string>): void {
+    if (this.data.marker.primary_tag?.id && 
+        this.data.marker.primary_tag.name &&
+        this.data.marker.primary_tag.name !== FAVORITE_TAG_NAME &&
+        this.data.marker.primary_tag.name !== MARKER_TAG_NAME) {
+      const chip = this.createTagChip(this.data.marker.primary_tag);
+      chips.appendChild(chip);
+      displayedTagIds.add(this.data.marker.primary_tag.id);
+    }
+  }
+
+  /**
+   * Add tag chips to the chips container
+   */
+  private addTagChips(chips: HTMLElement): void {
+    if (this.data.marker.tags && this.data.marker.tags.length > 0) {
+      // Create a set to track displayed tags and ensure no duplicates
+      const displayedTagIds = new Set<string>();
+      
+      // First, add primary tag if it exists and is valid
+      this.addPrimaryTagChip(chips, displayedTagIds);
+      
+      // Then, add all other tags from the tags array
+      for (const tag of this.data.marker.tags) {
+        if (this.shouldSkipTag(tag, displayedTagIds)) {
+          continue;
+        }
+        
+        const chip = this.createTagChip(tag);
+        chips.appendChild(chip);
+        displayedTagIds.add(tag.id);
+      }
+    } else {
+      // Fallback: if tags array is empty but primary tag exists, show it
+      const displayedTagIds = new Set<string>();
+      this.addPrimaryTagChip(chips, displayedTagIds);
+    }
   }
 
   /**
@@ -366,7 +388,7 @@ export class VideoPost {
     // Handler function to filter by performer
     const handleClick = () => {
       if (this.onPerformerChipClick) {
-        const performerId = parseInt(performer.id, 10);
+        const performerId = Number.parseInt(performer.id, 10);
         if (!Number.isNaN(performerId)) {
           this.onPerformerChipClick(performerId, performer.name);
         }
@@ -417,7 +439,7 @@ export class VideoPost {
         const deltaX = Math.abs(touch.clientX - touchStartX);
         const deltaY = Math.abs(touch.clientY - touchStartY);
         const touchDuration = Date.now() - touchStartTime;
-        const totalDistance = Math.sqrt(deltaX * deltaX + deltaY * deltaY);
+        const totalDistance = Math.hypot(deltaX, deltaY);
         
         // Only trigger click if:
         // 1. Not scrolling (movement < threshold)
@@ -462,29 +484,42 @@ export class VideoPost {
   }
 
   /**
-   * Create a tag chip element
+   * Create a tag chip element (displayed as hashtag without borders)
    */
   private createTagChip(tag: { id: string; name: string }): HTMLElement {
-    const chip = document.createElement('a');
-    chip.className = 'chip chip--tag';
-    chip.href = this.getTagLink(tag.id);
-    chip.target = '_blank';
-    chip.rel = 'noopener noreferrer';
-    chip.style.padding = '2px 8px';
-    chip.style.fontSize = '12px';
-    chip.style.lineHeight = '1.4';
-    chip.style.transition = 'opacity 0.2s ease';
-    chip.style.cursor = 'pointer';
+    const hashtag = document.createElement('a');
+    hashtag.className = 'hashtag';
+    hashtag.href = this.getTagLink(tag.id);
+    hashtag.target = '_blank';
+    hashtag.rel = 'noopener noreferrer';
+    hashtag.style.display = 'inline-block';
+    hashtag.style.padding = '0';
+    hashtag.style.margin = '0';
+    hashtag.style.fontSize = '12px';
+    hashtag.style.lineHeight = '1.4';
+    hashtag.style.color = 'rgba(255, 255, 255, 0.7)';
+    hashtag.style.textDecoration = 'none';
+    hashtag.style.transition = 'color 0.2s ease';
+    hashtag.style.cursor = 'pointer';
+    hashtag.style.fontWeight = '500';
     
     // Handler function to filter by tag
     const handleClick = () => {
       if (this.onTagChipClick) {
-        const tagId = parseInt(tag.id, 10);
+        const tagId = Number.parseInt(tag.id, 10);
         if (!Number.isNaN(tagId)) {
           this.onTagChipClick(tagId, tag.name);
         }
       }
     };
+    
+    // Hover effect
+    hashtag.addEventListener('mouseenter', () => {
+      hashtag.style.color = 'rgba(255, 255, 255, 0.9)';
+    });
+    hashtag.addEventListener('mouseleave', () => {
+      hashtag.style.color = 'rgba(255, 255, 255, 0.7)';
+    });
     
     // Detect mobile device
     const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
@@ -498,7 +533,7 @@ export class VideoPost {
       const touchMoveThreshold: number = 10; // pixels
       const touchDurationThreshold: number = 300; // milliseconds
       
-      chip.addEventListener('touchstart', (e) => {
+      hashtag.addEventListener('touchstart', (e) => {
         const touch = e.touches[0];
         if (touch) {
           touchStartX = touch.clientX;
@@ -508,7 +543,7 @@ export class VideoPost {
         }
       }, { passive: true });
       
-      chip.addEventListener('touchmove', (e) => {
+      hashtag.addEventListener('touchmove', (e) => {
         if (e.touches.length > 0) {
           const touch = e.touches[0];
           if (touch) {
@@ -523,14 +558,14 @@ export class VideoPost {
         }
       }, { passive: true });
       
-      chip.addEventListener('touchend', (e) => {
+      hashtag.addEventListener('touchend', (e) => {
         const touch = e.changedTouches[0];
         if (!touch) return;
         
         const deltaX = Math.abs(touch.clientX - touchStartX);
         const deltaY = Math.abs(touch.clientY - touchStartY);
         const touchDuration = Date.now() - touchStartTime;
-        const totalDistance = Math.sqrt(deltaX * deltaX + deltaY * deltaY);
+        const totalDistance = Math.hypot(deltaX, deltaY);
         
         // Only trigger click if:
         // 1. Not scrolling (movement < threshold)
@@ -552,7 +587,7 @@ export class VideoPost {
       }, { passive: false });
       
       // Click handler as fallback (shouldn't fire if touchend worked, but keep for compatibility)
-      chip.addEventListener('click', (e) => {
+      hashtag.addEventListener('click', (e) => {
         e.preventDefault();
         e.stopPropagation();
         // Only handle click if it wasn't already handled by touchend
@@ -561,15 +596,49 @@ export class VideoPost {
       });
     } else {
       // Desktop: use simple click handler
-      chip.addEventListener('click', (e) => {
+      hashtag.addEventListener('click', (e) => {
         e.preventDefault();
         e.stopPropagation();
         handleClick();
       });
     }
     
-    chip.appendChild(document.createTextNode(tag.name));
-    return chip;
+    // Add hashtag prefix
+    hashtag.appendChild(document.createTextNode(`#${tag.name}`));
+    return hashtag;
+  }
+
+  /**
+   * Add action buttons (heart/marker/add tag) to button group
+   */
+  private addActionButtons(buttonGroup: HTMLElement): void {
+    // Hide favorite button in shuffle mode, show marker button instead
+    // But if marker was already created, show heart button instead
+    if (this.useShuffleMode) {
+      if (this.hasCreatedMarker && this.favoritesManager) {
+        // Marker was created, show heart button and "+" button
+        const heartBtn = this.createHeartButton();
+        buttonGroup.appendChild(heartBtn);
+        if (this.api && this.isRealMarker()) {
+          const addTagBtn = this.createAddTagButton();
+          buttonGroup.appendChild(addTagBtn);
+        }
+      } else if (this.api) {
+        // Show marker button to create marker
+        const markerBtn = this.createMarkerButton();
+        buttonGroup.appendChild(markerBtn);
+      }
+    } else {
+      // Non-shuffle mode: show heart and "+" buttons for real markers
+      if (this.favoritesManager) {
+        const heartBtn = this.createHeartButton();
+        buttonGroup.appendChild(heartBtn);
+      }
+      if (this.api && this.isRealMarker()) {
+        const addTagBtn = this.createAddTagButton();
+        buttonGroup.appendChild(addTagBtn);
+      }
+    }
   }
 
   /**
@@ -601,33 +670,7 @@ export class VideoPost {
     this.buttonGroup = buttonGroup; // Store reference for button swapping
 
     // Add buttons in order
-    // Hide favorite button in shuffle mode, show marker button instead
-    // But if marker was already created, show heart button instead
-    if (this.useShuffleMode) {
-      if (this.hasCreatedMarker && this.favoritesManager) {
-        // Marker was created, show heart button and "+" button
-        const heartBtn = this.createHeartButton();
-        buttonGroup.appendChild(heartBtn);
-        if (this.api && this.isRealMarker()) {
-          const addTagBtn = this.createAddTagButton();
-          buttonGroup.appendChild(addTagBtn);
-        }
-      } else if (this.api) {
-        // Show marker button to create marker
-        const markerBtn = this.createMarkerButton();
-        buttonGroup.appendChild(markerBtn);
-      }
-    } else {
-      // Non-shuffle mode: show heart and "+" buttons for real markers
-      if (this.favoritesManager) {
-        const heartBtn = this.createHeartButton();
-        buttonGroup.appendChild(heartBtn);
-      }
-      if (this.api && this.isRealMarker()) {
-        const addTagBtn = this.createAddTagButton();
-        buttonGroup.appendChild(addTagBtn);
-      }
-    }
+    this.addActionButtons(buttonGroup);
 
     if (this.api) {
       const oCountBtn = this.createOCountButton();
@@ -774,9 +817,7 @@ export class VideoPost {
         this.isFavorite = newFavoriteState;
         
         // Update local marker tags to reflect the change
-        if (!this.data.marker.tags) {
-          this.data.marker.tags = [];
-        }
+        this.data.marker.tags ??= [];
         
         if (newFavoriteState) {
           if (!this.data.marker.tags.some(tag => tag.name === FAVORITE_TAG_NAME)) {
@@ -877,7 +918,7 @@ export class VideoPost {
     if (!this.buttonGroup || !this.markerButton || !this.favoritesManager) return;
 
     // Remove marker button
-    this.buttonGroup.removeChild(this.markerButton);
+    this.markerButton?.remove();
     this.markerButton = undefined;
 
     // Create and add heart button in the same position (first button)
@@ -1033,7 +1074,6 @@ export class VideoPost {
           console.error('DOMException details:', {
             name: error.name,
             message: error.message,
-            code: error.code,
           });
         }
         showToast('Failed to load high-quality video. Please try again.');
@@ -1069,7 +1109,7 @@ export class VideoPost {
   private createRatingSection(): HTMLElement {
     const wrapper = document.createElement('div');
     wrapper.className = 'rating-control';
-    wrapper.setAttribute('data-role', 'rating');
+    wrapper.dataset.role = 'rating';
     this.ratingWrapper = wrapper;
 
     const displayButton = this.createRatingDisplayButton();
@@ -1180,7 +1220,7 @@ export class VideoPost {
   private handleRatingKeydown(event: KeyboardEvent, currentIndex: number): void {
     if (!this.isRatingDialogOpen) return;
     
-    let newIndex = currentIndex;
+    let newIndex: number;
     
     switch (event.key) {
       case 'ArrowRight':
@@ -1327,7 +1367,7 @@ export class VideoPost {
    */
   private updateRatingStarButtons(): void {
     if (!this.ratingStarButtons || this.ratingStarButtons.length === 0) return;
-    this.ratingStarButtons.forEach((button, index) => {
+    for (const [index, button] of this.ratingStarButtons.entries()) {
       const value = Number(button.dataset.value || '0');
       const isActive = this.hasRating && value <= this.ratingValue;
       const isChecked = this.hasRating && value === this.ratingValue;
@@ -1336,7 +1376,7 @@ export class VideoPost {
       button.tabIndex = isChecked || (!this.hasRating && index === 0) ? 0 : -1;
       button.textContent = isActive ? '★' : '☆';
       button.disabled = this.isSavingRating;
-    });
+    }
   }
 
   /**
@@ -1402,14 +1442,41 @@ export class VideoPost {
       this.ratingDisplayButton.removeAttribute('aria-busy');
       this.ratingDisplayButton.disabled = false;
     }
-    this.ratingStarButtons.forEach((button) => {
+    for (const button of this.ratingStarButtons) {
       button.disabled = isSaving;
-    });
+    }
   }
 
   /**
    * Sync rating dialog layout with container
    */
+  private calculateStarsWidth(dialog: HTMLElement): number {
+    if (this.ratingStarButtons.length > 0) {
+      // Use cached width if available (button widths don't change)
+      if (this.cachedStarButtonWidth === undefined) {
+        // Measure actual width of all star buttons combined (only once)
+        let totalWidth = 0;
+        for (const starBtn of this.ratingStarButtons) {
+          const rect = starBtn.getBoundingClientRect();
+          totalWidth += rect.width;
+        }
+        // Cache the average width per button
+        if (this.ratingStarButtons.length > 0) {
+          this.cachedStarButtonWidth = totalWidth / this.ratingStarButtons.length;
+        }
+        return totalWidth;
+      }
+      return this.cachedStarButtonWidth * this.ratingStarButtons.length;
+    }
+    // Fallback: use container scrollWidth if buttons aren't available yet
+    const starsContainer = dialog.querySelector('.rating-dialog__stars') as HTMLElement;
+    if (starsContainer) {
+      return starsContainer.scrollWidth;
+    }
+    // Final fallback: estimate based on star count
+    return 10 * 24; // 10 stars * ~24px each
+  }
+
   private syncRatingDialogLayout(): void {
     if (!this.ratingWrapper) return;
     const dialog = this.ratingDialog;
@@ -1420,32 +1487,7 @@ export class VideoPost {
     if (!cardRect.width || !wrapperRect.width) return;
 
     // Calculate exact width needed for stars dynamically
-    let starsWidth = 0;
-    if (this.ratingStarButtons.length > 0) {
-      // Use cached width if available (button widths don't change)
-      if (this.cachedStarButtonWidth !== undefined) {
-        starsWidth = this.cachedStarButtonWidth * this.ratingStarButtons.length;
-      } else {
-        // Measure actual width of all star buttons combined (only once)
-        this.ratingStarButtons.forEach((starBtn) => {
-          const rect = starBtn.getBoundingClientRect();
-          starsWidth += rect.width;
-        });
-        // Cache the average width per button
-        if (this.ratingStarButtons.length > 0) {
-          this.cachedStarButtonWidth = starsWidth / this.ratingStarButtons.length;
-        }
-      }
-    } else {
-      // Fallback: use container scrollWidth if buttons aren't available yet
-      const starsContainer = dialog.querySelector('.rating-dialog__stars') as HTMLElement;
-      if (starsContainer) {
-        starsWidth = starsContainer.scrollWidth;
-      } else {
-        // Final fallback: estimate based on star count
-        starsWidth = 10 * 24; // 10 stars * ~24px each
-      }
-    }
+    const starsWidth = this.calculateStarsWidth(dialog);
     
     // No padding or border - just stars
     const dialogWidth = starsWidth;
@@ -1494,83 +1536,154 @@ export class VideoPost {
   }
 
   /**
-   * Upgrade from marker video to full scene video with audio
+   * Destroy the current player instance
    */
-  private async upgradeToSceneVideo(): Promise<void> {
-    if (!this.api) {
-      throw new Error('API not available');
+  private async destroyCurrentPlayer(): Promise<void> {
+    if (!this.player) {
+      return;
     }
-
-    // Get full scene video URL
-    const sceneVideoUrl = this.api.getVideoUrl(this.data.marker.scene);
-    if (!sceneVideoUrl || !isValidMediaUrl(sceneVideoUrl)) {
-      throw new Error('Scene video URL not available');
+    
+    // Clear the state change listener first to prevent it from firing after destroy
+    // This is critical - the old player's listener might try to update visibility manager
+    // with the destroyed player's state, causing conflicts
+    this.player.setStateChangeListener();
+    
+    // Unload first to release video buffers immediately
+    if (this.player.getIsUnloaded()) {
+      return;
     }
+    this.player.unload();
+    // Small delay to ensure unload completes and memory is released
+    await new Promise(resolve => setTimeout(resolve, 50));
+    
+    // Destroy the player FIRST - it will handle removing the video element from DOM
+    // This prevents the "Child to be replaced is not a child" error
+    this.player.destroy();
+    this.player = undefined;
+    this.isLoaded = false;
+    
+    // Small delay to ensure destroy completes
+    await new Promise(resolve => setTimeout(resolve, 50));
+  }
 
-    const playerContainer = this.playerContainer || this.container.querySelector('.video-post__player') as HTMLElement;
-    if (!playerContainer) {
-      throw new Error('Player container not found');
-    }
-
-    // Capture current playback state with proper null checks
-    const playerState = this.player?.getState();
-    const wasPlaying = playerState?.isPlaying ?? false;
-
-    // Unload and destroy current marker player to free memory before creating new one
-    if (this.player) {
-      // Clear the state change listener first to prevent it from firing after destroy
-      // This is critical - the old player's listener might try to update visibility manager
-      // with the destroyed player's state, causing conflicts
-      this.player.setStateChangeListener(undefined);
-      
-      // Unload first to release video buffers immediately
-      if (!this.player.getIsUnloaded()) {
-        this.player.unload();
-      }
-      // Small delay to ensure unload completes and memory is released
-      await new Promise(resolve => setTimeout(resolve, 50));
-      
-      // Destroy the player FIRST - it will handle removing the video element from DOM
-      // This prevents the "Child to be replaced is not a child" error
-      this.player.destroy();
-      this.player = undefined;
-      this.isLoaded = false;
-      
-      // Small delay to ensure destroy completes
-      await new Promise(resolve => setTimeout(resolve, 50));
-    }
-
-    // Clean up any leftover player elements from the old player
-    // Remove all .video-player wrappers and .video-player__controls
+  /**
+   * Clean up leftover player elements from DOM
+   */
+  private cleanupPlayerElements(playerContainer: HTMLElement): void {
     try {
       const oldPlayerWrappers = playerContainer.querySelectorAll('.video-player');
       for (const wrapper of Array.from(oldPlayerWrappers)) {
-        if (wrapper.parentNode) {
-          wrapper.parentNode.removeChild(wrapper);
-        }
+        wrapper.remove();
       }
       
       const oldControls = playerContainer.querySelectorAll('.video-player__controls');
       for (const controls of Array.from(oldControls)) {
-        if (controls.parentNode) {
-          controls.parentNode.removeChild(controls);
-        }
+        controls.remove();
       }
     } catch (e) {
       console.warn('Failed to remove old player elements', e);
       // If removing elements fails, try clearing container as fallback
       try {
         playerContainer.innerHTML = '';
-      } catch (e2) {
-        console.error('Failed to clear player container', e2);
+      } catch (error_) {
+        console.error('Failed to clear player container', error_);
         throw new Error('Failed to clear player container for upgrade');
       }
     }
+  }
 
-    // Small delay to ensure DOM is cleared and old player is fully destroyed
-    await new Promise(resolve => setTimeout(resolve, 50));
+  /**
+   * Attempt to start playback with retry logic
+   */
+  private async attemptPlayback(waitTimeout: number, checkDelay: number): Promise<boolean> {
+    if (!this.player) {
+      return false;
+    }
+    
+    try {
+      // Wait for video to be actually loaded (fires on loadeddata/canplay events)
+      await this.player.waitForReady(waitTimeout);
+      
+      // Attempt to play
+      await this.player.play();
+      
+      // Wait for play() to take effect (longer on mobile)
+      await new Promise(resolve => setTimeout(resolve, checkDelay));
+      
+      // Check if playback actually started
+      if (this.player.isPlaying()) {
+        return true;
+      }
+      
+      // If not playing, check readyState as additional verification
+      const videoElement = this.player.getVideoElement();
+      if (videoElement && videoElement.readyState >= 2) {
+        // Video is loaded, might just need more time
+        // Wait a bit more and check again
+        await new Promise(resolve => setTimeout(resolve, checkDelay));
+        return this.player.isPlaying();
+      }
+      
+      return false;
+    } catch (error: unknown) {
+      // Error occurred, check if video is actually playing despite the error
+      // Sometimes waitForReady or play() throws even when playback succeeds
+      // Error is intentionally handled - we check playback state as fallback
+      if (error instanceof Error) {
+        // Silently handle - playback may have succeeded despite error
+      }
+      await new Promise(resolve => setTimeout(resolve, checkDelay));
+      return this.player.isPlaying() ?? false;
+    }
+  }
 
-    // Create new player with full scene video (with error handling)
+  /**
+   * Resume playback after upgrading to scene video
+   */
+  private async resumePlaybackAfterUpgrade(): Promise<void> {
+    if (!this.player) {
+      return;
+    }
+    
+    const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+    const waitTimeout = isMobile ? 6000 : 4000; // Longer timeout on mobile for HD videos
+    const checkDelay = isMobile ? 300 : 100; // More time on mobile for play() to take effect
+    
+    // Retry logic with exponential backoff
+    let retryCount = 0;
+    const maxRetries = 2; // Try up to 3 times total (initial + 2 retries)
+    const retryDelays = [0, 500, 1000]; // Initial attempt, then 500ms, then 1000ms
+    
+    while (retryCount <= maxRetries) {
+      const success = await this.attemptPlayback(waitTimeout, checkDelay);
+      if (success) {
+        return;
+      }
+      
+      // If we get here, playback didn't start
+      // Retry if we haven't exhausted retries
+      if (retryCount < maxRetries) {
+        const delay = retryDelays[retryCount + 1];
+        await new Promise(resolve => setTimeout(resolve, delay));
+        retryCount++;
+        continue;
+      }
+      
+      // All retries exhausted, show error
+      const videoElement = this.player.getVideoElement();
+      console.warn('Failed to resume playback after upgrade - video not playing after retries', {
+        retryCount,
+        readyState: videoElement?.readyState,
+      });
+      showToast('Video upgraded but playback failed. Click play to start.');
+      return;
+    }
+  }
+
+  /**
+   * Create new scene video player
+   */
+  private async createSceneVideoPlayer(playerContainer: HTMLElement, sceneVideoUrl: string): Promise<void> {
     try {
       const startTime = this.data.startTime ?? this.data.marker.seconds;
       
@@ -1599,98 +1712,69 @@ export class VideoPost {
       });
       throw error; // Re-throw since this is an async method that should fail if player creation fails
     }
+  }
 
-    // Register with visibility manager if available
+  /**
+   * Register player with visibility manager after upgrade
+   */
+  private async registerUpgradedPlayerWithVisibilityManager(): Promise<void> {
     // Wait a brief moment to ensure player is fully initialized before registering
     await new Promise(resolve => setTimeout(resolve, 50));
-    if (this.visibilityManager && this.data.marker.id) {
+    if (this.visibilityManager && this.data.marker.id && this.player) {
       this.visibilityManager.registerPlayer(this.data.marker.id, this.player);
     }
+  }
+
+  /**
+   * Validate and prepare for video upgrade
+   */
+  private validateAndPrepareUpgrade(): { sceneVideoUrl: string; playerContainer: HTMLElement; wasPlaying: boolean } {
+    if (!this.api) {
+      throw new Error('API not available');
+    }
+
+    // Get full scene video URL
+    const sceneVideoUrl = this.api.getVideoUrl(this.data.marker.scene);
+    if (!sceneVideoUrl || !isValidMediaUrl(sceneVideoUrl)) {
+      throw new Error('Scene video URL not available');
+    }
+
+    const playerContainer = this.playerContainer || this.container.querySelector('.video-post__player') as HTMLElement;
+    if (!playerContainer) {
+      throw new Error('Player container not found');
+    }
+
+    // Capture current playback state with proper null checks
+    const playerState = this.player?.getState();
+    const wasPlaying = playerState?.isPlaying ?? false;
+
+    return { sceneVideoUrl, playerContainer, wasPlaying };
+  }
+
+  /**
+   * Upgrade from marker video to full scene video with audio
+   */
+  private async upgradeToSceneVideo(): Promise<void> {
+    const { sceneVideoUrl, playerContainer, wasPlaying } = this.validateAndPrepareUpgrade();
+
+    // Unload and destroy current marker player to free memory before creating new one
+    await this.destroyCurrentPlayer();
+
+    // Clean up any leftover player elements from the old player
+    this.cleanupPlayerElements(playerContainer);
+
+    // Small delay to ensure DOM is cleared and old player is fully destroyed
+    await new Promise(resolve => setTimeout(resolve, 50));
+
+    // Create new player with full scene video
+    await this.createSceneVideoPlayer(playerContainer, sceneVideoUrl);
+
+    // Register with visibility manager if available
+    await this.registerUpgradedPlayerWithVisibilityManager();
 
     // If video was playing, resume playback
     if (wasPlaying) {
-      const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
-      const waitTimeout = isMobile ? 6000 : 4000; // Longer timeout on mobile for HD videos
-      const checkDelay = isMobile ? 300 : 100; // More time on mobile for play() to take effect
-      
-      // Retry logic with exponential backoff
-      let retryCount = 0;
-      const maxRetries = 2; // Try up to 3 times total (initial + 2 retries)
-      const retryDelays = [0, 500, 1000]; // Initial attempt, then 500ms, then 1000ms
-      
-      while (retryCount <= maxRetries) {
-        try {
-          // Wait for video to be actually loaded (fires on loadeddata/canplay events)
-          await this.player.waitForReady(waitTimeout);
-          
-          // Attempt to play
-          await this.player.play();
-          
-          // Wait for play() to take effect (longer on mobile)
-          await new Promise(resolve => setTimeout(resolve, checkDelay));
-          
-          // Check if playback actually started
-          if (this.player.isPlaying()) {
-            // Success! Playback started
-            return;
-          }
-          
-          // If not playing, check readyState as additional verification
-          const videoElement = this.player.getVideoElement();
-          if (videoElement && videoElement.readyState >= 2) {
-            // Video is loaded, might just need more time
-            // Wait a bit more and check again
-            await new Promise(resolve => setTimeout(resolve, checkDelay));
-            if (this.player.isPlaying()) {
-              return; // Success after additional wait
-            }
-          }
-          
-          // If we get here, playback didn't start
-          // Retry if we haven't exhausted retries
-          if (retryCount < maxRetries) {
-            const delay = retryDelays[retryCount + 1];
-            await new Promise(resolve => setTimeout(resolve, delay));
-            retryCount++;
-            continue;
-          }
-          
-          // All retries exhausted, show error
-          console.warn('Failed to resume playback after upgrade - video not playing after retries', {
-            retryCount,
-            readyState: videoElement?.readyState,
-          });
-          showToast('Video upgraded but playback failed. Click play to start.');
-          return;
-          
-        } catch (error) {
-          // Error occurred, check if video is actually playing despite the error
-          // Sometimes waitForReady or play() throws even when playback succeeds
-          await new Promise(resolve => setTimeout(resolve, checkDelay));
-          
-          if (this.player.isPlaying()) {
-            // Actually playing despite error, success!
-            return;
-          }
-          
-          // Not playing, retry if we haven't exhausted retries
-          if (retryCount < maxRetries) {
-            const delay = retryDelays[retryCount + 1];
-            await new Promise(resolve => setTimeout(resolve, delay));
-            retryCount++;
-            continue;
-          }
-          
-          // All retries exhausted, show error
-          console.warn('Failed to resume playback after upgrade', {
-            error,
-            retryCount,
-            readyState: this.player.getVideoElement()?.readyState,
-          });
-          showToast('Video upgraded but playback failed. Click play to start.');
-          return;
-        }
-      }
+      await this.resumePlaybackAfterUpgrade();
     }
   }
 
@@ -1723,21 +1807,21 @@ export class VideoPost {
   private getSceneLink(): string {
     const s = this.data.marker.scene;
     const t = Math.max(0, Math.floor(this.data.marker.seconds || 0));
-    return `${window.location.origin}/scenes/${s.id}?t=${t}`;
+    return `${globalThis.location.origin}/scenes/${s.id}?t=${t}`;
   }
 
   /**
    * Get link to performer page
    */
   private getPerformerLink(performerId: string): string {
-    return `${window.location.origin}/performers/${performerId}`;
+    return `${globalThis.location.origin}/performers/${performerId}`;
   }
 
   /**
    * Get link to tag page
    */
   private getTagLink(tagId: string): string {
-    return `${window.location.origin}/tags/${tagId}`;
+    return `${globalThis.location.origin}/tags/${tagId}`;
   }
 
   /**
@@ -1795,15 +1879,15 @@ export class VideoPost {
         clearInterval(this.loadErrorCheckIntervalId);
       }
       this.loadErrorCheckIntervalId = setInterval(() => {
-        if (this.player && !this.hasFailedPermanently) {
-          this.checkForLoadError();
-        } else {
+        if (!this.player || this.hasFailedPermanently) {
           // Stop checking if player is gone or has failed permanently
           if (this.loadErrorCheckIntervalId) {
             clearInterval(this.loadErrorCheckIntervalId);
             this.loadErrorCheckIntervalId = undefined;
           }
+          return;
         }
+        this.checkForLoadError();
       }, 3000);
     } catch (error) {
       console.error('VideoPost: Failed to create video player', {
@@ -1908,7 +1992,7 @@ export class VideoPost {
    * Keep loading visible until the native player reports it can render frames.
    */
   private hideMediaWhenReady(player: NativeVideoPlayer, container: HTMLElement): void {
-    const loading = container.querySelector('.video-post__loading') as HTMLElement | null;
+    const loading = container.querySelector<HTMLElement>('.video-post__loading');
 
     const hideVisuals = () => {
       if (loading) {
@@ -1920,15 +2004,9 @@ export class VideoPost {
       }
     };
 
-    const scheduleTimeout = typeof window !== 'undefined'
-      ? window.setTimeout.bind(window)
-      : setTimeout;
-    const clearScheduledTimeout = typeof window !== 'undefined'
-      ? window.clearTimeout.bind(window)
-      : clearTimeout;
-    const requestFrame = typeof window !== 'undefined' && typeof window.requestAnimationFrame === 'function'
-      ? window.requestAnimationFrame.bind(window)
-      : (cb: FrameRequestCallback) => setTimeout(cb, 16);
+    const scheduleTimeout = globalThis.window?.setTimeout.bind(globalThis.window) ?? setTimeout;
+    const clearScheduledTimeout = globalThis.window?.clearTimeout.bind(globalThis.window) ?? clearTimeout;
+    const requestFrame = globalThis.window?.requestAnimationFrame?.bind(globalThis.window) ?? ((cb: FrameRequestCallback) => setTimeout(cb, 16));
 
     const videoElement = player.getVideoElement();
     let revealed = false;
@@ -2080,7 +2158,7 @@ export class VideoPost {
         error,
       });
 
-      this.retryTimeoutId = window.setTimeout(() => {
+      this.retryTimeoutId = globalThis.setTimeout(() => {
         this.retryLoad();
       }, delay);
     }
@@ -2436,7 +2514,7 @@ export class VideoPost {
   /**
    * Handle clicks outside marker dialog
    */
-  private onMarkerDialogOutsideClick = (event: Event): void => {
+  private readonly onMarkerDialogOutsideClick = (event: Event): void => {
     if (!this.isMarkerDialogOpen || !this.markerDialog) return;
     const target = event.target as Node | null;
     if (target && this.markerDialog.contains(target)) {
@@ -2448,7 +2526,7 @@ export class VideoPost {
   /**
    * Handle keyboard events for marker dialog
    */
-  private onMarkerDialogKeydown = (event: KeyboardEvent): void => {
+  private readonly onMarkerDialogKeydown = (event: KeyboardEvent): void => {
     if (!this.isMarkerDialogOpen) return;
     if (event.key === 'Escape') {
       event.preventDefault();
@@ -2504,7 +2582,7 @@ export class VideoPost {
     // Create 4 skeleton suggestion items
     for (let i = 0; i < 4; i++) {
       const skeletonItem = document.createElement('div');
-      skeletonItem.setAttribute('data-tag-suggestion-skeleton', 'true');
+      skeletonItem.dataset.tagSuggestionSkeleton = 'true';
       skeletonItem.style.width = '100%';
       skeletonItem.style.padding = '10px 12px';
       skeletonItem.style.display = 'flex';
@@ -2512,7 +2590,7 @@ export class VideoPost {
       
       const skeletonText = document.createElement('div');
       skeletonText.className = 'chip-skeleton';
-      skeletonText.setAttribute('data-tag-suggestion-skeleton', 'true');
+      skeletonText.dataset.tagSuggestionSkeleton = 'true';
       skeletonText.style.height = '16px';
       skeletonText.style.borderRadius = '4px';
       skeletonText.style.flex = '1';
@@ -2534,11 +2612,9 @@ export class VideoPost {
 
     // Remove all skeleton items
     const skeletonItems = Array.from(this.markerDialogSuggestions.querySelectorAll('[data-tag-suggestion-skeleton="true"]'));
-    skeletonItems.forEach((item) => {
-      if (item.parentNode) {
-        item.parentNode.removeChild(item);
-      }
-    });
+    for (const item of skeletonItems) {
+      item.remove();
+    }
 
     this.isTagSearchLoading = false;
   }
@@ -2606,7 +2682,7 @@ export class VideoPost {
       return;
     }
 
-    tags.forEach(tag => {
+    for (const tag of tags) {
       const item = document.createElement('button');
       item.type = 'button';
       item.textContent = tag.name;
@@ -2634,7 +2710,7 @@ export class VideoPost {
       if (this.markerDialogSuggestions) {
         this.markerDialogSuggestions.appendChild(item);
       }
-    });
+    }
   }
 
   /**
@@ -2712,7 +2788,7 @@ export class VideoPost {
         recentSection.style.display = 'block';
       }
       this.markerDialogRecentTags.style.display = 'flex';
-      recentTags.forEach(tag => {
+      for (const tag of recentTags) {
         const chip = document.createElement('button');
         chip.type = 'button';
         chip.textContent = tag.name;
@@ -2741,7 +2817,7 @@ export class VideoPost {
         if (this.markerDialogRecentTags) {
           this.markerDialogRecentTags.appendChild(chip);
         }
-      });
+      }
     } catch (error) {
       console.error('Failed to load recent tags', error);
     }
@@ -2924,9 +3000,7 @@ export class VideoPost {
       await this.api.addTagToMarker(this.data.marker, this.selectedTagId);
 
       // Update local marker tags
-      if (!this.data.marker.tags) {
-        this.data.marker.tags = [];
-      }
+      this.data.marker.tags ??= [];
       
       // Add tag to local data (we already have the name from selectedTagName)
       this.data.marker.tags.push({ id: this.selectedTagId, name: this.selectedTagName });

@@ -3,11 +3,21 @@
  * TypeScript interfaces for GraphQL queries, mutations, and filters
  */
 
-import { Scene, SceneMarker, Tag } from '../types.js';
+import { Scene, SceneMarker } from '../types.js';
 
 // ============================================================================
 // Filter Types
 // ============================================================================
+
+/**
+ * Filter modifier for includes/excludes operations
+ */
+export type FilterModifier = 'INCLUDES' | 'INCLUDES_ALL' | 'EXCLUDES';
+
+/**
+ * Filter modifier for comparison operations
+ */
+export type ComparisonModifier = 'GREATER_THAN' | 'LESS_THAN' | 'EQUALS';
 
 /**
  * FindFilterType - Common filter for pagination and sorting
@@ -26,21 +36,21 @@ export interface FindFilterInput {
 export interface SceneMarkerFilterInput {
   tags?: {
     value: string[];
-    modifier: 'INCLUDES' | 'INCLUDES_ALL' | 'EXCLUDES';
+    modifier: FilterModifier;
     excludes?: string[];
     depth?: number;
   };
   scene_tags?: {
     value: string[];
-    modifier: 'INCLUDES' | 'INCLUDES_ALL' | 'EXCLUDES';
+    modifier: FilterModifier;
   };
   scene_performers?: {
     value: number[];
-    modifier: 'INCLUDES' | 'INCLUDES_ALL' | 'EXCLUDES';
+    modifier: FilterModifier;
   };
   performers?: {
     value: number[];
-    modifier: 'INCLUDES' | 'INCLUDES_ALL' | 'EXCLUDES';
+    modifier: FilterModifier;
   };
   [key: string]: unknown; // Allow additional filter properties
 }
@@ -52,19 +62,19 @@ export interface SceneFilterInput {
   has_markers?: string; // 'true' | 'false'
   tags?: {
     value: string[];
-    modifier: 'INCLUDES' | 'INCLUDES_ALL' | 'EXCLUDES';
+    modifier: FilterModifier;
   };
   performers?: {
     value: number[];
-    modifier: 'INCLUDES' | 'INCLUDES_ALL' | 'EXCLUDES';
+    modifier: FilterModifier;
   };
   studios?: {
     value: string[];
-    modifier: 'INCLUDES' | 'INCLUDES_ALL' | 'EXCLUDES';
+    modifier: FilterModifier;
   };
   rating100?: {
     value: number;
-    modifier: 'GREATER_THAN' | 'LESS_THAN' | 'EQUALS';
+    modifier: ComparisonModifier;
   };
   [key: string]: unknown; // Allow additional filter properties
 }
@@ -75,7 +85,7 @@ export interface SceneFilterInput {
 export interface TagFilterInput {
   marker_count?: {
     value: number;
-    modifier: 'GREATER_THAN' | 'LESS_THAN' | 'EQUALS';
+    modifier: ComparisonModifier;
   };
   [key: string]: unknown;
 }
@@ -86,9 +96,28 @@ export interface TagFilterInput {
 export interface PerformerFilterInput {
   scene_count?: {
     value: number;
-    modifier: 'GREATER_THAN' | 'LESS_THAN' | 'EQUALS';
+    modifier: ComparisonModifier;
   };
   [key: string]: unknown;
+}
+
+/**
+ * ImageFilterType - Filter for images
+ */
+export interface ImageFilterInput {
+  path?: {
+    value: string;
+    modifier: 'MATCHES_REGEX' | 'NOT_MATCHES_REGEX' | 'EQUALS' | 'NOT_EQUALS' | 'INCLUDES' | 'EXCLUDES';
+  };
+  performers?: {
+    value: number[];
+    modifier: FilterModifier;
+  };
+  tags?: {
+    value: string[];
+    modifier: FilterModifier;
+  };
+  [key: string]: unknown; // Allow additional filter properties
 }
 
 // ============================================================================
@@ -239,6 +268,87 @@ export interface FindSceneMarkerTagsResponse {
   };
 }
 
+/**
+ * Image type (from Stash GraphQL)
+ */
+export interface Image {
+  id: string;
+  title?: string;
+  code?: string;
+  date?: string;
+  urls?: string[];
+  details?: string;
+  photographer?: string;
+  rating100?: number;
+  organized?: boolean;
+  o_counter?: number;
+  paths?: {
+    thumbnail?: string;
+    preview?: string;
+    image?: string;
+  };
+  galleries?: Array<{
+    id: string;
+    title?: string;
+    files?: Array<{
+      path?: string;
+    }>;
+    folder?: {
+      path?: string;
+    };
+  }>;
+  studio?: {
+    id: string;
+    name: string;
+    image_path?: string;
+  };
+  tags?: Array<{
+    id: string;
+    name: string;
+  }>;
+  performers?: Array<{
+    id: string;
+    name: string;
+    gender?: string;
+    favorite?: boolean;
+    image_path?: string;
+  }>;
+  visual_files?: Array<VisualFile>;
+}
+
+/**
+ * VisualFile union type
+ */
+export interface VisualFile {
+  id: string;
+  path: string;
+  size?: number;
+  mod_time?: string;
+  fingerprints?: Array<{
+    type: string;
+    value: string;
+  }>;
+  width?: number;
+  height?: number;
+  duration?: number;
+  video_codec?: string;
+  audio_codec?: string;
+  frame_rate?: number;
+  bit_rate?: number;
+}
+
+/**
+ * FindImages response
+ */
+export interface FindImagesResponse {
+  findImages: {
+    count: number;
+    megapixels?: number;
+    filesize?: number;
+    images: Image[];
+  };
+}
+
 // ============================================================================
 // Mutation Input Types
 // ============================================================================
@@ -373,6 +483,31 @@ export interface SceneAddOResponse {
   } | null;
 }
 
+/**
+ * ImageUpdate input
+ */
+export interface ImageUpdateInput {
+  id: string;
+  tag_ids?: string[];
+  o_counter?: number;
+}
+
+/**
+ * ImageUpdate response
+ */
+export interface ImageUpdateResponse {
+  imageUpdate: {
+    id: string;
+  } | null;
+}
+
+/**
+ * ImageIncrementO response
+ */
+export interface ImageIncrementOResponse {
+  imageIncrementO: number;
+}
+
 // ============================================================================
 // GraphQL Client Types
 // ============================================================================
@@ -395,11 +530,6 @@ export interface GraphQLMutationOptions<TVariables = Record<string, unknown>, _T
   signal?: AbortSignal;
 }
 
-/**
- * GraphQL mutation string type
- * Represents a GraphQL mutation operation string
- */
-export type GraphQLMutation = string;
 
 /**
  * Typed GraphQL client interface

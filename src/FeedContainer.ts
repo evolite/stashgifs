@@ -3,14 +3,18 @@
  * Main application container managing the feed
  */
 
-import { SceneMarker, FilterOptions, FeedSettings, VideoPostData } from './types.js';
+import { SceneMarker, FilterOptions, FeedSettings, VideoPostData, ImagePostData, Image } from './types.js';
 import { StashAPI } from './StashAPI.js';
 import { VideoPost } from './VideoPost.js';
+import { ImagePost } from './ImagePost.js';
 import { NativeVideoPlayer } from './NativeVideoPlayer.js';
+import { ImagePlayer } from './ImagePlayer.js';
 import { VisibilityManager } from './VisibilityManager.js';
 import { FavoritesManager } from './FavoritesManager.js';
+import { SettingsPage } from './SettingsPage.js';
 import { debounce, isValidMediaUrl, detectDeviceCapabilities, DeviceCapabilities, isStandaloneNavigator } from './utils.js';
 import { posterPreloader } from './PosterPreloader.js';
+import { Image as GraphQLImage } from './graphql/types.js';
 
 const DEFAULT_SETTINGS: FeedSettings = {
   autoPlay: true, // Enable autoplay for markers
@@ -25,6 +29,9 @@ const DEFAULT_SETTINGS: FeedSettings = {
   backgroundPreloadDelay: 150, // ms, delay between videos
   backgroundPreloadFastScrollDelay: 400, // ms, delay during fast scrolling
   backgroundPreloadScrollVelocityThreshold: 2, // pixels/ms, threshold for fast scroll detection
+  enabledFileTypes: ['.gif'], // Default file types to include
+  includeImagesInFeed: true, // Whether to include images in feed
+  imagesOnly: false,
 };
 
 /**
@@ -37,16 +44,28 @@ interface FeedContainerDebug {
   _mobileLoadTimeout?: ReturnType<typeof setTimeout> | null;
 }
 
+/**
+ * Type guard to check if a player is a NativeVideoPlayer
+ */
+function isNativeVideoPlayer(player: NativeVideoPlayer | ImagePlayer | undefined): player is NativeVideoPlayer {
+  return player !== undefined && 'getVideoElement' in player;
+}
+
 export class FeedContainer {
   private readonly container: HTMLElement;
   private scrollContainer: HTMLElement;
   private readonly api: StashAPI;
   private visibilityManager: VisibilityManager;
   private favoritesManager: FavoritesManager;
-  private posts: Map<string, VideoPost>;
+  private posts: Map<string, VideoPost | ImagePost>;
   private postOrder: string[];
+  private images: Image[] = [];
   private settings: FeedSettings;
+  private settingsPage?: SettingsPage;
+  private settingsContainer?: HTMLElement;
   private markers: SceneMarker[] = [];
+  private readonly imagesLoadedCount: number = 0; // Track how many images we've loaded
+  private readonly markersLoadedCount: number = 0; // Track how many markers we've loaded
   // Batch poster prefetching aligns with previous commit behavior
   private isLoading: boolean = false;
   private currentFilters?: FilterOptions;
@@ -686,6 +705,9 @@ export class FeedContainer {
       await this.loadVideos(this.currentFilters, false, undefined, true);
     });
 
+    const settingsButton = this.createSettingsButton();
+    
+    playbackSection.appendChild(settingsButton);
     playbackSection.appendChild(hdBtn);
     playbackSection.appendChild(randomBtn);
     container.appendChild(playbackSection);
@@ -1532,7 +1554,7 @@ export class FeedContainer {
     queryInput.style.fontSize = '15px';
     queryInput.style.lineHeight = '1.4';
     queryInput.style.boxSizing = 'border-box';
-    queryInput.style.color = 'transparent';
+    queryInput.style.color = 'rgba(255, 255, 255, 0.9)';
     queryInput.style.caretColor = '#FFFFFF';
     return queryInput;
   }
@@ -1812,6 +1834,80 @@ export class FeedContainer {
       shuffleToggle,
       onHDToggleClick,
     };
+  }
+
+  /**
+   * Create settings button
+   */
+  private createSettingsButton(): HTMLButtonElement {
+    const settingsButton = document.createElement('button');
+    settingsButton.type = 'button';
+    settingsButton.title = 'Settings';
+    settingsButton.setAttribute('aria-label', 'Open settings');
+    settingsButton.style.padding = '10px 12px';
+    settingsButton.style.borderRadius = '10px';
+    settingsButton.style.border = '1px solid rgba(255,255,255,0.12)';
+    settingsButton.style.background = 'rgba(245, 197, 24, 0.25)';
+    settingsButton.style.color = '#F5C518';
+    settingsButton.style.cursor = 'pointer';
+    settingsButton.style.display = 'inline-flex';
+    settingsButton.style.alignItems = 'center';
+    settingsButton.style.justifyContent = 'center';
+    settingsButton.style.transition = 'background 0.2s ease, border-color 0.2s ease, color 0.2s ease';
+    // Classic gear/settings icon (simpler version)
+    settingsButton.innerHTML = '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M12 1v6m0 6v6M5.64 5.64l4.24 4.24m4.24 4.24l4.24 4.24M1 12h6m6 0h6M5.64 18.36l4.24-4.24m4.24-4.24l4.24-4.24"/></svg>';
+
+    settingsButton.addEventListener('mouseenter', () => {
+      settingsButton.style.color = '#FFD54F';
+      settingsButton.style.background = 'rgba(245, 197, 24, 0.35)';
+      settingsButton.style.borderColor = 'rgba(255,255,255,0.18)';
+    });
+
+    settingsButton.addEventListener('mouseleave', () => {
+      settingsButton.style.color = '#F5C518';
+      settingsButton.style.background = 'rgba(245, 197, 24, 0.25)';
+      settingsButton.style.borderColor = 'rgba(255,255,255,0.12)';
+    });
+
+    settingsButton.addEventListener('click', () => {
+      this.openSettings();
+    });
+
+    return settingsButton;
+  }
+
+  /**
+   * Open settings page
+   */
+  private openSettings(): void {
+    if (!this.settingsContainer) {
+      this.settingsContainer = document.createElement('div');
+      document.body.appendChild(this.settingsContainer);
+    }
+
+    this.settingsPage = new SettingsPage(
+      this.settingsContainer,
+      this.settings,
+      (newSettings) => {
+        // Update settings
+        this.settings = { ...this.settings, ...newSettings };
+        // Reload feed if images settings changed
+        if (
+          newSettings.includeImagesInFeed !== undefined ||
+          newSettings.enabledFileTypes ||
+          newSettings.imagesOnly !== undefined
+        ) {
+          this.loadVideos(this.currentFilters, false, undefined, true).catch(e => {
+            console.error('Failed to reload feed after settings change', e);
+          });
+        }
+      },
+      () => {
+        // On close, remove settings container and clear reference
+        this.settingsContainer?.remove();
+        this.settingsContainer = undefined;
+      }
+    );
   }
 
   /**
@@ -3487,7 +3583,7 @@ export class FeedContainer {
    * Render posts progressively in chunks
    */
   private async renderPostsProgressively(
-    markers: SceneMarker[],
+    content: Array<{ type: 'marker' | 'image'; data: SceneMarker | Image; date?: string }> | SceneMarker[],
     append: boolean,
     signal: AbortSignal | undefined,
     renderChunkSize: number,
@@ -3496,13 +3592,21 @@ export class FeedContainer {
     let fragment: DocumentFragment | null = null;
     let fragmentPostCount = 0;
 
-    for (let i = 0; i < markers.length; i++) {
+    // Handle both merged content and legacy markers array
+    const isMergedContent = content.length > 0 && 'type' in content[0];
+    const items = isMergedContent 
+      ? content as Array<{ type: 'marker' | 'image'; data: SceneMarker | Image; date?: string }>
+      : (content as SceneMarker[]).map(m => ({ type: 'marker' as const, data: m, date: m.scene.date }));
+
+    for (let i = 0; i < items.length; i++) {
       if (this.checkAbortAndCleanupRender(signal)) {
         return;
       }
 
-      const marker = markers[i];
-      const result = await this.processMarkerForRender(marker, fragment, signal);
+      const item = items[i];
+      const result: { fragment: DocumentFragment; postContainer: HTMLElement | null } = item.type === 'marker'
+        ? await this.processMarkerForRender(item.data as SceneMarker, fragment, signal)
+        : await this.processImageForRender(item.data as Image, fragment, signal);
       fragment = result.fragment;
       
       if (result.postContainer) {
@@ -3511,14 +3615,147 @@ export class FeedContainer {
 
       this.removeSkeletonIfNeeded(append, i);
 
-      if (this.shouldInsertFragment(i, renderChunkSize, markers.length) && fragment && fragmentPostCount > 0) {
+      if (this.shouldInsertFragment(i, renderChunkSize, items.length) && fragment && fragmentPostCount > 0) {
         this.insertFragment(fragment, fragmentPostCount);
         fragment = null;
         fragmentPostCount = 0;
 
-        await this.waitForRenderDelay(i, markers.length, renderDelay);
+        await this.waitForRenderDelay(i, items.length, renderDelay);
       }
     }
+  }
+
+  /**
+   * Process image for rendering
+   */
+  private async processImageForRender(
+    image: Image | undefined,
+    fragment: DocumentFragment | null,
+    signal?: AbortSignal
+  ): Promise<{ fragment: DocumentFragment; postContainer: HTMLElement | null }> {
+    if (!image) {
+      return { fragment: fragment ?? document.createDocumentFragment(), postContainer: null };
+    }
+
+    const postContainer = await this.createImagePost(image, signal);
+    const currentFragment = fragment ?? document.createDocumentFragment();
+    
+    if (postContainer) {
+      currentFragment.appendChild(postContainer);
+    }
+
+    return { fragment: currentFragment, postContainer };
+  }
+
+  /**
+   * Create an image post
+   */
+  private async createImagePost(image: Image, signal?: AbortSignal): Promise<HTMLElement | null> {
+    const imageUrl = this.getImageUrlForPost(image);
+    if (!imageUrl) {
+      return null;
+    }
+
+    const postContainer = this.createPostContainer();
+    const post = this.createImagePostInstance(postContainer, image, imageUrl);
+    
+    this.posts.set(image.id, post);
+    this.postOrder.push(image.id);
+    // Don't observe images with VisibilityManager - they don't need video playback management
+    // Images use their own simple IntersectionObserver in setupLazyLoadingForImage
+
+    if (signal?.aborted) {
+      return null;
+    }
+
+    this.setupLazyLoadingForImage(postContainer, post, image, imageUrl, signal);
+    return postContainer;
+  }
+
+  /**
+   * Get image URL for post
+   */
+  private getImageUrlForPost(image: Image): string | undefined {
+    // Try paths.image first, then paths.preview, then paths.thumbnail
+    const baseUrl = globalThis.location.origin;
+    
+    if (image.paths?.image) {
+      const url = image.paths.image.startsWith('http') 
+        ? image.paths.image 
+        : `${baseUrl}${image.paths.image}`;
+      return isValidMediaUrl(url) ? url : undefined;
+    }
+    if (image.paths?.preview) {
+      const url = image.paths.preview.startsWith('http') 
+        ? image.paths.preview 
+        : `${baseUrl}${image.paths.preview}`;
+      return isValidMediaUrl(url) ? url : undefined;
+    }
+    if (image.paths?.thumbnail) {
+      const url = image.paths.thumbnail.startsWith('http') 
+        ? image.paths.thumbnail 
+        : `${baseUrl}${image.paths.thumbnail}`;
+      return isValidMediaUrl(url) ? url : undefined;
+    }
+    return undefined;
+  }
+
+  /**
+   * Create image post instance
+   */
+  private createImagePostInstance(
+    postContainer: HTMLElement,
+    image: Image,
+    imageUrl: string
+  ): ImagePost {
+    const postData: ImagePostData = {
+      image,
+      imageUrl,
+      aspectRatio: image.aspectRatio ?? (image.width && image.height ? image.width / image.height : undefined),
+    };
+
+    const post = new ImagePost(
+      postContainer,
+      postData,
+      this.favoritesManager,
+      this.api,
+      this.visibilityManager,
+      (performerId, performerName) => this.handlePerformerChipClick(performerId, performerName),
+      (tagId, tagName) => this.handleTagChipClick(tagId, tagName)
+    );
+    
+    post.initialize();
+    return post;
+  }
+
+  /**
+   * Setup lazy loading for image post
+   */
+  private setupLazyLoadingForImage(
+    postContainer: HTMLElement,
+    post: ImagePost,
+    image: Image,
+    imageUrl: string,
+    signal?: AbortSignal
+  ): void {
+    // Use IntersectionObserver for lazy loading
+    const observer = new IntersectionObserver(
+      (entries) => {
+        for (const entry of entries) {
+          if (entry.isIntersecting) {
+            observer.disconnect();
+            if (!signal?.aborted) {
+              post.loadPlayer(imageUrl);
+            }
+            break;
+          }
+        }
+      },
+      { rootMargin: '200px' }
+    );
+
+    observer.observe(postContainer);
+    this.loadObservers.set(image.id, observer);
   }
 
   /**
@@ -3580,7 +3817,10 @@ export class FeedContainer {
    */
   private handleEmptyMarkers(append: boolean): void {
     if (!append) {
-      this.showError('No scene markers found. Try adjusting your filters.');
+      const message = this.settings.imagesOnly
+        ? 'No images found. Try adjusting your filters.'
+        : 'No scene markers found. Try adjusting your filters.';
+      this.showError(message);
     }
     this.hideSkeletonLoaders();
   }
@@ -3640,25 +3880,37 @@ export class FeedContainer {
         return;
       }
 
-      const markers = await this.fetchMarkersForLoad(currentFilters, limit, offset, signal);
+      // Load both markers and images in parallel if images are enabled
+      const shouldLoadMarkers = !this.settings.imagesOnly;
+      const shouldLoadImages = this.shouldLoadImages() || this.settings.imagesOnly;
+      const [markers, images] = await Promise.all([
+        shouldLoadMarkers ? this.fetchMarkersForLoad(currentFilters, limit, offset, signal) : Promise.resolve<SceneMarker[]>([]),
+        shouldLoadImages ? this.loadImages(currentFilters, limit, offset, signal) : Promise.resolve<Image[]>([]),
+      ]);
 
       if (this.checkAbortAndCleanup(signal)) {
         return;
       }
 
-      const expectedLimit = append ? this.subsequentLoadLimit : (currentFilters.limit || this.initialLoadLimit);
-      this.processFetchedMarkers(markers, append, expectedLimit);
+      // Merge markers and images chronologically
+      const mergedContent = this.mergeMarkersAndImages(markers, images);
 
-      if (markers.length === 0) {
+      const expectedLimit = append ? this.subsequentLoadLimit : (currentFilters.limit || this.initialLoadLimit);
+      
+      this.processLoadedContent(markers, images, shouldLoadMarkers, append, expectedLimit);
+
+      if (mergedContent.length === 0) {
         this.handleEmptyMarkers(append);
         return;
       }
 
-      this.prefetchPosters(markers, append, currentFilters);
+      if (shouldLoadMarkers && markers.length > 0) {
+        this.prefetchPosters(markers, append, currentFilters);
+      }
 
       const renderChunkSize = 6;
       const renderDelay = 8;
-      await this.renderPostsProgressively(markers, append, signal, renderChunkSize, renderDelay);
+      await this.renderPostsProgressively(mergedContent, append, signal, renderChunkSize, renderDelay);
 
       if (this.checkAbortAndCleanup(signal)) {
         return;
@@ -3670,6 +3922,204 @@ export class FeedContainer {
     } finally {
       this.deferLoadingComplete();
     }
+  }
+
+  /**
+   * Process loaded markers and images
+   */
+  private processLoadedContent(
+    markers: SceneMarker[],
+    images: Image[],
+    shouldLoadMarkers: boolean,
+    append: boolean,
+    expectedLimit: number
+  ): void {
+    // Process markers separately for backward compatibility
+    if (shouldLoadMarkers) {
+      this.processFetchedMarkers(markers, append, expectedLimit);
+    } else if (!append) {
+      this.clearPosts();
+      this.markers = [];
+    }
+    
+    // Process images
+    if (images.length > 0 && !append) {
+      this.images = images;
+    } else if (images.length > 0 && append) {
+      this.images.push(...images);
+    }
+
+    if (this.settings.imagesOnly) {
+      this.hasMore = images.length >= expectedLimit;
+    }
+  }
+
+  /**
+   * Check if images should be loaded
+   */
+  private shouldLoadImages(): boolean {
+    const imagesEnabled = this.settings.includeImagesInFeed ?? true;
+    const imagesOnly = this.settings.imagesOnly ?? false;
+    const hasFileTypes = (this.settings.enabledFileTypes?.length ?? 0) > 0;
+    return (imagesEnabled || imagesOnly) && hasFileTypes;
+  }
+
+  /**
+   * Load images from Stash
+   */
+  private async loadImages(
+    filters: FilterOptions,
+    limit: number,
+    offset: number,
+    signal?: AbortSignal
+  ): Promise<Image[]> {
+    if (!this.shouldLoadImages() || !this.api) {
+      return [];
+    }
+
+    try {
+      const fileExtensions = this.settings.enabledFileTypes || ['.gif'];
+      const imageFilters: {
+        performerIds?: number[];
+        tagIds?: string[];
+      } = {};
+
+      // Apply performer filter if set
+      if (filters.performers && filters.performers.length > 0) {
+        imageFilters.performerIds = filters.performers
+          .map(p => Number.parseInt(p, 10))
+          .filter(id => !Number.isNaN(id));
+      }
+
+      // Apply tag filter if set
+      if (filters.tags && filters.tags.length > 0) {
+        imageFilters.tagIds = filters.tags;
+      }
+
+      const images = await this.api.findImages(
+        fileExtensions,
+        Object.keys(imageFilters).length > 0 ? imageFilters : undefined,
+        limit,
+        offset,
+        signal
+      );
+
+      // Convert GraphQL Image to simplified Image type
+      return images.map(img => this.convertGraphQLImageToImage(img));
+    } catch (error) {
+      console.error('FeedContainer: Failed to load images', error);
+      return [];
+    }
+  }
+
+  /**
+   * Convert GraphQL Image to simplified Image type
+   */
+  private convertGraphQLImageToImage(graphqlImage: GraphQLImage): Image {
+    const visualFile = graphqlImage.visual_files?.find(
+      (file) => typeof (file as { width?: number }).width === 'number' && typeof (file as { height?: number }).height === 'number'
+    ) as { width?: number; height?: number } | undefined;
+    const width = visualFile?.width;
+    const height = visualFile?.height;
+    const aspectRatio = width && height && height !== 0 ? width / height : undefined;
+
+    return {
+      id: graphqlImage.id,
+      title: graphqlImage.title,
+      date: graphqlImage.date,
+      rating100: graphqlImage.rating100,
+      o_counter: graphqlImage.o_counter,
+      width,
+      height,
+      aspectRatio,
+      paths: graphqlImage.paths,
+      tags: graphqlImage.tags,
+      performers: graphqlImage.performers?.map(p => ({
+        id: p.id,
+        name: p.name,
+        image_path: p.image_path,
+      })),
+    };
+  }
+
+  /**
+   * Merge markers and images by interleaving in chunks
+   * Preserves the random order from API (no sorting)
+   */
+  private mergeMarkersAndImages(markers: SceneMarker[], images: Image[]): Array<{ type: 'marker' | 'image'; data: SceneMarker | Image; date?: string }> {
+    const content: Array<{ type: 'marker' | 'image'; data: SceneMarker | Image; date?: string }> = [];
+
+    // If only one type, return it in original order
+    if (markers.length === 0) {
+      for (const image of images) {
+        content.push({
+          type: 'image',
+          data: image,
+          date: image.date,
+        });
+      }
+      return content;
+    }
+
+    if (images.length === 0) {
+      for (const marker of markers) {
+        content.push({
+          type: 'marker',
+          data: marker,
+          date: marker.scene.date,
+        });
+      }
+      return content;
+    }
+
+    // Both types present - interleave in chunks
+    const markerCount = markers.length;
+    const imageCount = images.length;
+
+    // Determine chunk sizes - always show 1-2 images between videos
+    let videoChunkSize: number;
+    const imageChunkSize = 1 + Math.floor(Math.random() * 2); // Always 1-2 images between videos
+
+    if (markerCount > imageCount) {
+      // More videos: larger video chunks
+      videoChunkSize = 4 + Math.floor(Math.random() * 2); // 4-5
+    } else if (imageCount > markerCount) {
+      // More images: smaller video chunks
+      videoChunkSize = 2 + Math.floor(Math.random() * 2); // 2-3
+    } else {
+      // Roughly equal: balanced chunks
+      videoChunkSize = 3 + Math.floor(Math.random() * 2); // 3-4
+    }
+
+    // Interleave in chunks
+    let markerIndex = 0;
+    let imageIndex = 0;
+
+    while (markerIndex < markerCount || imageIndex < imageCount) {
+      // Add chunk of videos
+      const videosToAdd = Math.min(videoChunkSize, markerCount - markerIndex);
+      for (let i = 0; i < videosToAdd; i++) {
+        const marker = markers[markerIndex++];
+        content.push({
+          type: 'marker',
+          data: marker,
+          date: marker.scene.date,
+        });
+      }
+
+      // Add chunk of images
+      const imagesToAdd = Math.min(imageChunkSize, imageCount - imageIndex);
+      for (let i = 0; i < imagesToAdd; i++) {
+        const image = images[imageIndex++];
+        content.push({
+          type: 'image',
+          data: image,
+          date: image.date,
+        });
+      }
+    }
+
+    return content;
   }
 
   /**
@@ -3757,7 +4207,8 @@ export class FeedContainer {
   private stopLoadingVideos(): void {
     for (const [, post] of this.posts.entries()) {
       const player = post.getPlayer();
-      if (player) {
+      // Only handle video players (NativeVideoPlayer), not image players
+      if (isNativeVideoPlayer(player)) {
         const videoElement = player.getVideoElement();
         // If video is loading (networkState is LOADING or networkState is 2), stop it
         if (videoElement.networkState === 2 || videoElement.readyState < 2) {
@@ -3765,9 +4216,11 @@ export class FeedContainer {
             videoElement.pause();
             videoElement.src = '';
             videoElement.load(); // This cancels the network request
-          } catch (e) {
-            // Ignore errors when stopping video
-            console.debug('Error stopping video', e);
+          } catch (e: unknown) {
+            // Ignore errors when stopping video (non-critical)
+            if (e instanceof Error) {
+              // Silently ignore - video stopping errors are not critical
+            }
           }
         }
       }
@@ -3876,14 +4329,16 @@ export class FeedContainer {
 
     const post = new VideoPost(
       postContainer, 
-      postData, 
-      this.favoritesManager, 
-      this.api, 
-      this.visibilityManager,
-      (performerId, performerName) => this.handlePerformerChipClick(performerId, performerName),
-      (tagId, tagName) => this.handleTagChipClick(tagId, tagName),
-      this.shuffleMode > 0,
-      () => this.cancelAllPendingRequests()
+      postData,
+      {
+        favoritesManager: this.favoritesManager,
+        api: this.api,
+        visibilityManager: this.visibilityManager,
+        onPerformerChipClick: (performerId, performerName) => this.handlePerformerChipClick(performerId, performerName),
+        onTagChipClick: (tagId, tagName) => this.handleTagChipClick(tagId, tagName),
+        useShuffleMode: this.shuffleMode > 0,
+        onCancelRequests: () => this.cancelAllPendingRequests()
+      }
     );
     
     post.initialize();
@@ -3981,7 +4436,8 @@ export class FeedContainer {
     }
     
     const player = post.preload();
-    if (player) {
+    if (isNativeVideoPlayer(player)) {
+      // Only register video players with visibility manager
       this.visibilityManager.registerPlayer(marker.id, player);
     } else {
       console.warn('FeedContainer: Player not created', { markerId: marker.id });
@@ -4092,8 +4548,8 @@ export class FeedContainer {
       if (!post) continue;
       if (!post.hasVideoSource()) continue;
       const player = post.preload();
-      if (player) {
-        // Register with visibility manager
+      if (isNativeVideoPlayer(player)) {
+        // Register with visibility manager (only video players)
         this.visibilityManager.registerPlayer(marker.id, player);
         this.eagerPreloadedPosts.add(marker.id);
       }
@@ -4108,6 +4564,9 @@ export class FeedContainer {
       if (!post) continue;
       const player = post.getPlayer();
       if (!player) continue;
+      
+      // Only handle video players (skip image players)
+      if (!isNativeVideoPlayer(player)) continue;
       
       // Robust play with multiple retries
       const tryPlay = async (attempt: number = 1, maxAttempts: number = 5): Promise<void> => {
@@ -4202,7 +4661,8 @@ export class FeedContainer {
       const player = post.preload();
       this.eagerPreloadedPosts.add(postId);
 
-      if (player) {
+      if (isNativeVideoPlayer(player)) {
+        // Only register video players with visibility manager
         this.visibilityManager.registerPlayer(postId, player);
         started += 1;
       }
@@ -4452,7 +4912,8 @@ export class FeedContainer {
     // Preload the video
     try {
       const player = post.preload();
-      if (player) {
+      if (isNativeVideoPlayer(player)) {
+        // Only register video players with visibility manager
         this.visibilityManager.registerPlayer(postId, player);
         this.trackBackgroundPreload(postId, player);
       } else {
@@ -4569,7 +5030,8 @@ export class FeedContainer {
     // Preload the video
     try {
       const player = post.preload();
-      if (player) {
+      if (isNativeVideoPlayer(player)) {
+        // Only register video players with visibility manager
         this.visibilityManager.registerPlayer(postId, player);
         this.trackBackgroundPreload(postId, player);
       }
@@ -4761,13 +5223,14 @@ export class FeedContainer {
   /**
    * Destroy a post's video player
    */
-  private destroyPostPlayer(post: VideoPost): void {
+  private destroyPostPlayer(post: VideoPost | ImagePost): void {
     const player = post.getPlayer();
     if (!player) {
       return;
     }
     
-    if (!player.getIsUnloaded()) {
+    // Only video players have unload method
+    if (isNativeVideoPlayer(player) && !player.getIsUnloaded()) {
       player.unload();
     }
     player.destroy();
@@ -4825,8 +5288,9 @@ export class FeedContainer {
     // If post has a video source, trigger preload
     if (post.hasVideoSource()) {
       const player = post.preload();
-      if (player) {
+      if (isNativeVideoPlayer(player)) {
         // Register player with VisibilityManager - it will handle playing when ready
+        // Only register video players, not image players
         this.visibilityManager.registerPlayer(postId, player);
       }
     }
@@ -4858,7 +5322,8 @@ export class FeedContainer {
     for (const [, post] of this.posts.entries()) {
       if (this.isPostNearViewport(post, viewportTop, viewportBottom, viewportMargin)) {
         const player = post.getPlayer();
-        if (player && !player.getIsUnloaded()) {
+        // Only count video players (images don't need unloading)
+        if (player && 'getIsUnloaded' in player && !player.getIsUnloaded()) {
           loadedVideoCount++;
         }
       }
@@ -4871,7 +5336,7 @@ export class FeedContainer {
    * Check if a post is near the viewport
    */
   private isPostNearViewport(
-    post: VideoPost,
+    post: VideoPost | ImagePost,
     viewportTop: number,
     viewportBottom: number,
     margin: number
@@ -4903,7 +5368,7 @@ export class FeedContainer {
    * Check if a post is far from the viewport
    */
   private isPostFarFromViewport(
-    post: VideoPost,
+    post: VideoPost | ImagePost,
     viewportTop: number,
     viewportBottom: number,
     unloadDistance: number
@@ -4939,7 +5404,8 @@ export class FeedContainer {
       
       if (!this.isPostImmediatelyVisible(post, viewportTop, viewportBottom)) {
         const player = post.getPlayer();
-        if (player && !player.getIsUnloaded()) {
+        // Only unload video players (images don't need unloading)
+        if (isNativeVideoPlayer(player) && !player.getIsUnloaded()) {
           player.unload();
           loadedVideoCount--;
         }
@@ -4951,7 +5417,7 @@ export class FeedContainer {
    * Check if a post is immediately visible in the viewport
    */
   private isPostImmediatelyVisible(
-    post: VideoPost,
+    post: VideoPost | ImagePost,
     viewportTop: number,
     viewportBottom: number
   ): boolean {
@@ -4966,9 +5432,10 @@ export class FeedContainer {
   /**
    * Unload a post's video if it's loaded
    */
-  private unloadPostVideo(post: VideoPost): void {
+  private unloadPostVideo(post: VideoPost | ImagePost): void {
     const player = post.getPlayer();
-    if (player && !player.getIsUnloaded()) {
+    // Only unload video players (images don't need unloading)
+    if (isNativeVideoPlayer(player) && !player.getIsUnloaded()) {
       player.unload();
     }
   }
@@ -5395,10 +5862,15 @@ export class FeedContainer {
 
     // Re-observe all posts
     for (const post of this.posts.values()) {
-      this.visibilityManager.observePost(post.getContainer(), post.getPostId());
-      const player = post.getPlayer();
-      if (player) {
-        this.visibilityManager.registerPlayer(post.getPostId(), player);
+      const postId = post.getPostId();
+      // Only observe video posts with VisibilityManager (images use their own IntersectionObserver)
+      if (post.hasVideoSource()) {
+        this.visibilityManager.observePost(post.getContainer(), postId);
+        const player = post.getPlayer();
+        // Only register video players with visibility manager
+        if (isNativeVideoPlayer(player)) {
+          this.visibilityManager.registerPlayer(postId, player);
+        }
       }
     }
   }

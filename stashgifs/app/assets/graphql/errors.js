@@ -64,7 +64,7 @@ export function createGraphQLError(response, data, originalError) {
         return new GraphQLAbortError();
     }
     // Check for network errors
-    if (!response || !response.ok) {
+    if (!response?.ok) {
         return new GraphQLNetworkError(`GraphQL request failed: ${response?.status || 'unknown'} ${response?.statusText || ''}`, originalError);
     }
     // Check for GraphQL errors in response
@@ -88,9 +88,14 @@ export function handleGraphQLError(error, context) {
         throw error;
     }
     // Wrap unknown errors
-    const message = context
-        ? `${context}: ${error instanceof Error ? error.message : 'Unknown error'}`
-        : error instanceof Error ? error.message : 'Unknown error';
+    let message;
+    if (context) {
+        const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+        message = `${context}: ${errorMessage}`;
+    }
+    else {
+        message = error instanceof Error ? error.message : 'Unknown error';
+    }
     throw new GraphQLRequestError(message);
 }
 //# sourceMappingURL=errors.js.map

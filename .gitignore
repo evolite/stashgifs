@@ -10,6 +10,7 @@ stashgifs/app/assets/*.js
 stashgifs/app/assets/*.js.map
 
 # IDE/Editor files
+.cursor/
 .vscode/
 .idea/
 *.swp

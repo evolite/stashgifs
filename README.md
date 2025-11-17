@@ -1,49 +1,71 @@
-# StashGifs 🎬
+# StashGifs
 
-Turn your Stash scene markers into an endless scroll of looping GIFs. It's like TikTok, but for your favorite moments.
+A hobby project that turns your Stash scene markers into an endless scroll of looping GIFs. Think TikTok, but for your favorite moments.
 
-## What's This All About?
+## What's This?
 
-Ever wish you could just scroll through your scene markers like you're doom-scrolling social media? Well, now you can! StashGifs transforms your markers into a vertical feed of auto-playing videos that loop endlessly. Just keep scrolling and let the algorithm (okay, it's random) serve you the good stuff.
+I wanted a way to scroll through my scene markers like a social feed, so I built this. It transforms your markers into a vertical feed of auto-playing videos that loop endlessly. Just keep scrolling and let randomness serve you the good stuff.
 
 ## Getting Started
 
-Install it via Stash's plugin system using the `index.yml` file. That's it. You're ready to scroll.
+Install it via Stash's plugin system using the `index.yml` file. That's it.
 
-## The Good Stuff ✨
+## Features
 
-Scroll through your markers like a social feed. Videos auto-play as you browse (HD videos wait for you to hover). Click performer or tag chips to filter on the fly. Every load gives you a fresh random mix. Heart your favorites, track o-counts, rate with stars, or jump into full HD mode with audio. Feeling adventurous? Use the random scene player to discover new content and add markers on the spot. Works great on mobile too!
+- Scroll through markers like a social feed
+- Videos auto-play as you browse (HD videos wait for hover)
+- Image support - browse images alongside videos in the feed
+- Click performer or tag chips to filter on the fly
+- Every load gives you a fresh random mix
+- Heart favorites, track o-counts, rate with stars
+- Jump into full HD mode with audio
+- Random scene player to discover new content and add markers on the spot
+- Works on mobile too
 
 ## How to Use It
 
 **The Feed:**
 - Click any performer or tag chip to filter instantly
 - Search bar opens a full-screen dropdown with trending tags and saved filters
-- Search is smart—type "finger" and it'll find "fingers", "finger - pov", etc.
 
 **On Each Card:**
-- ❤️ Heart it to favorite (adds a tag in Stash)
-- 💦 Increment the o-count
-- ⭐ Rate it (0-10 stars)
+- Heart it to favorite (adds a tag in Stash)
+- Increment the o-count
+- Rate it (0-10 stars)
 - **HD** Switch to full scene with audio
-- 📌 Add a marker at the current timestamp (in random mode)
+- Add a marker at the current timestamp (in random mode)
 - **+** Add more tags
-- ▶️ Open in Stash at the marker timestamp
+- Open in Stash at the marker timestamp
 
 **Video Controls:**
-- Play/pause, seek, fullscreen—you know the drill
+- Play/pause, seek, fullscreen—standard stuff
 
-## For Developers 👨‍💻
+**Images:**
+- Images from your Stash library appear in the feed alongside videos
+- Same interaction features as videos: heart, rate, add tags, increment o-count
+- Click to view full size
+
+## Settings
+
+Access settings via the settings button in the header. You can configure:
+
+- **Include images in feed** - Toggle whether images appear in the feed (enabled by default)
+- **Only load images** - When enabled, only images are shown and videos are skipped
+- **File extensions** - Control which file types are included (default: `.gif`). Enter comma-separated extensions like `.gif, .webm, .mp4`
+
+Settings are saved to your browser's localStorage and persist across sessions. The page will reload after saving to apply changes.
+
+## For Developers
 
 ```bash
-npm install    # Get the dependencies
-npm run build  # Build it
+npm install
+npm run build
 ```
 
 ## AMD GPU Setup (Optional)
 
-Got an AMD GPU? There are scripts here to help Ollama use it for GPU acceleration. Check out the setup scripts if you're into that kind of thing.
+There are some scripts here to help Ollama use AMD GPUs for acceleration. Check them out if you need that.
 
 ## Credits
 
-Inspired by [Stash TV](https://discourse.stashapp.cc/t/stash-tv/3627). Thanks for the idea! 🎉
+Inspired by [Stash TV](https://discourse.stashapp.cc/t/stash-tv/3627). Thanks for the idea!

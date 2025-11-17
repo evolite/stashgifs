@@ -70,7 +70,7 @@ function init(): void {
     interface WindowWithStashgifs extends Window {
       stashgifsFeed?: FeedContainer;
     }
-    (window as WindowWithStashgifs).stashgifsFeed = feed;
+    (globalThis.window as WindowWithStashgifs).stashgifsFeed = feed;
   } catch (error: unknown) {
     console.error('Stashgifs Feed UI: Fatal error during initialization:', error);
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';

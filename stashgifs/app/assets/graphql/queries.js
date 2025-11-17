@@ -2,7 +2,7 @@
  * GraphQL Queries
  * Centralized query definitions
  */
-import { SceneFields, SceneMarkerFields, TagFields, TagFieldsExtended, PerformerFields } from './fragments.js';
+import { SceneFields, SceneMarkerFields, TagFields, TagFieldsExtended, PerformerFields, SlimImageData, VisualFileData } from './fragments.js';
 /**
  * Check if tags have markers
  */
@@ -172,6 +172,23 @@ export const FIND_SCENE_MARKER_TAGS = `
     sceneMarkerTags(scene_id: $id) {
       scene_markers {
         seconds
+      }
+    }
+  }
+`;
+/**
+ * Find images with filtering
+ */
+export const FIND_IMAGES = `
+  ${SlimImageData}
+  ${VisualFileData}
+  query FindImages($filter: FindFilterType, $image_filter: ImageFilterType, $image_ids: [Int!]) {
+    findImages(filter: $filter, image_filter: $image_filter, image_ids: $image_ids) {
+      count
+      megapixels
+      filesize
+      images {
+        ...SlimImageData
       }
     }
   }
