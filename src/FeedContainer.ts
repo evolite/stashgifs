@@ -15,6 +15,7 @@ import { SettingsPage } from './SettingsPage.js';
 import { debounce, isValidMediaUrl, detectDeviceCapabilities, DeviceCapabilities, isStandaloneNavigator } from './utils.js';
 import { posterPreloader } from './PosterPreloader.js';
 import { Image as GraphQLImage } from './graphql/types.js';
+import { HQ_SVG_OUTLINE, RANDOM_SVG, SETTINGS_SVG, VOLUME_MUTED_SVG, VOLUME_UNMUTED_SVG, RANDOM_ARROWS_SVG, SHUFFLE_CHECK_SVG, CLEAR_SVG } from './icons.js';
 
 const DEFAULT_SETTINGS: FeedSettings = {
   autoPlay: true, // Enable autoplay for markers
@@ -649,37 +650,46 @@ export class FeedContainer {
     // HD toggle button
     const hdBtn = document.createElement('button');
     hdBtn.type = 'button';
-    hdBtn.textContent = this.useHDMode ? 'HD Video: On' : 'HD Video: Off';
-    hdBtn.style.padding = '10px 12px';
+    hdBtn.innerHTML = HQ_SVG_OUTLINE;
+    hdBtn.title = this.useHDMode ? 'HD Video: On' : 'HD Video: Off';
+    hdBtn.style.padding = '10px';
+    hdBtn.style.width = '44px';
+    hdBtn.style.height = '44px';
     hdBtn.style.borderRadius = '10px';
-    hdBtn.style.border = '1px solid rgba(255,255,255,0.12)';
-    hdBtn.style.background = this.useHDMode ? 'rgba(76, 175, 80, 0.25)' : 'rgba(28, 28, 30, 0.95)';
-    hdBtn.style.color = this.useHDMode ? '#C8E6C9' : 'rgba(255,255,255,0.85)';
+    hdBtn.style.border = this.useHDMode ? '1px solid rgba(76, 175, 80, 0.55)' : '1px solid rgba(255,255,255,0.06)';
+    hdBtn.style.background = this.useHDMode ? 'rgba(76, 175, 80, 0.25)' : 'rgba(28, 28, 30, 0.6)';
+    hdBtn.style.color = this.useHDMode ? '#C8E6C9' : 'rgba(255,255,255,0.4)';
     hdBtn.style.cursor = 'pointer';
     hdBtn.style.display = 'inline-flex';
     hdBtn.style.alignItems = 'center';
+    hdBtn.style.justifyContent = 'center';
 
     // Random positions toggle
     const randomBtn = document.createElement('button');
     randomBtn.type = 'button';
+    randomBtn.innerHTML = RANDOM_SVG;
     const setRandomBtnState = () => {
       const isOn = this.shuffleMode > 0;
-      randomBtn.textContent = isOn ? 'Random Positions: On' : 'Random Positions: Off';
-      randomBtn.style.background = isOn ? 'rgba(33, 150, 243, 0.25)' : 'rgba(28, 28, 30, 0.95)';
-      randomBtn.style.color = isOn ? '#BBDEFB' : 'rgba(255,255,255,0.85)';
+      randomBtn.title = isOn ? 'Random Positions: On' : 'Random Positions: Off';
+      randomBtn.style.background = isOn ? 'rgba(33, 150, 243, 0.25)' : 'rgba(28, 28, 30, 0.6)';
+      randomBtn.style.border = isOn ? '1px solid rgba(33, 150, 243, 0.65)' : '1px solid rgba(255,255,255,0.06)';
+      randomBtn.style.color = isOn ? '#64B5F6' : 'rgba(255,255,255,0.4)';
     };
-    randomBtn.style.padding = '10px 12px';
+    randomBtn.style.padding = '10px';
+    randomBtn.style.width = '44px';
+    randomBtn.style.height = '44px';
     randomBtn.style.borderRadius = '10px';
-    randomBtn.style.border = '1px solid rgba(255,255,255,0.12)';
     randomBtn.style.cursor = 'pointer';
     randomBtn.style.display = 'inline-flex';
     randomBtn.style.alignItems = 'center';
+    randomBtn.style.justifyContent = 'center';
     setRandomBtnState();
 
     const updateButtonStates = () => {
-      hdBtn.textContent = this.useHDMode ? 'HD Video: On' : 'HD Video: Off';
-      hdBtn.style.background = this.useHDMode ? 'rgba(76, 175, 80, 0.25)' : 'rgba(28, 28, 30, 0.95)';
-      hdBtn.style.color = this.useHDMode ? '#C8E6C9' : 'rgba(255,255,255,0.85)';
+      hdBtn.style.background = this.useHDMode ? 'rgba(76, 175, 80, 0.25)' : 'rgba(28, 28, 30, 0.6)';
+      hdBtn.style.border = this.useHDMode ? '1px solid rgba(76, 175, 80, 0.55)' : '1px solid rgba(255,255,255,0.06)';
+      hdBtn.style.color = this.useHDMode ? '#C8E6C9' : 'rgba(255,255,255,0.4)';
+      hdBtn.title = this.useHDMode ? 'HD Video: On' : 'HD Video: Off';
       setRandomBtnState();
     };
 
@@ -1609,6 +1619,7 @@ export class FeedContainer {
       textEl.style.opacity = isEntering ? '0' : '1';
       textEl.style.whiteSpace = 'nowrap';
       textEl.style.fontWeight = 'bold';
+      textEl.style.color = '#F5C518';
       return textEl;
     };
     
@@ -1733,7 +1744,9 @@ export class FeedContainer {
     randomLeftIcon.style.pointerEvents = 'none';
     
     const randomLeftIconSpan = document.createElement('span');
-    randomLeftIconSpan.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="16" height="16"><path d="M16 3h5v5M21 3l-5 5"/><path d="M4 20l5-5m0 0l5 5m-5-5h3"/><path d="M4 4l7 7"/></svg>';
+    randomLeftIconSpan.innerHTML = RANDOM_ARROWS_SVG;
+    randomLeftIconSpan.querySelector('svg')?.setAttribute('width', '16');
+    randomLeftIconSpan.querySelector('svg')?.setAttribute('height', '16');
     const randomLeftText = document.createElement('span');
     randomLeftText.textContent = 'Discovering randomly';
     randomLeftIcon.appendChild(randomLeftIconSpan);
@@ -1784,17 +1797,10 @@ export class FeedContainer {
     shuffleIndicator.style.fontSize = '12px';
     shuffleIndicator.style.pointerEvents = 'none';
     
-    const randomIconSvg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-    randomIconSvg.setAttribute('viewBox', '0 0 24 24');
-    randomIconSvg.setAttribute('width', '14');
-    randomIconSvg.setAttribute('height', '14');
-    randomIconSvg.setAttribute('fill', 'currentColor');
-    const p1 = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-    p1.setAttribute('d', 'M14.59 7.41L13.17 6 9 10.17 7.41 8.59 6 10l3 3 5.59-5.59z');
-    const p2 = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-    p2.setAttribute('d', 'M14 6h5v5h-2V8h-3V6z');
-    randomIconSvg.appendChild(p1);
-    randomIconSvg.appendChild(p2);
+    const randomIconSvg = document.createElement('span');
+    randomIconSvg.innerHTML = SHUFFLE_CHECK_SVG;
+    randomIconSvg.querySelector('svg')?.setAttribute('width', '14');
+    randomIconSvg.querySelector('svg')?.setAttribute('height', '14');
     const shuffleText = document.createElement('span');
     shuffleText.textContent = 'Random';
     shuffleIndicator.appendChild(randomIconSvg);
@@ -1847,25 +1853,25 @@ export class FeedContainer {
     settingsButton.style.padding = '10px 12px';
     settingsButton.style.borderRadius = '10px';
     settingsButton.style.border = '1px solid rgba(255,255,255,0.12)';
-    settingsButton.style.background = 'rgba(245, 197, 24, 0.25)';
+    settingsButton.style.background = 'rgba(28, 28, 30, 0.9)';
     settingsButton.style.color = '#F5C518';
     settingsButton.style.cursor = 'pointer';
     settingsButton.style.display = 'inline-flex';
     settingsButton.style.alignItems = 'center';
     settingsButton.style.justifyContent = 'center';
     settingsButton.style.transition = 'background 0.2s ease, border-color 0.2s ease, color 0.2s ease';
-    // Classic gear/settings icon (simpler version)
-    settingsButton.innerHTML = '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M12 1v6m0 6v6M5.64 5.64l4.24 4.24m4.24 4.24l4.24 4.24M1 12h6m6 0h6M5.64 18.36l4.24-4.24m4.24-4.24l4.24-4.24"/></svg>';
+    // Standard settings/gear icon
+    settingsButton.innerHTML = SETTINGS_SVG;
 
     settingsButton.addEventListener('mouseenter', () => {
       settingsButton.style.color = '#FFD54F';
-      settingsButton.style.background = 'rgba(245, 197, 24, 0.35)';
+      settingsButton.style.background = 'rgba(28, 28, 30, 0.95)';
       settingsButton.style.borderColor = 'rgba(255,255,255,0.18)';
     });
 
     settingsButton.addEventListener('mouseleave', () => {
       settingsButton.style.color = '#F5C518';
-      settingsButton.style.background = 'rgba(245, 197, 24, 0.25)';
+      settingsButton.style.background = 'rgba(28, 28, 30, 0.9)';
       settingsButton.style.borderColor = 'rgba(255,255,255,0.12)';
     });
 
@@ -1937,10 +1943,10 @@ export class FeedContainer {
     hdToggle.style.alignItems = 'center';
     hdToggle.style.justifyContent = 'center';
     hdToggle.style.transition = 'background 0.2s ease, border-color 0.2s ease, color 0.2s ease, transform 0.2s cubic-bezier(0.2, 0, 0, 1)';
-    hdToggle.textContent = 'HD';
 
     const setHDToggleVisualState = (shuffleToggle: HTMLButtonElement | HTMLElement | null | undefined) => {
       if (this.useHDMode) {
+        hdToggle.textContent = 'HD Video';
         hdToggle.style.background = 'rgba(76, 175, 80, 0.25)';
         hdToggle.style.borderColor = 'rgba(76, 175, 80, 0.55)';
         hdToggle.style.color = '#C8E6C9';
@@ -1948,9 +1954,10 @@ export class FeedContainer {
           shuffleToggle.style.display = 'inline-flex';
         }
       } else {
-        hdToggle.style.background = 'rgba(28, 28, 30, 0.9)';
-        hdToggle.style.borderColor = 'rgba(255,255,255,0.16)';
-        hdToggle.style.color = 'rgba(255,255,255,0.85)';
+        hdToggle.textContent = 'HD Video';
+        hdToggle.style.background = 'rgba(28, 28, 30, 0.6)';
+        hdToggle.style.borderColor = 'rgba(255,255,255,0.06)';
+        hdToggle.style.color = 'rgba(255,255,255,0.4)';
         if (shuffleToggle) {
           shuffleToggle.style.display = 'none';
         }
@@ -1995,6 +2002,9 @@ export class FeedContainer {
       onHDToggleClick();
     });
 
+    // Set initial state
+    setHDToggleVisualState(null);
+
     return {
       button: hdToggle,
       onClick: onHDToggleClick,
@@ -2026,20 +2036,25 @@ export class FeedContainer {
     volToggle.style.justifyContent = 'center';
     volToggle.style.transition = 'background 0.2s ease, border-color 0.2s ease, color 0.2s ease, transform 0.2s cubic-bezier(0.2, 0, 0, 1)';
     
-    const mutedIcon = '<svg viewBox="0 0 24 24" fill="currentColor" width="16" height="16" style="display: block;"><path d="M16.5 12c0-1.77-1.02-3.29-2.5-4.03v2.21l2.45 2.45c.03-.2.05-.41.05-.63zm2.5 0c0 .94-.2 1.82-.54 2.64l1.51 1.51C20.63 14.91 21 13.5 21 12c0-4.28-2.99-7.86-7-8.77v2.06c2.89.86 5 3.54 5 6.71zM4.27 3L3 4.27 7.73 9H3v6h4l5 5v-6.73l4.25 4.25c-.67.52-1.42.93-2.25 1.18v2.06c1.38-.31 2.63-.95 3.69-1.81L19.73 21 21 19.73l-9-9L4.27 3zM12 4L9.91 6.09 12 8.18V4z"/></svg>';
-    const unmutedIcon = '<svg viewBox="0 0 24 24" fill="currentColor" width="16" height="16" style="display: block;"><path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02zM14 3.23v2.06c2.89.86 5 3.54 5 6.71s-2.11 5.85-5 6.71v2.06c4.01-.91 7-4.49 7-8.77s-2.99-7.86-7-8.77z"/></svg>';
+    const getMutedIcon = () => {
+      return VOLUME_MUTED_SVG.replace('width="24"', 'width="16"').replace('height="24"', 'height="16"').replace('preserveAspectRatio="xMidYMid meet"', 'preserveAspectRatio="xMidYMid meet" style="display: block;"');
+    };
+    
+    const getUnmutedIcon = () => {
+      return VOLUME_UNMUTED_SVG.replace('width="24"', 'width="16"').replace('height="24"', 'height="16"').replace('preserveAspectRatio="xMidYMid meet"', 'preserveAspectRatio="xMidYMid meet" style="display: block;"');
+    };
 
     const setVolToggleVisualState = () => {
       if (this.useVolumeMode) {
         volToggle.style.background = 'rgba(33, 150, 243, 0.25)';
         volToggle.style.borderColor = 'rgba(33, 150, 243, 0.55)';
         volToggle.style.color = '#BBDEFB';
-        volToggle.innerHTML = unmutedIcon;
+        volToggle.innerHTML = getUnmutedIcon();
       } else {
         volToggle.style.background = 'rgba(28, 28, 30, 0.9)';
         volToggle.style.borderColor = 'rgba(255,255,255,0.16)';
         volToggle.style.color = 'rgba(255,255,255,0.85)';
-        volToggle.innerHTML = mutedIcon;
+        volToggle.innerHTML = getMutedIcon();
       }
     };
 
@@ -2099,31 +2114,30 @@ export class FeedContainer {
     shuffleToggle.style.alignItems = 'center';
     shuffleToggle.style.justifyContent = 'center';
     shuffleToggle.style.transition = 'background 0.2s ease, border-color 0.2s ease, color 0.2s ease, transform 0.2s cubic-bezier(0.2, 0, 0, 1)';
-    
-    const shuffleIcon = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="16" height="16" style="display: block;"><path d="M16 3h5v5M21 3l-5 5M8 21H3v-5M3 16l5-5"/><path d="M21 16v-5h-5M16 21l5-5"/></svg>';
-    const noMarkersIcon = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="16" height="16" style="display: block;"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/><path d="M6 6l12 12" stroke-width="2.5"/></svg>';
-    
-    shuffleToggle.innerHTML = shuffleIcon;
+    shuffleToggle.style.fontSize = '12px';
+    shuffleToggle.style.fontWeight = '700';
+    shuffleToggle.style.lineHeight = '1.2';
+    shuffleToggle.style.userSelect = 'none';
 
     const setShuffleToggleVisualState = () => {
       if (this.shuffleMode === 0) {
-        shuffleToggle.style.background = 'rgba(28, 28, 30, 0.9)';
-        shuffleToggle.style.borderColor = 'rgba(255,255,255,0.12)';
-        shuffleToggle.style.color = 'rgba(255,255,255,0.85)';
-        shuffleToggle.innerHTML = shuffleIcon;
-        shuffleToggle.title = 'Shuffle mode: Off';
+        shuffleToggle.textContent = 'Random Positions';
+        shuffleToggle.style.background = 'rgba(28, 28, 30, 0.6)';
+        shuffleToggle.style.borderColor = 'rgba(255,255,255,0.06)';
+        shuffleToggle.style.color = 'rgba(255,255,255,0.4)';
+        shuffleToggle.title = 'Random Positions';
       } else if (this.shuffleMode === 1) {
+        shuffleToggle.textContent = 'Random Positions';
         shuffleToggle.style.background = 'rgba(33, 150, 243, 0.25)';
         shuffleToggle.style.borderColor = 'rgba(33, 150, 243, 0.65)';
         shuffleToggle.style.color = '#64B5F6';
-        shuffleToggle.innerHTML = shuffleIcon;
-        shuffleToggle.title = 'Shuffle mode: All scenes';
+        shuffleToggle.title = 'Random Positions';
       } else {
+        shuffleToggle.textContent = 'Random Positions';
         shuffleToggle.style.background = 'rgba(156, 39, 176, 0.25)';
         shuffleToggle.style.borderColor = 'rgba(156, 39, 176, 0.65)';
         shuffleToggle.style.color = '#BA68C8';
-        shuffleToggle.innerHTML = noMarkersIcon;
-        shuffleToggle.title = 'Shuffle mode: Scenes with no markers';
+        shuffleToggle.title = 'Random Positions (No Markers)';
       }
     };
 
@@ -3044,17 +3058,8 @@ export class FeedContainer {
     clearBtn.style.opacity = '0.8';
     clearBtn.onmouseenter = () => { clearBtn.style.opacity = '1'; };
     clearBtn.onmouseleave = () => { clearBtn.style.opacity = '0.8'; };
-    // Use createElement instead of innerHTML for better performance
-    const clearSvg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-    clearSvg.setAttribute('viewBox', '0 0 24 24');
-    clearSvg.setAttribute('width', '16');
-    clearSvg.setAttribute('height', '16');
-    clearSvg.setAttribute('fill', 'currentColor');
-    clearSvg.setAttribute('aria-hidden', 'true');
-    const path1 = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-    path1.setAttribute('d', 'M18 6L6 18M6 6l12 12');
-    clearSvg.appendChild(path1);
-    clearBtn.appendChild(clearSvg);
+    const clearIcon = CLEAR_SVG.replace('width="24"', 'width="16"').replace('height="24"', 'height="16"');
+    clearBtn.innerHTML = clearIcon;
 
     const apply = async () => {
       // Clear suggestions when applying a search
@@ -3996,9 +4001,16 @@ export class FeedContainer {
         imageFilters.tagIds = filters.tags;
       }
 
+      const imageFiltersWithOrientation = {
+        ...imageFilters,
+        ...(this.settings.orientationFilter && this.settings.orientationFilter.length > 0
+          ? { orientationFilter: this.settings.orientationFilter }
+          : {}),
+      };
+
       const images = await this.api.findImages(
         fileExtensions,
-        Object.keys(imageFilters).length > 0 ? imageFilters : undefined,
+        Object.keys(imageFiltersWithOrientation).length > 0 ? imageFiltersWithOrientation : undefined,
         limit,
         offset,
         signal

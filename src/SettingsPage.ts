@@ -24,6 +24,84 @@ export class SettingsPage {
     this.render();
   }
 
+  /**
+   * Create a modern toggle switch
+   */
+  private createToggleSwitch(checked: boolean, onChange?: (checked: boolean) => void): { container: HTMLElement; input: HTMLInputElement } {
+    const container = document.createElement('label');
+    container.style.position = 'relative';
+    container.style.display = 'inline-block';
+    container.style.width = '50px';
+    container.style.height = '28px';
+    container.style.cursor = 'pointer';
+
+    const input = document.createElement('input');
+    input.type = 'checkbox';
+    input.checked = checked;
+    input.style.opacity = '0';
+    input.style.width = '0';
+    input.style.height = '0';
+    input.style.position = 'absolute';
+
+    const slider = document.createElement('span');
+    slider.style.position = 'absolute';
+    slider.style.top = '0';
+    slider.style.left = '0';
+    slider.style.right = '0';
+    slider.style.bottom = '0';
+    slider.style.backgroundColor = checked ? '#4CAF50' : 'rgba(255, 255, 255, 0.3)';
+    slider.style.transition = 'background-color 0.3s ease';
+    slider.style.borderRadius = '28px';
+    slider.style.cursor = 'pointer';
+
+    const thumb = document.createElement('span');
+    thumb.style.position = 'absolute';
+    thumb.style.height = '22px';
+    thumb.style.width = '22px';
+    thumb.style.left = checked ? '26px' : '3px';
+    thumb.style.top = '3px';
+    thumb.style.backgroundColor = '#FFFFFF';
+    thumb.style.borderRadius = '50%';
+    thumb.style.transition = 'left 0.3s ease, box-shadow 0.3s ease';
+    thumb.style.boxShadow = '0 2px 4px rgba(0, 0, 0, 0.2)';
+    thumb.style.cursor = 'pointer';
+
+    const updateVisualState = () => {
+      const isChecked = input.checked;
+      slider.style.backgroundColor = isChecked ? '#4CAF50' : 'rgba(255, 255, 255, 0.3)';
+      thumb.style.left = isChecked ? '26px' : '3px';
+    };
+
+    // Add hover effect
+    container.addEventListener('mouseenter', () => {
+      if (!input.checked) {
+        slider.style.backgroundColor = 'rgba(255, 255, 255, 0.4)';
+      }
+    });
+    container.addEventListener('mouseleave', () => {
+      updateVisualState();
+    });
+
+    input.addEventListener('change', () => {
+      updateVisualState();
+      if (onChange) {
+        onChange(input.checked);
+      }
+    });
+
+    // Also listen for programmatic changes
+    const observer = new MutationObserver(() => {
+      updateVisualState();
+    });
+    observer.observe(input, { attributes: true, attributeFilter: ['checked'] });
+
+    container.appendChild(input);
+    container.appendChild(slider);
+    slider.appendChild(thumb);
+
+    return { container, input };
+  }
+
   private render(): void {
     this.container.innerHTML = '';
     this.container.style.position = 'fixed';
@@ -38,6 +116,7 @@ export class SettingsPage {
     this.container.style.justifyContent = 'center';
     this.container.style.padding = '20px';
     this.container.style.boxSizing = 'border-box';
+    this.container.style.fontFamily = 'system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif';
 
     const modal = document.createElement('div');
     modal.style.backgroundColor = '#1C1C1E';
@@ -101,18 +180,16 @@ export class SettingsPage {
     includeImagesContainer.style.alignItems = 'center';
     includeImagesContainer.style.marginBottom = '16px';
 
-    const includeImagesLabel = document.createElement('label');
+    const includeImagesLabel = document.createElement('span');
     includeImagesLabel.textContent = 'Include images in feed';
     includeImagesLabel.style.color = '#FFFFFF';
     includeImagesLabel.style.fontSize = '14px';
-    includeImagesLabel.style.cursor = 'pointer';
     includeImagesContainer.appendChild(includeImagesLabel);
 
-    const includeImagesToggle = document.createElement('input');
-    includeImagesToggle.type = 'checkbox';
-    includeImagesToggle.checked = this.settings.includeImagesInFeed !== false;
-    includeImagesToggle.style.cursor = 'pointer';
-    includeImagesContainer.appendChild(includeImagesToggle);
+    const { container: includeImagesToggleContainer, input: includeImagesToggle } = this.createToggleSwitch(
+      this.settings.includeImagesInFeed !== false
+    );
+    includeImagesContainer.appendChild(includeImagesToggleContainer);
 
     imageSection.appendChild(includeImagesContainer);
 
@@ -123,23 +200,22 @@ export class SettingsPage {
     imagesOnlyContainer.style.alignItems = 'center';
     imagesOnlyContainer.style.marginBottom = '16px';
 
-    const imagesOnlyLabel = document.createElement('label');
+    const imagesOnlyLabel = document.createElement('span');
     imagesOnlyLabel.textContent = 'Only load images (skip videos)';
     imagesOnlyLabel.style.color = '#FFFFFF';
     imagesOnlyLabel.style.fontSize = '14px';
-    imagesOnlyLabel.style.cursor = 'pointer';
     imagesOnlyContainer.appendChild(imagesOnlyLabel);
 
-    const imagesOnlyToggle = document.createElement('input');
-    imagesOnlyToggle.type = 'checkbox';
-    imagesOnlyToggle.checked = this.settings.imagesOnly === true;
-    imagesOnlyToggle.style.cursor = 'pointer';
-    imagesOnlyToggle.addEventListener('change', () => {
-      if (imagesOnlyToggle.checked) {
-        includeImagesToggle.checked = true;
+    const { container: imagesOnlyToggleContainer, input: imagesOnlyToggle } = this.createToggleSwitch(
+      this.settings.imagesOnly === true,
+      (checked) => {
+        if (checked) {
+          includeImagesToggle.checked = true;
+          includeImagesToggle.dispatchEvent(new Event('change'));
+        }
       }
-    });
-    imagesOnlyContainer.appendChild(imagesOnlyToggle);
+    );
+    imagesOnlyContainer.appendChild(imagesOnlyToggleContainer);
 
     imageSection.appendChild(imagesOnlyContainer);
 

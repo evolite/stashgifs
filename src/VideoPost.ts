@@ -10,6 +10,7 @@ import { StashAPI } from './StashAPI.js';
 import { VisibilityManager } from './VisibilityManager.js';
 import { calculateAspectRatio, getAspectRatioClass, isValidMediaUrl, showToast, throttle, toAbsoluteUrl } from './utils.js';
 import { posterPreloader } from './PosterPreloader.js';
+import { HEART_SVG_OUTLINE, HEART_SVG_FILLED, HQ_SVG_OUTLINE, HQ_SVG_FILLED, PLAY_SVG, MARKER_SVG, ADD_TAG_SVG, STAR_SVG, STAR_SVG_OUTLINE, OCOUNT_SVG, VERIFIED_CHECKMARK_SVG } from './icons.js';
 
 // Constants for magic numbers and strings
 const FAVORITE_TAG_NAME = 'StashGifs Favorite';
@@ -20,38 +21,7 @@ const RATING_DIALOG_MAX_WIDTH = 900;
 const RATING_DIALOG_MIN_WIDTH = 160;
 const OCOUNT_DIGIT_WIDTH_PX = 8; // Approximate pixels per digit for 14px font
 const OCOUNT_MIN_WIDTH_PX = 14;
-const OCOUNT_THREE_DIGIT_PADDING = 10;
-const OCOUNT_DEFAULT_PADDING = 8;
 const RESIZE_THROTTLE_MS = 100;
-
-// SVG Constants
-const HEART_SVG_OUTLINE = `<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-  <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/>
-</svg>`;
-
-const HEART_SVG_FILLED = `<svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor" aria-hidden="true">
-  <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/>
-</svg>`;
-
-const HQ_SVG_OUTLINE = `<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-  <rect x="4" y="6" width="16" height="12" rx="2"/>
-  <path d="M8 10h8M8 14h8" stroke-width="1.5"/>
-  <text x="12" y="15" font-size="7" font-weight="bold" fill="currentColor" text-anchor="middle" font-family="Arial, sans-serif">HD</text>
-</svg>`;
-
-const HQ_SVG_FILLED = `<svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor" aria-hidden="true">
-  <rect x="4" y="6" width="16" height="12" rx="2"/>
-  <text x="12" y="15" font-size="7" font-weight="bold" fill="white" text-anchor="middle" font-family="Arial, sans-serif">HD</text>
-</svg>`;
-
-const PLAY_SVG = '<svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor" aria-hidden="true"><path d="M8 5v14l11-7z"/></svg>';
-
-const MARKER_SVG = '<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>';
-const ADD_TAG_SVG = '<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>';
-
-const STAR_SVG = `<svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor" aria-hidden="true" focusable="false">
-  <path d="M12 17.27L18.18 21l-1.64-7.03L22 9.24l-7.19-.62L12 2 9.19 8.62 2 9.24l5.46 4.73L5.82 21z"/>
-</svg>`;
 
 interface HoverHandlers {
   mouseenter: () => void;
@@ -90,6 +60,7 @@ export class VideoPost {
   private ratingWrapper?: HTMLElement;
   private ratingDisplayButton?: HTMLButtonElement;
   private ratingDisplayValue?: HTMLElement;
+  private ratingDisplayIcon?: HTMLElement;
   private ratingDialog?: HTMLElement;
   private ratingStarButtons: HTMLButtonElement[] = [];
   private isRatingDialogOpen: boolean = false;
@@ -281,7 +252,7 @@ export class VideoPost {
     chips.style.flexWrap = 'wrap';
     chips.style.gap = '4px';
     chips.style.margin = '0';
-    chips.style.padding = '8px 16px';
+    chips.style.padding = '0 16px';
     
     // Add performer chips
     if (this.data.marker.scene.performers && this.data.marker.scene.performers.length > 0) {
@@ -330,7 +301,7 @@ export class VideoPost {
   /**
    * Add primary tag chip if valid
    */
-  private addPrimaryTagChip(chips: HTMLElement, displayedTagIds: Set<string>): void {
+  private addPrimaryTagChip(chips: HTMLElement, displayedTagIds: Set<string>): HTMLElement | null {
     if (this.data.marker.primary_tag?.id && 
         this.data.marker.primary_tag.name &&
         this.data.marker.primary_tag.name !== FAVORITE_TAG_NAME &&
@@ -338,34 +309,48 @@ export class VideoPost {
       const chip = this.createTagChip(this.data.marker.primary_tag);
       chips.appendChild(chip);
       displayedTagIds.add(this.data.marker.primary_tag.id);
+      return chip;
     }
+    return null;
+  }
+
+  /**
+   * Add spacing to first tag chip if performers are present
+   */
+  private addSpacingToFirstTag(chip: HTMLElement, hasPerformers: boolean, isFirstTag: boolean): boolean {
+    if (hasPerformers && isFirstTag) {
+      chip.style.marginLeft = '8px';
+      return false; // No longer first tag
+    }
+    return isFirstTag;
   }
 
   /**
    * Add tag chips to the chips container
    */
   private addTagChips(chips: HTMLElement): void {
+    const hasPerformers = !!(this.data.marker.scene.performers && this.data.marker.scene.performers.length > 0);
+    const displayedTagIds = new Set<string>();
+    let isFirstTag = true;
+    
+    // Add primary tag if it exists
+    const primaryTagChip = this.addPrimaryTagChip(chips, displayedTagIds);
+    if (primaryTagChip) {
+      isFirstTag = this.addSpacingToFirstTag(primaryTagChip, hasPerformers, isFirstTag);
+    }
+    
+    // Add other tags from tags array
     if (this.data.marker.tags && this.data.marker.tags.length > 0) {
-      // Create a set to track displayed tags and ensure no duplicates
-      const displayedTagIds = new Set<string>();
-      
-      // First, add primary tag if it exists and is valid
-      this.addPrimaryTagChip(chips, displayedTagIds);
-      
-      // Then, add all other tags from the tags array
       for (const tag of this.data.marker.tags) {
         if (this.shouldSkipTag(tag, displayedTagIds)) {
           continue;
         }
         
         const chip = this.createTagChip(tag);
+        isFirstTag = this.addSpacingToFirstTag(chip, hasPerformers, isFirstTag);
         chips.appendChild(chip);
         displayedTagIds.add(tag.id);
       }
-    } else {
-      // Fallback: if tags array is empty but primary tag exists, show it
-      const displayedTagIds = new Set<string>();
-      this.addPrimaryTagChip(chips, displayedTagIds);
     }
   }
 
@@ -374,16 +359,21 @@ export class VideoPost {
    */
   private createPerformerChip(performer: { id: string; name: string; image_path?: string }): HTMLElement {
     const chip = document.createElement('a');
-    chip.className = 'chip';
+    chip.className = 'performer-chip';
     chip.href = this.getPerformerLink(performer.id);
     chip.target = '_blank';
     chip.rel = 'noopener noreferrer';
-    chip.style.padding = '2px 8px';
-    chip.style.fontSize = '12px';
-    chip.style.lineHeight = '1.4';
+    chip.style.display = 'inline-flex';
+    chip.style.alignItems = 'center';
     chip.style.gap = '4px';
-    chip.style.transition = 'opacity 0.2s ease';
+    chip.style.fontSize = '14px';
+    chip.style.lineHeight = '1.4';
+    chip.style.color = 'rgba(255, 255, 255, 0.85)';
+    chip.style.textDecoration = 'none';
+    chip.style.transition = 'color 0.2s ease, opacity 0.2s ease';
     chip.style.cursor = 'pointer';
+    chip.style.minHeight = '44px';
+    chip.style.height = '44px';
     
     // Handler function to filter by performer
     const handleClick = () => {
@@ -477,31 +467,92 @@ export class VideoPost {
       });
     }
     
-    // Performer avatar images removed to reduce initial network requests
-    // Only show performer names in chips
+    // Add performer image (circular, 20px) before the name
+    const imageContainer = document.createElement('div');
+    imageContainer.style.width = '20px';
+    imageContainer.style.height = '20px';
+    imageContainer.style.borderRadius = '50%';
+    imageContainer.style.background = 'rgba(255,255,255,0.1)';
+    imageContainer.style.display = 'flex';
+    imageContainer.style.alignItems = 'center';
+    imageContainer.style.justifyContent = 'center';
+    imageContainer.style.fontSize = '12px';
+    imageContainer.style.fontWeight = '600';
+    imageContainer.style.color = 'rgba(255,255,255,0.85)';
+    imageContainer.style.flexShrink = '0';
+    imageContainer.style.overflow = 'hidden';
+    
+    if (performer.image_path) {
+      const imageSrc = performer.image_path.startsWith('http')
+        ? performer.image_path
+        : toAbsoluteUrl(performer.image_path);
+      if (imageSrc) {
+        const img = document.createElement('img');
+        img.src = imageSrc;
+        img.alt = performer.name;
+        img.style.width = '100%';
+        img.style.height = '100%';
+        img.style.objectFit = 'cover';
+        imageContainer.appendChild(img);
+      } else {
+        imageContainer.textContent = performer.name.charAt(0).toUpperCase();
+      }
+    } else {
+      imageContainer.textContent = performer.name.charAt(0).toUpperCase();
+    }
+    
+    chip.appendChild(imageContainer);
+    
+    // Add performer name
     chip.appendChild(document.createTextNode(performer.name));
+    
+    // Add verified checkmark icon after the name
+    const checkmarkIcon = document.createElement('span');
+    checkmarkIcon.innerHTML = VERIFIED_CHECKMARK_SVG;
+    checkmarkIcon.style.display = 'inline-flex';
+    checkmarkIcon.style.alignItems = 'center';
+    checkmarkIcon.style.width = '14px';
+    checkmarkIcon.style.height = '14px';
+    checkmarkIcon.style.flexShrink = '0';
+    const svg = checkmarkIcon.querySelector('svg');
+    if (svg) {
+      svg.setAttribute('width', '14');
+      svg.setAttribute('height', '14');
+    }
+    chip.appendChild(checkmarkIcon);
+    
+    // Hover effect
+    chip.addEventListener('mouseenter', () => {
+      chip.style.color = 'rgba(255, 255, 255, 1)';
+    });
+    chip.addEventListener('mouseleave', () => {
+      chip.style.color = 'rgba(255, 255, 255, 0.85)';
+    });
+    
     return chip;
   }
 
   /**
-   * Create a tag chip element (displayed as hashtag without borders)
+   * Create a tag chip element (displayed as hashtag with unique styling)
    */
   private createTagChip(tag: { id: string; name: string }): HTMLElement {
     const hashtag = document.createElement('a');
-    hashtag.className = 'hashtag';
+    hashtag.className = 'tag-chip';
     hashtag.href = this.getTagLink(tag.id);
     hashtag.target = '_blank';
     hashtag.rel = 'noopener noreferrer';
-    hashtag.style.display = 'inline-block';
+    hashtag.style.display = 'inline-flex';
+    hashtag.style.alignItems = 'center';
     hashtag.style.padding = '0';
     hashtag.style.margin = '0';
-    hashtag.style.fontSize = '12px';
+    hashtag.style.fontSize = '14px';
     hashtag.style.lineHeight = '1.4';
-    hashtag.style.color = 'rgba(255, 255, 255, 0.7)';
+    hashtag.style.color = 'rgba(255, 255, 255, 0.75)';
     hashtag.style.textDecoration = 'none';
     hashtag.style.transition = 'color 0.2s ease';
     hashtag.style.cursor = 'pointer';
-    hashtag.style.fontWeight = '500';
+    hashtag.style.minHeight = '44px';
+    hashtag.style.height = '44px';
     
     // Handler function to filter by tag
     const handleClick = () => {
@@ -515,10 +566,10 @@ export class VideoPost {
     
     // Hover effect
     hashtag.addEventListener('mouseenter', () => {
-      hashtag.style.color = 'rgba(255, 255, 255, 0.9)';
+      hashtag.style.color = 'rgba(255, 255, 255, 0.95)';
     });
     hashtag.addEventListener('mouseleave', () => {
-      hashtag.style.color = 'rgba(255, 255, 255, 0.7)';
+      hashtag.style.color = 'rgba(255, 255, 255, 0.75)';
     });
     
     // Detect mobile device
@@ -647,7 +698,7 @@ export class VideoPost {
   private createFooter(): HTMLElement {
     const footer = document.createElement('div');
     footer.className = 'video-post__footer';
-    footer.style.padding = '8px 16px';
+    footer.style.padding = '0';
 
     const info = document.createElement('div');
     info.className = 'video-post__info';
@@ -667,6 +718,8 @@ export class VideoPost {
     buttonGroup.style.display = 'flex';
     buttonGroup.style.alignItems = 'center';
     buttonGroup.style.gap = '4px';
+    buttonGroup.style.flexWrap = 'nowrap';
+    buttonGroup.style.flexShrink = '0';
     this.buttonGroup = buttonGroup; // Store reference for button swapping
 
     // Add buttons in order
@@ -707,6 +760,7 @@ export class VideoPost {
     iconBtn.setAttribute('aria-label', 'View full scene');
     iconBtn.title = 'Open scene in Stash';
     this.applyIconButtonStyles(iconBtn);
+    iconBtn.style.color = '#F5C518';
     iconBtn.style.padding = '0';
     // Keep 44x44px for touch target
     iconBtn.style.width = '44px';
@@ -799,6 +853,11 @@ export class VideoPost {
     heartBtn.title = 'Add to favorites';
     this.applyIconButtonStyles(heartBtn);
     heartBtn.style.padding = '0';
+    heartBtn.style.width = '56px';
+    heartBtn.style.height = '56px';
+    heartBtn.style.minWidth = '56px';
+    heartBtn.style.minHeight = '56px';
+    heartBtn.style.flexShrink = '0';
 
     this.updateHeartButton(heartBtn);
 
@@ -965,14 +1024,15 @@ export class VideoPost {
     oCountBtn.setAttribute('aria-label', 'Increment o count');
     oCountBtn.title = 'Increment o-count';
     this.applyIconButtonStyles(oCountBtn);
-    oCountBtn.style.padding = '0 8px';
-    oCountBtn.style.gap = '6px';
+    oCountBtn.style.padding = '5px 7px';
+    oCountBtn.style.gap = '3px';
+    oCountBtn.style.flexShrink = '1';
+    oCountBtn.style.minHeight = '44px';
+    oCountBtn.style.height = 'auto';
     oCountBtn.style.fontSize = '16px';
     // Keep 44px height but allow width to be auto for text content
     oCountBtn.style.width = 'auto';
     oCountBtn.style.minWidth = '44px';
-    
-    oCountBtn.innerHTML = '💦';
     
     this.oCountButton = oCountBtn;
     this.updateOCountButton();
@@ -1011,26 +1071,23 @@ export class VideoPost {
   private updateOCountButton(): void {
     if (!this.oCountButton) return;
     
-    const emoji = '💦';
-    this.oCountButton.innerHTML = emoji;
-    
     const digitCount = this.oCount > 0 ? this.oCount.toString().length : 0;
     const minWidth = digitCount > 0 ? `${Math.max(OCOUNT_MIN_WIDTH_PX, digitCount * OCOUNT_DIGIT_WIDTH_PX)}px` : `${OCOUNT_MIN_WIDTH_PX}px`;
     
-    const countSpan = document.createElement('span');
-    countSpan.style.fontSize = '14px';
-    countSpan.style.fontWeight = '500';
-    countSpan.style.minWidth = minWidth;
-    countSpan.style.textAlign = 'left';
-    countSpan.style.display = 'inline-block';
-    countSpan.textContent = this.oCount > 0 ? this.oCount.toString() : '';
-    this.oCountButton.appendChild(countSpan);
-    
-    if (digitCount >= 3) {
-      this.oCountButton.style.paddingRight = `${OCOUNT_THREE_DIGIT_PADDING}px`;
-    } else {
-      this.oCountButton.style.paddingRight = `${OCOUNT_DEFAULT_PADDING}px`;
+    // Find existing countSpan or create new one
+    let countSpan = this.oCountButton.querySelector('span') as HTMLSpanElement;
+    if (!countSpan) {
+      countSpan = document.createElement('span');
+      countSpan.style.fontSize = '14px';
+      countSpan.style.fontWeight = '500';
+      countSpan.style.textAlign = 'left';
+      countSpan.style.display = 'inline-block';
+      this.oCountButton.innerHTML = OCOUNT_SVG;
+      this.oCountButton.appendChild(countSpan);
     }
+    
+    countSpan.style.minWidth = minWidth;
+    countSpan.textContent = this.oCount > 0 ? this.oCount.toString() : '-';
   }
 
   /**
@@ -1135,11 +1192,13 @@ export class VideoPost {
     displayButton.setAttribute('aria-expanded', 'false');
     displayButton.title = 'Set rating on scene';
     this.applyIconButtonStyles(displayButton);
-    displayButton.style.padding = '0 8px';
-    displayButton.style.gap = '6px';
+    displayButton.style.padding = '8px 12px';
+    displayButton.style.gap = '3px';
     // Keep 44px height but allow width to be auto for text content
     displayButton.style.width = 'auto';
     displayButton.style.minWidth = '44px';
+    displayButton.style.height = 'auto';
+    displayButton.style.minHeight = '44px';
     
     displayButton.addEventListener('click', (event) => {
       event.preventDefault();
@@ -1154,6 +1213,10 @@ export class VideoPost {
     const iconSpan = document.createElement('span');
     iconSpan.className = 'rating-display__icon';
     iconSpan.innerHTML = STAR_SVG;
+    iconSpan.style.display = 'flex';
+    iconSpan.style.alignItems = 'center';
+    iconSpan.style.justifyContent = 'center';
+    this.ratingDisplayIcon = iconSpan;
 
     const valueSpan = document.createElement('span');
     valueSpan.className = 'rating-display__value';
@@ -1359,6 +1422,15 @@ export class VideoPost {
     }
     if (this.ratingDisplayValue) {
       this.ratingDisplayValue.textContent = this.hasRating ? this.ratingValue.toString() : '0';
+    }
+    if (this.ratingDisplayIcon) {
+      if (this.hasRating) {
+        this.ratingDisplayIcon.innerHTML = STAR_SVG;
+        this.ratingDisplayIcon.style.color = '';
+      } else {
+        this.ratingDisplayIcon.innerHTML = STAR_SVG_OUTLINE;
+        this.ratingDisplayIcon.style.color = 'rgba(255, 255, 255, 0.7)';
+      }
     }
   }
 

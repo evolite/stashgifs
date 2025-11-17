@@ -564,11 +564,11 @@ export class StashAPI {
       const filter = this.buildFindFilter(filters, savedFilterCriteria, page, limit);
       const sceneMarkerFilter = this.buildSceneMarkerFilter(filters, savedFilterCriteria);
       
-      const markers = await this.executeMarkerQuery(filter, sceneMarkerFilter, signal);
+      let markers = await this.executeMarkerQuery(filter, sceneMarkerFilter, signal);
       if (this.isAborted(signal)) return [];
       
       if (filters?.shuffleMode && markers.length > 0) {
-        return this.filterScenesByMarkerCount(markers, 5);
+        markers = this.filterScenesByMarkerCount(markers, 5);
       }
       
       return markers;
@@ -867,7 +867,9 @@ export class StashAPI {
       
       if (this.isAborted(signal)) return [];
 
-      return this.createSyntheticMarkers(scenes);
+      let markers = this.createSyntheticMarkers(scenes);
+      
+      return markers;
     } catch (e: unknown) {
       if (isAbortError(e) || this.isAborted(signal)) {
         return [];
@@ -1408,8 +1410,8 @@ export class StashAPI {
         variables,
       });
       const sceneAddO = result.data?.sceneAddO;
-      if (sceneAddO && 'o_counter' in sceneAddO) {
-        return { count: sceneAddO.o_counter ?? 0, history: times || [] };
+      if (sceneAddO && 'count' in sceneAddO) {
+        return { count: sceneAddO.count ?? 0, history: times || [] };
       }
       return { count: 0, history: [] };
     } catch (error) {
@@ -1605,6 +1607,61 @@ export class StashAPI {
   }
 
   /**
+   * Determine orientation from width and height
+   * @param width Width in pixels
+   * @param height Height in pixels
+   * @returns 'landscape', 'portrait', or 'square'
+   */
+  private getOrientation(width?: number, height?: number): 'landscape' | 'portrait' | 'square' | null {
+    if (!width || !height || width <= 0 || height <= 0) {
+      return null;
+    }
+    
+    const aspectRatio = width / height;
+    const tolerance = 0.05; // 5% tolerance for square detection
+    
+    if (Math.abs(aspectRatio - 1) < tolerance) {
+      return 'square';
+    } else if (aspectRatio > 1) {
+      return 'landscape';
+    } else {
+      return 'portrait';
+    }
+  }
+
+  /**
+   * Filter items by orientation
+   * @param items Array of items with width/height properties
+   * @param orientationFilter Array of allowed orientations
+   * @param getWidth Function to get width from item
+   * @param getHeight Function to get height from item
+   * @returns Filtered array of items
+   */
+  private filterByOrientation<T>(
+    items: T[],
+    orientationFilter: ('landscape' | 'portrait' | 'square')[] | undefined,
+    getWidth: (item: T) => number | undefined,
+    getHeight: (item: T) => number | undefined
+  ): T[] {
+    if (!orientationFilter || orientationFilter.length === 0) {
+      return items;
+    }
+    
+    return items.filter(item => {
+      const width = getWidth(item);
+      const height = getHeight(item);
+      const orientation = this.getOrientation(width, height);
+      
+      if (orientation === null) {
+        // If orientation cannot be determined, include the item
+        return true;
+      }
+      
+      return orientationFilter.includes(orientation);
+    });
+  }
+
+  /**
    * Build regex pattern from file extensions
    * Converts ['.gif', '.webm'] to "\.(gif|webm)$" (case-insensitive)
    */
@@ -1629,7 +1686,7 @@ export class StashAPI {
   /**
    * Find images with filtering by file extension, performers, and tags
    * @param fileExtensions Array of file extensions (e.g., ['.gif', '.webm'])
-   * @param filters Optional filters for performers and tags
+   * @param filters Optional filters for performers, tags, and orientation
    * @param limit Maximum number of images to return
    * @param offset Offset for pagination
    * @param signal AbortSignal for cancellation
@@ -1639,6 +1696,7 @@ export class StashAPI {
     filters?: {
       performerIds?: number[];
       tagIds?: string[];
+      orientationFilter?: ('landscape' | 'portrait' | 'square')[];
     },
     limit: number = 40,
     offset: number = 0,
@@ -1695,7 +1753,28 @@ export class StashAPI {
 
       if (signal?.aborted) return [];
 
-      const images = result.data?.findImages?.images || [];
+      let images = result.data?.findImages?.images || [];
+      
+      // Filter by orientation if specified
+      if (filters?.orientationFilter && filters.orientationFilter.length > 0) {
+        images = this.filterByOrientation(
+          images,
+          filters.orientationFilter,
+          (img) => {
+            const visualFile = img.visual_files?.find(
+              (file) => typeof (file as { width?: number }).width === 'number' && typeof (file as { height?: number }).height === 'number'
+            ) as { width?: number; height?: number } | undefined;
+            return visualFile?.width;
+          },
+          (img) => {
+            const visualFile = img.visual_files?.find(
+              (file) => typeof (file as { width?: number }).width === 'number' && typeof (file as { height?: number }).height === 'number'
+            ) as { width?: number; height?: number } | undefined;
+            return visualFile?.height;
+          }
+        );
+      }
+      
       return images;
     } catch (e: unknown) {
       if (isAbortError(e) || signal?.aborted) {

@@ -9,18 +9,10 @@ import { FavoritesManager } from './FavoritesManager.js';
 import { StashAPI } from './StashAPI.js';
 import { VisibilityManager } from './VisibilityManager.js';
 import { getAspectRatioClass, showToast, toAbsoluteUrl } from './utils.js';
+import { HEART_SVG_OUTLINE, HEART_SVG_FILLED, ADD_TAG_SVG, OCOUNT_SVG, VERIFIED_CHECKMARK_SVG } from './icons.js';
 
 // Constants
 const FAVORITE_TAG_NAME = 'StashGifs Favorite';
-const HEART_SVG_OUTLINE = `<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-  <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/>
-</svg>`;
-
-const HEART_SVG_FILLED = `<svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor" aria-hidden="true">
-  <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/>
-</svg>`;
-
-const ADD_TAG_SVG = '<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>';
 
 const OCOUNT_DIGIT_WIDTH_PX = 8; // Approximate pixels per digit for 14px font
 const OCOUNT_MIN_WIDTH_PX = 14;
@@ -151,6 +143,45 @@ export class ImagePost {
   }
 
   /**
+   * Add performer chips to the chips container
+   */
+  private addPerformerChips(chips: HTMLElement): void {
+    if (!this.data.image.performers || this.data.image.performers.length === 0) {
+      return;
+    }
+    
+    for (const performer of this.data.image.performers) {
+      const chip = this.createPerformerChip(performer);
+      chips.appendChild(chip);
+    }
+  }
+
+  /**
+   * Add tag chips to the chips container
+   */
+  private addTagChipsToHeader(chips: HTMLElement): void {
+    if (!this.data.image.tags?.length) {
+      return;
+    }
+    
+    const hasPerformers = this.data.image.performers && this.data.image.performers.length > 0;
+    let isFirstTag = true;
+    
+    for (const tag of this.data.image.tags) {
+      if (!tag?.id || !tag?.name || tag.name === FAVORITE_TAG_NAME) {
+        continue;
+      }
+      
+      const chip = this.createTagChip(tag);
+      if (hasPerformers && isFirstTag) {
+        chip.style.marginLeft = '8px';
+        isFirstTag = false;
+      }
+      chips.appendChild(chip);
+    }
+  }
+
+  /**
    * Create header with performer and tag chips
    */
   private createHeader(): HTMLElement {
@@ -166,25 +197,10 @@ export class ImagePost {
     chips.style.flexWrap = 'wrap';
     chips.style.gap = '4px';
     chips.style.margin = '0';
-    chips.style.padding = '8px 16px';
+    chips.style.padding = '0 16px';
     
-    // Add performer chips
-    if (this.data.image.performers && this.data.image.performers.length > 0) {
-      for (const performer of this.data.image.performers) {
-        const chip = this.createPerformerChip(performer);
-        chips.appendChild(chip);
-      }
-    }
-
-    // Add tag chips
-    if (this.data.image.tags?.length) {
-      for (const tag of this.data.image.tags) {
-        if (tag?.id && tag?.name && tag.name !== FAVORITE_TAG_NAME) {
-          const chip = this.createTagChip(tag);
-          chips.appendChild(chip);
-        }
-      }
-    }
+    this.addPerformerChips(chips);
+    this.addTagChipsToHeader(chips);
 
     header.appendChild(chips);
     return header;
@@ -195,16 +211,21 @@ export class ImagePost {
    */
   private createPerformerChip(performer: { id: string; name: string; image_path?: string }): HTMLElement {
     const chip = document.createElement('a');
-    chip.className = 'chip';
+    chip.className = 'performer-chip';
     chip.href = this.getPerformerLink(performer.id);
     chip.target = '_blank';
     chip.rel = 'noopener noreferrer';
-    chip.style.padding = '2px 8px';
-    chip.style.fontSize = '12px';
-    chip.style.lineHeight = '1.4';
+    chip.style.display = 'inline-flex';
+    chip.style.alignItems = 'center';
     chip.style.gap = '4px';
-    chip.style.transition = 'opacity 0.2s ease';
+    chip.style.fontSize = '14px';
+    chip.style.lineHeight = '1.4';
+    chip.style.color = 'rgba(255, 255, 255, 0.85)';
+    chip.style.textDecoration = 'none';
+    chip.style.transition = 'color 0.2s ease, opacity 0.2s ease';
     chip.style.cursor = 'pointer';
+    chip.style.minHeight = '44px';
+    chip.style.height = '44px';
     
     const handleClick = () => {
       if (this.onPerformerChipClick) {
@@ -284,29 +305,92 @@ export class ImagePost {
       });
     }
     
+    // Add performer image (circular, 20px) before the name
+    const imageContainer = document.createElement('div');
+    imageContainer.style.width = '20px';
+    imageContainer.style.height = '20px';
+    imageContainer.style.borderRadius = '50%';
+    imageContainer.style.background = 'rgba(255,255,255,0.1)';
+    imageContainer.style.display = 'flex';
+    imageContainer.style.alignItems = 'center';
+    imageContainer.style.justifyContent = 'center';
+    imageContainer.style.fontSize = '12px';
+    imageContainer.style.fontWeight = '600';
+    imageContainer.style.color = 'rgba(255,255,255,0.85)';
+    imageContainer.style.flexShrink = '0';
+    imageContainer.style.overflow = 'hidden';
+    
+    if (performer.image_path) {
+      const imageSrc = performer.image_path.startsWith('http')
+        ? performer.image_path
+        : toAbsoluteUrl(performer.image_path);
+      if (imageSrc) {
+        const img = document.createElement('img');
+        img.src = imageSrc;
+        img.alt = performer.name;
+        img.style.width = '100%';
+        img.style.height = '100%';
+        img.style.objectFit = 'cover';
+        imageContainer.appendChild(img);
+      } else {
+        imageContainer.textContent = performer.name.charAt(0).toUpperCase();
+      }
+    } else {
+      imageContainer.textContent = performer.name.charAt(0).toUpperCase();
+    }
+    
+    chip.appendChild(imageContainer);
+    
+    // Add performer name
     chip.appendChild(document.createTextNode(performer.name));
+    
+    // Add verified checkmark icon after the name
+    const checkmarkIcon = document.createElement('span');
+    checkmarkIcon.innerHTML = VERIFIED_CHECKMARK_SVG;
+    checkmarkIcon.style.display = 'inline-flex';
+    checkmarkIcon.style.alignItems = 'center';
+    checkmarkIcon.style.width = '14px';
+    checkmarkIcon.style.height = '14px';
+    checkmarkIcon.style.flexShrink = '0';
+    const svg = checkmarkIcon.querySelector('svg');
+    if (svg) {
+      svg.setAttribute('width', '14');
+      svg.setAttribute('height', '14');
+    }
+    chip.appendChild(checkmarkIcon);
+    
+    // Hover effect
+    chip.addEventListener('mouseenter', () => {
+      chip.style.color = 'rgba(255, 255, 255, 1)';
+    });
+    chip.addEventListener('mouseleave', () => {
+      chip.style.color = 'rgba(255, 255, 255, 0.85)';
+    });
+    
     return chip;
   }
 
   /**
-   * Create a tag chip element (displayed as hashtag without borders)
+   * Create a tag chip element (displayed as hashtag with unique styling)
    */
   private createTagChip(tag: { id: string; name: string }): HTMLElement {
     const hashtag = document.createElement('a');
-    hashtag.className = 'hashtag';
+    hashtag.className = 'tag-chip';
     hashtag.href = this.getTagLink(tag.id);
     hashtag.target = '_blank';
     hashtag.rel = 'noopener noreferrer';
-    hashtag.style.display = 'inline-block';
+    hashtag.style.display = 'inline-flex';
+    hashtag.style.alignItems = 'center';
     hashtag.style.padding = '0';
     hashtag.style.margin = '0';
-    hashtag.style.fontSize = '12px';
+    hashtag.style.fontSize = '14px';
     hashtag.style.lineHeight = '1.4';
-    hashtag.style.color = 'rgba(255, 255, 255, 0.7)';
+    hashtag.style.color = 'rgba(255, 255, 255, 0.75)';
     hashtag.style.textDecoration = 'none';
     hashtag.style.transition = 'color 0.2s ease';
     hashtag.style.cursor = 'pointer';
-    hashtag.style.fontWeight = '500';
+    hashtag.style.minHeight = '44px';
+    hashtag.style.height = '44px';
     
     const handleClick = () => {
       if (this.onTagChipClick) {
@@ -318,10 +402,10 @@ export class ImagePost {
     };
     
     hashtag.addEventListener('mouseenter', () => {
-      hashtag.style.color = 'rgba(255, 255, 255, 0.9)';
+      hashtag.style.color = 'rgba(255, 255, 255, 0.95)';
     });
     hashtag.addEventListener('mouseleave', () => {
-      hashtag.style.color = 'rgba(255, 255, 255, 0.7)';
+      hashtag.style.color = 'rgba(255, 255, 255, 0.75)';
     });
     
     const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
@@ -474,7 +558,7 @@ export class ImagePost {
   private createFooter(): HTMLElement {
     const footer = document.createElement('div');
     footer.className = 'video-post__footer';
-    footer.style.padding = '8px 16px';
+    footer.style.padding = '0';
     footer.style.position = 'relative';
     footer.style.zIndex = '10';
 
@@ -606,6 +690,11 @@ export class ImagePost {
     heartBtn.title = 'Add to favorites';
     this.applyIconButtonStyles(heartBtn);
     heartBtn.style.padding = '0';
+    heartBtn.style.width = '56px';
+    heartBtn.style.height = '56px';
+    heartBtn.style.minWidth = '56px';
+    heartBtn.style.minHeight = '56px';
+    heartBtn.style.flexShrink = '0';
 
     this.updateHeartButton(heartBtn);
 
@@ -673,8 +762,11 @@ export class ImagePost {
     oCountBtn.setAttribute('aria-label', 'Increment o count');
     oCountBtn.title = 'Increment o-count';
     this.applyIconButtonStyles(oCountBtn);
-    oCountBtn.style.padding = '0 8px';
-    oCountBtn.style.gap = '6px';
+    oCountBtn.style.padding = '5px 7px';
+    oCountBtn.style.gap = '3px';
+    oCountBtn.style.flexShrink = '1';
+    oCountBtn.style.minHeight = '44px';
+    oCountBtn.style.height = 'auto';
     oCountBtn.style.fontSize = '16px';
     oCountBtn.style.width = 'auto';
     oCountBtn.style.minWidth = '44px';
@@ -710,20 +802,23 @@ export class ImagePost {
   private updateOCountButton(): void {
     if (!this.oCountButton) return;
     
-    const emoji = '💦';
-    this.oCountButton.innerHTML = emoji;
-    
     const digitCount = this.oCount > 0 ? this.oCount.toString().length : 0;
     const minWidth = digitCount > 0 ? `${Math.max(OCOUNT_MIN_WIDTH_PX, digitCount * OCOUNT_DIGIT_WIDTH_PX)}px` : `${OCOUNT_MIN_WIDTH_PX}px`;
     
-    const countSpan = document.createElement('span');
-    countSpan.style.fontSize = '14px';
-    countSpan.style.fontWeight = '500';
+    // Find existing countSpan or create new one
+    let countSpan = this.oCountButton.querySelector('span') as HTMLSpanElement;
+    if (!countSpan) {
+      countSpan = document.createElement('span');
+      countSpan.style.fontSize = '14px';
+      countSpan.style.fontWeight = '500';
+      countSpan.style.textAlign = 'left';
+      countSpan.style.display = 'inline-block';
+      this.oCountButton.innerHTML = OCOUNT_SVG;
+      this.oCountButton.appendChild(countSpan);
+    }
+    
     countSpan.style.minWidth = minWidth;
-    countSpan.style.textAlign = 'left';
-    countSpan.style.display = 'inline-block';
-    countSpan.textContent = this.oCount > 0 ? this.oCount.toString() : '';
-    this.oCountButton.appendChild(countSpan);
+    countSpan.textContent = this.oCount > 0 ? this.oCount.toString() : '-';
     
     if (digitCount >= 3) {
       this.oCountButton.style.paddingRight = `${OCOUNT_THREE_DIGIT_PADDING}px`;

@@ -89,8 +89,7 @@ export const SCENE_UPDATE = `
 export const SCENE_ADD_O = `
   mutation SceneAddO($id: ID!, $times: [Timestamp!]) {
     sceneAddO(id: $id, times: $times) {
-      id
-      o_counter
+      count
     }
   }
 `;

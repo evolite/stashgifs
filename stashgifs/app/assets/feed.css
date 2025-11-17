@@ -841,6 +841,29 @@
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
 }
 
+/* Performer chip - text-based with verified checkmark */
+.performer-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  text-decoration: none;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.performer-chip svg {
+  flex-shrink: 0;
+}
+
+/* Tag chip - subtle background styling */
+.tag-chip {
+  display: inline-flex;
+  align-items: center;
+  text-decoration: none;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+
 /* Icon button */
 .icon-btn {
   width: 44px;

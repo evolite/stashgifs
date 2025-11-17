@@ -83,6 +83,7 @@ export interface FilterOptions {
   savedFilterId?: string; // Saved filter id from Stash (scene markers)
   shuffleMode?: boolean; // When true, use shuffle mode (query scenes directly)
   includeScenesWithoutMarkers?: boolean; // When true in shuffle mode, include scenes with 0 markers
+  orientationFilter?: ('landscape' | 'portrait' | 'square')[]; // Filter content by orientation
 }
 
 export interface FeedSettings {
@@ -101,6 +102,7 @@ export interface FeedSettings {
   enabledFileTypes?: string[]; // File extensions to include (e.g., ['.gif', '.webm']), default: ['.gif']
   includeImagesInFeed?: boolean; // Whether to include images in feed, default: true
   imagesOnly?: boolean; // When true, only load images and skip videos
+  orientationFilter?: ('landscape' | 'portrait' | 'square')[]; // Filter content by orientation
 }
 
 export interface VideoPostData {

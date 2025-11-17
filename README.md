@@ -6,6 +6,28 @@ A hobby project that turns your Stash scene markers into an endless scroll of lo
 
 I wanted a way to scroll through my scene markers like a social feed, so I built this. It transforms your markers into a vertical feed of auto-playing videos that loop endlessly. Just keep scrolling and let randomness serve you the good stuff.
 
+## Screenshots
+
+### Main Feed View
+![Main Feed](screenshots/main-feed.png)
+*The endless scroll feed with auto-playing videos and images*
+
+### Performer and Tag Filtering
+![Filtering](screenshots/filtering.png)
+*Click performer or tag chips to filter the feed instantly*
+
+### Card Interactions
+![Card Actions](screenshots/card-actions.png)
+*Heart favorites, rate with stars, increment o-count, and more*
+
+### Search and Discovery
+![Search](screenshots/search.png)
+*Search bar with trending tags, performers, and saved filters*
+
+### Settings
+![Settings](screenshots/settings.png)
+*Configure feed behavior, file types, and image inclusion*
+
 ## Getting Started
 
 Install it via Stash's plugin system using the `index.yml` file. That's it.

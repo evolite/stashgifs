@@ -478,8 +478,7 @@ export interface SceneUpdateResponse {
  */
 export interface SceneAddOResponse {
   sceneAddO: {
-    id: string;
-    o_counter?: number;
+    count: number;
   } | null;
 }
 
