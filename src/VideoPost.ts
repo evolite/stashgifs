@@ -10,7 +10,8 @@ import { StashAPI } from './StashAPI.js';
 import { VisibilityManager } from './VisibilityManager.js';
 import { calculateAspectRatio, getAspectRatioClass, isValidMediaUrl, showToast, throttle, toAbsoluteUrl } from './utils.js';
 import { posterPreloader } from './PosterPreloader.js';
-import { HEART_SVG_OUTLINE, HEART_SVG_FILLED, HQ_SVG_OUTLINE, HQ_SVG_FILLED, PLAY_SVG, MARKER_SVG, ADD_TAG_SVG, STAR_SVG, STAR_SVG_OUTLINE, OCOUNT_SVG, VERIFIED_CHECKMARK_SVG, MARKER_BADGE_SVG, SCENE_BADGE_SVG } from './icons.js';
+import { HEART_SVG_OUTLINE, HEART_SVG_FILLED, HQ_SVG_OUTLINE, HQ_SVG_FILLED, PLAY_SVG, MARKER_SVG, ADD_TAG_SVG, STAR_SVG, STAR_SVG_OUTLINE, OCOUNT_SVG, MARKER_BADGE_SVG, SCENE_BADGE_SVG } from './icons.js';
+import { BasePost } from './BasePost.js';
 
 // Constants for magic numbers and strings
 const FAVORITE_TAG_NAME = 'StashGifs Favorite';
@@ -23,11 +24,6 @@ const OCOUNT_DIGIT_WIDTH_PX = 8; // Approximate pixels per digit for 14px font
 const OCOUNT_MIN_WIDTH_PX = 14;
 const RESIZE_THROTTLE_MS = 100;
 
-interface HoverHandlers {
-  mouseenter: () => void;
-  mouseleave: () => void;
-}
-
 interface VideoPostOptions {
   favoritesManager?: FavoritesManager;
   api?: StashAPI;
@@ -38,14 +34,10 @@ interface VideoPostOptions {
   onCancelRequests?: () => void;
 }
 
-export class VideoPost {
-  private readonly container: HTMLElement;
+export class VideoPost extends BasePost {
   private readonly data: VideoPostData;
   private player?: NativeVideoPlayer;
   private isLoaded: boolean = false;
-  private readonly favoritesManager?: FavoritesManager;
-  private readonly api?: StashAPI;
-  private readonly visibilityManager?: VisibilityManager;
   private heartButton?: HTMLElement;
   private markerButton?: HTMLElement;
   private addTagButton?: HTMLElement;
@@ -91,15 +83,12 @@ export class VideoPost {
   private readonly ratingOutsideClickHandler = (event: Event) => this.onRatingOutsideClick(event);
   private readonly ratingKeydownHandler = (event: KeyboardEvent) => this.onRatingKeydown(event);
   private readonly ratingResizeHandler: () => void;
-  private readonly hoverHandlers: Map<HTMLElement, HoverHandlers> = new Map();
   
   // Cached DOM elements
   private playerContainer?: HTMLElement;
   private footer?: HTMLElement;
   private buttonGroup?: HTMLElement;
 
-  private readonly onPerformerChipClick?: (performerId: number, performerName: string) => void;
-  private readonly onTagChipClick?: (tagId: number, tagName: string) => void;
   private readonly onCancelRequests?: () => void; // Callback to cancel pending requests
 
   private readonly useShuffleMode: boolean = false;
@@ -109,13 +98,15 @@ export class VideoPost {
     data: VideoPostData,
     options: VideoPostOptions = {}
   ) {
-    this.container = container;
+    super(
+      container,
+      options.favoritesManager,
+      options.api,
+      options.visibilityManager,
+      options.onPerformerChipClick,
+      options.onTagChipClick
+    );
     this.data = data;
-    this.favoritesManager = options.favoritesManager;
-    this.api = options.api;
-    this.visibilityManager = options.visibilityManager;
-    this.onPerformerChipClick = options.onPerformerChipClick;
-    this.onTagChipClick = options.onTagChipClick;
     this.useShuffleMode = options.useShuffleMode || false;
     this.onCancelRequests = options.onCancelRequests;
     this.oCount = this.data.marker.scene.o_counter || 0;
@@ -389,310 +380,7 @@ export class VideoPost {
     }
   }
 
-  /**
-   * Create a performer chip element
-   */
-  private createPerformerChip(performer: { id: string; name: string; image_path?: string }): HTMLElement {
-    const chip = document.createElement('a');
-    chip.className = 'performer-chip';
-    chip.href = this.getPerformerLink(performer.id);
-    chip.target = '_blank';
-    chip.rel = 'noopener noreferrer';
-    chip.style.display = 'inline-flex';
-    chip.style.alignItems = 'center';
-    chip.style.gap = '4px';
-    chip.style.fontSize = '14px';
-    chip.style.lineHeight = '1.4';
-    chip.style.color = 'rgba(255, 255, 255, 0.85)';
-    chip.style.textDecoration = 'none';
-    chip.style.transition = 'color 0.2s ease, opacity 0.2s ease';
-    chip.style.cursor = 'pointer';
-    chip.style.minHeight = '44px';
-    chip.style.height = '44px';
-    
-    // Handler function to filter by performer
-    const handleClick = () => {
-      if (this.onPerformerChipClick) {
-        const performerId = Number.parseInt(performer.id, 10);
-        if (!Number.isNaN(performerId)) {
-          this.onPerformerChipClick(performerId, performer.name);
-        }
-      }
-    };
-    
-    // Detect mobile device
-    const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
-    
-    if (isMobile) {
-      // Touch state tracking for scroll detection (same as player)
-      let touchStartX: number = 0;
-      let touchStartY: number = 0;
-      let touchStartTime: number = 0;
-      let isScrolling: boolean = false;
-      const touchMoveThreshold: number = 10; // pixels
-      const touchDurationThreshold: number = 300; // milliseconds
-      
-      chip.addEventListener('touchstart', (e) => {
-        const touch = e.touches[0];
-        if (touch) {
-          touchStartX = touch.clientX;
-          touchStartY = touch.clientY;
-          touchStartTime = Date.now();
-          isScrolling = false;
-        }
-      }, { passive: true });
-      
-      chip.addEventListener('touchmove', (e) => {
-        if (e.touches.length > 0) {
-          const touch = e.touches[0];
-          if (touch) {
-            const deltaX = Math.abs(touch.clientX - touchStartX);
-            const deltaY = Math.abs(touch.clientY - touchStartY);
-            
-            // If touch moved more than threshold, consider it scrolling
-            if (deltaX > touchMoveThreshold || deltaY > touchMoveThreshold) {
-              isScrolling = true;
-            }
-          }
-        }
-      }, { passive: true });
-      
-      chip.addEventListener('touchend', (e) => {
-        const touch = e.changedTouches[0];
-        if (!touch) return;
-        
-        const deltaX = Math.abs(touch.clientX - touchStartX);
-        const deltaY = Math.abs(touch.clientY - touchStartY);
-        const touchDuration = Date.now() - touchStartTime;
-        const totalDistance = Math.hypot(deltaX, deltaY);
-        
-        // Only trigger click if:
-        // 1. Not scrolling (movement < threshold)
-        // 2. Touch duration is reasonable (not a long press)
-        // 3. Total distance moved is within threshold
-        if (!isScrolling && 
-            totalDistance < touchMoveThreshold && 
-            touchDuration < touchDurationThreshold) {
-          e.preventDefault();
-          e.stopPropagation();
-          handleClick();
-        }
-        
-        // Reset state
-        isScrolling = false;
-        touchStartX = 0;
-        touchStartY = 0;
-        touchStartTime = 0;
-      }, { passive: false });
-      
-      // Click handler as fallback (shouldn't fire if touchend worked, but keep for compatibility)
-      chip.addEventListener('click', (e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        // Only handle click if it wasn't already handled by touchend
-        // (touchend will have prevented default if it handled it)
-        handleClick();
-      });
-    } else {
-      // Desktop: use simple click handler
-      chip.addEventListener('click', (e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        handleClick();
-      });
-    }
-    
-    // Add performer image (circular, 20px) before the name
-    const imageContainer = document.createElement('div');
-    imageContainer.style.width = '20px';
-    imageContainer.style.height = '20px';
-    imageContainer.style.borderRadius = '50%';
-    imageContainer.style.background = 'rgba(255,255,255,0.1)';
-    imageContainer.style.display = 'flex';
-    imageContainer.style.alignItems = 'center';
-    imageContainer.style.justifyContent = 'center';
-    imageContainer.style.fontSize = '12px';
-    imageContainer.style.fontWeight = '600';
-    imageContainer.style.color = 'rgba(255,255,255,0.85)';
-    imageContainer.style.flexShrink = '0';
-    imageContainer.style.overflow = 'hidden';
-    
-    if (performer.image_path) {
-      const imageSrc = performer.image_path.startsWith('http')
-        ? performer.image_path
-        : toAbsoluteUrl(performer.image_path);
-      if (imageSrc) {
-        const img = document.createElement('img');
-        img.src = imageSrc;
-        img.alt = performer.name;
-        img.style.width = '100%';
-        img.style.height = '100%';
-        img.style.objectFit = 'cover';
-        imageContainer.appendChild(img);
-      } else {
-        imageContainer.textContent = performer.name.charAt(0).toUpperCase();
-      }
-    } else {
-      imageContainer.textContent = performer.name.charAt(0).toUpperCase();
-    }
-    
-    chip.appendChild(imageContainer);
-    
-    // Add performer name
-    chip.appendChild(document.createTextNode(performer.name));
-    
-    // Add verified checkmark icon after the name
-    const checkmarkIcon = document.createElement('span');
-    checkmarkIcon.innerHTML = VERIFIED_CHECKMARK_SVG;
-    checkmarkIcon.style.display = 'inline-flex';
-    checkmarkIcon.style.alignItems = 'center';
-    checkmarkIcon.style.width = '14px';
-    checkmarkIcon.style.height = '14px';
-    checkmarkIcon.style.flexShrink = '0';
-    const svg = checkmarkIcon.querySelector('svg');
-    if (svg) {
-      svg.setAttribute('width', '14');
-      svg.setAttribute('height', '14');
-    }
-    chip.appendChild(checkmarkIcon);
-    
-    // Hover effect
-    chip.addEventListener('mouseenter', () => {
-      chip.style.color = 'rgba(255, 255, 255, 1)';
-    });
-    chip.addEventListener('mouseleave', () => {
-      chip.style.color = 'rgba(255, 255, 255, 0.85)';
-    });
-    
-    return chip;
-  }
 
-  /**
-   * Create a tag chip element (displayed as hashtag with unique styling)
-   */
-  private createTagChip(tag: { id: string; name: string }): HTMLElement {
-    const hashtag = document.createElement('a');
-    hashtag.className = 'tag-chip';
-    hashtag.href = this.getTagLink(tag.id);
-    hashtag.target = '_blank';
-    hashtag.rel = 'noopener noreferrer';
-    hashtag.style.display = 'inline-flex';
-    hashtag.style.alignItems = 'center';
-    hashtag.style.padding = '0';
-    hashtag.style.margin = '0';
-    hashtag.style.fontSize = '14px';
-    hashtag.style.lineHeight = '1.4';
-    hashtag.style.color = 'rgba(255, 255, 255, 0.75)';
-    hashtag.style.textDecoration = 'none';
-    hashtag.style.transition = 'color 0.2s ease';
-    hashtag.style.cursor = 'pointer';
-    hashtag.style.minHeight = '44px';
-    hashtag.style.height = '44px';
-    
-    // Handler function to filter by tag
-    const handleClick = () => {
-      if (this.onTagChipClick) {
-        const tagId = Number.parseInt(tag.id, 10);
-        if (!Number.isNaN(tagId)) {
-          this.onTagChipClick(tagId, tag.name);
-        }
-      }
-    };
-    
-    // Hover effect
-    hashtag.addEventListener('mouseenter', () => {
-      hashtag.style.color = 'rgba(255, 255, 255, 0.95)';
-    });
-    hashtag.addEventListener('mouseleave', () => {
-      hashtag.style.color = 'rgba(255, 255, 255, 0.75)';
-    });
-    
-    // Detect mobile device
-    const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
-    
-    if (isMobile) {
-      // Touch state tracking for scroll detection (same as player)
-      let touchStartX: number = 0;
-      let touchStartY: number = 0;
-      let touchStartTime: number = 0;
-      let isScrolling: boolean = false;
-      const touchMoveThreshold: number = 10; // pixels
-      const touchDurationThreshold: number = 300; // milliseconds
-      
-      hashtag.addEventListener('touchstart', (e) => {
-        const touch = e.touches[0];
-        if (touch) {
-          touchStartX = touch.clientX;
-          touchStartY = touch.clientY;
-          touchStartTime = Date.now();
-          isScrolling = false;
-        }
-      }, { passive: true });
-      
-      hashtag.addEventListener('touchmove', (e) => {
-        if (e.touches.length > 0) {
-          const touch = e.touches[0];
-          if (touch) {
-            const deltaX = Math.abs(touch.clientX - touchStartX);
-            const deltaY = Math.abs(touch.clientY - touchStartY);
-            
-            // If touch moved more than threshold, consider it scrolling
-            if (deltaX > touchMoveThreshold || deltaY > touchMoveThreshold) {
-              isScrolling = true;
-            }
-          }
-        }
-      }, { passive: true });
-      
-      hashtag.addEventListener('touchend', (e) => {
-        const touch = e.changedTouches[0];
-        if (!touch) return;
-        
-        const deltaX = Math.abs(touch.clientX - touchStartX);
-        const deltaY = Math.abs(touch.clientY - touchStartY);
-        const touchDuration = Date.now() - touchStartTime;
-        const totalDistance = Math.hypot(deltaX, deltaY);
-        
-        // Only trigger click if:
-        // 1. Not scrolling (movement < threshold)
-        // 2. Touch duration is reasonable (not a long press)
-        // 3. Total distance moved is within threshold
-        if (!isScrolling && 
-            totalDistance < touchMoveThreshold && 
-            touchDuration < touchDurationThreshold) {
-          e.preventDefault();
-          e.stopPropagation();
-          handleClick();
-        }
-        
-        // Reset state
-        isScrolling = false;
-        touchStartX = 0;
-        touchStartY = 0;
-        touchStartTime = 0;
-      }, { passive: false });
-      
-      // Click handler as fallback (shouldn't fire if touchend worked, but keep for compatibility)
-      hashtag.addEventListener('click', (e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        // Only handle click if it wasn't already handled by touchend
-        // (touchend will have prevented default if it handled it)
-        handleClick();
-      });
-    } else {
-      // Desktop: use simple click handler
-      hashtag.addEventListener('click', (e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        handleClick();
-      });
-    }
-    
-    // Add hashtag prefix
-    hashtag.appendChild(document.createTextNode(`#${tag.name}`));
-    return hashtag;
-  }
 
   /**
    * Check if this is a short-form content marker
@@ -866,73 +554,6 @@ export class VideoPost {
     return iconBtn;
   }
 
-  /**
-   * Apply common icon button styles
-   */
-  private applyIconButtonStyles(button: HTMLElement): void {
-    button.style.background = 'transparent';
-    button.style.border = 'none';
-    button.style.cursor = 'pointer';
-    button.style.display = 'flex';
-    button.style.alignItems = 'center';
-    button.style.justifyContent = 'center';
-    button.style.color = 'rgba(255, 255, 255, 0.7)';
-    // No transition on button container - only icons will have transitions
-    button.style.transition = 'none';
-    // Ensure button is 44x44px for touch targets
-    button.style.width = '44px';
-    button.style.height = '44px';
-    button.style.minWidth = '44px';
-    button.style.minHeight = '44px';
-  }
-
-  /**
-   * Add hover effect to a button element - CRITICAL: Only affects icon, not container
-   */
-  private addHoverEffect(button: HTMLElement): void {
-    // Find the icon element (SVG or first child)
-    const getIconElement = (): HTMLElement | SVGElement | null => {
-      const svg = button.querySelector('svg');
-      if (svg) return svg as SVGElement;
-      // If no SVG, use first child element
-      const firstChild = button.firstElementChild as HTMLElement;
-      if (firstChild) return firstChild;
-      return null;
-    };
-
-    const mouseenter = () => {
-      if (!(button instanceof HTMLButtonElement) || !button.disabled) {
-        const icon = getIconElement();
-        if (icon) {
-          icon.style.transform = 'scale(1.1)';
-          icon.style.transition = 'transform 0.2s cubic-bezier(0.2, 0, 0, 1)';
-        }
-      }
-    };
-    const mouseleave = () => {
-      const icon = getIconElement();
-      if (icon) {
-        icon.style.transform = 'scale(1)';
-      }
-    };
-    
-    button.addEventListener('mouseenter', mouseenter);
-    button.addEventListener('mouseleave', mouseleave);
-    
-    this.hoverHandlers.set(button, { mouseenter, mouseleave });
-  }
-
-  /**
-   * Remove hover effect from a button element
-   */
-  private removeHoverEffect(button: HTMLElement): void {
-    const handlers = this.hoverHandlers.get(button);
-    if (handlers) {
-      button.removeEventListener('mouseenter', handlers.mouseenter);
-      button.removeEventListener('mouseleave', handlers.mouseleave);
-      this.hoverHandlers.delete(button);
-    }
-  }
 
   /**
    * Create heart button for favorites
@@ -2009,19 +1630,6 @@ export class VideoPost {
     return `${globalThis.location.origin}/scenes/${s.id}?t=${t}`;
   }
 
-  /**
-   * Get link to performer page
-   */
-  private getPerformerLink(performerId: string): string {
-    return `${globalThis.location.origin}/performers/${performerId}`;
-  }
-
-  /**
-   * Get link to tag page
-   */
-  private getTagLink(tagId: string): string {
-    return `${globalThis.location.origin}/tags/${tagId}`;
-  }
 
   /**
    * Load the video player

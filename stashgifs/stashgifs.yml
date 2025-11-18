@@ -1,7 +1,7 @@
 name: StashGifs
 description: A GIF-style vertical scroller interface for Stash.
 url: https://anonymous.4open.science/r/stashgifs-D783
-version: 5.1.0
+version: 5.3.0
 ui:
   assets:
     /: .
