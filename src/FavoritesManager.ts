@@ -59,12 +59,32 @@ export class FavoritesManager {
   }
 
   /**
+   * Check if a marker represents shortform content (scene, not a real marker)
+   */
+  private isShortFormMarker(marker: SceneMarker): boolean {
+    return typeof marker.id === 'string' && marker.id.startsWith('shortform-');
+  }
+
+  /**
    * Check if a marker is favorited
    */
   async isFavorite(marker: SceneMarker): Promise<boolean> {
     try {
       const tagId = await this.getFavoriteTagId();
       if (!tagId) return false;
+
+      // For shortform content, check scene tags instead of marker tags
+      if (this.isShortFormMarker(marker)) {
+        // Check scene tags directly from marker data if available
+        if (marker.scene?.tags && marker.scene.tags.length > 0) {
+          return marker.scene.tags.some(tag => tag.id === tagId);
+        }
+        // Fall back to API query if scene tags not available
+        if (marker.scene?.id) {
+          return await this.api.sceneHasTag(marker.scene.id, tagId);
+        }
+        return false;
+      }
 
       return await this.api.markerHasTag(marker, tagId);
     } catch (error) {
@@ -85,6 +105,24 @@ export class FavoritesManager {
 
       const isCurrentlyFavorite = await this.isFavorite(marker);
       
+      // For shortform content, use scene tag methods
+      if (this.isShortFormMarker(marker)) {
+        if (!marker.scene?.id) {
+          throw new Error('Scene ID not available for shortform marker');
+        }
+        
+        if (isCurrentlyFavorite) {
+          // Remove tag from scene
+          await this.api.removeTagFromScene(marker.scene.id, tagId);
+          return false;
+        } else {
+          // Add tag to scene
+          await this.api.addTagToScene(marker.scene.id, tagId);
+          return true;
+        }
+      }
+      
+      // For regular markers, use marker tag methods
       if (isCurrentlyFavorite) {
         // Remove tag
         await this.api.removeTagFromMarker(marker, tagId);
@@ -112,6 +150,21 @@ export class FavoritesManager {
 
       const isCurrentlyFavorite = await this.isFavorite(marker);
       
+      // For shortform content, use scene tag methods
+      if (this.isShortFormMarker(marker)) {
+        if (!marker.scene?.id) {
+          throw new Error('Scene ID not available for shortform marker');
+        }
+        
+        if (favorite && !isCurrentlyFavorite) {
+          await this.api.addTagToScene(marker.scene.id, tagId);
+        } else if (!favorite && isCurrentlyFavorite) {
+          await this.api.removeTagFromScene(marker.scene.id, tagId);
+        }
+        return;
+      }
+      
+      // For regular markers, use marker tag methods
       if (favorite && !isCurrentlyFavorite) {
         await this.api.addTagToMarker(marker, tagId);
       } else if (!favorite && isCurrentlyFavorite) {

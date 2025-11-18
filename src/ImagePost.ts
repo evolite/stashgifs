@@ -9,7 +9,7 @@ import { FavoritesManager } from './FavoritesManager.js';
 import { StashAPI } from './StashAPI.js';
 import { VisibilityManager } from './VisibilityManager.js';
 import { getAspectRatioClass, showToast, toAbsoluteUrl } from './utils.js';
-import { HEART_SVG_OUTLINE, HEART_SVG_FILLED, ADD_TAG_SVG, OCOUNT_SVG, VERIFIED_CHECKMARK_SVG } from './icons.js';
+import { HEART_SVG_OUTLINE, HEART_SVG_FILLED, ADD_TAG_SVG, OCOUNT_SVG, VERIFIED_CHECKMARK_SVG, IMAGE_BADGE_SVG } from './icons.js';
 
 // Constants
 const FAVORITE_TAG_NAME = 'StashGifs Favorite';
@@ -195,15 +195,40 @@ export class ImagePost {
     chips.className = 'chips';
     chips.style.display = 'flex';
     chips.style.flexWrap = 'wrap';
+    chips.style.alignItems = 'center';
     chips.style.gap = '4px';
     chips.style.margin = '0';
     chips.style.padding = '0';
+
+    const badge = this.createImageBadgeIcon();
+    chips.appendChild(badge);
     
     this.addPerformerChips(chips);
     this.addTagChipsToHeader(chips);
 
     header.appendChild(chips);
     return header;
+  }
+
+  /**
+   * Create an image badge to show content type
+   */
+  private createImageBadgeIcon(): HTMLElement {
+    const badge = document.createElement('span');
+    badge.className = 'content-badge';
+    badge.style.display = 'inline-flex';
+    badge.style.alignItems = 'center';
+    badge.style.justifyContent = 'center';
+    badge.style.width = '30px';
+    badge.style.height = '30px';
+    badge.style.flexShrink = '0';
+    badge.style.color = 'rgba(255, 255, 255, 0.85)';
+    badge.style.pointerEvents = 'none';
+    badge.innerHTML = IMAGE_BADGE_SVG;
+    badge.title = 'Image';
+    badge.setAttribute('role', 'img');
+    badge.setAttribute('aria-label', 'Image');
+    return badge;
   }
 
   /**
@@ -990,6 +1015,11 @@ export class ImagePost {
       this.addTagDialog.style.opacity = '1';
       this.addTagDialog.style.transform = 'translateX(-50%) translateY(0) scale(1)';
       this.addTagDialog.style.pointerEvents = 'auto';
+      
+      // Adjust position to keep dialog within card boundaries
+      requestAnimationFrame(() => {
+        this.adjustDialogPosition(this.addTagDialog!);
+      });
     }
 
     document.addEventListener('mousedown', this.onAddTagDialogOutsideClick);
@@ -1387,6 +1417,49 @@ export class ImagePost {
    */
   getContainer(): HTMLElement {
     return this.container;
+  }
+
+  /**
+   * Adjust dialog position to keep it within card boundaries
+   */
+  private adjustDialogPosition(dialog: HTMLElement): void {
+    if (!dialog || !this.container) return;
+
+    // Get dialog dimensions
+    const dialogRect = dialog.getBoundingClientRect();
+    const dialogWidth = dialogRect.width;
+    
+    // Find the card container (the post container)
+    const cardContainer = this.container.closest('.video-post, .image-post');
+    if (!cardContainer) return;
+    
+    const cardRect = cardContainer.getBoundingClientRect();
+    const buttonGroupRect = this.buttonGroup?.getBoundingClientRect();
+    if (!buttonGroupRect) return;
+    
+    // Calculate button center position relative to card
+    const buttonCenterX = buttonGroupRect.left + buttonGroupRect.width / 2 - cardRect.left;
+    const dialogHalfWidth = dialogWidth / 2;
+    
+    // Calculate min and max left positions to keep dialog within card
+    const minLeft = dialogHalfWidth + 16; // 16px padding from left edge
+    const maxLeft = cardRect.width - dialogHalfWidth - 16; // 16px padding from right edge
+    
+    // Calculate desired left position (centered on button)
+    let desiredLeft = buttonCenterX;
+    
+    // Calculate offset needed to keep dialog within boundaries
+    // Keep left at 50% and use transform offset instead
+    let offsetX = 0;
+    if (desiredLeft < minLeft) {
+      offsetX = minLeft - buttonCenterX;
+    } else if (desiredLeft > maxLeft) {
+      offsetX = maxLeft - buttonCenterX;
+    }
+    
+    // Update dialog position using transform offset instead of changing left
+    dialog.style.left = '50%';
+    dialog.style.transform = `translateX(calc(-50% + ${offsetX}px)) translateY(0) scale(1)`;
   }
 
   /**

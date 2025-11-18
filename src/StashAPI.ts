@@ -540,17 +540,20 @@ export class StashAPI {
    * Note: Stash's SceneMarkerFilterType only supports filtering by primary_tag, not by tags array.
    * For non-primary tags, we fetch markers and filter client-side.
    */
-  async fetchSceneMarkers(filters?: FilterOptions, signal?: AbortSignal): Promise<SceneMarker[]> {
-    if (this.isAborted(signal)) return [];
+  async fetchSceneMarkers(filters?: FilterOptions, signal?: AbortSignal): Promise<{ markers: SceneMarker[]; totalCount: number }> {
+    if (this.isAborted(signal)) return { markers: [], totalCount: 0 };
     
     // Fetching scene markers with filters
     
     if (filters?.shuffleMode) {
-      return this.fetchScenesForShuffle(filters, signal);
+      const markers = await this.fetchScenesForShuffle(filters, signal);
+      // For shuffle mode, we don't have a reliable count, so return markers with 0 count
+      // The caller should handle this case
+      return { markers, totalCount: 0 };
     }
     
     const savedFilterCriteria = await this.getSavedFilterCriteria(filters, signal);
-    if (this.isAborted(signal)) return [];
+    if (this.isAborted(signal)) return { markers: [], totalCount: 0 };
 
     try {
       const limit = filters?.limit || 20;
@@ -558,26 +561,27 @@ export class StashAPI {
       
       if (!filters?.offset && !this.hasActiveFilters(filters)) {
         page = await this.calculateRandomPage(filters, savedFilterCriteria, limit, signal);
-        if (this.isAborted(signal)) return [];
+        if (this.isAborted(signal)) return { markers: [], totalCount: 0 };
       }
 
       const filter = this.buildFindFilter(filters, savedFilterCriteria, page, limit);
       const sceneMarkerFilter = this.buildSceneMarkerFilter(filters, savedFilterCriteria);
       
-      let markers = await this.executeMarkerQuery(filter, sceneMarkerFilter, signal);
-      if (this.isAborted(signal)) return [];
+      const { markers, totalCount } = await this.executeMarkerQueryWithCount(filter, sceneMarkerFilter, signal);
+      if (this.isAborted(signal)) return { markers: [], totalCount: 0 };
       
-      if (filters?.shuffleMode && markers.length > 0) {
-        markers = this.filterScenesByMarkerCount(markers, 5);
+      let finalMarkers = markers;
+      if (filters?.shuffleMode && finalMarkers.length > 0) {
+        finalMarkers = this.filterScenesByMarkerCount(finalMarkers, 5);
       }
       
-      return markers;
+      return { markers: finalMarkers, totalCount };
     } catch (e: unknown) {
       if ((e instanceof Error && e.name === 'AbortError') || this.isAborted(signal)) {
-        return [];
+        return { markers: [], totalCount: 0 };
       }
       console.error('Error fetching scene markers:', e);
-      return [];
+      return { markers: [], totalCount: 0 };
     }
   }
 
@@ -789,6 +793,18 @@ export class StashAPI {
     sceneMarkerFilter: SceneMarkerFilterInput,
     signal?: AbortSignal
   ): Promise<SceneMarker[]> {
+    const { markers } = await this.executeMarkerQueryWithCount(filter, sceneMarkerFilter, signal);
+    return markers;
+  }
+
+  /**
+   * Execute marker query with retry logic and return count
+   */
+  private async executeMarkerQueryWithCount(
+    filter: FindFilterInput,
+    sceneMarkerFilter: SceneMarkerFilterInput,
+    signal?: AbortSignal
+  ): Promise<{ markers: SceneMarker[]; totalCount: number }> {
     const result = await this.gqlClient.query<FindSceneMarkersResponse>({
       query: queries.FIND_SCENE_MARKERS,
       variables: {
@@ -798,16 +814,18 @@ export class StashAPI {
       signal,
     });
     
-    if (this.isAborted(signal)) return [];
+    if (this.isAborted(signal)) return { markers: [], totalCount: 0 };
     
     const responseData = result.data?.findSceneMarkers;
     let markers = responseData?.scene_markers || [];
+    const totalCount = responseData?.count ?? 0;
     
-    if ((responseData?.count ?? 0) > 0 && markers.length === 0 && filter.page !== 1) {
-      return this.retryMarkerQuery(filter, sceneMarkerFilter, signal);
+    if (totalCount > 0 && markers.length === 0 && filter.page !== 1) {
+      const retryResult = await this.retryMarkerQueryWithCount(filter, sceneMarkerFilter, signal);
+      return retryResult;
     }
     
-    return markers;
+    return { markers, totalCount };
   }
 
   /**
@@ -818,9 +836,21 @@ export class StashAPI {
     sceneMarkerFilter: SceneMarkerFilterInput,
     signal?: AbortSignal
   ): Promise<SceneMarker[]> {
+    const { markers } = await this.retryMarkerQueryWithCount(filter, sceneMarkerFilter, signal);
+    return markers;
+  }
+
+  /**
+   * Retry marker query with page 1 and return count
+   */
+  private async retryMarkerQueryWithCount(
+    filter: FindFilterInput,
+    sceneMarkerFilter: SceneMarkerFilterInput,
+    signal?: AbortSignal
+  ): Promise<{ markers: SceneMarker[]; totalCount: number }> {
     console.warn('[StashAPI] Count > 0 but no markers returned - retrying with page 1');
     
-    if (this.isAborted(signal)) return [];
+    if (this.isAborted(signal)) return { markers: [], totalCount: 0 };
     
     filter.page = 1;
     const retryResult = await this.gqlClient.query<FindSceneMarkersResponse>({
@@ -832,10 +862,13 @@ export class StashAPI {
       signal,
     });
     
-    if (this.isAborted(signal)) return [];
+    if (this.isAborted(signal)) return { markers: [], totalCount: 0 };
     
     const retryData = retryResult.data?.findSceneMarkers;
-    return retryData?.scene_markers || [];
+    return {
+      markers: retryData?.scene_markers || [],
+      totalCount: retryData?.count ?? 0
+    };
   }
 
   /**
@@ -971,41 +1004,50 @@ export class StashAPI {
     limit: number = 20,
     offset: number = 0,
     signal?: AbortSignal
-  ): Promise<SceneMarker[]> {
-    if (this.isAborted(signal)) return [];
+  ): Promise<{ markers: SceneMarker[]; totalCount: number }> {
+    if (this.isAborted(signal)) return { markers: [], totalCount: 0 };
 
     try {
-      if (this.isAborted(signal)) return [];
+      if (this.isAborted(signal)) return { markers: [], totalCount: 0 };
 
       const scenesPerPage = 100; // 100 scenes per page
-      const pagesToFetch = 20; // Fetch 20 different random pages to get a larger pool
+      const pagesToFetch = 20; // Fetch 20 different pages to get a larger pool
       
       const sceneFilter = this.buildShortFormSceneFilter(filters);
       console.log('[ShortForm] Scene filter:', JSON.stringify(sceneFilter, null, 2));
       
-      const maxPage = await this.getMaxPageForShortForm(sceneFilter, scenesPerPage, signal);
+      const { maxPage, totalCount } = await this.getMaxPageForShortForm(sceneFilter, scenesPerPage, signal);
       if (maxPage === 0) {
-        return [];
+        return { markers: [], totalCount: 0 };
       }
       
-      const selectedPages = this.generateUniqueRandomPages(pagesToFetch, maxPage);
+      // Calculate base page from offset to ensure pagination progression
+      // Each offset increment moves us forward by approximately one page worth of content
+      const basePage = Math.floor(offset / scenesPerPage) + 1;
+      const pageRange = 10; // Fetch pages within ±10 of base page for variety
+      
+      console.log(`[ShortForm] Offset: ${offset}, Base page: ${basePage}, Max page: ${maxPage}`);
+      
+      // Generate pages in a range around the base page, using offset as seed for deterministic randomness
+      const selectedPages = this.generatePagesForOffset(basePage, pageRange, pagesToFetch, maxPage, offset);
+      
       const allPageResults = await this.fetchShortFormPages(selectedPages, scenesPerPage, sceneFilter, maxPage, signal);
       
-      if (this.isAborted(signal)) return [];
+      if (this.isAborted(signal)) return { markers: [], totalCount: 0 };
 
       const allScenes = this.combineAndDeduplicateScenes(allPageResults);
       const shortFormScenes = this.filterAndShuffleShortFormScenes(allScenes, maxDuration, limit);
 
       const markers = this.createShortFormMarkers(shortFormScenes);
-      console.log('[ShortForm] Created', markers.length, 'markers');
+      console.log(`[ShortForm] Created ${markers.length} markers from pages: ${selectedPages.slice(0, 5).join(', ')}${selectedPages.length > 5 ? '...' : ''}`);
       
-      return markers;
+      return { markers, totalCount };
     } catch (e: unknown) {
       if (isAbortError(e) || this.isAborted(signal)) {
-        return [];
+        return { markers: [], totalCount: 0 };
       }
       console.error('[ShortForm] Error fetching short-form videos', e);
-      return [];
+      return { markers: [], totalCount: 0 };
     }
   }
 
@@ -1016,8 +1058,9 @@ export class StashAPI {
     sceneFilter: SceneFilterInput | null,
     scenesPerPage: number,
     signal?: AbortSignal
-  ): Promise<number> {
+  ): Promise<{ maxPage: number; totalCount: number }> {
     let maxPage = 100; // Default fallback
+    let totalCount = 0;
     try {
       const countFilter: FindFilterInput = { per_page: 1, page: 1 };
       const countResult = await this.gqlClient.query<FindScenesResponse>({
@@ -1026,9 +1069,9 @@ export class StashAPI {
         signal,
       });
       
-      if (this.isAborted(signal)) return 0;
+      if (this.isAborted(signal)) return { maxPage: 0, totalCount: 0 };
       
-      const totalCount = countResult.data?.findScenes?.count || 0;
+      totalCount = countResult.data?.findScenes?.count || 0;
       console.log('[ShortForm] Total scenes matching filter:', totalCount);
       
       if (totalCount > 0) {
@@ -1036,16 +1079,18 @@ export class StashAPI {
         console.log('[ShortForm] Max valid page:', maxPage, '(scenes per page:', scenesPerPage, ')');
       } else {
         console.warn('[ShortForm] No scenes found matching filter');
-        return 0;
+        return { maxPage: 0, totalCount: 0 };
       }
     } catch (countError: unknown) {
       console.warn('[ShortForm] Failed to get scene count, using default max page:', maxPage, countError);
+      // If we can't get count, we can't reliably calculate totalCount, so return 0
+      return { maxPage, totalCount: 0 };
     }
-    return maxPage;
+    return { maxPage, totalCount };
   }
 
   /**
-   * Generate unique random page numbers
+   * Generate unique random page numbers (legacy method, kept for backwards compatibility)
    */
   private generateUniqueRandomPages(pagesToFetch: number, maxPage: number): number[] {
     const selectedPages = new Set<number>();
@@ -1057,6 +1102,57 @@ export class StashAPI {
     }
     
     // If we don't have enough unique pages, fill with sequential pages
+    if (selectedPages.size < pagesToFetch) {
+      for (let page = 1; page <= maxPage && selectedPages.size < pagesToFetch; page++) {
+        selectedPages.add(page);
+      }
+    }
+    
+    return Array.from(selectedPages);
+  }
+
+  /**
+   * Generate pages for a specific offset using deterministic randomness
+   * Ensures pagination progression while maintaining variety
+   */
+  private generatePagesForOffset(
+    basePage: number,
+    pageRange: number,
+    pagesToFetch: number,
+    maxPage: number,
+    offset: number
+  ): number[] {
+    const selectedPages = new Set<number>();
+    
+    // Calculate page range bounds
+    const minPage = Math.max(1, basePage - pageRange);
+    const maxPageInRange = Math.min(maxPage, basePage + pageRange);
+    const availablePages = maxPageInRange - minPage + 1;
+    
+    // Use offset as seed for deterministic randomness
+    // Same offset always generates same pages, but different offsets get different pages
+    let seed = offset;
+    const seededRandom = () => {
+      seed = (seed * 9301 + 49297) % 233280;
+      return seed / 233280;
+    };
+    
+    // Generate unique pages within the range
+    while (selectedPages.size < pagesToFetch && selectedPages.size < availablePages) {
+      const randomValue = seededRandom();
+      const pageInRange = Math.floor(randomValue * availablePages);
+      const page = minPage + pageInRange;
+      selectedPages.add(page);
+    }
+    
+    // If we don't have enough unique pages in range, fill with sequential pages from the range
+    if (selectedPages.size < pagesToFetch) {
+      for (let page = minPage; page <= maxPageInRange && selectedPages.size < pagesToFetch; page++) {
+        selectedPages.add(page);
+      }
+    }
+    
+    // If still not enough, fall back to any available pages
     if (selectedPages.size < pagesToFetch) {
       for (let page = 1; page <= maxPage && selectedPages.size < pagesToFetch; page++) {
         selectedPages.add(page);
@@ -1984,8 +2080,8 @@ export class StashAPI {
     limit: number = 40,
     offset: number = 0,
     signal?: AbortSignal
-  ): Promise<Image[]> {
-    if (signal?.aborted) return [];
+  ): Promise<{ images: Image[]; totalCount: number }> {
+    if (signal?.aborted) return { images: [], totalCount: 0 };
 
     // Build regex pattern from file extensions
     const regexPattern = this.buildPathRegex(fileExtensions);
@@ -2034,9 +2130,10 @@ export class StashAPI {
         signal,
       });
 
-      if (signal?.aborted) return [];
+      if (signal?.aborted) return { images: [], totalCount: 0 };
 
       let images = result.data?.findImages?.images || [];
+      const totalCount = result.data?.findImages?.count ?? 0;
       
       // Filter by orientation if specified
       if (filters?.orientationFilter && filters.orientationFilter.length > 0) {
@@ -2058,13 +2155,13 @@ export class StashAPI {
         );
       }
       
-      return images;
+      return { images, totalCount };
     } catch (e: unknown) {
       if (isAbortError(e) || signal?.aborted) {
-        return [];
+        return { images: [], totalCount: 0 };
       }
       console.error('StashAPI: Failed to find images', e);
-      return [];
+      return { images: [], totalCount: 0 };
     }
   }
 }

@@ -10,7 +10,7 @@ import { StashAPI } from './StashAPI.js';
 import { VisibilityManager } from './VisibilityManager.js';
 import { calculateAspectRatio, getAspectRatioClass, isValidMediaUrl, showToast, throttle, toAbsoluteUrl } from './utils.js';
 import { posterPreloader } from './PosterPreloader.js';
-import { HEART_SVG_OUTLINE, HEART_SVG_FILLED, HQ_SVG_OUTLINE, HQ_SVG_FILLED, PLAY_SVG, MARKER_SVG, ADD_TAG_SVG, STAR_SVG, STAR_SVG_OUTLINE, OCOUNT_SVG, VERIFIED_CHECKMARK_SVG } from './icons.js';
+import { HEART_SVG_OUTLINE, HEART_SVG_FILLED, HQ_SVG_OUTLINE, HQ_SVG_FILLED, PLAY_SVG, MARKER_SVG, ADD_TAG_SVG, STAR_SVG, STAR_SVG_OUTLINE, OCOUNT_SVG, VERIFIED_CHECKMARK_SVG, MARKER_BADGE_SVG, SCENE_BADGE_SVG } from './icons.js';
 
 // Constants for magic numbers and strings
 const FAVORITE_TAG_NAME = 'StashGifs Favorite';
@@ -121,6 +121,11 @@ export class VideoPost {
     this.oCount = this.data.marker.scene.o_counter || 0;
     this.ratingValue = this.convertRating100ToStars(this.data.marker.scene.rating100);
     this.hasRating = typeof this.data.marker.scene.rating100 === 'number' && !Number.isNaN(this.data.marker.scene.rating100);
+    
+    // Short form content is always HD by default
+    if (this.isShortFormContent()) {
+      this.isHQMode = true;
+    }
     
     // Throttle resize handler for performance
     this.ratingResizeHandler = throttle(() => this.syncRatingDialogLayout(), RESIZE_THROTTLE_MS);
@@ -250,9 +255,15 @@ export class VideoPost {
     chips.className = 'chips';
     chips.style.display = 'flex';
     chips.style.flexWrap = 'wrap';
+    chips.style.alignItems = 'center';
     chips.style.gap = '4px';
     chips.style.margin = '0';
     chips.style.padding = '0';
+
+    const badge = this.createContentBadgeIcon();
+    if (badge) {
+      chips.appendChild(badge);
+    }
     
     // Add performer chips
     if (this.data.marker.scene.performers && this.data.marker.scene.performers.length > 0) {
@@ -326,6 +337,34 @@ export class VideoPost {
   }
 
   /**
+   * Add tags from a list to the chips container
+   */
+  private addTagsFromList(
+    tags: Array<{ id: string; name: string }> | undefined,
+    chips: HTMLElement,
+    displayedTagIds: Set<string>,
+    hasPerformers: boolean,
+    isFirstTag: boolean
+  ): boolean {
+    if (!tags || tags.length === 0) {
+      return isFirstTag;
+    }
+
+    for (const tag of tags) {
+      if (this.shouldSkipTag(tag, displayedTagIds)) {
+        continue;
+      }
+      
+      const chip = this.createTagChip(tag);
+      isFirstTag = this.addSpacingToFirstTag(chip, hasPerformers, isFirstTag);
+      chips.appendChild(chip);
+      displayedTagIds.add(tag.id);
+    }
+
+    return isFirstTag;
+  }
+
+  /**
    * Add tag chips to the chips container
    */
   private addTagChips(chips: HTMLElement): void {
@@ -339,18 +378,14 @@ export class VideoPost {
       isFirstTag = this.addSpacingToFirstTag(primaryTagChip, hasPerformers, isFirstTag);
     }
     
-    // Add other tags from tags array
-    if (this.data.marker.tags && this.data.marker.tags.length > 0) {
-      for (const tag of this.data.marker.tags) {
-        if (this.shouldSkipTag(tag, displayedTagIds)) {
-          continue;
-        }
-        
-        const chip = this.createTagChip(tag);
-        isFirstTag = this.addSpacingToFirstTag(chip, hasPerformers, isFirstTag);
-        chips.appendChild(chip);
-        displayedTagIds.add(tag.id);
-      }
+    // Add other tags from marker tags array
+    isFirstTag = this.addTagsFromList(this.data.marker.tags, chips, displayedTagIds, hasPerformers, isFirstTag);
+    
+    // For shortform content (scenes, not markers), show tags from the scene
+    // For regular markers, only show marker tags (not scene tags)
+    const isShortForm = this.isShortFormContent();
+    if (isShortForm) {
+      this.addTagsFromList(this.data.marker.scene.tags, chips, displayedTagIds, hasPerformers, isFirstTag);
     }
   }
 
@@ -667,20 +702,67 @@ export class VideoPost {
   }
 
   /**
+   * Determine if marker ID represents a synthetic marker
+   */
+  private isSyntheticMarker(): boolean {
+    const markerId = this.data.marker?.id;
+    return typeof markerId === 'string' && markerId.startsWith('synthetic-');
+  }
+
+  /**
+   * Create an icon badge describing the content type
+   */
+  private createContentBadgeIcon(): HTMLElement | null {
+    const isShortForm = this.isShortFormContent();
+    const isSynthetic = this.isSyntheticMarker();
+
+    if (isSynthetic || isShortForm) {
+      const label = isShortForm ? 'Short form scene' : 'Synthetic scene';
+      return this.buildBadgeIcon(SCENE_BADGE_SVG, label);
+    }
+
+    if (this.isRealMarker()) {
+      return this.buildBadgeIcon(MARKER_BADGE_SVG, 'Marker');
+    }
+
+    return null;
+  }
+
+  /**
+   * Build a styled badge element
+   */
+  private buildBadgeIcon(svg: string, label: string): HTMLElement {
+    const badge = document.createElement('span');
+    badge.className = 'content-badge';
+    badge.style.display = 'inline-flex';
+    badge.style.alignItems = 'center';
+    badge.style.justifyContent = 'center';
+    badge.style.width = '30px';
+    badge.style.height = '30px';
+    badge.style.flexShrink = '0';
+    badge.style.color = 'rgba(255, 255, 255, 0.85)';
+    badge.style.pointerEvents = 'none';
+    badge.innerHTML = svg;
+    badge.title = label;
+    badge.setAttribute('role', 'img');
+    badge.setAttribute('aria-label', label);
+    return badge;
+  }
+
+  /**
    * Add action buttons (heart/marker/add tag) to button group
    */
   private addActionButtons(buttonGroup: HTMLElement): void {
-    // Don't show favorite button for short-form content
     const isShortForm = this.isShortFormContent();
     
     // Hide favorite button in shuffle mode, show marker button instead
     // But if marker was already created, show heart button instead
     if (this.useShuffleMode) {
-      if (this.hasCreatedMarker && this.favoritesManager && !isShortForm) {
+      if (this.hasCreatedMarker && this.favoritesManager) {
         // Marker was created, show heart button and "+" button
         const heartBtn = this.createHeartButton();
         buttonGroup.appendChild(heartBtn);
-        if (this.api && this.isRealMarker()) {
+        if (this.api && (this.isRealMarker() || isShortForm)) {
           const addTagBtn = this.createAddTagButton();
           buttonGroup.appendChild(addTagBtn);
         }
@@ -690,12 +772,12 @@ export class VideoPost {
         buttonGroup.appendChild(markerBtn);
       }
     } else {
-      // Non-shuffle mode: show heart and "+" buttons for real markers (but not short-form)
-      if (this.favoritesManager && !isShortForm) {
+      // Non-shuffle mode: show heart and "+" buttons for real markers and shortform content
+      if (this.favoritesManager) {
         const heartBtn = this.createHeartButton();
         buttonGroup.appendChild(heartBtn);
       }
-      if (this.api && this.isRealMarker()) {
+      if (this.api && (this.isRealMarker() || isShortForm)) {
         const addTagBtn = this.createAddTagButton();
         buttonGroup.appendChild(addTagBtn);
       }
@@ -884,20 +966,7 @@ export class VideoPost {
       try {
         const newFavoriteState = await this.favoritesManager.toggleFavorite(this.data.marker);
         this.isFavorite = newFavoriteState;
-        
-        // Update local marker tags to reflect the change
-        this.data.marker.tags ??= [];
-        
-        if (newFavoriteState) {
-          if (!this.data.marker.tags.some(tag => tag.name === FAVORITE_TAG_NAME)) {
-            this.data.marker.tags.push({ id: '', name: FAVORITE_TAG_NAME });
-          }
-        } else {
-          this.data.marker.tags = this.data.marker.tags.filter(
-            tag => tag.name !== FAVORITE_TAG_NAME
-          );
-        }
-        
+        await this.updateLocalTagsAfterFavoriteToggle(newFavoriteState);
         this.updateHeartButton(heartBtn);
       } catch (error) {
         console.error('Failed to toggle favorite', error);
@@ -1007,6 +1076,42 @@ export class VideoPost {
 
     // Check favorite status to ensure heart button shows correct state
     this.checkFavoriteStatus();
+  }
+
+  /**
+   * Update local tags after favorite toggle
+   */
+  private async updateLocalTagsAfterFavoriteToggle(newFavoriteState: boolean): Promise<void> {
+    const isShortForm = this.isShortFormContent();
+    
+    if (isShortForm) {
+      // For shortform content, update scene tags
+      this.data.marker.scene.tags ??= [];
+      const favoriteTagId = await this.favoritesManager?.getFavoriteTagId();
+      
+      if (newFavoriteState) {
+        if (favoriteTagId && !this.data.marker.scene.tags.some(tag => tag.id === favoriteTagId || tag.name === FAVORITE_TAG_NAME)) {
+          this.data.marker.scene.tags.push({ id: favoriteTagId, name: FAVORITE_TAG_NAME });
+        }
+      } else {
+        this.data.marker.scene.tags = this.data.marker.scene.tags.filter(
+          tag => tag.id !== favoriteTagId && tag.name !== FAVORITE_TAG_NAME
+        );
+      }
+    } else {
+      // For regular markers, update marker tags
+      this.data.marker.tags ??= [];
+      
+      if (newFavoriteState) {
+        if (!this.data.marker.tags.some(tag => tag.name === FAVORITE_TAG_NAME)) {
+          this.data.marker.tags.push({ id: '', name: FAVORITE_TAG_NAME });
+        }
+      } else {
+        this.data.marker.tags = this.data.marker.tags.filter(
+          tag => tag.name !== FAVORITE_TAG_NAME
+        );
+      }
+    }
   }
 
   /**
@@ -1861,17 +1966,29 @@ export class VideoPost {
   }
 
   /**
-   * Check favorite status from marker tags
+   * Check favorite status from marker tags or scene tags
    */
   private async checkFavoriteStatus(): Promise<void> {
     if (!this.favoritesManager) return;
 
     try {
-      const hasFavoriteTag = this.data.marker.tags?.some(
-        tag => tag.name === FAVORITE_TAG_NAME
-      ) || false;
+      const isShortForm = this.isShortFormContent();
+      
+      if (isShortForm) {
+        // For shortform content, check scene tags
+        const hasFavoriteTag = this.data.marker.scene?.tags?.some(
+          tag => tag.name === FAVORITE_TAG_NAME
+        ) || false;
+        
+        this.isFavorite = hasFavoriteTag;
+      } else {
+        // For regular markers, check marker tags
+        const hasFavoriteTag = this.data.marker.tags?.some(
+          tag => tag.name === FAVORITE_TAG_NAME
+        ) || false;
 
-      this.isFavorite = hasFavoriteTag;
+        this.isFavorite = hasFavoriteTag;
+      }
 
       // Update heart button if it exists
       if (this.heartButton) {
@@ -2542,6 +2659,11 @@ export class VideoPost {
       this.markerDialog.style.opacity = '1';
       this.markerDialog.style.transform = 'translateX(-50%) translateY(0) scale(1)';
       this.markerDialog.style.pointerEvents = 'auto';
+      
+      // Adjust position to keep dialog within card boundaries
+      requestAnimationFrame(() => {
+        this.adjustDialogPosition(this.markerDialog!);
+      });
     }
 
     document.addEventListener('mousedown', this.onMarkerDialogOutsideClick);
@@ -3051,13 +3173,62 @@ export class VideoPost {
   }
 
   /**
-   * Add tag to existing marker
+   * Add tag to existing marker or scene (for shortform content)
    */
   private async addTagToMarker(): Promise<void> {
     if (!this.api || !this.selectedTagId || !this.selectedTagName) return;
     if (!this.markerDialogCreateButton) return;
 
-    // Validate marker has real ID (not synthetic)
+    const isShortForm = this.isShortFormContent();
+
+    // For shortform content, add tag to scene
+    if (isShortForm) {
+      if (!this.data.marker.scene?.id) {
+        showToast('Scene ID not available.');
+        return;
+      }
+
+      this.markerDialogCreateButton.disabled = true;
+      this.markerDialogCreateButton.textContent = 'Adding...';
+      this.markerDialogCreateButton.style.opacity = '0.6';
+
+      try {
+        // Check if tag is already added to scene
+        const currentTagIds = (this.data.marker.scene.tags || []).map(t => t.id).filter(Boolean);
+        if (currentTagIds.includes(this.selectedTagId)) {
+          showToast(`Tag "${this.selectedTagName}" is already added to this scene.`);
+          this.markerDialogCreateButton.disabled = false;
+          this.markerDialogCreateButton.textContent = 'Add';
+          this.markerDialogCreateButton.style.opacity = '1';
+          return;
+        }
+
+        // Add tag to scene
+        await this.api.addTagToScene(this.data.marker.scene.id, this.selectedTagId);
+
+        // Update local scene tags
+        this.data.marker.scene.tags ??= [];
+        
+        // Add tag to local data (we already have the name from selectedTagName)
+        this.data.marker.scene.tags.push({ id: this.selectedTagId, name: this.selectedTagName });
+
+        showToast(`Tag "${this.selectedTagName}" added to scene`);
+        
+        // Refresh header to show new tag chip
+        this.refreshHeader();
+        
+        this.closeMarkerDialog();
+      } catch (error) {
+        console.error('Failed to add tag to scene', error);
+        showToast('Failed to add tag. Please try again.');
+        this.markerDialogCreateButton.disabled = false;
+        this.markerDialogCreateButton.textContent = 'Add';
+        this.markerDialogCreateButton.style.opacity = '1';
+      }
+      return;
+    }
+
+    // For regular markers, validate marker has real ID (not synthetic)
     if (!this.isRealMarker()) {
       showToast('Cannot add tag to synthetic marker. Please create the marker first.');
       return;
@@ -3100,6 +3271,53 @@ export class VideoPost {
       this.markerDialogCreateButton.textContent = 'Add';
       this.markerDialogCreateButton.style.opacity = '1';
     }
+  }
+
+  /**
+   * Adjust dialog position to keep it within card boundaries
+   */
+  private adjustDialogPosition(dialog: HTMLElement): void {
+    if (!dialog || !this.container) return;
+
+    // Get dialog dimensions
+    const dialogRect = dialog.getBoundingClientRect();
+    const dialogWidth = dialogRect.width;
+    
+    // Find the card container (the post container)
+    const cardContainer = this.container.closest('.video-post, .image-post');
+    if (!cardContainer) return;
+    
+    const cardRect = cardContainer.getBoundingClientRect();
+    
+    // Find button group from either marker button or add tag button
+    const buttonGroup = (this.markerButton || this.addTagButton)?.parentElement;
+    if (!buttonGroup) return;
+    
+    const buttonGroupRect = buttonGroup.getBoundingClientRect();
+    
+    // Calculate button center position relative to card
+    const buttonCenterX = buttonGroupRect.left + buttonGroupRect.width / 2 - cardRect.left;
+    const dialogHalfWidth = dialogWidth / 2;
+    
+    // Calculate min and max left positions to keep dialog within card
+    const minLeft = dialogHalfWidth + 16; // 16px padding from left edge
+    const maxLeft = cardRect.width - dialogHalfWidth - 16; // 16px padding from right edge
+    
+    // Calculate desired left position (centered on button)
+    let desiredLeft = buttonCenterX;
+    
+    // Calculate offset needed to keep dialog within boundaries
+    // Keep left at 50% and use transform offset instead
+    let offsetX = 0;
+    if (desiredLeft < minLeft) {
+      offsetX = minLeft - buttonCenterX;
+    } else if (desiredLeft > maxLeft) {
+      offsetX = maxLeft - buttonCenterX;
+    }
+    
+    // Update dialog position using transform offset instead of changing left
+    dialog.style.left = '50%';
+    dialog.style.transform = `translateX(calc(-50% + ${offsetX}px)) translateY(0) scale(1)`;
   }
 
   /**
