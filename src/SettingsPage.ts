@@ -279,7 +279,7 @@ export class SettingsPage {
         return;
       }
 
-      const regex = `\\.(${cleanExtensions.join('|')})$`;
+      const regex = String.raw`\.(${cleanExtensions.join('|')})$`;
       regexPreview.textContent = `Regex: ${regex}`;
     };
 

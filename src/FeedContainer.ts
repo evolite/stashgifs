@@ -3501,23 +3501,18 @@ export class FeedContainer {
   }
 
   /**
-   * Process fetched markers (update state, check limits)
-   * Note: hasMore is now calculated in processLoadedContent based on total content
+   * Append markers to existing markers array
    */
-  private processFetchedMarkers(
-    markers: SceneMarker[],
-    append: boolean,
-    expectedLimit: number
-  ): void {
-    if (append) {
-      this.markers.push(...markers);
-    } else {
-      this.markers = markers;
-      this.clearPosts();
-    }
+  private appendMarkers(markers: SceneMarker[]): void {
+    this.markers.push(...markers);
+  }
 
-    // Note: hasMore is now calculated in processLoadedContent based on total merged content
-    // (markers + shortform + images), so we don't set it here anymore
+  /**
+   * Replace existing markers with new markers and clear posts
+   */
+  private replaceMarkers(markers: SceneMarker[]): void {
+    this.markers = markers;
+    this.clearPosts();
   }
 
   /**
@@ -3903,6 +3898,168 @@ export class FeedContainer {
     await this.loadVideos(this.currentFilters, false, undefined, true);
   }
 
+  /**
+   * Determine what content types should be loaded
+   */
+  private determineContentLoadingFlags(): {
+    shouldLoadMarkers: boolean;
+    shouldLoadImages: boolean;
+    shouldLoadShortForm: boolean;
+  } {
+    const shortFormEnabledForCurrentMode = this.shouldLoadShortFormContent();
+    const shortFormOnlyActive = this.settings.shortFormOnly === true && shortFormEnabledForCurrentMode;
+    
+    return {
+      shouldLoadMarkers: !(this.settings.imagesOnly ?? false) && !shortFormOnlyActive,
+      shouldLoadImages: this.shouldLoadImages() || (this.settings.imagesOnly ?? false),
+      shouldLoadShortForm: shortFormEnabledForCurrentMode || shortFormOnlyActive
+    };
+  }
+
+  /**
+   * Calculate content limits for markers and shortform
+   */
+  private calculateContentLimits(
+    limit: number,
+    shouldLoadMarkers: boolean,
+    shouldLoadShortForm: boolean
+  ): { markerLimit: number; shortFormLimit: number } {
+    let markerLimit = limit;
+    let shortFormLimit = limit;
+    
+    if (shouldLoadMarkers && shouldLoadShortForm) {
+      // Split limit in half when both are enabled
+      markerLimit = Math.ceil(limit / 2);
+      shortFormLimit = Math.floor(limit / 2);
+      console.log(`[Load] Splitting limit ${limit} into ${markerLimit} markers + ${shortFormLimit} shortform`);
+    }
+    
+    return { markerLimit, shortFormLimit };
+  }
+
+  /**
+   * Fetch all content types in parallel
+   */
+  private async fetchAllContent(
+    currentFilters: FilterOptions,
+    limit: number,
+    markerLimit: number,
+    shortFormLimit: number,
+    offset: number,
+    signal: AbortSignal | undefined,
+    shouldLoadMarkers: boolean,
+    shouldLoadImages: boolean,
+    shouldLoadShortForm: boolean
+  ): Promise<{
+    markers: SceneMarker[];
+    images: Image[];
+    shortFormMarkers: SceneMarker[];
+    markerCount: number;
+    imageCount: number;
+    shortFormCount: number;
+  }> {
+    const [markersResult, imagesResult, shortFormResult] = await Promise.all([
+      shouldLoadMarkers ? this.fetchMarkersForLoad(currentFilters, markerLimit, offset, signal) : Promise.resolve<{ markers: SceneMarker[]; totalCount: number }>({ markers: [], totalCount: 0 }),
+      shouldLoadImages ? this.loadImages(currentFilters, limit, offset, signal) : Promise.resolve<{ images: Image[]; totalCount: number }>({ images: [], totalCount: 0 }),
+      shouldLoadShortForm ? this.fetchShortFormVideosForLoad(currentFilters, shortFormLimit, offset, signal) : Promise.resolve<{ markers: SceneMarker[]; totalCount: number }>({ markers: [], totalCount: 0 }),
+    ]);
+    
+    // Debug logging for fetched results
+    if (shouldLoadMarkers) {
+      console.log(`[Load] Fetched ${markersResult.markers.length} markers (limit: ${markerLimit}, total: ${markersResult.totalCount})`);
+    }
+    if (shouldLoadShortForm) {
+      console.log(`[Load] Fetched ${shortFormResult.markers.length} short-form markers (limit: ${shortFormLimit}, total: ${shortFormResult.totalCount})`);
+    }
+    if (shouldLoadImages) {
+      console.log(`[Load] Fetched ${imagesResult.images.length} images (limit: ${limit}, total: ${imagesResult.totalCount})`);
+    }
+    
+    return {
+      markers: markersResult.markers,
+      images: imagesResult.images,
+      shortFormMarkers: shortFormResult.markers,
+      markerCount: markersResult.totalCount,
+      imageCount: imagesResult.totalCount,
+      shortFormCount: shortFormResult.totalCount
+    };
+  }
+
+  /**
+   * Process and merge fetched content
+   */
+  private async processFetchedContent(
+    markers: SceneMarker[],
+    shortFormMarkers: SceneMarker[],
+    images: Image[],
+    markerCount: number,
+    shortFormCount: number,
+    imageCount: number,
+    currentFilters: FilterOptions,
+    offset: number,
+    append: boolean,
+    shouldLoadMarkers: boolean
+  ): Promise<Array<{ type: 'marker' | 'image'; data: SceneMarker | Image; date?: string }>> {
+    // Merge regular markers, short-form markers, and images chronologically
+    const mergedContent = this.mergeMarkersShortFormAndImages(markers, shortFormMarkers, images);
+
+    const expectedLimit = append ? this.subsequentLoadLimit : (currentFilters.limit || this.initialLoadLimit);
+    
+    const allMarkers = [...markers, ...shortFormMarkers];
+    this.processLoadedContent({
+      content: {
+        markers: allMarkers,
+        images
+      },
+      counts: {
+        markerCount,
+        shortFormCount,
+        imageCount
+      },
+      pagination: {
+        offset,
+        expectedLimit,
+        totalContentLength: mergedContent.length
+      },
+      shouldLoadMarkers,
+      append
+    });
+
+    return mergedContent;
+  }
+
+  /**
+   * Render and finalize loaded content
+   */
+  private async renderAndFinalizeContent(
+    mergedContent: Array<{ type: 'marker' | 'image'; data: SceneMarker | Image; date?: string }>,
+    allMarkers: SceneMarker[],
+    shouldLoadMarkers: boolean,
+    currentFilters: FilterOptions,
+    append: boolean,
+    signal: AbortSignal | undefined,
+    page: number
+  ): Promise<void> {
+    if (mergedContent.length === 0) {
+      this.handleEmptyMarkers(append);
+      return;
+    }
+
+    if (shouldLoadMarkers && allMarkers.length > 0) {
+      this.prefetchPosters(allMarkers, append, currentFilters);
+    }
+
+    const renderChunkSize = 6;
+    const renderDelay = 8;
+    await this.renderPostsProgressively(mergedContent, append, signal, renderChunkSize, renderDelay);
+
+    if (this.checkAbortAndCleanup(signal)) {
+      return;
+    }
+
+    this.finalizeLoadState(append, page);
+  }
+
   async loadVideos(filters?: FilterOptions, append: boolean = false, signal?: AbortSignal, force: boolean = false): Promise<void> {
     signal = this.prepareLoadVideos(signal);
 
@@ -3920,101 +4077,58 @@ export class FeedContainer {
         return;
       }
 
-      // Check if short-form is enabled for current mode
-      const shortFormEnabledForCurrentMode = this.shouldLoadShortFormContent();
-      
-      // shortFormOnly only applies if short-form is enabled for current mode
-      const shortFormOnlyActive = this.settings.shortFormOnly === true && shortFormEnabledForCurrentMode;
-      
-      // Load both markers and images in parallel if images are enabled
-      const shouldLoadMarkers = !this.settings.imagesOnly && !shortFormOnlyActive;
-      const shouldLoadImages = this.shouldLoadImages() || this.settings.imagesOnly;
-      
-      // Check if short-form content should be loaded
-      const shouldLoadShortForm = shortFormEnabledForCurrentMode || shortFormOnlyActive;
-      
-      // Split limit between markers and shortform when both are enabled
-      // This ensures we get equal amounts of each type (e.g., 12 total = 6 markers + 6 shortform)
-      let markerLimit = limit;
-      let shortFormLimit = limit;
-      
-      if (shouldLoadMarkers && shouldLoadShortForm) {
-        // Split limit in half when both are enabled
-        markerLimit = Math.ceil(limit / 2);
-        shortFormLimit = Math.floor(limit / 2);
-        console.log(`[Load] Splitting limit ${limit} into ${markerLimit} markers + ${shortFormLimit} shortform`);
-      }
+      const { shouldLoadMarkers, shouldLoadImages, shouldLoadShortForm } = this.determineContentLoadingFlags();
+      const { markerLimit, shortFormLimit } = this.calculateContentLimits(limit, shouldLoadMarkers, shouldLoadShortForm);
       
       // Debug logging for short-form content
       this.logShortFormSettings(shouldLoadShortForm);
       
-      const [markersResult, imagesResult, shortFormResult] = await Promise.all([
-        shouldLoadMarkers ? this.fetchMarkersForLoad(currentFilters, markerLimit, offset, signal) : Promise.resolve<{ markers: SceneMarker[]; totalCount: number }>({ markers: [], totalCount: 0 }),
-        shouldLoadImages ? this.loadImages(currentFilters, limit, offset, signal) : Promise.resolve<{ images: Image[]; totalCount: number }>({ images: [], totalCount: 0 }),
-        shouldLoadShortForm ? this.fetchShortFormVideosForLoad(currentFilters, shortFormLimit, offset, signal) : Promise.resolve<{ markers: SceneMarker[]; totalCount: number }>({ markers: [], totalCount: 0 }),
-      ]);
-      
-      const markers = markersResult.markers;
-      const images = imagesResult.images;
-      const shortFormMarkers = shortFormResult.markers;
-      
-      // Extract counts for hasMore calculation
-      const markerCount = markersResult.totalCount;
-      const imageCount = imagesResult.totalCount;
-      const shortFormCount = shortFormResult.totalCount;
-      
-      // Debug logging for fetched results
-      if (shouldLoadMarkers) {
-        console.log(`[Load] Fetched ${markers.length} markers (limit: ${markerLimit}, total: ${markerCount})`);
-      }
-      if (shouldLoadShortForm) {
-        console.log(`[Load] Fetched ${shortFormMarkers.length} short-form markers (limit: ${shortFormLimit}, total: ${shortFormCount})`);
-      }
-      if (shouldLoadImages) {
-        console.log(`[Load] Fetched ${images.length} images (limit: ${limit}, total: ${imageCount})`);
-      }
-
-      if (this.checkAbortAndCleanup(signal)) {
-        return;
-      }
-
-      // Merge regular markers, short-form markers, and images chronologically
-      const mergedContent = this.mergeMarkersShortFormAndImages(markers, shortFormMarkers, images);
-
-      const expectedLimit = append ? this.subsequentLoadLimit : (currentFilters.limit || this.initialLoadLimit);
-      
-      const allMarkers = [...markers, ...shortFormMarkers];
-      this.processLoadedContent(
-        allMarkers,
+      const {
+        markers,
         images,
-        shouldLoadMarkers,
-        append,
-        expectedLimit,
-        mergedContent.length,
-        offset,
+        shortFormMarkers,
         markerCount,
-        shortFormCount,
-        imageCount
+        imageCount,
+        shortFormCount
+      } = await this.fetchAllContent(
+        currentFilters,
+        limit,
+        markerLimit,
+        shortFormLimit,
+        offset,
+        signal,
+        shouldLoadMarkers,
+        shouldLoadImages,
+        shouldLoadShortForm
       );
 
-      if (mergedContent.length === 0) {
-        this.handleEmptyMarkers(append);
-        return;
-      }
-
-      if (shouldLoadMarkers && allMarkers.length > 0) {
-        this.prefetchPosters(allMarkers, append, currentFilters);
-      }
-
-      const renderChunkSize = 6;
-      const renderDelay = 8;
-      await this.renderPostsProgressively(mergedContent, append, signal, renderChunkSize, renderDelay);
-
       if (this.checkAbortAndCleanup(signal)) {
         return;
       }
 
-      this.finalizeLoadState(append, page);
+      const mergedContent = await this.processFetchedContent(
+        markers,
+        shortFormMarkers,
+        images,
+        markerCount,
+        shortFormCount,
+        imageCount,
+        currentFilters,
+        offset,
+        append,
+        shouldLoadMarkers
+      );
+
+      const allMarkers = [...markers, ...shortFormMarkers];
+      await this.renderAndFinalizeContent(
+        mergedContent,
+        allMarkers,
+        shouldLoadMarkers,
+        currentFilters,
+        append,
+        signal,
+        page
+      );
     } catch (error: unknown) {
       this.handleLoadError(error, append);
     } finally {
@@ -4023,73 +4137,170 @@ export class FeedContainer {
   }
 
   /**
-   * Process loaded markers and images
+   * Process markers and images into state when appending
    */
-  private processLoadedContent(
+  private processMarkersAndImagesAppend(
     markers: SceneMarker[],
     images: Image[],
-    shouldLoadMarkers: boolean,
-    append: boolean,
-    expectedLimit: number,
-    totalContentLength: number,
-    offset: number,
-    markerCount: number,
-    shortFormCount: number,
-    imageCount: number
+    shouldLoadMarkers: boolean
   ): void {
     // Process markers separately for backward compatibility
     if (shouldLoadMarkers) {
-      this.processFetchedMarkers(markers, append, expectedLimit);
-    } else if (!append) {
+      this.appendMarkers(markers);
+    }
+    
+    // Process images
+    if (images.length > 0) {
+      this.images.push(...images);
+    }
+  }
+
+  /**
+   * Process markers and images into state when replacing
+   */
+  private processMarkersAndImagesReplace(
+    markers: SceneMarker[],
+    images: Image[],
+    shouldLoadMarkers: boolean
+  ): void {
+    // Process markers separately for backward compatibility
+    if (shouldLoadMarkers) {
+      this.replaceMarkers(markers);
+    } else {
       this.clearPosts();
       this.markers = [];
     }
     
     // Process images
-    if (images.length > 0 && !append) {
+    if (images.length > 0) {
       this.images = images;
-    } else if (images.length > 0 && append) {
-      this.images.push(...images);
+    }
+  }
+
+  /**
+   * Calculate hasMore for images-only mode
+   */
+  private calculateHasMoreForImagesOnly(
+    images: Image[],
+    append: boolean,
+    offset: number,
+    imageCount: number,
+    expectedLimit: number
+  ): void {
+    const totalLoaded = offset + images.length;
+    this.hasMore = totalLoaded < imageCount && imageCount > 0;
+    
+    // Fallback: if count is unavailable (0), use length-based check
+    if (imageCount === 0) {
+      this.hasMore = images.length >= expectedLimit;
+    }
+    
+    // Special case: if we got 0 results and it's not the first load, we've definitely reached the end
+    if (append && images.length === 0) {
+      this.hasMore = false;
+    }
+  }
+
+  /**
+   * Calculate hasMore for mixed content mode
+   */
+  private calculateHasMoreForMixedContent(
+    append: boolean,
+    offset: number,
+    totalContentLength: number,
+    expectedLimit: number,
+    markerCount: number,
+    shortFormCount: number,
+    imageCount: number
+  ): void {
+    // Calculate total available content count
+    const totalAvailable = markerCount + shortFormCount + imageCount;
+    
+    // Calculate total loaded so far
+    const totalLoaded = offset + totalContentLength;
+    
+    // Use count-based calculation if counts are available
+    if (totalAvailable > 0) {
+      this.hasMore = totalLoaded < totalAvailable;
+      console.log(`[hasMore] Total loaded: ${totalLoaded}, Total available: ${totalAvailable}, hasMore: ${this.hasMore}`);
+    } else {
+      // Fallback: if counts are unavailable (e.g., shuffle mode), use length-based check
+      this.hasMore = totalContentLength >= expectedLimit;
+      console.log(`[hasMore] Count unavailable, using length-based check: ${totalContentLength} >= ${expectedLimit}`);
+    }
+    
+    // Special case: if we got 0 results and it's not the first load, we've definitely reached the end
+    if (append && totalContentLength === 0) {
+      this.hasMore = false;
+      console.log(`[hasMore] Got 0 results on append, setting hasMore to false`);
+    }
+  }
+
+  /**
+   * Process loaded markers and images
+   */
+  private processLoadedContent(options: {
+    content: {
+      markers: SceneMarker[];
+      images: Image[];
+    };
+    counts: {
+      markerCount: number;
+      shortFormCount: number;
+      imageCount: number;
+    };
+    pagination: {
+      offset: number;
+      expectedLimit: number;
+      totalContentLength: number;
+    };
+    shouldLoadMarkers: boolean;
+    append: boolean;
+  }): void {
+    const {
+      content: { markers, images },
+      counts: { markerCount, shortFormCount, imageCount },
+      pagination: { offset, expectedLimit, totalContentLength },
+      shouldLoadMarkers,
+      append
+    } = options;
+    
+    if (append) {
+      this.processMarkersAndImagesAppend(markers, images, shouldLoadMarkers);
+    } else {
+      this.processMarkersAndImagesReplace(markers, images, shouldLoadMarkers);
     }
 
     // Calculate hasMore using API counts to determine if there's more content available
     // This ensures infinite scroll works correctly when filters are applied
+    this.calculateHasMore(append, offset, totalContentLength, expectedLimit, markerCount, shortFormCount, imageCount, images);
+  }
+
+  /**
+   * Calculate hasMore flag based on content type and pagination
+   */
+  private calculateHasMore(
+    append: boolean,
+    offset: number,
+    totalContentLength: number,
+    expectedLimit: number,
+    markerCount: number,
+    shortFormCount: number,
+    imageCount: number,
+    images: Image[]
+  ): void {
     if (this.settings.imagesOnly) {
-      // For images-only mode, use image count
-      const totalLoaded = offset + images.length;
-      this.hasMore = totalLoaded < imageCount && imageCount > 0;
-      
-      // Fallback: if count is unavailable (0), use length-based check
-      if (imageCount === 0) {
-        this.hasMore = images.length >= expectedLimit;
-      }
-      
-      // Special case: if we got 0 results and it's not the first load, we've definitely reached the end
-      if (append && images.length === 0) {
-        this.hasMore = false;
-      }
+      this.calculateHasMoreForImagesOnly(images, append, offset, imageCount, expectedLimit);
     } else {
-      // Calculate total available content count
-      const totalAvailable = markerCount + shortFormCount + imageCount;
-      
-      // Calculate total loaded so far
-      const totalLoaded = offset + totalContentLength;
-      
-      // Use count-based calculation if counts are available
-      if (totalAvailable > 0) {
-        this.hasMore = totalLoaded < totalAvailable;
-        console.log(`[hasMore] Total loaded: ${totalLoaded}, Total available: ${totalAvailable}, hasMore: ${this.hasMore}`);
-      } else {
-        // Fallback: if counts are unavailable (e.g., shuffle mode), use length-based check
-        this.hasMore = totalContentLength >= expectedLimit;
-        console.log(`[hasMore] Count unavailable, using length-based check: ${totalContentLength} >= ${expectedLimit}`);
-      }
-      
-      // Special case: if we got 0 results and it's not the first load, we've definitely reached the end
-      if (append && totalContentLength === 0) {
-        this.hasMore = false;
-        console.log(`[hasMore] Got 0 results on append, setting hasMore to false`);
-      }
+      this.calculateHasMoreForMixedContent(
+        append,
+        offset,
+        totalContentLength,
+        expectedLimit,
+        markerCount,
+        shortFormCount,
+        imageCount
+      );
     }
   }
 
@@ -4322,6 +4533,32 @@ export class FeedContainer {
   }
 
   /**
+   * Check if only a single content type is present
+   */
+  private getSingleContentTypeResult(
+    markers: SceneMarker[],
+    shortFormMarkers: SceneMarker[],
+    images: Image[]
+  ): Array<{ type: 'marker' | 'image'; data: SceneMarker | Image; date?: string }> | null {
+    // If only images
+    if (markers.length === 0 && shortFormMarkers.length === 0) {
+      return this.createImageContentArray(images);
+    }
+
+    // If only regular markers
+    if (images.length === 0 && shortFormMarkers.length === 0) {
+      return this.createMarkerContentArray(markers);
+    }
+
+    // If only short-form markers
+    if (markers.length === 0 && images.length === 0) {
+      return this.createMarkerContentArray(shortFormMarkers);
+    }
+
+    return null;
+  }
+
+  /**
    * Merge regular markers, short-form markers, and images in a unified, proportional mix
    * Interleaves all three types together evenly throughout the feed
    */
@@ -4331,16 +4568,9 @@ export class FeedContainer {
     images: Image[]
   ): Array<{ type: 'marker' | 'image'; data: SceneMarker | Image; date?: string }> {
     // If only one type, return it in original order
-    if (markers.length === 0 && shortFormMarkers.length === 0) {
-      return this.createImageContentArray(images);
-    }
-
-    if (images.length === 0 && shortFormMarkers.length === 0) {
-      return this.createMarkerContentArray(markers);
-    }
-
-    if (markers.length === 0 && images.length === 0) {
-      return this.createMarkerContentArray(shortFormMarkers);
+    const singleTypeResult = this.getSingleContentTypeResult(markers, shortFormMarkers, images);
+    if (singleTypeResult !== null) {
+      return singleTypeResult;
     }
 
     // Multiple types present - mix all three together proportionally
@@ -4370,6 +4600,113 @@ export class FeedContainer {
   }
 
   /**
+   * Calculate proportions for content types
+   */
+  private calculateProportions(
+    remainingMarkers: number,
+    remainingShortForm: number,
+    remainingImages: number,
+    totalRemaining: number
+  ): { markerRatio: number; shortFormRatio: number } {
+    return {
+      markerRatio: remainingMarkers / totalRemaining,
+      shortFormRatio: remainingShortForm / totalRemaining
+    };
+  }
+
+  /**
+   * Select content type based on proportions and consecutive count constraints
+   */
+  private selectContentType(
+    remainingMarkers: number,
+    remainingShortForm: number,
+    remainingImages: number,
+    markerRatio: number,
+    shortFormRatio: number,
+    consecutiveCount: number,
+    maxConsecutive: number,
+    lastType: 'marker' | 'shortform' | 'image' | null
+  ): 'marker' | 'shortform' | 'image' {
+    const random = Math.random();
+    
+    // If we've hit max consecutive, prefer other types
+    if (consecutiveCount >= maxConsecutive && lastType) {
+      // Force selection of a different type
+      const availableTypes: Array<'marker' | 'shortform' | 'image'> = [];
+      if (remainingMarkers > 0 && lastType !== 'marker') availableTypes.push('marker');
+      if (remainingShortForm > 0 && lastType !== 'shortform') availableTypes.push('shortform');
+      if (remainingImages > 0 && lastType !== 'image') availableTypes.push('image');
+      
+      if (availableTypes.length > 0) {
+        return availableTypes[Math.floor(Math.random() * availableTypes.length)];
+      }
+      // Fallback to proportional selection if no other types available
+      if (random < markerRatio && remainingMarkers > 0) {
+        return 'marker';
+      }
+      if (random < markerRatio + shortFormRatio && remainingShortForm > 0) {
+        return 'shortform';
+      }
+      return 'image';
+    }
+    
+    // Normal proportional selection
+    if (random < markerRatio && remainingMarkers > 0) {
+      return 'marker';
+    }
+    if (random < markerRatio + shortFormRatio && remainingShortForm > 0) {
+      return 'shortform';
+    }
+    if (remainingImages > 0) {
+      return 'image';
+    }
+    if (remainingShortForm > 0) {
+      return 'shortform';
+    }
+    return 'marker';
+  }
+
+  /**
+   * Add content items of the selected type to the content array
+   */
+  private addContentItems(
+    content: Array<{ type: 'marker' | 'image'; data: SceneMarker | Image; date?: string }>,
+    selectedType: 'marker' | 'shortform' | 'image',
+    itemsToAdd: number,
+    markers: SceneMarker[],
+    shortFormMarkers: SceneMarker[],
+    images: Image[],
+    markerIndex: { value: number },
+    shortFormIndex: { value: number },
+    imageIndex: { value: number }
+  ): void {
+    for (let i = 0; i < itemsToAdd; i++) {
+      if (selectedType === 'marker' && markerIndex.value < markers.length) {
+        const marker = markers[markerIndex.value++];
+        content.push({
+          type: 'marker',
+          data: marker,
+          date: marker.scene.date,
+        });
+      } else if (selectedType === 'shortform' && shortFormIndex.value < shortFormMarkers.length) {
+        const shortForm = shortFormMarkers[shortFormIndex.value++];
+        content.push({
+          type: 'marker',
+          data: shortForm,
+          date: shortForm.scene.date,
+        });
+      } else if (selectedType === 'image' && imageIndex.value < images.length) {
+        const image = images[imageIndex.value++];
+        content.push({
+          type: 'image',
+          data: image,
+          date: image.date,
+        });
+      }
+    }
+  }
+
+  /**
    * Unified mixing algorithm that mixes markers, shortform, and images proportionally
    * Uses smaller alternations (1-3 items) and prevents any type from dominating
    */
@@ -4380,70 +4717,46 @@ export class FeedContainer {
   ): Array<{ type: 'marker' | 'image'; data: SceneMarker | Image; date?: string }> {
     const content: Array<{ type: 'marker' | 'image'; data: SceneMarker | Image; date?: string }> = [];
     
-    let markerIndex = 0;
-    let shortFormIndex = 0;
-    let imageIndex = 0;
+    const markerIndex = { value: 0 };
+    const shortFormIndex = { value: 0 };
+    const imageIndex = { value: 0 };
     
     // Track consecutive items of the same type to prevent dominance
     let consecutiveCount = 0;
     let lastType: 'marker' | 'shortform' | 'image' | null = null;
     const maxConsecutive = 3; // Maximum consecutive items of same type
     
-    while (markerIndex < markers.length || shortFormIndex < shortFormMarkers.length || imageIndex < images.length) {
+    while (markerIndex.value < markers.length || shortFormIndex.value < shortFormMarkers.length || imageIndex.value < images.length) {
       // Calculate remaining counts
-      const remainingMarkers = markers.length - markerIndex;
-      const remainingShortForm = shortFormMarkers.length - shortFormIndex;
-      const remainingImages = images.length - imageIndex;
+      const remainingMarkers = markers.length - markerIndex.value;
+      const remainingShortForm = shortFormMarkers.length - shortFormIndex.value;
+      const remainingImages = images.length - imageIndex.value;
       const totalRemaining = remainingMarkers + remainingShortForm + remainingImages;
       
       if (totalRemaining === 0) break;
       
       // Calculate proportions
-      const markerRatio = remainingMarkers / totalRemaining;
-      const shortFormRatio = remainingShortForm / totalRemaining;
-      const imageRatio = remainingImages / totalRemaining;
+      const { markerRatio, shortFormRatio } = this.calculateProportions(
+        remainingMarkers,
+        remainingShortForm,
+        remainingImages,
+        totalRemaining
+      );
       
       // Determine how many items to add from selected type (1-3 items)
       const itemsToAdd = 1 + Math.floor(Math.random() * 3); // 1-3 items
       
       // Select type based on proportions, but avoid too many consecutive items
-      let selectedType: 'marker' | 'shortform' | 'image';
-      const random = Math.random();
-      
-      // If we've hit max consecutive, prefer other types
-      if (consecutiveCount >= maxConsecutive && lastType) {
-        // Force selection of a different type
-        const availableTypes: Array<'marker' | 'shortform' | 'image'> = [];
-        if (remainingMarkers > 0 && lastType !== 'marker') availableTypes.push('marker');
-        if (remainingShortForm > 0 && lastType !== 'shortform') availableTypes.push('shortform');
-        if (remainingImages > 0 && lastType !== 'image') availableTypes.push('image');
-        
-        if (availableTypes.length > 0) {
-          selectedType = availableTypes[Math.floor(Math.random() * availableTypes.length)];
-        } else {
-          // Fallback to proportional selection if no other types available
-          if (random < markerRatio && remainingMarkers > 0) {
-            selectedType = 'marker';
-          } else if (random < markerRatio + shortFormRatio && remainingShortForm > 0) {
-            selectedType = 'shortform';
-          } else {
-            selectedType = 'image';
-          }
-        }
-      } else {
-        // Normal proportional selection
-        if (random < markerRatio && remainingMarkers > 0) {
-          selectedType = 'marker';
-        } else if (random < markerRatio + shortFormRatio && remainingShortForm > 0) {
-          selectedType = 'shortform';
-        } else if (remainingImages > 0) {
-          selectedType = 'image';
-        } else if (remainingShortForm > 0) {
-          selectedType = 'shortform';
-        } else {
-          selectedType = 'marker';
-        }
-      }
+      const selectedType = this.selectContentType(
+        remainingMarkers,
+        remainingShortForm,
+        remainingImages,
+        markerRatio,
+        shortFormRatio,
+        consecutiveCount,
+        maxConsecutive,
+        lastType
+      );
       
       // Update consecutive count
       if (selectedType === lastType) {
@@ -4453,37 +4766,29 @@ export class FeedContainer {
         lastType = selectedType;
       }
       
-      // Add items from selected type
-      const actualItemsToAdd = Math.min(itemsToAdd, 
-        selectedType === 'marker' ? remainingMarkers :
-        selectedType === 'shortform' ? remainingShortForm :
-        remainingImages
-      );
-      
-      for (let i = 0; i < actualItemsToAdd; i++) {
-        if (selectedType === 'marker' && markerIndex < markers.length) {
-          const marker = markers[markerIndex++];
-          content.push({
-            type: 'marker',
-            data: marker,
-            date: marker.scene.date,
-          });
-        } else if (selectedType === 'shortform' && shortFormIndex < shortFormMarkers.length) {
-          const shortForm = shortFormMarkers[shortFormIndex++];
-          content.push({
-            type: 'marker',
-            data: shortForm,
-            date: shortForm.scene.date,
-          });
-        } else if (selectedType === 'image' && imageIndex < images.length) {
-          const image = images[imageIndex++];
-          content.push({
-            type: 'image',
-            data: image,
-            date: image.date,
-          });
-        }
+      // Calculate remaining for selected type
+      let remainingForType: number;
+      if (selectedType === 'marker') {
+        remainingForType = remainingMarkers;
+      } else if (selectedType === 'shortform') {
+        remainingForType = remainingShortForm;
+      } else {
+        remainingForType = remainingImages;
       }
+      const actualItemsToAdd = Math.min(itemsToAdd, remainingForType);
+      
+      // Add items from selected type
+      this.addContentItems(
+        content,
+        selectedType,
+        actualItemsToAdd,
+        markers,
+        shortFormMarkers,
+        images,
+        markerIndex,
+        shortFormIndex,
+        imageIndex
+      );
     }
     
     return content;
