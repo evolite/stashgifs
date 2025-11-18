@@ -489,17 +489,8 @@ export class SettingsPage {
       shortFormOnly: shortFormOnlyToggle.checked,
     };
 
-    // Save to localStorage first
-    try {
-      const savedSettings = localStorage.getItem('stashgifs-settings');
-      const currentSettings = savedSettings ? JSON.parse(savedSettings) : {};
-      const updatedSettings = { ...currentSettings, ...newSettings };
-      localStorage.setItem('stashgifs-settings', JSON.stringify(updatedSettings));
-    } catch (error) {
-      console.error('Failed to save settings to localStorage', error);
-    }
-
     // Notify parent to update settings and reload feed if needed
+    // Parent (FeedContainer) will handle saving to localStorage
     if (this.onSave) {
       this.onSave(newSettings);
     }

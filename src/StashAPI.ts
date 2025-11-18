@@ -1010,36 +1010,40 @@ export class StashAPI {
     try {
       if (this.isAborted(signal)) return { markers: [], totalCount: 0 };
 
-      const scenesPerPage = 100; // 100 scenes per page
-      const pagesToFetch = 20; // Fetch 20 different pages to get a larger pool
+      const scenesPerPage = 24; // Fetch 24 scenes per page
       
-      const sceneFilter = this.buildShortFormSceneFilter(filters);
-      console.log('[ShortForm] Scene filter:', JSON.stringify(sceneFilter, null, 2));
+      const sceneFilter = this.buildShortFormSceneFilter(filters, maxDuration);
       
       const { maxPage, totalCount } = await this.getMaxPageForShortForm(sceneFilter, scenesPerPage, signal);
       if (maxPage === 0) {
         return { markers: [], totalCount: 0 };
       }
       
-      // Calculate base page from offset to ensure pagination progression
-      // Each offset increment moves us forward by approximately one page worth of content
-      const basePage = Math.floor(offset / scenesPerPage) + 1;
-      const pageRange = 10; // Fetch pages within ±10 of base page for variety
+      // Calculate page from offset based on scenesPerPage
+      const page = Math.floor(offset / scenesPerPage) + 1;
+      // Ensure page doesn't exceed maxPage
+      const actualPage = Math.min(page, maxPage);
       
-      console.log(`[ShortForm] Offset: ${offset}, Base page: ${basePage}, Max page: ${maxPage}`);
+      // Calculate offset within the page
+      const offsetInPage = offset % scenesPerPage;
       
-      // Generate pages in a range around the base page, using offset as seed for deterministic randomness
-      const selectedPages = this.generatePagesForOffset(basePage, pageRange, pagesToFetch, maxPage, offset);
+      // Fetch only the single page needed
+      const filter: FindFilterInput = {
+        per_page: scenesPerPage,
+        page: actualPage,
+        sort: generateRandomSortSeed(),
+      };
       
-      const allPageResults = await this.fetchShortFormPages(selectedPages, scenesPerPage, sceneFilter, maxPage, signal);
-      
+      const scenes = await this.fetchScenesQuery(filter, sceneFilter, signal);
       if (this.isAborted(signal)) return { markers: [], totalCount: 0 };
-
-      const allScenes = this.combineAndDeduplicateScenes(allPageResults);
-      const shortFormScenes = this.filterAndShuffleShortFormScenes(allScenes, maxDuration, limit);
-
-      const markers = this.createShortFormMarkers(shortFormScenes);
-      console.log(`[ShortForm] Created ${markers.length} markers from pages: ${selectedPages.slice(0, 5).join(', ')}${selectedPages.length > 5 ? '...' : ''}`);
+      
+      // Filter by duration (in case any scenes don't match the duration filter)
+      const shortFormScenes = this.filterShortFormScenes(scenes, maxDuration);
+      
+      // Apply offset within page and limit to results
+      const limitedScenes = shortFormScenes.slice(offsetInPage, offsetInPage + limit);
+      
+      const markers = this.createShortFormMarkers(limitedScenes);
       
       return { markers, totalCount };
     } catch (e: unknown) {
@@ -1072,11 +1076,9 @@ export class StashAPI {
       if (this.isAborted(signal)) return { maxPage: 0, totalCount: 0 };
       
       totalCount = countResult.data?.findScenes?.count || 0;
-      console.log('[ShortForm] Total scenes matching filter:', totalCount);
       
       if (totalCount > 0) {
         maxPage = Math.max(1, Math.ceil(totalCount / scenesPerPage));
-        console.log('[ShortForm] Max valid page:', maxPage, '(scenes per page:', scenesPerPage, ')');
       } else {
         console.warn('[ShortForm] No scenes found matching filter');
         return { maxPage: 0, totalCount: 0 };
@@ -1181,13 +1183,10 @@ export class StashAPI {
         sort: generateRandomSortSeed(), // Different random seed for each page
       };
       
-      console.log('[ShortForm] Fetching page', randomPage, 'of', maxPage);
-      
       // Wrap fetchScenesQuery with error handling
       fetchPromises.push(
         this.fetchScenesQuery(filter, sceneFilter, signal)
           .then((scenes) => {
-            console.log('[ShortForm] Page', randomPage, 'returned', scenes.length, 'scenes');
             return { scenes, page: randomPage };
           })
           .catch((error: unknown) => {
@@ -1219,7 +1218,6 @@ export class StashAPI {
     }
     
     const allScenes = Array.from(sceneMap.values());
-    console.log('[ShortForm] Fetched', totalFetched, 'scenes total,', allScenes.length, 'unique scenes');
     return allScenes;
   }
 
@@ -1232,7 +1230,6 @@ export class StashAPI {
     limit: number
   ): Scene[] {
     const shortFormScenes = this.filterShortFormScenes(allScenes, maxDuration);
-    console.log('[ShortForm] Filtered', shortFormScenes.length, 'scenes from', allScenes.length, 'total (maxDuration:', maxDuration, 's)');
     
     if (shortFormScenes.length === 0) {
       console.warn('[ShortForm] No scenes match duration criteria');
@@ -1244,7 +1241,6 @@ export class StashAPI {
     
     // Limit to requested amount
     const limitedScenes = shuffled.slice(0, limit);
-    console.log('[ShortForm] After shuffle and limit', limit, ':', limitedScenes.length, 'scenes');
     
     return limitedScenes;
   }
@@ -1264,13 +1260,21 @@ export class StashAPI {
   /**
    * Build scene filter for short-form content
    */
-  private buildShortFormSceneFilter(filters?: FilterOptions): SceneFilterInput | null {
+  private buildShortFormSceneFilter(filters?: FilterOptions, maxDuration?: number): SceneFilterInput | null {
     const sceneFilter: SceneFilterInput = {
       file_count: {
         value: 0,
         modifier: 'GREATER_THAN'
       }
     };
+
+    // Add duration filter if maxDuration is provided
+    if (maxDuration !== undefined && maxDuration > 0) {
+      sceneFilter.duration = {
+        value: maxDuration,
+        modifier: 'LESS_THAN'
+      };
+    }
 
     // Apply performer filter if provided
     if (filters?.performers && filters.performers.length > 0) {

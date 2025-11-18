@@ -15,7 +15,7 @@ import { SettingsPage } from './SettingsPage.js';
 import { debounce, isValidMediaUrl, detectDeviceCapabilities, DeviceCapabilities, isStandaloneNavigator } from './utils.js';
 import { posterPreloader } from './PosterPreloader.js';
 import { Image as GraphQLImage } from './graphql/types.js';
-import { HQ_SVG_OUTLINE, RANDOM_SVG, SETTINGS_SVG, VOLUME_MUTED_SVG, VOLUME_UNMUTED_SVG, RANDOM_ARROWS_SVG, SHUFFLE_CHECK_SVG, CLEAR_SVG } from './icons.js';
+import { HQ_SVG_OUTLINE, RANDOM_SVG, SETTINGS_SVG, VOLUME_MUTED_SVG, VOLUME_UNMUTED_SVG, SHUFFLE_CHECK_SVG, CLEAR_SVG } from './icons.js';
 
 const DEFAULT_SETTINGS: FeedSettings = {
   autoPlay: true, // Enable autoplay for markers
@@ -124,11 +124,17 @@ export class FeedContainer {
   private readonly loadObservers: Map<string, IntersectionObserver> = new Map(); // Track load observers for cleanup
   private deviceCapabilities: DeviceCapabilities; // Device capabilities for adaptive quality
   private shuffleToggle?: HTMLElement; // Reference to shuffle toggle button
+  private contentRatio?: { markerRatio: number; shortFormRatio: number; imageRatio: number }; // Store initial ratio based on total counts
+  private contentTotals?: { markerTotal: number; shortFormTotal: number; imageTotal: number }; // Store initial totals from API
+  private contentConsumed?: { markers: number; shortForm: number; images: number }; // Track consumed items to maintain ratio
 
   constructor(container: HTMLElement, api?: StashAPI, settings?: Partial<FeedSettings>) {
     this.container = container;
     this.api = api || new StashAPI();
-    this.settings = { ...DEFAULT_SETTINGS, ...settings };
+    // Merge settings: defaults first, then passed settings (which may include loaded settings from index.ts)
+    // If no settings passed, load from localStorage
+    const loadedSettings = settings && Object.keys(settings).length > 0 ? settings : this.loadSettingsFromStorage();
+    this.settings = { ...DEFAULT_SETTINGS, ...loadedSettings };
     // Initialize properties that will be set in methods
     this.scrollContainer = null!; // Will be set in initializeContainers
     this.visibilityManager = null!; // Will be set in initializeManagers
@@ -224,6 +230,34 @@ export class FeedContainer {
       this.postsContainer = document.createElement('div');
       this.postsContainer.className = 'feed-posts';
       this.scrollContainer.appendChild(this.postsContainer);
+    }
+  }
+
+  /**
+   * Load settings from localStorage
+   */
+  private loadSettingsFromStorage(): Partial<FeedSettings> {
+    try {
+      const savedSettings = localStorage.getItem('stashgifs-settings');
+      if (savedSettings) {
+        return JSON.parse(savedSettings);
+      }
+    } catch (error) {
+      console.error('Failed to load settings from localStorage', error);
+    }
+    return {};
+  }
+
+  /**
+   * Save settings to localStorage
+   */
+  private saveSettingsToStorage(settings: FeedSettings): void {
+    try {
+      // Ensure we have a complete settings object by merging with defaults
+      const completeSettings: FeedSettings = { ...DEFAULT_SETTINGS, ...settings };
+      localStorage.setItem('stashgifs-settings', JSON.stringify(completeSettings));
+    } catch (error) {
+      console.error('Failed to save settings to localStorage', error);
     }
   }
 
@@ -789,6 +823,7 @@ export class FeedContainer {
         this.closeSuggestions();
         updateSearchBarDisplay();
         this.currentFilters = { savedFilterId: filter.id, limit: this.initialLoadLimit, offset: 0 };
+        this.clearContentRatio(); // Clear ratio so it's recalculated with new filter
         this.loadVideos(this.currentFilters, false).catch((e) => console.error('Apply saved filter failed', e));
       }));
     }
@@ -1040,6 +1075,7 @@ export class FeedContainer {
             this.closeSuggestions();
             updateSearchBarDisplay();
             this.currentFilters = { savedFilterId: filter.id, limit: this.initialLoadLimit, offset: 0 };
+            this.clearContentRatio(); // Clear ratio so it's recalculated with new filter
             this.loadVideos(this.currentFilters, false).catch((e) => console.error('Apply saved filter failed', e));
           })
         );
@@ -1749,7 +1785,7 @@ export class FeedContainer {
     randomLeftIcon.style.pointerEvents = 'none';
     
     const randomLeftIconSpan = document.createElement('span');
-    randomLeftIconSpan.innerHTML = RANDOM_ARROWS_SVG;
+    randomLeftIconSpan.innerHTML = RANDOM_SVG;
     randomLeftIconSpan.querySelector('svg')?.setAttribute('width', '16');
     randomLeftIconSpan.querySelector('svg')?.setAttribute('height', '16');
     const randomLeftText = document.createElement('span');
@@ -1900,8 +1936,11 @@ export class FeedContainer {
       this.settingsContainer,
       this.settings,
       (newSettings) => {
-        // Update settings
-        this.settings = { ...this.settings, ...newSettings };
+        // Update settings by merging with current settings
+        const updatedSettings = { ...this.settings, ...newSettings };
+        this.settings = updatedSettings;
+        // Save updated settings to localStorage
+        this.saveSettingsToStorage(updatedSettings);
         // Reload feed if images or short-form settings changed
         if (
           newSettings.includeImagesInFeed !== undefined ||
@@ -2706,6 +2745,7 @@ export class FeedContainer {
       includeScenesWithoutMarkers: this.shuffleMode === 2,
     };
     this.currentFilters = newFilters;
+    this.clearContentRatio(); // Clear ratio so it's recalculated with new filters
     await this.loadVideos(newFilters, false, loadSignal, true);
   }
 
@@ -2914,6 +2954,7 @@ export class FeedContainer {
       offset: 0,
     };
     this.currentFilters = newFilters;
+    this.clearContentRatio(); // Clear ratio so it's recalculated with new filters
     this.loadVideos(newFilters, false).catch((e) => console.error('Apply filters failed', e));
   }
 
@@ -3312,6 +3353,7 @@ export class FeedContainer {
       savedSelect.value = '';
       updateSearchBarDisplay();
       this.currentFilters = {};
+      this.clearContentRatio(); // Clear ratio so it's recalculated with cleared filters
       this.loadVideos({}, false).catch((e) => console.error('Clear filters failed', e));
     });
 
@@ -3871,6 +3913,15 @@ export class FeedContainer {
   }
 
   /**
+   * Clear stored content ratio (called when filters change or feed is refreshed)
+   */
+  private clearContentRatio(): void {
+    this.contentRatio = undefined;
+    this.contentTotals = undefined;
+    this.contentConsumed = undefined;
+  }
+
+  /**
    * Refresh the entire feed by clearing all posts and reloading from the beginning
    */
   async refreshFeed(): Promise<void> {
@@ -3899,6 +3950,9 @@ export class FeedContainer {
     this.markers = [];
     this.images = [];
     
+    // Clear content ratio so it's recalculated on next load
+    this.clearContentRatio();
+    
     // Reload feed with current filters
     await this.loadVideos(this.currentFilters, false, undefined, true);
   }
@@ -3914,15 +3968,20 @@ export class FeedContainer {
     const shortFormEnabledForCurrentMode = this.shouldLoadShortFormContent();
     const shortFormOnlyActive = this.settings.shortFormOnly === true && shortFormEnabledForCurrentMode;
     
+    // In shuffle mode, don't force load short form content separately
+    // It's already included naturally as scenes, so loading it separately would cause duplication
+    const shouldLoadShortForm = this.shuffleMode === 0 && (shortFormEnabledForCurrentMode || shortFormOnlyActive);
+    
     return {
       shouldLoadMarkers: !(this.settings.imagesOnly ?? false) && !shortFormOnlyActive,
       shouldLoadImages: this.shouldLoadImages() || (this.settings.imagesOnly ?? false),
-      shouldLoadShortForm: shortFormEnabledForCurrentMode || shortFormOnlyActive
+      shouldLoadShortForm
     };
   }
 
   /**
    * Calculate content limits for markers and shortform
+   * Uses stored ratio if available to maintain proportional fetching
    */
   private calculateContentLimits(
     limit: number,
@@ -3933,10 +3992,31 @@ export class FeedContainer {
     let shortFormLimit = limit;
     
     if (shouldLoadMarkers && shouldLoadShortForm) {
-      // Split limit in half when both are enabled
-      markerLimit = Math.ceil(limit / 2);
-      shortFormLimit = Math.floor(limit / 2);
-      console.log(`[Load] Splitting limit ${limit} into ${markerLimit} markers + ${shortFormLimit} shortform`);
+      // If we have a stored ratio, use it to calculate proportional limits
+      if (this.contentRatio) {
+        markerLimit = Math.max(1, Math.round(limit * this.contentRatio.markerRatio));
+        shortFormLimit = Math.max(1, Math.round(limit * this.contentRatio.shortFormRatio));
+        // Ensure we don't exceed the total limit
+        const total = markerLimit + shortFormLimit;
+        if (total > limit) {
+          // Adjust proportionally if we exceed
+          const scale = limit / total;
+          markerLimit = Math.max(1, Math.round(markerLimit * scale));
+          shortFormLimit = Math.max(1, Math.round(shortFormLimit * scale));
+        } else if (total < limit) {
+          // Distribute remaining to maintain ratio
+          const remaining = limit - total;
+          if (this.contentRatio.markerRatio > this.contentRatio.shortFormRatio) {
+            markerLimit += remaining;
+          } else {
+            shortFormLimit += remaining;
+          }
+        }
+      } else {
+        // Fallback: Split limit in half when both are enabled and no ratio available
+        markerLimit = Math.ceil(limit / 2);
+        shortFormLimit = Math.floor(limit / 2);
+      }
     }
     
     return { markerLimit, shortFormLimit };
@@ -4019,6 +4099,29 @@ export class FeedContainer {
     const { content, counts, currentFilters, offset, append, shouldLoadMarkers } = options;
     const { markers, shortFormMarkers, images } = content;
     const { markerCount, shortFormCount, imageCount } = counts;
+    
+    // Calculate and store ratio on initial load (when append is false)
+    if (!append) {
+      const total = markerCount + shortFormCount + imageCount;
+      if (total > 0) {
+        this.contentTotals = {
+          markerTotal: markerCount,
+          shortFormTotal: shortFormCount,
+          imageTotal: imageCount
+        };
+        this.contentRatio = {
+          markerRatio: markerCount / total,
+          shortFormRatio: shortFormCount / total,
+          imageRatio: imageCount / total
+        };
+        this.contentConsumed = {
+          markers: 0,
+          shortForm: 0,
+          images: 0
+        };
+      }
+    }
+    
     // Merge regular markers, short-form markers, and images chronologically
     const mergedContent = this.mergeMarkersShortFormAndImages(markers, shortFormMarkers, images);
 
@@ -4097,7 +4200,54 @@ export class FeedContainer {
       }
 
       const { shouldLoadMarkers, shouldLoadImages, shouldLoadShortForm } = this.determineContentLoadingFlags();
-      const { markerLimit, shortFormLimit } = this.calculateContentLimits(limit, shouldLoadMarkers, shouldLoadShortForm);
+      
+      // On initial load, fetch counts first to calculate ratio, then fetch with proportional limits
+      let markerLimit: number;
+      let shortFormLimit: number;
+      
+      if (!append && !this.contentRatio && shouldLoadMarkers && shouldLoadShortForm) {
+        // Fetch with minimal limits (1 each) just to get totalCounts
+        const countResults = await this.fetchAllContent({
+          currentFilters,
+          limits: {
+            limit: 1,
+            markerLimit: 1,
+            shortFormLimit: 1
+          },
+          offset: 0,
+          signal,
+          loadingFlags: {
+            shouldLoadMarkers,
+            shouldLoadImages,
+            shouldLoadShortForm
+          }
+        });
+        
+        // Calculate ratio from counts
+        const total = countResults.markerCount + countResults.shortFormCount + countResults.imageCount;
+        if (total > 0) {
+          this.contentTotals = {
+            markerTotal: countResults.markerCount,
+            shortFormTotal: countResults.shortFormCount,
+            imageTotal: countResults.imageCount
+          };
+          this.contentRatio = {
+            markerRatio: countResults.markerCount / total,
+            shortFormRatio: countResults.shortFormCount / total,
+            imageRatio: countResults.imageCount / total
+          };
+          this.contentConsumed = {
+            markers: 0,
+            shortForm: 0,
+            images: 0
+          };
+        }
+      }
+      
+      // Calculate limits (will use stored ratio if available)
+      const limits = this.calculateContentLimits(limit, shouldLoadMarkers, shouldLoadShortForm);
+      markerLimit = limits.markerLimit;
+      shortFormLimit = limits.shortFormLimit;
       
       // Debug logging for short-form content
       this.logShortFormSettings(shouldLoadShortForm);
@@ -4378,17 +4528,6 @@ export class FeedContainer {
    */
   private logShortFormSettings(shouldLoadShortForm: boolean): void {
     const shortFormEnabledForCurrentMode = this.shouldLoadShortFormContent();
-    if (this.settings.shortFormInHDMode || this.settings.shortFormInNonHDMode !== false || this.settings.shortFormOnly) {
-      console.log('[ShortForm] Settings:', {
-        shortFormInHDMode: this.settings.shortFormInHDMode,
-        shortFormInNonHDMode: this.settings.shortFormInNonHDMode,
-        useHDMode: this.useHDMode,
-        shortFormOnly: this.settings.shortFormOnly,
-        shortFormEnabledForCurrentMode,
-        shortFormOnlyActive: this.settings.shortFormOnly === true && shortFormEnabledForCurrentMode,
-        shouldLoadShortForm,
-      });
-    }
   }
 
   /**
@@ -4650,12 +4789,60 @@ export class FeedContainer {
   /**
    * Calculate proportions for content types
    */
+  /**
+   * Calculate proportions for content mixing
+   * Uses stored ratio from initial load if available, otherwise falls back to remaining items
+   */
   private calculateProportions(
     remainingMarkers: number,
     remainingShortForm: number,
     remainingImages: number,
     totalRemaining: number
   ): { markerRatio: number; shortFormRatio: number } {
+    // If we have a stored ratio, use it adjusted by consumed items
+    if (this.contentRatio && this.contentTotals && this.contentConsumed) {
+      // Calculate how much of each type we should have consumed based on the ratio
+      const totalConsumed = this.contentConsumed.markers + this.contentConsumed.shortForm + this.contentConsumed.images;
+      const expectedMarkerConsumed = totalConsumed * this.contentRatio.markerRatio;
+      const expectedShortFormConsumed = totalConsumed * this.contentRatio.shortFormRatio;
+      const expectedImageConsumed = totalConsumed * this.contentRatio.imageRatio;
+      
+      // Calculate how far behind/ahead each type is from expected consumption
+      const markerDeviation = expectedMarkerConsumed - this.contentConsumed.markers;
+      const shortFormDeviation = expectedShortFormConsumed - this.contentConsumed.shortForm;
+      const imageDeviation = expectedImageConsumed - this.contentConsumed.images;
+      
+      // Adjust ratios to favor types that are behind
+      // Types that are behind get higher weight, types ahead get lower weight
+      let markerWeight = this.contentRatio.markerRatio;
+      let shortFormWeight = this.contentRatio.shortFormRatio;
+      let imageWeight = this.contentRatio.imageRatio;
+      
+      // If a type is significantly behind, boost its weight
+      const maxDeviation = Math.max(Math.abs(markerDeviation), Math.abs(shortFormDeviation), Math.abs(imageDeviation));
+      if (maxDeviation > 0) {
+        if (markerDeviation > 0 && remainingMarkers > 0) {
+          markerWeight += markerDeviation / this.contentTotals.markerTotal * 0.5;
+        }
+        if (shortFormDeviation > 0 && remainingShortForm > 0) {
+          shortFormWeight += shortFormDeviation / this.contentTotals.shortFormTotal * 0.5;
+        }
+        if (imageDeviation > 0 && remainingImages > 0) {
+          imageWeight += imageDeviation / this.contentTotals.imageTotal * 0.5;
+        }
+      }
+      
+      // Normalize weights
+      const totalWeight = markerWeight + shortFormWeight + imageWeight;
+      if (totalWeight > 0) {
+        return {
+          markerRatio: markerWeight / totalWeight,
+          shortFormRatio: shortFormWeight / totalWeight
+        };
+      }
+    }
+    
+    // Fallback to original behavior: calculate from remaining items
     return {
       markerRatio: remainingMarkers / totalRemaining,
       shortFormRatio: remainingShortForm / totalRemaining
@@ -4884,6 +5071,17 @@ export class FeedContainer {
           imageIndex
         }
       });
+      
+      // Track consumed items for ratio maintenance
+      if (this.contentConsumed) {
+        if (selectedType === 'marker') {
+          this.contentConsumed.markers += actualItemsToAdd;
+        } else if (selectedType === 'shortform') {
+          this.contentConsumed.shortForm += actualItemsToAdd;
+        } else if (selectedType === 'image') {
+          this.contentConsumed.images += actualItemsToAdd;
+        }
+      }
     }
     
     return content;
