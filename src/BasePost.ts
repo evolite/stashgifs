@@ -8,6 +8,7 @@ import { StashAPI } from './StashAPI.js';
 import { VisibilityManager } from './VisibilityManager.js';
 import { toAbsoluteUrl, showToast, isMobileDevice } from './utils.js';
 import { VERIFIED_CHECKMARK_SVG, ADD_TAG_SVG, HEART_SVG_OUTLINE, HEART_SVG_FILLED, OCOUNT_SVG } from './icons.js';
+import { setupTouchHandlers, preventClickAfterTouch } from './utils/touchHandlers.js';
 
 interface HoverHandlers {
   mouseenter: () => void;
@@ -160,71 +161,27 @@ export abstract class BasePost {
     const isMobile = isMobileDevice();
     
     if (isMobile) {
-      let touchStartX: number = 0;
-      let touchStartY: number = 0;
-      let touchStartTime: number = 0;
-      let isScrolling: boolean = false;
-      const touchMoveThreshold: number = 10;
-      const touchDurationThreshold: number = 300;
-      
-      chip.addEventListener('touchstart', (e) => {
-        const touch = e.touches[0];
-        if (touch) {
-          touchStartX = touch.clientX;
-          touchStartY = touch.clientY;
-          touchStartTime = Date.now();
-          isScrolling = false;
-        }
-      }, { passive: true });
-      
-      chip.addEventListener('touchmove', (e) => {
-        if (e.touches.length > 0) {
-          const touch = e.touches[0];
-          if (touch) {
-            const deltaX = Math.abs(touch.clientX - touchStartX);
-            const deltaY = Math.abs(touch.clientY - touchStartY);
-            if (deltaX > touchMoveThreshold || deltaY > touchMoveThreshold) {
-              isScrolling = true;
-            }
-          }
-        }
-      }, { passive: true });
-      
-      chip.addEventListener('touchend', (e) => {
-        const touch = e.changedTouches[0];
-        if (!touch) return;
-        
-        const deltaX = Math.abs(touch.clientX - touchStartX);
-        const deltaY = Math.abs(touch.clientY - touchStartY);
-        const touchDuration = Date.now() - touchStartTime;
-        const totalDistance = Math.hypot(deltaX, deltaY);
-        
-        if (!isScrolling && 
-            totalDistance < touchMoveThreshold && 
-            touchDuration < touchDurationThreshold) {
+      // Use unified touch handler utility
+      setupTouchHandlers(chip, {
+        onTap: (e) => {
           e.preventDefault();
           e.stopPropagation();
           handleClick();
-        }
-        
-        isScrolling = false;
-        touchStartX = 0;
-        touchStartY = 0;
-        touchStartTime = 0;
-      }, { passive: false });
+        },
+        preventDefault: true,
+        stopPropagation: true,
+      });
       
-      chip.addEventListener('click', (e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        handleClick();
-      });
-    } else {
-      chip.addEventListener('click', (e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        handleClick();
-      });
+      // Prevent click event from firing after touch to avoid double-firing
+      preventClickAfterTouch(chip);
     }
+    
+    // Desktop click handler
+    chip.addEventListener('click', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      handleClick();
+    });
     
     // Add performer image (circular, 20px) before the name
     const imageContainer = document.createElement('div');
@@ -332,71 +289,27 @@ export abstract class BasePost {
     const isMobile = isMobileDevice();
     
     if (isMobile) {
-      let touchStartX: number = 0;
-      let touchStartY: number = 0;
-      let touchStartTime: number = 0;
-      let isScrolling: boolean = false;
-      const touchMoveThreshold: number = 10;
-      const touchDurationThreshold: number = 300;
-      
-      hashtag.addEventListener('touchstart', (e) => {
-        const touch = e.touches[0];
-        if (touch) {
-          touchStartX = touch.clientX;
-          touchStartY = touch.clientY;
-          touchStartTime = Date.now();
-          isScrolling = false;
-        }
-      }, { passive: true });
-      
-      hashtag.addEventListener('touchmove', (e) => {
-        if (e.touches.length > 0) {
-          const touch = e.touches[0];
-          if (touch) {
-            const deltaX = Math.abs(touch.clientX - touchStartX);
-            const deltaY = Math.abs(touch.clientY - touchStartY);
-            if (deltaX > touchMoveThreshold || deltaY > touchMoveThreshold) {
-              isScrolling = true;
-            }
-          }
-        }
-      }, { passive: true });
-      
-      hashtag.addEventListener('touchend', (e) => {
-        const touch = e.changedTouches[0];
-        if (!touch) return;
-        
-        const deltaX = Math.abs(touch.clientX - touchStartX);
-        const deltaY = Math.abs(touch.clientY - touchStartY);
-        const touchDuration = Date.now() - touchStartTime;
-        const totalDistance = Math.hypot(deltaX, deltaY);
-        
-        if (!isScrolling && 
-            totalDistance < touchMoveThreshold && 
-            touchDuration < touchDurationThreshold) {
+      // Use unified touch handler utility
+      setupTouchHandlers(hashtag, {
+        onTap: (e) => {
           e.preventDefault();
           e.stopPropagation();
           handleClick();
-        }
-        
-        isScrolling = false;
-        touchStartX = 0;
-        touchStartY = 0;
-        touchStartTime = 0;
-      }, { passive: false });
+        },
+        preventDefault: true,
+        stopPropagation: true,
+      });
       
-      hashtag.addEventListener('click', (e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        handleClick();
-      });
-    } else {
-      hashtag.addEventListener('click', (e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        handleClick();
-      });
+      // Prevent click event from firing after touch to avoid double-firing
+      preventClickAfterTouch(hashtag);
     }
+    
+    // Desktop click handler
+    hashtag.addEventListener('click', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      handleClick();
+    });
     
     hashtag.appendChild(document.createTextNode(`#${tag.name}`));
     return hashtag;

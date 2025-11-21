@@ -1370,16 +1370,16 @@ export class VisibilityManager {
         entry.element.style.opacity = '0.95';
       }
       
-      // For quick taps (< 200ms), don't unmute - let NativeVideoPlayer handle play/pause
-      // For longer touches (> 200ms), treat as hover and unmute
+      // For quick taps, don't unmute - let NativeVideoPlayer handle play/pause
+      // For longer touches (> 250ms), treat as hover and unmute
       // Use a timeout to detect long touch
       const longTouchTimeout = setTimeout(() => {
-        // This is a long touch (> 200ms) - treat as hover and unmute
+        // This is a long touch (> 250ms) - treat as hover and unmute
         if (this.touchedPostId === postId) {
           this.hoveredPostId = postId;
           this.handleHoverEnter(postId);
         }
-      }, 200);
+      }, 250);
       
       // Store timeout for cleanup
       if (entry.hoverHandlers) {
@@ -1410,8 +1410,8 @@ export class VisibilityManager {
         entry.element.style.opacity = '1';
       }
 
-      // If touch ended before 200ms, it was a quick tap - NativeVideoPlayer handles it
-      // If touch lasted > 200ms, we already triggered hover/unmute in handleTouchEnter
+      // If touch ended before 250ms, it was a quick tap - NativeVideoPlayer handles it
+      // If touch lasted > 250ms, we already triggered hover/unmute in handleTouchEnter
       // So we just need to clean up the touched state
       
       // On mobile, touchend doesn't mean the user moved away - just that they lifted their finger

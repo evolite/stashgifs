@@ -335,6 +335,18 @@ export class ImagePost extends BasePost {
     row.appendChild(buttonGroup);
     info.appendChild(row);
     footer.appendChild(info);
+    
+    // Prevent hover events from bubbling to post container to avoid triggering video playback
+    // when hovering over buttons
+    footer.addEventListener('mouseenter', (e) => {
+      e.stopPropagation();
+      e.stopImmediatePropagation();
+    });
+    footer.addEventListener('mouseleave', (e) => {
+      e.stopPropagation();
+      e.stopImmediatePropagation();
+    });
+    
     return footer;
   }
 

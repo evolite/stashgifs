@@ -261,6 +261,12 @@
   will-change: scroll-position;
 }
 
+/* Video element touch handling */
+.video-post video {
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+
 /* Image Post - distinct styling with border */
 .image-post {
   width: 100%;
@@ -465,8 +471,8 @@
   transition: opacity 0.3s cubic-bezier(0.2, 0, 0, 1);
 }
 
-.video-post:hover .video-player__controls,
-.video-post:focus-within .video-player__controls {
+.video-post__player:hover .video-player__controls,
+.video-post__player:focus-within .video-player__controls {
   opacity: 1;
 }
 
@@ -780,6 +786,7 @@
 
 .chip {
   display: inline-flex;
+  touch-action: manipulation;
   align-items: center;
   gap: var(--spacing-sm);
   padding: var(--spacing-sm) var(--spacing-md);
@@ -862,6 +869,8 @@
   cursor: pointer;
   /* Hover effects will be applied to icons only, not container */
   transition: none;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: rgba(255, 255, 255, 0.1);
 }
 
 /* Icon-only hover effects - affects SVG/icon content only */
@@ -930,12 +939,12 @@
   }
 
   /* Hide controls after 3 seconds on mobile when not interacting */
-  .video-post:not(:active) .video-player__controls {
+  .video-post__player:not(:active) .video-player__controls {
     opacity: 0;
   }
 
-  .video-post:active .video-player__controls,
-  .video-post:focus-within .video-player__controls {
+  .video-post__player:active .video-player__controls,
+  .video-post__player:focus-within .video-player__controls {
     opacity: 1;
   }
 
@@ -1005,7 +1014,10 @@
     padding: 0 1px;
     /* Ensure touch target is adequate */
     min-height: 44px;
+    min-width: 44px;
+    width: 44px;
     touch-action: manipulation;
+    -webkit-tap-highlight-color: rgba(255, 255, 255, 0.1);
   }
 
   /* Footer buttons - ensure adequate touch targets */

@@ -6,6 +6,7 @@
 import { VideoPlayerState } from './types.js';
 import { formatDuration, isValidMediaUrl, hasWebkitFullscreen, hasMozFullscreen, hasMsFullscreen, hasWebkitFullscreenHTMLElement, hasMozFullscreenHTMLElement, hasMsFullscreenHTMLElement, hasWebkitFullscreenDocument, hasMozFullscreenDocument, hasMsFullscreenDocument, type ElementWebkitFullscreen, type ElementMozFullscreen, type ElementMsFullscreen, isMobileDevice, getNetworkInfo, isSlowNetwork, isCellularConnection } from './utils.js';
 import { VOLUME_MUTED_SVG, VOLUME_UNMUTED_SVG } from './icons.js';
+import { setupTouchHandlers, createTouchState, type TouchState } from './utils/touchHandlers.js';
 
 /**
  * Enhanced error with additional video loading information
@@ -61,15 +62,9 @@ export class NativeVideoPlayer {
   // Overlay and touch handling
   private overlay?: HTMLElement; // Play/pause overlay
   private overlayTimeoutId?: ReturnType<typeof setTimeout>; // Timeout for overlay fade
-  // Double tap detection
-  private lastTapTime: number = 0;
-  private lastTapX: number = 0;
-  private lastTapY: number = 0;
-  // Touch tracking for play/pause
-  private touchStartX: number = 0;
-  private touchStartY: number = 0;
-  private touchStartTime: number = 0;
-  private isScrolling: boolean = false;
+  // Touch tracking for play/pause (using unified touch handler)
+  private touchState?: TouchState;
+  private touchHandlerCleanup?: () => void;
   // Manual pause tracking - tracks when user manually pauses to prevent autoplay from resuming
   private manuallyPaused: boolean = false;
   // Hover state tracking for overlay visibility
@@ -136,6 +131,7 @@ export class NativeVideoPlayer {
     this.createControls();
     this.attachEventListeners();
     this.setupHoverHandlers();
+    this.setupContainerHoverHandlers();
     this.setupMobileScrollDetection();
   }
 
@@ -266,6 +262,10 @@ export class NativeVideoPlayer {
     this.videoElement.setAttribute('webkit-playsinline', 'true'); // Legacy iOS support
     this.videoElement.setAttribute('x5-playsinline', 'true'); // Android X5 browser
     this.videoElement.setAttribute('x-webkit-airplay', 'allow'); // AirPlay support
+    
+    // Prevent video element from receiving focus via tab navigation or card clicks
+    // This ensures the video only gets focus when clicked directly
+    this.videoElement.setAttribute('tabindex', '-1');
     
     // Apply adaptive buffering based on network conditions
     this.applyAdaptiveBuffering();
@@ -999,6 +999,9 @@ export class NativeVideoPlayer {
     // Enable hardware acceleration for video wrapper
     playerWrapper.style.transform = 'translateZ(0)';
     playerWrapper.style.willChange = 'transform';
+    // Set pointer-events: none by default to prevent blocking clicks on header/footer buttons
+    // Will be enabled when hovering over the player container
+    playerWrapper.style.pointerEvents = 'none';
     this.playerWrapper = playerWrapper; // Store reference for hover handlers
     
     this.videoElement.style.position = 'relative';
@@ -1008,6 +1011,9 @@ export class NativeVideoPlayer {
     this.videoElement.style.zIndex = '1';
     // Set background to transparent
     this.videoElement.style.backgroundColor = 'transparent';
+    // Set pointer-events: none on video element to prevent blocking clicks on header/footer buttons
+    // Will be enabled when hovering over the player container
+    this.videoElement.style.pointerEvents = 'none';
     // Enable hardware acceleration for video element
     this.videoElement.style.transform = 'translateZ(0)';
     this.videoElement.style.willChange = 'auto'; // Browser will optimize based on video playback
@@ -1427,6 +1433,57 @@ export class NativeVideoPlayer {
   }
 
   /**
+   * Setup hover handlers for the container to enable pointer-events on video wrapper
+   * This allows the video to be interactive when hovering over the player container area
+   */
+  private setupContainerHoverHandlers(): void {
+    if (!this.playerWrapper) return;
+    
+    const containerEnterHandler = () => {
+      // Enable pointer-events when hovering over the container
+      if (this.playerWrapper) {
+        this.playerWrapper.style.pointerEvents = 'auto';
+      }
+      // Also enable pointer-events on the video element itself
+      if (this.isVideoElementValid()) {
+        this.videoElement.style.pointerEvents = 'auto';
+      }
+    };
+    
+    const containerLeaveHandler = (e: MouseEvent) => {
+      // Check if we're leaving to go to buttons/footer/header
+      const relatedTarget = e.relatedTarget as HTMLElement | null;
+      if (relatedTarget) {
+        // If moving to footer, header, or button elements, disable pointer-events
+        if (relatedTarget.closest('.video-post__footer') || 
+            relatedTarget.closest('.video-post__header') ||
+            relatedTarget.closest('button')) {
+          if (this.playerWrapper) {
+            this.playerWrapper.style.pointerEvents = 'none';
+          }
+          // Also disable pointer-events on the video element
+          if (this.isVideoElementValid()) {
+            this.videoElement.style.pointerEvents = 'none';
+          }
+          return;
+        }
+      }
+      // Leaving container area - disable pointer-events
+      if (this.playerWrapper) {
+        this.playerWrapper.style.pointerEvents = 'none';
+      }
+      // Also disable pointer-events on the video element
+      if (this.isVideoElementValid()) {
+        this.videoElement.style.pointerEvents = 'none';
+      }
+    };
+    
+    // Attach to container to enable pointer-events when hovering over player area
+    this.container.addEventListener('mouseenter', containerEnterHandler);
+    this.container.addEventListener('mouseleave', containerLeaveHandler);
+  }
+
+  /**
    * Setup mobile scroll detection to prevent showing overlay during scrolling
    */
   private setupMobileScrollDetection(): void {
@@ -1469,112 +1526,47 @@ export class NativeVideoPlayer {
    */
   private setupVideoClickHandlers(): void {
     const isMobile = isMobileDevice();
-    // Optimized thresholds for better mobile responsiveness
-    const touchMoveThreshold = 10; // Pixels - allow small movements
-    const touchDurationThreshold = 300; // ms - distinguish tap from long press
-    const doubleTapTimeThreshold = 300; // ms - time window for double tap
-    const doubleTapDistanceThreshold = 50; // Pixels - max distance between taps
     
     if (isMobile) {
-      // Mobile: use touch events with movement/duration detection
-      this.videoElement.addEventListener('touchstart', (e) => {
-        const touch = e.touches[0];
-        if (touch) {
-          this.touchStartX = touch.clientX;
-          this.touchStartY = touch.clientY;
-          this.touchStartTime = Date.now();
-          this.isScrolling = false;
-        }
-        // Stop propagation to prevent parent handlers from interfering
-        // Only stop if this looks like a tap (not a scroll)
-        if (e.touches.length === 1) {
-          e.stopPropagation();
-        }
-      }, { passive: true });
+      // Mobile: use unified touch handler utility
+      this.touchState = createTouchState();
       
-      this.videoElement.addEventListener('touchmove', (e) => {
-        if (e.touches.length > 0) {
-          const touch = e.touches[0];
-          if (touch) {
-            const deltaX = Math.abs(touch.clientX - this.touchStartX);
-            const deltaY = Math.abs(touch.clientY - this.touchStartY);
-            if (deltaX > touchMoveThreshold || deltaY > touchMoveThreshold) {
-              this.isScrolling = true;
-            }
-          }
-        }
-        // Stop propagation to prevent parent handlers from interfering with video controls
-        e.stopPropagation();
-      }, { passive: true });
-      
-      this.videoElement.addEventListener('touchend', (e) => {
-        const touch = e.changedTouches[0];
-        if (!touch) return;
-        
-        const deltaX = Math.abs(touch.clientX - this.touchStartX);
-        const deltaY = Math.abs(touch.clientY - this.touchStartY);
-        const touchDuration = Date.now() - this.touchStartTime;
-        const totalDistance = Math.hypot(deltaX, deltaY);
-        const currentTime = Date.now();
-        
-        // Check for double tap
-        const timeSinceLastTap = currentTime - this.lastTapTime;
-        const distanceFromLastTap = Math.hypot(
-          touch.clientX - this.lastTapX,
-          touch.clientY - this.lastTapY
-        );
-        
-        if (timeSinceLastTap < doubleTapTimeThreshold && 
-            distanceFromLastTap < doubleTapDistanceThreshold) {
-          // Double tap detected - toggle fullscreen
-          e.preventDefault();
-          e.stopPropagation();
-          e.stopImmediatePropagation(); // Prevent any other handlers from running
-          
-          // Don't show overlay for double tap - just toggle fullscreen
-          this.toggleFullscreen();
-          this.lastTapTime = 0; // Reset to prevent triple tap
-          return;
-        }
-        
-        // Check if this is a valid tap (not scrolling)
-        if (!this.isScrolling && 
-            totalDistance < touchMoveThreshold && 
-            touchDuration < touchDurationThreshold) {
+      this.touchHandlerCleanup = setupTouchHandlers(this.videoElement, {
+        onTap: (e) => {
           // Single tap - toggle play/pause
           e.preventDefault();
-          e.stopPropagation();
-          e.stopImmediatePropagation(); // Prevent any other handlers from running
+          e.stopImmediatePropagation(); // Prevent other handlers but allow parent handlers
           
           // Don't show overlay during tap - only show when actually paused
           // The play/pause event handlers will update overlay state correctly
           this.togglePlay();
-        } else {
-          // Not a tap - restore overlay state based on actual pause state
-          // Still stop propagation to prevent parent handlers from interfering
-          e.stopPropagation();
-          if (this.overlay) {
-            this.updateOverlayState();
-          }
-        }
-        
-        // Update last tap info for double tap detection
-        this.lastTapTime = currentTime;
-        this.lastTapX = touch.clientX;
-        this.lastTapY = touch.clientY;
-        
-        // Reset touch tracking
-        this.isScrolling = false;
-        this.touchStartX = 0;
-        this.touchStartY = 0;
-        this.touchStartTime = 0;
-      }, { passive: false });
+        },
+        onDoubleTap: (e) => {
+          // Double tap - toggle fullscreen
+          e.preventDefault();
+          e.stopImmediatePropagation(); // Prevent other handlers but allow parent handlers
+          
+          // Don't show overlay for double tap - just toggle fullscreen
+          this.toggleFullscreen();
+        },
+        preventDefault: true,
+        stopImmediatePropagation: true,
+      });
     } else {
       // Desktop: use click event
       let clickCount = 0;
       let clickTimer: ReturnType<typeof setTimeout> | undefined;
+      const doubleTapTimeThreshold = 300; // ms - time window for double tap
       
       this.videoElement.addEventListener('click', (e) => {
+        // Only handle clicks directly on the video element, not bubbled from child elements
+        if (e.target !== this.videoElement) {
+          return;
+        }
+        
+        // Stop propagation immediately to prevent event from bubbling to card container
+        e.stopPropagation();
+        
         clickCount++;
         
         if (clickCount === 1) {
@@ -1592,7 +1584,6 @@ export class NativeVideoPlayer {
             clickTimer = undefined;
           }
           e.preventDefault();
-          e.stopPropagation();
           this.toggleFullscreen();
           clickCount = 0;
         }
@@ -2683,6 +2674,13 @@ export class NativeVideoPlayer {
       clearTimeout(this.scrollTimeoutId);
       this.scrollTimeoutId = undefined;
     }
+
+    // Clean up touch handlers
+    if (this.touchHandlerCleanup) {
+      this.touchHandlerCleanup();
+      this.touchHandlerCleanup = undefined;
+    }
+    this.touchState = undefined;
 
     // Remove poster fallback if exists
     if (this.posterImage) {

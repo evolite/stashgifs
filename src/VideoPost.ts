@@ -12,6 +12,7 @@ import { calculateAspectRatio, getAspectRatioClass, isValidMediaUrl, showToast, 
 import { posterPreloader } from './PosterPreloader.js';
 import { HQ_SVG_OUTLINE, HQ_SVG_FILLED, PLAY_SVG, MARKER_SVG, STAR_SVG, STAR_SVG_OUTLINE, MARKER_BADGE_SVG, SCENE_BADGE_SVG, VOLUME_MUTED_SVG, VOLUME_UNMUTED_SVG } from './icons.js';
 import { BasePost } from './BasePost.js';
+import { setupTouchHandlers, preventClickAfterTouch } from './utils/touchHandlers.js';
 
 // Constants for magic numbers and strings
 const FAVORITE_TAG_NAME = 'StashGifs Favorite';
@@ -291,62 +292,20 @@ export class VideoPost extends BasePost {
     // Click handler (desktop)
     button.addEventListener('click', handleMuteToggle);
     
-    // Touch handler (mobile) - use touchend for better responsiveness
+    // Touch handler (mobile) - use unified touch handler utility
     const isMobile = isMobileDevice();
     if (isMobile) {
-      let touchStartTime = 0;
-      let touchStartX = 0;
-      let touchStartY = 0;
-      let isScrolling = false;
-      const touchMoveThreshold = 10; // Pixels
-      
-      button.addEventListener('touchstart', (e) => {
-        const touch = e.touches[0];
-        if (touch) {
-          touchStartTime = Date.now();
-          touchStartX = touch.clientX;
-          touchStartY = touch.clientY;
-          isScrolling = false;
-        }
-        // Stop propagation to prevent parent handlers from interfering
-        e.stopPropagation();
-      }, { passive: true });
-      
-      button.addEventListener('touchmove', (e) => {
-        if (e.touches.length > 0) {
-          const touch = e.touches[0];
-          if (touch) {
-            const deltaX = Math.abs(touch.clientX - touchStartX);
-            const deltaY = Math.abs(touch.clientY - touchStartY);
-            if (deltaX > touchMoveThreshold || deltaY > touchMoveThreshold) {
-              isScrolling = true;
-            }
-          }
-        }
-        // Stop propagation
-        e.stopPropagation();
-      }, { passive: true });
-      
-      button.addEventListener('touchend', (e) => {
-        const touch = e.changedTouches[0];
-        if (!touch) return;
-        
-        const touchDuration = Date.now() - touchStartTime;
-        const deltaX = Math.abs(touch.clientX - touchStartX);
-        const deltaY = Math.abs(touch.clientY - touchStartY);
-        const totalDistance = Math.hypot(deltaX, deltaY);
-        
-        // Only trigger if it was a tap (not a scroll) and quick (< 300ms)
-        if (!isScrolling && totalDistance < touchMoveThreshold && touchDuration < 300) {
+      setupTouchHandlers(button, {
+        onTap: (e) => {
           handleMuteToggle(e);
-        }
-        
-        // Reset tracking
-        isScrolling = false;
-        touchStartTime = 0;
-        touchStartX = 0;
-        touchStartY = 0;
-      }, { passive: false });
+        },
+        preventDefault: true,
+        stopPropagation: true,
+        stopImmediatePropagation: true,
+      });
+      
+      // Prevent click event from firing after touch to avoid double-firing
+      preventClickAfterTouch(button);
     }
     
     this.muteOverlayButton = button;
@@ -720,6 +679,18 @@ export class VideoPost extends BasePost {
     row.appendChild(buttonGroup);
     info.appendChild(row);
     footer.appendChild(info);
+    
+    // Prevent hover events from bubbling to post container to avoid triggering video playback
+    // when hovering over buttons
+    footer.addEventListener('mouseenter', (e) => {
+      e.stopPropagation();
+      e.stopImmediatePropagation();
+    });
+    footer.addEventListener('mouseleave', (e) => {
+      e.stopPropagation();
+      e.stopImmediatePropagation();
+    });
+    
     return footer;
   }
 
@@ -1145,8 +1116,10 @@ export class VideoPost extends BasePost {
       starBtn.style.display = 'flex';
       starBtn.style.alignItems = 'center';
       starBtn.style.justifyContent = 'center';
-      starBtn.style.width = '36px';
-      starBtn.style.height = '36px';
+      starBtn.style.width = '44px';
+      starBtn.style.height = '44px';
+      starBtn.style.minWidth = '44px';
+      starBtn.style.minHeight = '44px';
       starBtn.style.margin = '0 4px';
       starBtn.style.padding = '4px';
       starBtn.style.border = 'none';
