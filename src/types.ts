@@ -108,6 +108,7 @@ export interface FeedSettings {
   shortFormInNonHDMode?: boolean; // Include short-form in non-HD mode
   shortFormMaxDuration?: number; // Maximum duration in seconds for short-form content, default: 120
   shortFormOnly?: boolean; // When true, only load short-form content and skip regular markers
+  snapToCards?: boolean; // When true, scroll/swipe snaps to center next/previous card
 }
 
 export interface VideoPostData {

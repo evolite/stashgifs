@@ -420,6 +420,41 @@ export class SettingsPage {
 
     modal.appendChild(shortFormSection);
 
+    // Scrolling Settings Section
+    const scrollingSection = document.createElement('div');
+    scrollingSection.style.marginBottom = '32px';
+
+    const scrollingSectionTitle = document.createElement('h3');
+    scrollingSectionTitle.textContent = 'Scrolling';
+    scrollingSectionTitle.style.margin = '0 0 16px 0';
+    scrollingSectionTitle.style.color = '#FFFFFF';
+    scrollingSectionTitle.style.fontSize = '18px';
+    scrollingSectionTitle.style.fontWeight = '600';
+    scrollingSection.appendChild(scrollingSectionTitle);
+
+    // Snap to cards toggle
+    const snapToCardsContainer = document.createElement('div');
+    snapToCardsContainer.style.display = 'flex';
+    snapToCardsContainer.style.justifyContent = 'space-between';
+    snapToCardsContainer.style.alignItems = 'center';
+    snapToCardsContainer.style.marginBottom = '16px';
+
+    const snapToCardsLabel = document.createElement('span');
+    snapToCardsLabel.textContent = 'Snap to cards';
+    snapToCardsLabel.style.color = '#FFFFFF';
+    snapToCardsLabel.style.fontSize = '14px';
+    snapToCardsContainer.appendChild(snapToCardsLabel);
+
+    const { container: snapToCardsToggleContainer, input: snapToCardsToggle } = this.createToggleSwitch(
+      this.settings.snapToCards === true,
+      () => this.saveSettings()
+    );
+    snapToCardsContainer.appendChild(snapToCardsToggleContainer);
+
+    scrollingSection.appendChild(snapToCardsContainer);
+
+    modal.appendChild(scrollingSection);
+
     // Store references to inputs for saveSettings method
     (this as any).fileTypesInput = fileTypesInput;
     (this as any).maxDurationInput = maxDurationInput;
@@ -428,6 +463,7 @@ export class SettingsPage {
     (this as any).shortFormHDToggle = shortFormHDToggle;
     (this as any).shortFormNonHDToggle = shortFormNonHDToggle;
     (this as any).shortFormOnlyToggle = shortFormOnlyToggle;
+    (this as any).snapToCardsToggle = snapToCardsToggle;
 
     this.container.appendChild(modal);
 
@@ -464,9 +500,10 @@ export class SettingsPage {
     const shortFormHDToggle = (this as any).shortFormHDToggle as HTMLInputElement | undefined;
     const shortFormNonHDToggle = (this as any).shortFormNonHDToggle as HTMLInputElement | undefined;
     const shortFormOnlyToggle = (this as any).shortFormOnlyToggle as HTMLInputElement | undefined;
+    const snapToCardsToggle = (this as any).snapToCardsToggle as HTMLInputElement | undefined;
 
     if (!fileTypesInput || !maxDurationInput || !includeImagesToggle || !imagesOnlyToggle || 
-        !shortFormHDToggle || !shortFormNonHDToggle || !shortFormOnlyToggle) {
+        !shortFormHDToggle || !shortFormNonHDToggle || !shortFormOnlyToggle || !snapToCardsToggle) {
       return; // Settings not fully initialized yet
     }
 
@@ -487,6 +524,7 @@ export class SettingsPage {
       shortFormInNonHDMode: shortFormNonHDToggle.checked,
       shortFormMaxDuration: validMaxDuration,
       shortFormOnly: shortFormOnlyToggle.checked,
+      snapToCards: snapToCardsToggle.checked,
     };
 
     // Notify parent to update settings and reload feed if needed

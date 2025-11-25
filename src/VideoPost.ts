@@ -2435,7 +2435,7 @@ export class VideoPost extends BasePost {
 
       this.retryTimeoutId = globalThis.setTimeout(() => {
         this.retryLoad();
-      }, delay);
+      }, delay) as unknown as number;
     }
   }
 

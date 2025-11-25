@@ -38,6 +38,7 @@ const DEFAULT_SETTINGS: FeedSettings = {
   shortFormInNonHDMode: true, // Include short-form in non-HD mode
   shortFormMaxDuration: 120, // Maximum duration in seconds for short-form content
   shortFormOnly: false, // When true, only load short-form content and skip regular markers
+  snapToCards: false, // When true, scroll/swipe snaps to center next/previous card
 };
 
 /**
@@ -128,6 +129,15 @@ export class FeedContainer {
   private contentRatio?: { markerRatio: number; shortFormRatio: number; imageRatio: number }; // Store initial ratio based on total counts
   private contentTotals?: { markerTotal: number; shortFormTotal: number; imageTotal: number }; // Store initial totals from API
   private contentConsumed?: { markers: number; shortForm: number; images: number }; // Track consumed items to maintain ratio
+  // Card snapping state
+  private cardSnapWheelHandler?: (e: WheelEvent) => void;
+  private cardSnapTouchStartHandler?: (e: TouchEvent) => void;
+  private cardSnapTouchMoveHandler?: (e: TouchEvent) => void;
+  private cardSnapTouchEndHandler?: (e: TouchEvent) => void;
+  private touchStartY: number = 0;
+  private touchStartTime: number = 0;
+  private isSnapping: boolean = false; // Prevent multiple snaps in progress
+  private snapThrottleTimeout?: ReturnType<typeof setTimeout>;
 
   constructor(container: HTMLElement, api?: StashAPI, settings?: Partial<FeedSettings>) {
     this.container = container;
@@ -161,6 +171,9 @@ export class FeedContainer {
 
     // Setup scroll handler
     this.setupScrollHandler();
+    
+    // Setup card snapping if enabled
+    this.setupCardSnapping();
     
     // Setup infinite scroll
     this.setupInfiniteScroll();
@@ -2063,6 +2076,10 @@ export class FeedContainer {
         this.settings = updatedSettings;
         // Save updated settings to localStorage
         this.saveSettingsToStorage(updatedSettings);
+        // Update card snapping if setting changed
+        if (newSettings.snapToCards !== undefined) {
+          this.setupCardSnapping();
+        }
         // Reload feed if images or short-form settings changed
         if (
           newSettings.includeImagesInFeed !== undefined ||
@@ -2722,7 +2739,7 @@ export class FeedContainer {
       }
       
       // Defer the check to next tick to ensure overlay state is updated
-      clickHandlerTimeout = globalThis.setTimeout(() => {
+      clickHandlerTimeout = (globalThis.setTimeout(() => {
         // Check if suggestions are visible
         const isSuggestionsVisible = suggestions.style.display !== 'none';
         
@@ -2738,7 +2755,7 @@ export class FeedContainer {
         if (isSuggestionsVisible && !clickedInsideSearch && !clickedInsideSuggestions && !clickedOnHeaderButton) {
           this.closeSuggestions();
         }
-      }, 0);
+      }, 0) as unknown as number);
     };
     
     document.addEventListener('click', handleClickOutside);
@@ -5686,7 +5703,7 @@ export class FeedContainer {
     }
 
     this.eagerPreloadScheduled = true;
-    this.eagerPreloadHandle = globalThis.setTimeout(execute, 32);
+    this.eagerPreloadHandle = globalThis.setTimeout(execute, 32) as unknown as number;
   }
 
   private runEagerPreload(): void {
@@ -6048,7 +6065,7 @@ export class FeedContainer {
       const delay = this.getPreloadDelay();
       this.backgroundPreloadHandle = globalThis.setTimeout(() => {
         this.preloadNextVideo();
-      }, delay);
+      }, delay) as unknown as number;
       return;
     }
 
@@ -6103,7 +6120,7 @@ export class FeedContainer {
     const delay = this.getPreloadDelay();
     this.backgroundPreloadHandle = globalThis.setTimeout(() => {
       this.preloadNextVideo();
-    }, delay);
+    }, delay) as unknown as number;
   }
 
   /**
@@ -6132,7 +6149,7 @@ export class FeedContainer {
     const delay = this.getPreloadDelay();
     this.backgroundPreloadHandle = globalThis.setTimeout(() => {
       this.preloadNextVideo();
-    }, delay);
+    }, delay) as unknown as number;
   }
 
   /**
@@ -6680,6 +6697,246 @@ export class FeedContainer {
         this.startBackgroundPreloading();
       }
     });
+  }
+
+  /**
+   * Setup card snapping - intercepts wheel and touch events to snap to cards
+   */
+  private setupCardSnapping(): void {
+    // Clean up existing handlers
+    this.cleanupCardSnapping();
+
+    // Only setup if snapToCards is enabled
+    if (!this.settings.snapToCards) {
+      return;
+    }
+
+    // Setup wheel event handler
+    this.cardSnapWheelHandler = (e: WheelEvent) => {
+      if (this.isSnapping) {
+        e.preventDefault();
+        return;
+      }
+
+      // Throttle to prevent rapid snapping
+      if (this.snapThrottleTimeout) {
+        e.preventDefault();
+        return;
+      }
+
+      const deltaY = e.deltaY;
+      if (Math.abs(deltaY) < 10) {
+        return; // Ignore small movements
+      }
+
+      e.preventDefault();
+      
+      const direction = deltaY > 0 ? 'next' : 'previous';
+      this.snapToNextCard(direction);
+      
+      // Throttle for 300ms
+      this.snapThrottleTimeout = setTimeout(() => {
+        this.snapThrottleTimeout = undefined;
+      }, 300) as ReturnType<typeof setTimeout>;
+    };
+
+    // Setup touch handlers for swipe detection
+    this.cardSnapTouchStartHandler = (e: TouchEvent) => {
+      if (e.touches.length === 1) {
+        this.touchStartY = e.touches[0].clientY;
+        this.touchStartTime = Date.now();
+      }
+    };
+
+    this.cardSnapTouchMoveHandler = (e: TouchEvent) => {
+      if (this.isSnapping && e.touches.length === 1) {
+        e.preventDefault(); // Prevent default scroll during snap
+      }
+    };
+
+    this.cardSnapTouchEndHandler = (e: TouchEvent) => {
+      if (this.isSnapping || !e.changedTouches.length) {
+        return;
+      }
+
+      const touchEndY = e.changedTouches[0].clientY;
+      const deltaY = this.touchStartY - touchEndY;
+      const deltaTime = Date.now() - this.touchStartTime;
+      const minSwipeDistance = 50; // Minimum pixels for swipe
+      const maxSwipeTime = 500; // Maximum milliseconds for swipe
+
+      // Check if this was a valid swipe
+      if (Math.abs(deltaY) > minSwipeDistance && deltaTime < maxSwipeTime) {
+        e.preventDefault();
+        
+        // Throttle to prevent rapid snapping
+        if (this.snapThrottleTimeout) {
+          return;
+        }
+
+        const direction = deltaY > 0 ? 'next' : 'previous';
+        this.snapToNextCard(direction);
+        
+        // Throttle for 300ms
+        this.snapThrottleTimeout = setTimeout(() => {
+          this.snapThrottleTimeout = undefined;
+        }, 300) as ReturnType<typeof setTimeout>;
+      }
+    };
+
+    // Add event listeners
+    globalThis.addEventListener('wheel', this.cardSnapWheelHandler, { passive: false });
+    globalThis.addEventListener('touchstart', this.cardSnapTouchStartHandler, { passive: true });
+    globalThis.addEventListener('touchmove', this.cardSnapTouchMoveHandler, { passive: false });
+    globalThis.addEventListener('touchend', this.cardSnapTouchEndHandler, { passive: false });
+  }
+
+  /**
+   * Clean up card snapping event listeners
+   */
+  private cleanupCardSnapping(): void {
+    if (this.cardSnapWheelHandler) {
+      globalThis.removeEventListener('wheel', this.cardSnapWheelHandler);
+      this.cardSnapWheelHandler = undefined;
+    }
+    if (this.cardSnapTouchStartHandler) {
+      globalThis.removeEventListener('touchstart', this.cardSnapTouchStartHandler);
+      this.cardSnapTouchStartHandler = undefined;
+    }
+    if (this.cardSnapTouchMoveHandler) {
+      globalThis.removeEventListener('touchmove', this.cardSnapTouchMoveHandler);
+      this.cardSnapTouchMoveHandler = undefined;
+    }
+    if (this.cardSnapTouchEndHandler) {
+      globalThis.removeEventListener('touchend', this.cardSnapTouchEndHandler);
+      this.cardSnapTouchEndHandler = undefined;
+    }
+    if (this.snapThrottleTimeout) {
+      clearTimeout(this.snapThrottleTimeout);
+      this.snapThrottleTimeout = undefined;
+    }
+  }
+
+  /**
+   * Get all card containers ordered by postOrder
+   */
+  private getAllCardContainers(): HTMLElement[] {
+    const cards: HTMLElement[] = [];
+    for (const postId of this.postOrder) {
+      const post = this.posts.get(postId);
+      if (post) {
+        const container = post.getContainer();
+        if (container && container.parentNode) {
+          cards.push(container);
+        }
+      }
+    }
+    return cards;
+  }
+
+  /**
+   * Find the card closest to the viewport center
+   */
+  private findCardClosestToCenter(): HTMLElement | null {
+    const cards = this.getAllCardContainers();
+    if (cards.length === 0) {
+      return null;
+    }
+
+    const viewportCenter = globalThis.scrollY + globalThis.innerHeight / 2;
+    let closestCard: HTMLElement | null = null;
+    let minDistance = Infinity;
+
+    for (const card of cards) {
+      const rect = card.getBoundingClientRect();
+      const cardCenter = globalThis.scrollY + rect.top + rect.height / 2;
+      const distance = Math.abs(cardCenter - viewportCenter);
+
+      if (distance < minDistance) {
+        minDistance = distance;
+        closestCard = card;
+      }
+    }
+
+    return closestCard;
+  }
+
+  /**
+   * Calculate scroll position to center a card in the viewport
+   */
+  private calculateCardCenterPosition(card: HTMLElement): number {
+    const rect = card.getBoundingClientRect();
+    const cardTop = globalThis.scrollY + rect.top;
+    const cardHeight = rect.height;
+    const viewportHeight = globalThis.innerHeight;
+    
+    // Calculate position to center the card
+    return cardTop + cardHeight / 2 - viewportHeight / 2;
+  }
+
+  /**
+   * Snap to the next or previous card
+   */
+  private snapToNextCard(direction: 'next' | 'previous'): void {
+    if (this.isSnapping) {
+      return;
+    }
+
+    const cards = this.getAllCardContainers();
+    if (cards.length === 0) {
+      return;
+    }
+
+    const currentCard = this.findCardClosestToCenter();
+    if (!currentCard) {
+      // If no card is close to center, snap to first or last
+      const targetCard = direction === 'next' ? cards[0] : cards[cards.length - 1];
+      this.snapToCard(targetCard);
+      return;
+    }
+
+    const currentIndex = cards.indexOf(currentCard);
+    if (currentIndex === -1) {
+      return;
+    }
+
+    let targetIndex: number;
+    if (direction === 'next') {
+      targetIndex = currentIndex + 1;
+      if (targetIndex >= cards.length) {
+        return; // Already at last card
+      }
+    } else {
+      targetIndex = currentIndex - 1;
+      if (targetIndex < 0) {
+        return; // Already at first card
+      }
+    }
+
+    const targetCard = cards[targetIndex];
+    this.snapToCard(targetCard);
+  }
+
+  /**
+   * Smoothly scroll to center a card
+   */
+  private snapToCard(card: HTMLElement): void {
+    if (this.isSnapping) {
+      return;
+    }
+
+    this.isSnapping = true;
+    const targetPosition = this.calculateCardCenterPosition(card);
+
+    globalThis.scrollTo({
+      top: targetPosition,
+      behavior: 'smooth'
+    });
+
+    // Reset snapping flag after animation completes (typically 500ms for smooth scroll)
+    setTimeout(() => {
+      this.isSnapping = false;
+    }, 600);
   }
 
   /**

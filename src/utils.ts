@@ -31,10 +31,10 @@ export function debounce<T extends (...args: never[]) => unknown>(
     if (timeoutId !== null) {
       clearTimeout(timeoutId);
     }
-    timeoutId = globalThis.setTimeout(() => {
+    timeoutId = (globalThis.setTimeout(() => {
       func(...args);
       timeoutId = null;
-    }, delay);
+    }, delay) as unknown as number);
   }) as T;
 }
 
