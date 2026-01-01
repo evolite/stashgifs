@@ -12,6 +12,7 @@ import { ImagePlayer } from './ImagePlayer.js';
 import { VisibilityManager } from './VisibilityManager.js';
 import { FavoritesManager } from './FavoritesManager.js';
 import { SettingsPage } from './SettingsPage.js';
+import { AudioManager, AudioPriority } from './AudioManager.js';
 import { debounce, isValidMediaUrl, detectDeviceCapabilities, DeviceCapabilities, isStandaloneNavigator, isMobileDevice, getNetworkInfo, isSlowNetwork, isCellularConnection } from './utils.js';
 import { posterPreloader } from './PosterPreloader.js';
 import { Image as GraphQLImage } from './graphql/types.js';
@@ -6918,6 +6919,182 @@ export class FeedContainer {
   }
 
   /**
+   * Extract post ID from a card element
+   */
+  private getPostIdFromCard(card: HTMLElement): string | null {
+    // Try direct dataset first
+    if (card.dataset.postId) {
+      return card.dataset.postId;
+    }
+    
+    // Traverse up the DOM to find the post container
+    let current: HTMLElement | null = card;
+    while (current) {
+      if (current.dataset.postId) {
+        return current.dataset.postId;
+      }
+      current = current.parentElement;
+    }
+    
+    return null;
+  }
+
+  /**
+   * Trigger autoplay for a snapped card
+   */
+  private async triggerAutoplayForSnappedCard(postId: string): Promise<void> {
+    const post = this.posts.get(postId);
+    if (!post) {
+      return; // Post doesn't exist
+    }
+
+    // Skip image posts
+    if (!post.hasVideoSource()) {
+      return;
+    }
+
+    // Check if autoplay is enabled
+    if (!this.settings.autoPlay) {
+      return;
+    }
+
+    // Preload the player if not already loaded
+    const player = post.preload();
+    if (!isNativeVideoPlayer(player)) {
+      return; // Not a video player or failed to load
+    }
+
+    // Register with VisibilityManager if needed
+    this.visibilityManager.registerPlayer(postId, player);
+    this.visibilityManager.observePost(post.getContainer(), postId);
+
+    // Wait a bit for player to initialize and IntersectionObserver to update
+    await new Promise((r) => setTimeout(r, 150));
+
+    // Check if video is manually paused - don't autoplay if user paused it
+    if (player.isManuallyPaused && player.isManuallyPaused()) {
+      return;
+    }
+
+    // Trigger playback via VisibilityManager
+    // Access the private entries map and requestPlaybackIfReady method
+    const visibilityManager = this.visibilityManager as any;
+    const entry = visibilityManager.entries?.get(postId);
+    if (!entry || !visibilityManager.requestPlaybackIfReady) {
+      return;
+    }
+
+    // Force update visibility state - check if element is actually in viewport
+    // IntersectionObserver might not have fired yet after snapping
+    const container = post.getContainer();
+    const rect = container.getBoundingClientRect();
+    const viewportHeight = globalThis.innerHeight;
+    const viewportWidth = globalThis.innerWidth;
+    const isActuallyVisible = rect.bottom > 0 && 
+                              rect.top < viewportHeight && 
+                              rect.right > 0 && 
+                              rect.left < viewportWidth;
+
+    // If element is actually visible but entry.isVisible is false, force update it
+    if (isActuallyVisible && !entry.isVisible) {
+      entry.isVisible = true;
+      // Also trigger visibility change handlers if they exist
+      if (visibilityManager.audioManager) {
+        visibilityManager.audioManager.onVisibilityChange(postId, true);
+      }
+    }
+
+    // Mark as manually started BEFORE triggering playback
+    // This ensures it gets MANUAL priority and audio focus when playback succeeds
+    if (visibilityManager.audioManager) {
+      visibilityManager.audioManager.markManuallyStarted(postId);
+    }
+
+    // Set as hovered temporarily to give it highest priority (HOVER priority)
+    // This ensures snapped card gets audio even if other videos are playing
+    const previousHoveredId = visibilityManager.hoveredPostId;
+    visibilityManager.hoveredPostId = postId;
+    
+    // Also set in AudioManager for consistency
+    if (visibilityManager.audioManager) {
+      (visibilityManager.audioManager as any).hoveredPostId = postId;
+    }
+
+    // Now trigger playback
+    if (entry.isVisible) {
+      visibilityManager.requestPlaybackIfReady(postId, entry, 'snap');
+    }
+
+    // Wait for playback to start, then ensure audio is granted
+    // Check periodically if video started playing
+    const checkPlayback = async (attempts: number = 0): Promise<void> => {
+      if (attempts > 10) return; // Give up after 1 second (10 * 100ms)
+      
+      if (player.isPlaying()) {
+        // Video is playing - ensure audio focus is granted
+        if (visibilityManager.audioManager) {
+          // Request with HOVER priority to ensure it gets audio
+          visibilityManager.audioManager.requestAudioFocus(postId, AudioPriority.HOVER);
+          visibilityManager.audioManager.applyMuteStateToAll();
+        }
+      } else {
+        // Wait a bit and check again
+        await new Promise((r) => setTimeout(r, 100));
+        await checkPlayback(attempts + 1);
+      }
+    };
+    
+    // Start checking for playback
+    checkPlayback().catch(() => {
+      // Ignore errors
+    });
+  }
+
+  /**
+   * Request audio focus for a snapped card
+   * This is called after playback starts to ensure audio is granted
+   */
+  private requestAudioFocusForSnappedCard(postId: string): void {
+    // Only request audio if global mute is off
+    if (this.globalMuteState) {
+      return; // Global mute is on, don't request audio
+    }
+
+    const post = this.posts.get(postId);
+    if (!post) {
+      return; // Post doesn't exist
+    }
+
+    // Skip image posts
+    if (!post.hasVideoSource()) {
+      return;
+    }
+
+    const player = post.getPlayer();
+    if (!isNativeVideoPlayer(player)) {
+      return;
+    }
+
+    // Only request audio if video is actually playing
+    if (!player.isPlaying()) {
+      return;
+    }
+
+    // Get AudioManager from VisibilityManager
+    const audioManager = (this.visibilityManager as any).audioManager as AudioManager | undefined;
+    if (!audioManager) {
+      return; // AudioManager not available
+    }
+
+    // Request audio focus with HOVER priority (highest) to ensure snapped card gets audio
+    // This ensures it takes priority over other videos
+    audioManager.requestAudioFocus(postId, AudioPriority.HOVER);
+    
+    // Apply mute state to ensure the snapped card gets unmuted
+    audioManager.applyMuteStateToAll();
+  }
+
+  /**
    * Smoothly scroll to center a card
    */
   private snapToCard(card: HTMLElement): void {
@@ -6928,14 +7105,34 @@ export class FeedContainer {
     this.isSnapping = true;
     const targetPosition = this.calculateCardCenterPosition(card);
 
+    // Extract postId before scrolling
+    const postId = this.getPostIdFromCard(card);
+
     globalThis.scrollTo({
       top: targetPosition,
       behavior: 'smooth'
     });
 
-    // Reset snapping flag after animation completes (typically 500ms for smooth scroll)
+    // After scroll animation completes, trigger autoplay and audio
     setTimeout(() => {
       this.isSnapping = false;
+      
+      // Only proceed if we have a valid postId
+      if (postId) {
+        // Wait a bit for IntersectionObserver to update after scroll
+        setTimeout(() => {
+          // Trigger autoplay for the snapped card (this will also handle audio focus)
+          this.triggerAutoplayForSnappedCard(postId).catch((e) => {
+            console.warn('Failed to trigger autoplay for snapped card', e);
+          });
+          
+          // Also request audio focus after a delay to ensure video has started playing
+          // This is a backup in case the video takes longer to start
+          setTimeout(() => {
+            this.requestAudioFocusForSnappedCard(postId);
+          }, 500);
+        }, 200);
+      }
     }, 600);
   }
 

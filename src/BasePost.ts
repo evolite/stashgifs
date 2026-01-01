@@ -9,6 +9,7 @@ import { VisibilityManager } from './VisibilityManager.js';
 import { toAbsoluteUrl, showToast, isMobileDevice } from './utils.js';
 import { VERIFIED_CHECKMARK_SVG, ADD_TAG_SVG, HEART_SVG_OUTLINE, HEART_SVG_FILLED, OCOUNT_SVG } from './icons.js';
 import { setupTouchHandlers, preventClickAfterTouch } from './utils/touchHandlers.js';
+import { PerformerExtended } from './graphql/types.js';
 
 interface HoverHandlers {
   mouseenter: () => void;
@@ -33,6 +34,14 @@ export abstract class BasePost {
   protected isTogglingFavorite: boolean = false;
   protected oCountButton?: HTMLElement;
   protected oCount: number = 0;
+  // Performer overlay properties
+  private performerOverlay?: HTMLElement;
+  private performerOverlayTimeout?: number;
+  private performerOverlayHideTimeout?: number;
+  private currentHoveredPerformerId?: string;
+  private performerOverlayAbortController?: AbortController;
+  private hadOverlayBefore: boolean = false; // Track if overlay was showing before (for delay logic)
+  private performerOverlayScrollHandler?: () => void;
 
   constructor(
     container: HTMLElement,
@@ -48,6 +57,22 @@ export abstract class BasePost {
     this.visibilityManager = visibilityManager;
     this.onPerformerChipClick = onPerformerChipClick;
     this.onTagChipClick = onTagChipClick;
+    
+    // Setup scroll listener to hide overlay when scrolling
+    this.setupPerformerOverlayScrollListener();
+  }
+
+  /**
+   * Setup scroll listener to hide performer overlay when user scrolls
+   */
+  private setupPerformerOverlayScrollListener(): void {
+    this.performerOverlayScrollHandler = () => {
+      if (this.performerOverlay) {
+        this.hidePerformerOverlay(true);
+      }
+    };
+    
+    globalThis.addEventListener('scroll', this.performerOverlayScrollHandler, { passive: true });
   }
 
   /**
@@ -150,6 +175,9 @@ export abstract class BasePost {
     chip.style.height = '44px';
     
     const handleClick = () => {
+      // Hide overlay when clicking to filter
+      this.hidePerformerOverlay(true);
+      
       if (this.onPerformerChipClick) {
         const performerId = Number.parseInt(performer.id, 10);
         if (!Number.isNaN(performerId)) {
@@ -209,6 +237,7 @@ export abstract class BasePost {
         img.style.width = '100%';
         img.style.height = '100%';
         img.style.objectFit = 'cover';
+        img.style.objectPosition = 'top center';
         imageContainer.appendChild(img);
       } else {
         imageContainer.textContent = performer.name.charAt(0).toUpperCase();
@@ -244,8 +273,521 @@ export abstract class BasePost {
     chip.addEventListener('mouseleave', () => {
       chip.style.color = 'rgba(255, 255, 255, 0.85)';
     });
+
+    // Add hover overlay handlers
+    if (this.api && !isMobile) {
+      chip.addEventListener('mouseenter', () => {
+        // Cancel any pending hide timeout (when moving from another chip)
+        if (this.performerOverlayHideTimeout) {
+          clearTimeout(this.performerOverlayHideTimeout);
+          this.performerOverlayHideTimeout = undefined;
+        }
+        this.showPerformerOverlay(performer.id, chip);
+      });
+      chip.addEventListener('mouseleave', (e) => {
+        // Check if we're moving to another performer chip
+        const relatedTarget = e.relatedTarget as HTMLElement | null;
+        const isMovingToAnotherChip = relatedTarget?.closest('.performer-chip') !== null;
+        
+        if (!isMovingToAnotherChip) {
+          // Small delay to allow mouse to move to overlay
+          this.performerOverlayHideTimeout = setTimeout(() => {
+            if (!this.performerOverlay?.matches(':hover')) {
+              this.hidePerformerOverlay();
+            }
+            this.performerOverlayHideTimeout = undefined;
+          }, 100) as unknown as number;
+        }
+      });
+    }
     
     return chip;
+  }
+
+  /**
+   * Create performer overlay card
+   */
+  private createPerformerOverlay(performerData: PerformerExtended): HTMLElement {
+    const overlay = document.createElement('div');
+    overlay.className = 'performer-overlay';
+    overlay.style.position = 'fixed';
+    overlay.style.zIndex = '10000';
+    overlay.style.backgroundColor = 'rgba(20, 20, 20, 0.98)';
+    overlay.style.border = '1px solid rgba(255, 255, 255, 0.1)';
+    overlay.style.borderRadius = '8px';
+    overlay.style.boxShadow = '0 8px 32px rgba(0, 0, 0, 0.5)';
+    overlay.style.width = '320px';
+    overlay.style.maxHeight = '80vh';
+    overlay.style.overflowY = 'auto';
+    overlay.style.opacity = '0';
+    overlay.style.transition = 'opacity 0.2s ease';
+    overlay.style.pointerEvents = 'auto';
+
+    // Keep overlay visible when hovering over it
+    // Note: Don't clear timeout here - the timeout is for showing the overlay, not hiding it
+    overlay.addEventListener('mouseenter', () => {
+      // Cancel any pending hide timeout when hovering over overlay
+      if (this.performerOverlayHideTimeout) {
+        clearTimeout(this.performerOverlayHideTimeout);
+        this.performerOverlayHideTimeout = undefined;
+      }
+    });
+    overlay.addEventListener('mouseleave', () => {
+      this.hidePerformerOverlay();
+    });
+
+    // Image section
+    const imageSection = document.createElement('div');
+    imageSection.style.width = '100%';
+    imageSection.style.height = '200px';
+    imageSection.style.backgroundColor = 'rgba(255, 255, 255, 0.05)';
+    imageSection.style.display = 'flex';
+    imageSection.style.alignItems = 'center';
+    imageSection.style.justifyContent = 'center';
+    imageSection.style.overflow = 'hidden';
+    imageSection.style.borderRadius = '8px 8px 0 0';
+
+    if (performerData.image_path) {
+      const imageSrc = performerData.image_path.startsWith('http')
+        ? performerData.image_path
+        : toAbsoluteUrl(performerData.image_path);
+      if (imageSrc) {
+        const img = document.createElement('img');
+        img.src = imageSrc;
+        img.alt = performerData.name;
+        img.style.width = '100%';
+        img.style.height = '100%';
+        img.style.objectFit = 'cover';
+        img.style.objectPosition = 'top center';
+        imageSection.appendChild(img);
+      } else {
+        imageSection.textContent = performerData.name.charAt(0).toUpperCase();
+        imageSection.style.fontSize = '64px';
+        imageSection.style.color = 'rgba(255, 255, 255, 0.5)';
+      }
+    } else {
+      imageSection.textContent = performerData.name.charAt(0).toUpperCase();
+      imageSection.style.fontSize = '64px';
+      imageSection.style.color = 'rgba(255, 255, 255, 0.5)';
+    }
+    overlay.appendChild(imageSection);
+
+    // Content section
+    const contentSection = document.createElement('div');
+    contentSection.style.padding = '16px';
+
+    // Name and favorite (name is clickable link to Stash)
+    const nameRow = document.createElement('div');
+    nameRow.style.display = 'flex';
+    nameRow.style.alignItems = 'center';
+    nameRow.style.gap = '8px';
+    nameRow.style.marginBottom = '12px';
+
+    const nameLink = document.createElement('a');
+    nameLink.href = this.getPerformerLink(performerData.id);
+    nameLink.target = '_blank';
+    nameLink.rel = 'noopener noreferrer';
+    nameLink.style.display = 'flex';
+    nameLink.style.alignItems = 'center';
+    nameLink.style.gap = '6px';
+    nameLink.style.textDecoration = 'none';
+    nameLink.style.color = '#FFFFFF';
+    nameLink.style.cursor = 'pointer';
+    nameLink.addEventListener('mouseenter', () => {
+      nameLink.style.color = '#4A9EFF';
+    });
+    nameLink.addEventListener('mouseleave', () => {
+      nameLink.style.color = '#FFFFFF';
+    });
+
+    const name = document.createElement('h3');
+    name.textContent = performerData.name;
+    name.style.margin = '0';
+    name.style.fontSize = '20px';
+    name.style.fontWeight = '600';
+    nameLink.appendChild(name);
+
+    // External link icon
+    const externalIcon = document.createElement('span');
+    externalIcon.innerHTML = '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" xmlns="http://www.w3.org/2000/svg"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><polyline points="15 3 21 3 21 9"></polyline><line x1="10" y1="14" x2="21" y2="3"></line></svg>';
+    externalIcon.style.display = 'inline-flex';
+    externalIcon.style.alignItems = 'center';
+    externalIcon.style.opacity = '0.7';
+    externalIcon.style.flexShrink = '0';
+    nameLink.appendChild(externalIcon);
+
+    nameRow.appendChild(nameLink);
+
+    if (performerData.favorite) {
+      const favoriteIcon = document.createElement('span');
+      favoriteIcon.innerHTML = HEART_SVG_FILLED;
+      favoriteIcon.style.display = 'inline-flex';
+      favoriteIcon.style.alignItems = 'center';
+      favoriteIcon.style.width = '20px';
+      favoriteIcon.style.height = '20px';
+      favoriteIcon.style.color = '#FF6B6B';
+      const svg = favoriteIcon.querySelector('svg');
+      if (svg) {
+        svg.setAttribute('width', '20');
+        svg.setAttribute('height', '20');
+      }
+      nameRow.appendChild(favoriteIcon);
+    }
+
+    contentSection.appendChild(nameRow);
+
+    // Performer URL (if available)
+    if (performerData.url) {
+      const urlLink = document.createElement('a');
+      urlLink.href = performerData.url;
+      urlLink.target = '_blank';
+      urlLink.rel = 'noopener noreferrer';
+      urlLink.textContent = performerData.url;
+      urlLink.style.display = 'block';
+      urlLink.style.marginTop = '4px';
+      urlLink.style.marginBottom = '12px';
+      urlLink.style.fontSize = '13px';
+      urlLink.style.color = '#4A9EFF';
+      urlLink.style.textDecoration = 'none';
+      urlLink.style.wordBreak = 'break-all';
+      urlLink.style.opacity = '0.8';
+      urlLink.addEventListener('mouseenter', () => {
+        urlLink.style.textDecoration = 'underline';
+        urlLink.style.opacity = '1';
+      });
+      urlLink.addEventListener('mouseleave', () => {
+        urlLink.style.textDecoration = 'none';
+        urlLink.style.opacity = '0.8';
+      });
+      contentSection.appendChild(urlLink);
+    }
+
+    // Metadata sections
+    const metadata: Array<{ label: string; value: string | undefined; isIcon?: boolean }> = [];
+
+    // Basic info
+    if (performerData.birthdate) {
+      const birthDate = new Date(performerData.birthdate);
+      const age = Math.floor((Date.now() - birthDate.getTime()) / (365.25 * 24 * 60 * 60 * 1000));
+      metadata.push({ label: 'Age', value: `${age} years` });
+    }
+    if (performerData.gender) {
+      // Use icon instead of text for gender
+      const genderIcon = performerData.gender.toUpperCase() === 'FEMALE' ? '♀' : 
+                        performerData.gender.toUpperCase() === 'MALE' ? '♂' : 
+                        performerData.gender.toUpperCase() === 'TRANSGENDER_FEMALE' ? '⚧♀' :
+                        performerData.gender.toUpperCase() === 'TRANSGENDER_MALE' ? '⚧♂' :
+                        performerData.gender.toUpperCase() === 'NON_BINARY' ? '⚧' :
+                        performerData.gender.toUpperCase() === 'INTERSEX' ? '⚥' :
+                        performerData.gender;
+      metadata.push({ label: 'Gender', value: genderIcon, isIcon: true });
+    }
+    if (performerData.country) {
+      metadata.push({ label: 'Country', value: performerData.country });
+    }
+
+    // Physical attributes
+    if (performerData.height_cm) {
+      const heightInches = Math.round(performerData.height_cm / 2.54);
+      const feet = Math.floor(heightInches / 12);
+      const inches = heightInches % 12;
+      metadata.push({ label: 'Height', value: `${feet}'${inches}" (${performerData.height_cm} cm)` });
+    }
+    if (performerData.weight) {
+      metadata.push({ label: 'Weight', value: `${performerData.weight} kg` });
+    }
+    if (performerData.measurements) {
+      metadata.push({ label: 'Measurements', value: performerData.measurements });
+    }
+    if (performerData.hair_color) {
+      metadata.push({ label: 'Hair', value: performerData.hair_color });
+    }
+    if (performerData.eye_color) {
+      metadata.push({ label: 'Eyes', value: performerData.eye_color });
+    }
+    if (performerData.ethnicity) {
+      metadata.push({ label: 'Ethnicity', value: performerData.ethnicity });
+    }
+
+    // Rating
+    if (performerData.rating100 !== undefined && performerData.rating100 !== null) {
+      const rating = (performerData.rating100 / 20).toFixed(1);
+      metadata.push({ label: 'Rating', value: `${rating}/5` });
+    }
+
+    // Display metadata
+    if (metadata.length > 0) {
+      const metadataSection = document.createElement('div');
+      metadataSection.style.marginBottom = '12px';
+
+      for (const item of metadata) {
+        if (item.value) {
+          const row = document.createElement('div');
+          row.style.display = 'flex';
+          row.style.justifyContent = 'space-between';
+          row.style.alignItems = 'center';
+          row.style.marginBottom = '6px';
+          row.style.fontSize = '14px';
+
+          const label = document.createElement('span');
+          label.textContent = item.label + ':';
+          label.style.color = 'rgba(255, 255, 255, 0.6)';
+          row.appendChild(label);
+
+          const value = document.createElement('span');
+          if (item.isIcon) {
+            value.textContent = item.value;
+            value.style.fontSize = '18px';
+            value.style.lineHeight = '1';
+          } else {
+            value.textContent = item.value;
+          }
+          value.style.color = '#FFFFFF';
+          value.style.fontWeight = '500';
+          row.appendChild(value);
+
+          metadataSection.appendChild(row);
+        }
+      }
+
+      contentSection.appendChild(metadataSection);
+    }
+
+
+    // Tags
+    if (performerData.tags && performerData.tags.length > 0) {
+      const tagsSection = document.createElement('div');
+      tagsSection.style.marginBottom = '12px';
+      tagsSection.style.fontSize = '14px';
+
+      const tagsLabel = document.createElement('div');
+      tagsLabel.textContent = 'Tags:';
+      tagsLabel.style.color = 'rgba(255, 255, 255, 0.6)';
+      tagsLabel.style.marginBottom = '4px';
+      tagsSection.appendChild(tagsLabel);
+
+      const tagsList = document.createElement('div');
+      tagsList.style.display = 'flex';
+      tagsList.style.flexWrap = 'wrap';
+      tagsList.style.gap = '4px';
+
+      for (const tag of performerData.tags.slice(0, 10)) {
+        const tagChip = document.createElement('span');
+        tagChip.textContent = tag.name;
+        tagChip.style.backgroundColor = 'rgba(255, 255, 255, 0.1)';
+        tagChip.style.padding = '2px 8px';
+        tagChip.style.borderRadius = '4px';
+        tagChip.style.fontSize = '12px';
+        tagChip.style.color = '#FFFFFF';
+        tagsList.appendChild(tagChip);
+      }
+
+      if (performerData.tags.length > 10) {
+        const moreChip = document.createElement('span');
+        moreChip.textContent = `+${performerData.tags.length - 10} more`;
+        moreChip.style.color = 'rgba(255, 255, 255, 0.6)';
+        moreChip.style.fontSize = '12px';
+        tagsList.appendChild(moreChip);
+      }
+
+      tagsSection.appendChild(tagsList);
+      contentSection.appendChild(tagsSection);
+    }
+
+    // Details
+    if (performerData.details) {
+      const detailsSection = document.createElement('div');
+      detailsSection.style.fontSize = '14px';
+      detailsSection.style.color = 'rgba(255, 255, 255, 0.8)';
+      detailsSection.style.lineHeight = '1.5';
+      detailsSection.style.marginTop = '12px';
+      detailsSection.style.paddingTop = '12px';
+      detailsSection.style.borderTop = '1px solid rgba(255, 255, 255, 0.1)';
+      detailsSection.textContent = performerData.details;
+      contentSection.appendChild(detailsSection);
+    }
+
+
+    overlay.appendChild(contentSection);
+    return overlay;
+  }
+
+  /**
+   * Show performer overlay on hover
+   */
+  private showPerformerOverlay(performerId: string, chipElement: HTMLElement): void {
+    // Clear any existing timeout
+    if (this.performerOverlayTimeout) {
+      clearTimeout(this.performerOverlayTimeout);
+      this.performerOverlayTimeout = undefined;
+    }
+
+    // If already showing this performer, don't do anything
+    if (this.currentHoveredPerformerId === performerId && this.performerOverlay) {
+      return;
+    }
+
+    // Cancel any pending hide timeout (when moving from another chip)
+    if (this.performerOverlayHideTimeout) {
+      clearTimeout(this.performerOverlayHideTimeout);
+      this.performerOverlayHideTimeout = undefined;
+    }
+
+    // Cancel any pending fetch
+    if (this.performerOverlayAbortController) {
+      this.performerOverlayAbortController.abort();
+      this.performerOverlayAbortController = undefined;
+    }
+
+    // Track if we had an overlay before hiding (for delay logic)
+    const hadOverlay = !!this.performerOverlay;
+    
+    // Hide existing overlay immediately (for rapid hover changes)
+    this.hidePerformerOverlay(true);
+
+    // Set timeout to show overlay (debounce - longer delay on first hover to avoid popping while scrolling)
+    this.currentHoveredPerformerId = performerId;
+    const isFirstHover = !hadOverlay; // Check if this is truly the first hover (no overlay was showing before)
+    const delay = isFirstHover ? 600 : 50; // 600ms for first hover, 50ms for subsequent hovers
+    const timeoutId = setTimeout(async () => {
+      if (this.currentHoveredPerformerId !== performerId) {
+        return; // User moved to different performer
+      }
+
+      if (!this.api) {
+        return;
+      }
+
+      // Create abort controller for this request
+      this.performerOverlayAbortController = new AbortController();
+
+      try {
+        // Fetch performer details
+        const performerData = await this.api.getPerformerDetails(
+          performerId,
+          this.performerOverlayAbortController.signal
+        );
+
+        if (!performerData || this.currentHoveredPerformerId !== performerId) {
+          return; // User moved to different performer or fetch failed
+        }
+
+        // Create overlay
+        const overlay = this.createPerformerOverlay(performerData);
+        this.performerOverlay = overlay;
+        document.body.appendChild(overlay);
+
+        // Position overlay
+        this.positionOverlay(overlay, chipElement);
+
+        // Show with fade-in
+        requestAnimationFrame(() => {
+          if (overlay.parentElement) {
+            overlay.style.opacity = '1';
+          }
+        });
+        
+        // Mark that we now have an overlay
+        this.hadOverlayBefore = true;
+      } catch (error) {
+        // Ignore abort errors
+        if (error instanceof Error && error.name === 'AbortError') {
+          return;
+        }
+        console.warn('Failed to fetch performer details:', error);
+      }
+    }, delay) as unknown as number;
+    this.performerOverlayTimeout = timeoutId;
+  }
+
+  /**
+   * Hide performer overlay
+   */
+  private hidePerformerOverlay(immediate: boolean = false): void {
+    if (this.performerOverlayTimeout) {
+      clearTimeout(this.performerOverlayTimeout);
+      this.performerOverlayTimeout = undefined;
+    }
+
+    if (this.performerOverlayHideTimeout) {
+      clearTimeout(this.performerOverlayHideTimeout);
+      this.performerOverlayHideTimeout = undefined;
+    }
+
+    if (this.performerOverlay) {
+      if (immediate) {
+        // Immediately remove from DOM (for rapid hover changes)
+        if (this.performerOverlay.parentElement) {
+          try {
+            this.performerOverlay.parentElement.removeChild(this.performerOverlay);
+          } catch {
+            // Element may have already been removed
+          }
+        }
+        this.performerOverlay = undefined;
+      } else {
+        // Fade out then remove (for normal mouse leave)
+        this.performerOverlay.style.opacity = '0';
+        setTimeout(() => {
+          if (this.performerOverlay && this.performerOverlay.parentElement) {
+            try {
+              this.performerOverlay.parentElement.removeChild(this.performerOverlay);
+            } catch {
+              // Element may have already been removed
+            }
+          }
+          this.performerOverlay = undefined;
+        }, 200) as unknown as number;
+      }
+    }
+
+    // Only clear currentHoveredPerformerId if not immediately hiding (for rapid changes)
+    if (!immediate) {
+      this.currentHoveredPerformerId = undefined;
+      this.hadOverlayBefore = false; // Reset when fully hiding
+    }
+
+    // Cancel any pending fetch
+    if (this.performerOverlayAbortController) {
+      this.performerOverlayAbortController.abort();
+      this.performerOverlayAbortController = undefined;
+    }
+  }
+
+  /**
+   * Position overlay relative to chip element
+   */
+  private positionOverlay(overlay: HTMLElement, chipElement: HTMLElement): void {
+    const chipRect = chipElement.getBoundingClientRect();
+    const overlayRect = overlay.getBoundingClientRect();
+    const viewportWidth = globalThis.innerWidth;
+    const viewportHeight = globalThis.innerHeight;
+    const padding = 16;
+
+    let top = chipRect.bottom + padding;
+    let left = chipRect.left;
+
+    // Adjust if would go off bottom of screen
+    if (top + overlayRect.height > viewportHeight - padding) {
+      top = chipRect.top - overlayRect.height - padding;
+      // If still off screen, position at top
+      if (top < padding) {
+        top = padding;
+      }
+    }
+
+    // Adjust if would go off right of screen
+    if (left + overlayRect.width > viewportWidth - padding) {
+      left = viewportWidth - overlayRect.width - padding;
+    }
+
+    // Adjust if would go off left of screen
+    if (left < padding) {
+      left = padding;
+    }
+
+    overlay.style.top = `${top}px`;
+    overlay.style.left = `${left}px`;
   }
 
   /**

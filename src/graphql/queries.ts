@@ -3,7 +3,7 @@
  * Centralized query definitions
  */
 
-import { SceneFields, SceneMarkerFields, TagFields, TagFieldsExtended, PerformerFields, SlimImageData, VisualFileData } from './fragments.js';
+import { SceneFields, SceneMarkerFields, TagFields, TagFieldsExtended, PerformerFields, PerformerFieldsExtended, SlimImageData, VisualFileData } from './fragments.js';
 
 /**
  * Get UI configuration
@@ -124,6 +124,21 @@ export const FIND_PERFORMERS = `
     findPerformers(filter: $filter, performer_filter: $performer_filter) {
       performers {
         ...PerformerFields
+      }
+    }
+  }
+`;
+
+/**
+ * Find a single performer by ID
+ * Using findPerformers with ids parameter (similar to findTags)
+ */
+export const FIND_PERFORMER = `
+  ${PerformerFieldsExtended}
+  query FindPerformer($ids: [ID!]) {
+    findPerformers(ids: $ids) {
+      performers {
+        ...PerformerFieldsExtended
       }
     }
   }

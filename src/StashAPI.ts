@@ -19,6 +19,8 @@ import {
   FindTagsResponse,
   FindTagsExtendedResponse,
   FindPerformersResponse,
+  FindPerformerResponse,
+  PerformerExtended,
   FindSceneResponse,
   FindImagesResponse,
   GetSavedMarkerFiltersResponse,
@@ -491,6 +493,33 @@ export class StashAPI {
       }
       this.logSearchError('searchPerformers', e);
       return [];
+    }
+  }
+
+  /**
+   * Get detailed performer information by ID
+   * Used for hover overlay display
+   */
+  async getPerformerDetails(performerId: string, signal?: AbortSignal): Promise<PerformerExtended | null> {
+    if (this.isAborted(signal)) return null;
+
+    try {
+      const result = await this.gqlClient.query<FindPerformerResponse>({
+        query: queries.FIND_PERFORMER,
+        variables: { ids: [performerId] },
+        signal,
+      });
+
+      if (this.isAborted(signal)) return null;
+
+      const performers = result.data?.findPerformers?.performers ?? [];
+      return performers[0] ?? null;
+    } catch (e: unknown) {
+      if (isAbortError(e) || this.isAborted(signal)) {
+        return null;
+      }
+      this.logSearchError('getPerformerDetails', e);
+      return null;
     }
   }
 

@@ -117,6 +117,35 @@ export const PerformerFields = `
 `;
 
 /**
+ * Fragment for Performer fields (extended - for hover overlay)
+ * Fields verified to work in Stash GraphQL schema
+ */
+export const PerformerFieldsExtended = `
+  fragment PerformerFieldsExtended on Performer {
+    id
+    name
+    image_path
+    gender
+    favorite
+    details
+    url
+    birthdate
+    height_cm
+    weight
+    measurements
+    ethnicity
+    hair_color
+    eye_color
+    country
+    rating100
+    tags {
+      id
+      name
+    }
+  }
+`;
+
+/**
  * Fragment for Image fields (slim - for feed display)
  */
 export const SlimImageData = `

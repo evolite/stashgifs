@@ -205,6 +205,38 @@ export interface FindPerformersResponse {
 }
 
 /**
+ * Extended Performer type (for hover overlay)
+ */
+export interface PerformerExtended {
+  id: string;
+  name: string;
+  image_path?: string;
+  gender?: string;
+  favorite?: boolean;
+  details?: string;
+  url?: string;
+  birthdate?: string;
+  height_cm?: number;
+  weight?: number;
+  measurements?: string;
+  ethnicity?: string;
+  hair_color?: string;
+  eye_color?: string;
+  country?: string;
+  rating100?: number;
+  tags?: Array<{ id: string; name: string }>;
+}
+
+/**
+ * FindPerformer response
+ */
+export interface FindPerformerResponse {
+  findPerformers: {
+    performers: PerformerExtended[];
+  };
+}
+
+/**
  * FindScene response
  */
 export interface FindSceneResponse {
