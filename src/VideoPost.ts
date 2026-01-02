@@ -1494,7 +1494,7 @@ export class VideoPost extends BasePost {
    * Update a single rating star button
    */
   private updateSingleStarButton(
-    button: HTMLElement,
+    button: HTMLButtonElement,
     starIndex: number,
     displayValue: number,
     isPreview: boolean,

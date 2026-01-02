@@ -190,23 +190,28 @@ export class AudioManager {
    * Handle mute state for non-playing video
    */
   private handleMuteStateForNonPlaying(entry: VisibilityEntry): void {
-    const videoElement = entry.player?.getVideoElement();
-    if (videoElement && !videoElement.muted) {
-      entry.player.setMuted(true);
+    if (!entry.player) return;
+    const videoElement = entry.player.getVideoElement();
+    if (!videoElement || videoElement.muted) {
+      return;
     }
+    entry.player.setMuted(true);
   }
 
   /**
    * Handle mute state for mobile device
    */
   private handleMuteStateForMobile(entry: VisibilityEntry, shouldBeMuted: boolean): void {
-    const videoElement = entry.player?.getVideoElement();
+    if (!entry.player) return;
+    const videoElement = entry.player.getVideoElement();
     if (!videoElement) return;
 
     if (!shouldBeMuted && videoElement.muted) {
       // On mobile, ensure video is unmuted only if it's the audio owner
       entry.player.setMuted(false);
-    } else if (shouldBeMuted && !videoElement.muted) {
+      return;
+    }
+    if (shouldBeMuted && !videoElement.muted) {
       // Mobile: mute if not owner
       entry.player.setMuted(true);
     }
@@ -216,7 +221,8 @@ export class AudioManager {
    * Handle mute state for desktop device
    */
   private handleMuteStateForDesktop(entry: VisibilityEntry, shouldBeMuted: boolean): void {
-    const videoElement = entry.player?.getVideoElement();
+    if (!entry.player) return;
+    const videoElement = entry.player.getVideoElement();
     if (!videoElement) return;
 
     if (shouldBeMuted !== videoElement.muted) {

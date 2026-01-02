@@ -407,26 +407,16 @@ export abstract class BasePost {
    * Get gender icon for performer
    */
   private getGenderIcon(gender: string): string {
+    const genderMap: Record<string, string> = {
+      'FEMALE': '♀',
+      'MALE': '♂',
+      'TRANSGENDER_FEMALE': '⚧♀',
+      'TRANSGENDER_MALE': '⚧♂',
+      'NON_BINARY': '⚧',
+      'INTERSEX': '⚥'
+    };
     const genderUpper = gender.toUpperCase();
-    if (genderUpper === 'FEMALE') {
-      return '♀';
-    }
-    if (genderUpper === 'MALE') {
-      return '♂';
-    }
-    if (genderUpper === 'TRANSGENDER_FEMALE') {
-      return '⚧♀';
-    }
-    if (genderUpper === 'TRANSGENDER_MALE') {
-      return '⚧♂';
-    }
-    if (genderUpper === 'NON_BINARY') {
-      return '⚧';
-    }
-    if (genderUpper === 'INTERSEX') {
-      return '⚥';
-    }
-    return gender;
+    return genderMap[genderUpper] ?? gender;
   }
 
   /**
