@@ -1288,6 +1288,52 @@ export class StashAPI {
   }
 
   /**
+   * Add duration filter to scene filter
+   */
+  private addDurationFilter(sceneFilter: SceneFilterInput, maxDuration?: number): void {
+    if (maxDuration !== undefined && maxDuration > 0) {
+      sceneFilter.duration = {
+        value: maxDuration,
+        modifier: 'LESS_THAN'
+      };
+    }
+  }
+
+  /**
+   * Add performer filter to scene filter
+   */
+  private addPerformerFilter(sceneFilter: SceneFilterInput, filters?: FilterOptions): void {
+    if (!filters?.performers || filters.performers.length === 0) {
+      return;
+    }
+
+    const performerIds = this.parseTagIds(filters.performers);
+    if (performerIds.length > 0) {
+      sceneFilter.performers = {
+        value: performerIds,
+        modifier: performerIds.length > 1 ? 'INCLUDES_ALL' : 'INCLUDES'
+      };
+    }
+  }
+
+  /**
+   * Add tag filter to scene filter
+   */
+  private addTagFilter(sceneFilter: SceneFilterInput, filters?: FilterOptions): void {
+    if (!filters?.tags || filters.tags.length === 0) {
+      return;
+    }
+
+    const tagIds = this.parseTagIds(filters.tags);
+    if (tagIds.length > 0) {
+      sceneFilter.tags = {
+        value: tagIds.map(String),
+        modifier: tagIds.length === 1 ? 'INCLUDES_ALL' : 'INCLUDES'
+      };
+    }
+  }
+
+  /**
    * Build scene filter for short-form content
    */
   private buildShortFormSceneFilter(filters?: FilterOptions, maxDuration?: number): SceneFilterInput | null {
@@ -1298,35 +1344,9 @@ export class StashAPI {
       }
     };
 
-    // Add duration filter if maxDuration is provided
-    if (maxDuration !== undefined && maxDuration > 0) {
-      sceneFilter.duration = {
-        value: maxDuration,
-        modifier: 'LESS_THAN'
-      };
-    }
-
-    // Apply performer filter if provided
-    if (filters?.performers && filters.performers.length > 0) {
-      const performerIds = this.parseTagIds(filters.performers);
-      if (performerIds.length > 0) {
-        sceneFilter.performers = {
-          value: performerIds,
-          modifier: performerIds.length > 1 ? 'INCLUDES_ALL' : 'INCLUDES'
-        };
-      }
-    }
-
-    // Apply tag filter if provided
-    if (filters?.tags && filters.tags.length > 0) {
-      const tagIds = this.parseTagIds(filters.tags);
-      if (tagIds.length > 0) {
-        sceneFilter.tags = {
-          value: tagIds.map(String),
-          modifier: tagIds.length === 1 ? 'INCLUDES_ALL' : 'INCLUDES'
-        };
-      }
-    }
+    this.addDurationFilter(sceneFilter, maxDuration);
+    this.addPerformerFilter(sceneFilter, filters);
+    this.addTagFilter(sceneFilter, filters);
 
     return Object.keys(sceneFilter).length > 0 ? sceneFilter : null;
   }

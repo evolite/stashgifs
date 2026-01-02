@@ -4889,6 +4889,88 @@ export class FeedContainer {
    * Calculate proportions for content types
    */
   /**
+   * Calculate expected consumption based on ratios
+   */
+  private calculateExpectedConsumption(totalConsumed: number): {
+    expectedMarkerConsumed: number;
+    expectedShortFormConsumed: number;
+    expectedImageConsumed: number;
+  } {
+    if (!this.contentRatio) {
+      return { expectedMarkerConsumed: 0, expectedShortFormConsumed: 0, expectedImageConsumed: 0 };
+    }
+    return {
+      expectedMarkerConsumed: totalConsumed * this.contentRatio.markerRatio,
+      expectedShortFormConsumed: totalConsumed * this.contentRatio.shortFormRatio,
+      expectedImageConsumed: totalConsumed * this.contentRatio.imageRatio
+    };
+  }
+
+  /**
+   * Calculate deviations from expected consumption
+   */
+  private calculateConsumptionDeviations(expected: {
+    expectedMarkerConsumed: number;
+    expectedShortFormConsumed: number;
+    expectedImageConsumed: number;
+  }): {
+    markerDeviation: number;
+    shortFormDeviation: number;
+    imageDeviation: number;
+  } {
+    if (!this.contentConsumed) {
+      return { markerDeviation: 0, shortFormDeviation: 0, imageDeviation: 0 };
+    }
+    return {
+      markerDeviation: expected.expectedMarkerConsumed - this.contentConsumed.markers,
+      shortFormDeviation: expected.expectedShortFormConsumed - this.contentConsumed.shortForm,
+      imageDeviation: expected.expectedImageConsumed - this.contentConsumed.images
+    };
+  }
+
+  /**
+   * Adjust weights based on deviations
+   */
+  private adjustWeightsForDeviations(
+    deviations: { markerDeviation: number; shortFormDeviation: number; imageDeviation: number },
+    remainingMarkers: number,
+    remainingShortForm: number,
+    remainingImages: number
+  ): { markerWeight: number; shortFormWeight: number; imageWeight: number } {
+    if (!this.contentRatio || !this.contentTotals) {
+      return {
+        markerWeight: 0,
+        shortFormWeight: 0,
+        imageWeight: 0
+      };
+    }
+
+    let markerWeight = this.contentRatio.markerRatio;
+    let shortFormWeight = this.contentRatio.shortFormRatio;
+    let imageWeight = this.contentRatio.imageRatio;
+
+    const maxDeviation = Math.max(
+      Math.abs(deviations.markerDeviation),
+      Math.abs(deviations.shortFormDeviation),
+      Math.abs(deviations.imageDeviation)
+    );
+
+    if (maxDeviation > 0) {
+      if (deviations.markerDeviation > 0 && remainingMarkers > 0) {
+        markerWeight += deviations.markerDeviation / this.contentTotals.markerTotal * 0.5;
+      }
+      if (deviations.shortFormDeviation > 0 && remainingShortForm > 0) {
+        shortFormWeight += deviations.shortFormDeviation / this.contentTotals.shortFormTotal * 0.5;
+      }
+      if (deviations.imageDeviation > 0 && remainingImages > 0) {
+        imageWeight += deviations.imageDeviation / this.contentTotals.imageTotal * 0.5;
+      }
+    }
+
+    return { markerWeight, shortFormWeight, imageWeight };
+  }
+
+  /**
    * Calculate proportions for content mixing
    * Uses stored ratio from initial load if available, otherwise falls back to remaining items
    */
@@ -4900,47 +4982,21 @@ export class FeedContainer {
   ): { markerRatio: number; shortFormRatio: number } {
     // If we have a stored ratio, use it adjusted by consumed items
     if (this.contentRatio && this.contentTotals && this.contentConsumed) {
-      // Calculate how much of each type we should have consumed based on the ratio
       const totalConsumed = this.contentConsumed.markers + this.contentConsumed.shortForm + this.contentConsumed.images;
-      const expectedMarkerConsumed = totalConsumed * this.contentRatio.markerRatio;
-      const expectedShortFormConsumed = totalConsumed * this.contentRatio.shortFormRatio;
-      const expectedImageConsumed = totalConsumed * this.contentRatio.imageRatio;
-      
-      // Calculate how far behind/ahead each type is from expected consumption
-      const markerDeviation = expectedMarkerConsumed - this.contentConsumed.markers;
-      const shortFormDeviation = expectedShortFormConsumed - this.contentConsumed.shortForm;
-      const imageDeviation = expectedImageConsumed - this.contentConsumed.images;
-      
-      // Adjust ratios to favor types that are behind
-      // Types that are behind get higher weight, types ahead get lower weight
-      let markerWeight = this.contentRatio.markerRatio;
-      let shortFormWeight = this.contentRatio.shortFormRatio;
-      let imageWeight = this.contentRatio.imageRatio;
-      
-      // If a type is significantly behind, boost its weight
-      const maxDeviation = Math.max(Math.abs(markerDeviation), Math.abs(shortFormDeviation), Math.abs(imageDeviation));
-      if (maxDeviation > 0) {
-        if (markerDeviation > 0 && remainingMarkers > 0) {
-          markerWeight += markerDeviation / this.contentTotals.markerTotal * 0.5;
-        }
-        if (shortFormDeviation > 0 && remainingShortForm > 0) {
-          shortFormWeight += shortFormDeviation / this.contentTotals.shortFormTotal * 0.5;
-        }
-        if (imageDeviation > 0 && remainingImages > 0) {
-          imageWeight += imageDeviation / this.contentTotals.imageTotal * 0.5;
-        }
-      }
-      
+      const expected = this.calculateExpectedConsumption(totalConsumed);
+      const deviations = this.calculateConsumptionDeviations(expected);
+      const weights = this.adjustWeightsForDeviations(deviations, remainingMarkers, remainingShortForm, remainingImages);
+
       // Normalize weights
-      const totalWeight = markerWeight + shortFormWeight + imageWeight;
+      const totalWeight = weights.markerWeight + weights.shortFormWeight + weights.imageWeight;
       if (totalWeight > 0) {
         return {
-          markerRatio: markerWeight / totalWeight,
-          shortFormRatio: shortFormWeight / totalWeight
+          markerRatio: weights.markerWeight / totalWeight,
+          shortFormRatio: weights.shortFormWeight / totalWeight
         };
       }
     }
-    
+
     // Fallback to original behavior: calculate from remaining items
     return {
       markerRatio: remainingMarkers / totalRemaining,
@@ -5143,47 +5199,91 @@ export class FeedContainer {
         lastType = selectedType;
       }
       
-      // Calculate remaining for selected type
-      let remainingForType: number;
-      if (selectedType === 'marker') {
-        remainingForType = remainingMarkers;
-      } else if (selectedType === 'shortform') {
-        remainingForType = remainingShortForm;
-      } else {
-        remainingForType = remainingImages;
-      }
-      const actualItemsToAdd = Math.min(itemsToAdd, remainingForType);
-      
-      // Add items from selected type
-      this.addContentItems({
-        content,
+      // Calculate remaining for selected type and add items
+      const actualItemsToAdd = this.processSelectedContentType({
         selectedType,
-        itemsToAdd: actualItemsToAdd,
-        contentArrays: {
-          markers,
-          shortFormMarkers,
-          images
-        },
-        indices: {
-          markerIndex,
-          shortFormIndex,
-          imageIndex
-        }
+        remainingMarkers,
+        remainingShortForm,
+        remainingImages,
+        itemsToAdd,
+        content,
+        markers,
+        shortFormMarkers,
+        images,
+        markerIndex,
+        shortFormIndex,
+        imageIndex
       });
       
       // Track consumed items for ratio maintenance
-      if (this.contentConsumed) {
-        if (selectedType === 'marker') {
-          this.contentConsumed.markers += actualItemsToAdd;
-        } else if (selectedType === 'shortform') {
-          this.contentConsumed.shortForm += actualItemsToAdd;
-        } else if (selectedType === 'image') {
-          this.contentConsumed.images += actualItemsToAdd;
-        }
-      }
+      this.trackContentConsumption(selectedType, actualItemsToAdd);
     }
     
     return content;
+  }
+
+  /**
+   * Calculate remaining items for selected type and add them to content
+   */
+  private processSelectedContentType(options: {
+    selectedType: ContentType;
+    remainingMarkers: number;
+    remainingShortForm: number;
+    remainingImages: number;
+    itemsToAdd: number;
+    content: Array<{ type: 'marker' | 'image'; data: SceneMarker | Image; date?: string }>;
+    markers: SceneMarker[];
+    shortFormMarkers: SceneMarker[];
+    images: Image[];
+    markerIndex: { value: number };
+    shortFormIndex: { value: number };
+    imageIndex: { value: number };
+  }): number {
+    const { selectedType, remainingMarkers, remainingShortForm, remainingImages, itemsToAdd, content, markers, shortFormMarkers, images, markerIndex, shortFormIndex, imageIndex } = options;
+    
+    let remainingForType: number;
+    if (selectedType === 'marker') {
+      remainingForType = remainingMarkers;
+    } else if (selectedType === 'shortform') {
+      remainingForType = remainingShortForm;
+    } else {
+      remainingForType = remainingImages;
+    }
+    const actualItemsToAdd = Math.min(itemsToAdd, remainingForType);
+    
+    // Add items from selected type
+    this.addContentItems({
+      content,
+      selectedType,
+      itemsToAdd: actualItemsToAdd,
+      contentArrays: {
+        markers,
+        shortFormMarkers,
+        images
+      },
+      indices: {
+        markerIndex,
+        shortFormIndex,
+        imageIndex
+      }
+    });
+    
+    return actualItemsToAdd;
+  }
+
+  /**
+   * Track consumed items for ratio maintenance
+   */
+  private trackContentConsumption(selectedType: ContentType, actualItemsToAdd: number): void {
+    if (!this.contentConsumed) return;
+    
+    if (selectedType === 'marker') {
+      this.contentConsumed.markers += actualItemsToAdd;
+    } else if (selectedType === 'shortform') {
+      this.contentConsumed.shortForm += actualItemsToAdd;
+    } else if (selectedType === 'image') {
+      this.contentConsumed.images += actualItemsToAdd;
+    }
   }
 
   /**

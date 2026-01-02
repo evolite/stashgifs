@@ -182,7 +182,7 @@ MISSING=$(comm -23 <(echo "$BUILT_FILES") <(echo "$MANIFEST_FILES"))
 # Find extra files in manifest
 EXTRA=$(comm -13 <(echo "$BUILT_FILES") <(echo "$MANIFEST_FILES"))
 
-if [ -n "$MISSING" ]; then
+if [[ -n "$MISSING" ]]; then
     echo -e "${RED}Error: Built files missing from manifest:${NC}"
     echo "$MISSING" | while read -r file; do
         echo -e "${YELLOW}  $file${NC}"
@@ -190,7 +190,7 @@ if [ -n "$MISSING" ]; then
     exit 1
 fi
 
-if [ -n "$EXTRA" ]; then
+if [[ -n "$EXTRA" ]]; then
     echo -e "${YELLOW}Warning: Files in manifest but not built:${NC}"
     echo "$EXTRA" | while read -r file; do
         echo -e "${YELLOW}  $file${NC}"

@@ -1491,6 +1491,51 @@ export class VideoPost extends BasePost {
   }
 
   /**
+   * Update a single rating star button
+   */
+  private updateSingleStarButton(
+    button: HTMLElement,
+    starIndex: number,
+    displayValue: number,
+    isPreview: boolean,
+    buttonIndex: number
+  ): void {
+    const iconWrapper = button.querySelector<HTMLElement>('.rating-dialog__star-icon');
+    const fillSpan = iconWrapper?.querySelector<HTMLElement>('.rating-dialog__star-fill');
+    const outlineSpan = iconWrapper?.querySelector<HTMLElement>('.rating-dialog__star-outline');
+    
+    const starStartValue = starIndex - 1;
+    const relativeFillValue = Math.min(Math.max(displayValue - starStartValue, 0), 1);
+    const fillPercent = Math.round(relativeFillValue * 100);
+    const isHalfState = fillPercent > 0 && fillPercent < 100;
+    const isFilled = fillPercent > 0;
+    
+    const isChecked = !isPreview && this.hasRating && Math.abs(this.ratingValue - displayValue) < 0.01;
+    button.classList.toggle('rating-dialog__star--active', isFilled);
+    button.classList.toggle('rating-dialog__star--half', isHalfState);
+    button.setAttribute('aria-checked', isChecked ? 'true' : 'false');
+    button.tabIndex = isChecked || (!this.hasRating && buttonIndex === 0) ? 0 : -1;
+    
+    if (fillSpan && outlineSpan) {
+      const clipPercent = 100 - fillPercent;
+      fillSpan.style.opacity = isFilled ? '1' : '0';
+      const clipInset = `inset(0 ${clipPercent}% 0 0)`;
+      fillSpan.style.clipPath = clipInset;
+      fillSpan.style.setProperty('-webkit-clip-path', clipInset);
+      
+      if (fillPercent === 100) {
+        outlineSpan.style.opacity = '0.15';
+      } else if (isFilled) {
+        outlineSpan.style.opacity = '0.4';
+      } else {
+        outlineSpan.style.opacity = '0.7';
+      }
+    }
+    
+    button.disabled = this.isSavingRating;
+  }
+
+  /**
    * Update rating star buttons display
    * @param isPreview - If true, show hover preview state
    */
@@ -1500,50 +1545,14 @@ export class VideoPost extends BasePost {
     this.getMaxStars();
     
     // Determine the preview or actual rating value
-    let displayValue: number;
-    if (isPreview && this.hoveredPreviewValue !== undefined) {
-      displayValue = this.hoveredPreviewValue;
-    } else {
-      // Show actual rating
-      displayValue = this.ratingValue;
-    }
+    const displayValue = isPreview && this.hoveredPreviewValue !== undefined
+      ? this.hoveredPreviewValue
+      : this.ratingValue;
     
     for (let i = 0; i < this.ratingStarButtons.length; i++) {
       const button = this.ratingStarButtons[i];
       const starIndex = i + 1; // 1-based index
-      const iconWrapper = button.querySelector<HTMLElement>('.rating-dialog__star-icon');
-      const fillSpan = iconWrapper?.querySelector<HTMLElement>('.rating-dialog__star-fill');
-      const outlineSpan = iconWrapper?.querySelector<HTMLElement>('.rating-dialog__star-outline');
-      
-      const starStartValue = starIndex - 1;
-      const relativeFillValue = Math.min(Math.max(displayValue - starStartValue, 0), 1);
-      const fillPercent = Math.round(relativeFillValue * 100);
-      const isHalfState = fillPercent > 0 && fillPercent < 100;
-      const isFilled = fillPercent > 0;
-      
-      const isChecked = !isPreview && this.hasRating && Math.abs(this.ratingValue - displayValue) < 0.01;
-      button.classList.toggle('rating-dialog__star--active', isFilled);
-      button.classList.toggle('rating-dialog__star--half', isHalfState);
-      button.setAttribute('aria-checked', isChecked ? 'true' : 'false');
-      button.tabIndex = isChecked || (!this.hasRating && i === 0) ? 0 : -1;
-      
-      if (fillSpan && outlineSpan) {
-        const clipPercent = 100 - fillPercent;
-        fillSpan.style.opacity = isFilled ? '1' : '0';
-        const clipInset = `inset(0 ${clipPercent}% 0 0)`;
-        fillSpan.style.clipPath = clipInset;
-        fillSpan.style.setProperty('-webkit-clip-path', clipInset);
-        
-        if (fillPercent === 100) {
-          outlineSpan.style.opacity = '0.15';
-        } else if (isFilled) {
-          outlineSpan.style.opacity = '0.4';
-        } else {
-          outlineSpan.style.opacity = '0.7';
-        }
-      }
-      
-      button.disabled = this.isSavingRating;
+      this.updateSingleStarButton(button, starIndex, displayValue, isPreview, i);
     }
   }
 

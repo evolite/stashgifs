@@ -305,6 +305,277 @@ export abstract class BasePost {
   }
 
   /**
+   * Create image section for performer overlay
+   */
+  private createPerformerOverlayImageSection(performerData: PerformerExtended): HTMLElement {
+    const imageSection = document.createElement('div');
+    imageSection.style.width = '100%';
+    imageSection.style.height = '200px';
+    imageSection.style.backgroundColor = 'rgba(255, 255, 255, 0.05)';
+    imageSection.style.display = 'flex';
+    imageSection.style.alignItems = 'center';
+    imageSection.style.justifyContent = 'center';
+    imageSection.style.overflow = 'hidden';
+    imageSection.style.borderRadius = '8px 8px 0 0';
+
+    if (performerData.image_path) {
+      const imageSrc = performerData.image_path.startsWith('http')
+        ? performerData.image_path
+        : toAbsoluteUrl(performerData.image_path);
+      if (imageSrc) {
+        const img = document.createElement('img');
+        img.src = imageSrc;
+        img.alt = performerData.name;
+        img.style.width = '100%';
+        img.style.height = '100%';
+        img.style.objectFit = 'cover';
+        img.style.objectPosition = 'top center';
+        imageSection.appendChild(img);
+        return imageSection;
+      }
+    }
+    imageSection.textContent = performerData.name.charAt(0).toUpperCase();
+    imageSection.style.fontSize = '64px';
+    imageSection.style.color = 'rgba(255, 255, 255, 0.5)';
+    return imageSection;
+  }
+
+  /**
+   * Create name row for performer overlay
+   */
+  private createPerformerOverlayNameRow(performerData: PerformerExtended): HTMLElement {
+    const nameRow = document.createElement('div');
+    nameRow.style.display = 'flex';
+    nameRow.style.alignItems = 'center';
+    nameRow.style.gap = '8px';
+    nameRow.style.marginBottom = '12px';
+
+    const nameLink = document.createElement('a');
+    nameLink.href = this.getPerformerLink(performerData.id);
+    nameLink.target = '_blank';
+    nameLink.rel = 'noopener noreferrer';
+    nameLink.style.display = 'flex';
+    nameLink.style.alignItems = 'center';
+    nameLink.style.gap = '6px';
+    nameLink.style.textDecoration = 'none';
+    nameLink.style.color = '#FFFFFF';
+    nameLink.style.cursor = 'pointer';
+    nameLink.addEventListener('mouseenter', () => {
+      nameLink.style.color = '#4A9EFF';
+    });
+    nameLink.addEventListener('mouseleave', () => {
+      nameLink.style.color = '#FFFFFF';
+    });
+
+    const name = document.createElement('h3');
+    name.textContent = performerData.name;
+    name.style.margin = '0';
+    name.style.fontSize = '20px';
+    name.style.fontWeight = '600';
+    nameLink.appendChild(name);
+
+    const externalIcon = document.createElement('span');
+    externalIcon.innerHTML = '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" xmlns="http://www.w3.org/2000/svg"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><polyline points="15 3 21 3 21 9"></polyline><line x1="10" y1="14" x2="21" y2="3"></line></svg>';
+    externalIcon.style.display = 'inline-flex';
+    externalIcon.style.alignItems = 'center';
+    externalIcon.style.opacity = '0.7';
+    externalIcon.style.flexShrink = '0';
+    nameLink.appendChild(externalIcon);
+
+    nameRow.appendChild(nameLink);
+
+    if (performerData.favorite) {
+      const favoriteIcon = document.createElement('span');
+      favoriteIcon.innerHTML = HEART_SVG_FILLED;
+      favoriteIcon.style.display = 'inline-flex';
+      favoriteIcon.style.alignItems = 'center';
+      favoriteIcon.style.width = '20px';
+      favoriteIcon.style.height = '20px';
+      favoriteIcon.style.color = '#FF6B6B';
+      const svg = favoriteIcon.querySelector('svg');
+      if (svg) {
+        svg.setAttribute('width', '20');
+        svg.setAttribute('height', '20');
+      }
+      nameRow.appendChild(favoriteIcon);
+    }
+
+    return nameRow;
+  }
+
+  /**
+   * Build metadata array for performer overlay
+   */
+  private buildPerformerMetadata(performerData: PerformerExtended): Array<{ label: string; value: string | undefined; isIcon?: boolean }> {
+    const metadata: Array<{ label: string; value: string | undefined; isIcon?: boolean }> = [];
+
+    if (performerData.birthdate) {
+      const birthDate = new Date(performerData.birthdate);
+      const age = Math.floor((Date.now() - birthDate.getTime()) / (365.25 * 24 * 60 * 60 * 1000));
+      metadata.push({ label: 'Age', value: `${age} years` });
+    }
+    if (performerData.gender) {
+      const genderUpper = performerData.gender.toUpperCase();
+      let genderIcon: string;
+      if (genderUpper === 'FEMALE') {
+        genderIcon = '♀';
+      } else if (genderUpper === 'MALE') {
+        genderIcon = '♂';
+      } else if (genderUpper === 'TRANSGENDER_FEMALE') {
+        genderIcon = '⚧♀';
+      } else if (genderUpper === 'TRANSGENDER_MALE') {
+        genderIcon = '⚧♂';
+      } else if (genderUpper === 'NON_BINARY') {
+        genderIcon = '⚧';
+      } else if (genderUpper === 'INTERSEX') {
+        genderIcon = '⚥';
+      } else {
+        genderIcon = performerData.gender;
+      }
+      metadata.push({ label: 'Gender', value: genderIcon, isIcon: true });
+    }
+    if (performerData.country) {
+      metadata.push({ label: 'Country', value: performerData.country });
+    }
+    if (performerData.height_cm) {
+      const heightInches = Math.round(performerData.height_cm / 2.54);
+      const feet = Math.floor(heightInches / 12);
+      const inches = heightInches % 12;
+      metadata.push({ label: 'Height', value: `${feet}'${inches}" (${performerData.height_cm} cm)` });
+    }
+    if (performerData.weight) {
+      metadata.push({ label: 'Weight', value: `${performerData.weight} kg` });
+    }
+    if (performerData.measurements) {
+      metadata.push({ label: 'Measurements', value: performerData.measurements });
+    }
+    if (performerData.hair_color) {
+      metadata.push({ label: 'Hair', value: performerData.hair_color });
+    }
+    if (performerData.eye_color) {
+      metadata.push({ label: 'Eyes', value: performerData.eye_color });
+    }
+    if (performerData.ethnicity) {
+      metadata.push({ label: 'Ethnicity', value: performerData.ethnicity });
+    }
+    if (performerData.rating100 !== undefined && performerData.rating100 !== null) {
+      const rating = (performerData.rating100 / 20).toFixed(1);
+      metadata.push({ label: 'Rating', value: `${rating}/5` });
+    }
+
+    return metadata;
+  }
+
+  /**
+   * Create metadata section for performer overlay
+   */
+  private createPerformerOverlayMetadata(metadata: Array<{ label: string; value: string | undefined; isIcon?: boolean }>): HTMLElement | null {
+    if (metadata.length === 0) {
+      return null;
+    }
+
+    const metadataSection = document.createElement('div');
+    metadataSection.style.marginBottom = '12px';
+
+    for (const item of metadata) {
+      if (item.value) {
+        const row = document.createElement('div');
+        row.style.display = 'flex';
+        row.style.justifyContent = 'space-between';
+        row.style.alignItems = 'center';
+        row.style.marginBottom = '6px';
+        row.style.fontSize = '14px';
+
+        const label = document.createElement('span');
+        label.textContent = item.label + ':';
+        label.style.color = 'rgba(255, 255, 255, 0.6)';
+        row.appendChild(label);
+
+        const value = document.createElement('span');
+        if (item.isIcon) {
+          value.textContent = item.value;
+          value.style.fontSize = '18px';
+          value.style.lineHeight = '1';
+        } else {
+          value.textContent = item.value;
+        }
+        value.style.color = '#FFFFFF';
+        value.style.fontWeight = '500';
+        row.appendChild(value);
+
+        metadataSection.appendChild(row);
+      }
+    }
+
+    return metadataSection;
+  }
+
+  /**
+   * Create tags section for performer overlay
+   */
+  private createPerformerOverlayTags(performerData: PerformerExtended): HTMLElement | null {
+    if (!performerData.tags || performerData.tags.length === 0) {
+      return null;
+    }
+
+    const tagsSection = document.createElement('div');
+    tagsSection.style.marginBottom = '12px';
+    tagsSection.style.fontSize = '14px';
+
+    const tagsLabel = document.createElement('div');
+    tagsLabel.textContent = 'Tags:';
+    tagsLabel.style.color = 'rgba(255, 255, 255, 0.6)';
+    tagsLabel.style.marginBottom = '4px';
+    tagsSection.appendChild(tagsLabel);
+
+    const tagsList = document.createElement('div');
+    tagsList.style.display = 'flex';
+    tagsList.style.flexWrap = 'wrap';
+    tagsList.style.gap = '4px';
+
+    for (const tag of performerData.tags.slice(0, 10)) {
+      const tagChip = document.createElement('span');
+      tagChip.textContent = tag.name;
+      tagChip.style.backgroundColor = 'rgba(255, 255, 255, 0.1)';
+      tagChip.style.padding = '2px 8px';
+      tagChip.style.borderRadius = '4px';
+      tagChip.style.fontSize = '12px';
+      tagChip.style.color = '#FFFFFF';
+      tagsList.appendChild(tagChip);
+    }
+
+    if (performerData.tags.length > 10) {
+      const moreChip = document.createElement('span');
+      moreChip.textContent = `+${performerData.tags.length - 10} more`;
+      moreChip.style.color = 'rgba(255, 255, 255, 0.6)';
+      moreChip.style.fontSize = '12px';
+      tagsList.appendChild(moreChip);
+    }
+
+    tagsSection.appendChild(tagsList);
+    return tagsSection;
+  }
+
+  /**
+   * Create details section for performer overlay
+   */
+  private createPerformerOverlayDetails(performerData: PerformerExtended): HTMLElement | null {
+    if (!performerData.details) {
+      return null;
+    }
+
+    const detailsSection = document.createElement('div');
+    detailsSection.style.fontSize = '14px';
+    detailsSection.style.color = 'rgba(255, 255, 255, 0.8)';
+    detailsSection.style.lineHeight = '1.5';
+    detailsSection.style.marginTop = '12px';
+    detailsSection.style.paddingTop = '12px';
+    detailsSection.style.borderTop = '1px solid rgba(255, 255, 255, 0.1)';
+    detailsSection.textContent = performerData.details;
+    return detailsSection;
+  }
+
+  /**
    * Create performer overlay card
    */
   private createPerformerOverlay(performerData: PerformerExtended): HTMLElement {
@@ -337,103 +608,15 @@ export abstract class BasePost {
     });
 
     // Image section
-    const imageSection = document.createElement('div');
-    imageSection.style.width = '100%';
-    imageSection.style.height = '200px';
-    imageSection.style.backgroundColor = 'rgba(255, 255, 255, 0.05)';
-    imageSection.style.display = 'flex';
-    imageSection.style.alignItems = 'center';
-    imageSection.style.justifyContent = 'center';
-    imageSection.style.overflow = 'hidden';
-    imageSection.style.borderRadius = '8px 8px 0 0';
-
-    if (performerData.image_path) {
-      const imageSrc = performerData.image_path.startsWith('http')
-        ? performerData.image_path
-        : toAbsoluteUrl(performerData.image_path);
-      if (imageSrc) {
-        const img = document.createElement('img');
-        img.src = imageSrc;
-        img.alt = performerData.name;
-        img.style.width = '100%';
-        img.style.height = '100%';
-        img.style.objectFit = 'cover';
-        img.style.objectPosition = 'top center';
-        imageSection.appendChild(img);
-      } else {
-        imageSection.textContent = performerData.name.charAt(0).toUpperCase();
-        imageSection.style.fontSize = '64px';
-        imageSection.style.color = 'rgba(255, 255, 255, 0.5)';
-      }
-    } else {
-      imageSection.textContent = performerData.name.charAt(0).toUpperCase();
-      imageSection.style.fontSize = '64px';
-      imageSection.style.color = 'rgba(255, 255, 255, 0.5)';
-    }
+    const imageSection = this.createPerformerOverlayImageSection(performerData);
     overlay.appendChild(imageSection);
 
     // Content section
     const contentSection = document.createElement('div');
     contentSection.style.padding = '16px';
 
-    // Name and favorite (name is clickable link to Stash)
-    const nameRow = document.createElement('div');
-    nameRow.style.display = 'flex';
-    nameRow.style.alignItems = 'center';
-    nameRow.style.gap = '8px';
-    nameRow.style.marginBottom = '12px';
-
-    const nameLink = document.createElement('a');
-    nameLink.href = this.getPerformerLink(performerData.id);
-    nameLink.target = '_blank';
-    nameLink.rel = 'noopener noreferrer';
-    nameLink.style.display = 'flex';
-    nameLink.style.alignItems = 'center';
-    nameLink.style.gap = '6px';
-    nameLink.style.textDecoration = 'none';
-    nameLink.style.color = '#FFFFFF';
-    nameLink.style.cursor = 'pointer';
-    nameLink.addEventListener('mouseenter', () => {
-      nameLink.style.color = '#4A9EFF';
-    });
-    nameLink.addEventListener('mouseleave', () => {
-      nameLink.style.color = '#FFFFFF';
-    });
-
-    const name = document.createElement('h3');
-    name.textContent = performerData.name;
-    name.style.margin = '0';
-    name.style.fontSize = '20px';
-    name.style.fontWeight = '600';
-    nameLink.appendChild(name);
-
-    // External link icon
-    const externalIcon = document.createElement('span');
-    externalIcon.innerHTML = '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" xmlns="http://www.w3.org/2000/svg"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><polyline points="15 3 21 3 21 9"></polyline><line x1="10" y1="14" x2="21" y2="3"></line></svg>';
-    externalIcon.style.display = 'inline-flex';
-    externalIcon.style.alignItems = 'center';
-    externalIcon.style.opacity = '0.7';
-    externalIcon.style.flexShrink = '0';
-    nameLink.appendChild(externalIcon);
-
-    nameRow.appendChild(nameLink);
-
-    if (performerData.favorite) {
-      const favoriteIcon = document.createElement('span');
-      favoriteIcon.innerHTML = HEART_SVG_FILLED;
-      favoriteIcon.style.display = 'inline-flex';
-      favoriteIcon.style.alignItems = 'center';
-      favoriteIcon.style.width = '20px';
-      favoriteIcon.style.height = '20px';
-      favoriteIcon.style.color = '#FF6B6B';
-      const svg = favoriteIcon.querySelector('svg');
-      if (svg) {
-        svg.setAttribute('width', '20');
-        svg.setAttribute('height', '20');
-      }
-      nameRow.appendChild(favoriteIcon);
-    }
-
+    // Name and favorite
+    const nameRow = this.createPerformerOverlayNameRow(performerData);
     contentSection.appendChild(nameRow);
 
     // Performer URL (if available)
@@ -462,158 +645,22 @@ export abstract class BasePost {
       contentSection.appendChild(urlLink);
     }
 
-    // Metadata sections
-    const metadata: Array<{ label: string; value: string | undefined; isIcon?: boolean }> = [];
-
-    // Basic info
-    if (performerData.birthdate) {
-      const birthDate = new Date(performerData.birthdate);
-      const age = Math.floor((Date.now() - birthDate.getTime()) / (365.25 * 24 * 60 * 60 * 1000));
-      metadata.push({ label: 'Age', value: `${age} years` });
-    }
-    if (performerData.gender) {
-      // Use icon instead of text for gender
-      const genderUpper = performerData.gender.toUpperCase();
-      let genderIcon: string;
-      if (genderUpper === 'FEMALE') {
-        genderIcon = '♀';
-      } else if (genderUpper === 'MALE') {
-        genderIcon = '♂';
-      } else if (genderUpper === 'TRANSGENDER_FEMALE') {
-        genderIcon = '⚧♀';
-      } else if (genderUpper === 'TRANSGENDER_MALE') {
-        genderIcon = '⚧♂';
-      } else if (genderUpper === 'NON_BINARY') {
-        genderIcon = '⚧';
-      } else if (genderUpper === 'INTERSEX') {
-        genderIcon = '⚥';
-      } else {
-        genderIcon = performerData.gender;
-      }
-      metadata.push({ label: 'Gender', value: genderIcon, isIcon: true });
-    }
-    if (performerData.country) {
-      metadata.push({ label: 'Country', value: performerData.country });
-    }
-
-    // Physical attributes
-    if (performerData.height_cm) {
-      const heightInches = Math.round(performerData.height_cm / 2.54);
-      const feet = Math.floor(heightInches / 12);
-      const inches = heightInches % 12;
-      metadata.push({ label: 'Height', value: `${feet}'${inches}" (${performerData.height_cm} cm)` });
-    }
-    if (performerData.weight) {
-      metadata.push({ label: 'Weight', value: `${performerData.weight} kg` });
-    }
-    if (performerData.measurements) {
-      metadata.push({ label: 'Measurements', value: performerData.measurements });
-    }
-    if (performerData.hair_color) {
-      metadata.push({ label: 'Hair', value: performerData.hair_color });
-    }
-    if (performerData.eye_color) {
-      metadata.push({ label: 'Eyes', value: performerData.eye_color });
-    }
-    if (performerData.ethnicity) {
-      metadata.push({ label: 'Ethnicity', value: performerData.ethnicity });
-    }
-
-    // Rating
-    if (performerData.rating100 !== undefined && performerData.rating100 !== null) {
-      const rating = (performerData.rating100 / 20).toFixed(1);
-      metadata.push({ label: 'Rating', value: `${rating}/5` });
-    }
-
-    // Display metadata
-    if (metadata.length > 0) {
-      const metadataSection = document.createElement('div');
-      metadataSection.style.marginBottom = '12px';
-
-      for (const item of metadata) {
-        if (item.value) {
-          const row = document.createElement('div');
-          row.style.display = 'flex';
-          row.style.justifyContent = 'space-between';
-          row.style.alignItems = 'center';
-          row.style.marginBottom = '6px';
-          row.style.fontSize = '14px';
-
-          const label = document.createElement('span');
-          label.textContent = item.label + ':';
-          label.style.color = 'rgba(255, 255, 255, 0.6)';
-          row.appendChild(label);
-
-          const value = document.createElement('span');
-          if (item.isIcon) {
-            value.textContent = item.value;
-            value.style.fontSize = '18px';
-            value.style.lineHeight = '1';
-          } else {
-            value.textContent = item.value;
-          }
-          value.style.color = '#FFFFFF';
-          value.style.fontWeight = '500';
-          row.appendChild(value);
-
-          metadataSection.appendChild(row);
-        }
-      }
-
+    // Metadata
+    const metadata = this.buildPerformerMetadata(performerData);
+    const metadataSection = this.createPerformerOverlayMetadata(metadata);
+    if (metadataSection) {
       contentSection.appendChild(metadataSection);
     }
 
-
     // Tags
-    if (performerData.tags && performerData.tags.length > 0) {
-      const tagsSection = document.createElement('div');
-      tagsSection.style.marginBottom = '12px';
-      tagsSection.style.fontSize = '14px';
-
-      const tagsLabel = document.createElement('div');
-      tagsLabel.textContent = 'Tags:';
-      tagsLabel.style.color = 'rgba(255, 255, 255, 0.6)';
-      tagsLabel.style.marginBottom = '4px';
-      tagsSection.appendChild(tagsLabel);
-
-      const tagsList = document.createElement('div');
-      tagsList.style.display = 'flex';
-      tagsList.style.flexWrap = 'wrap';
-      tagsList.style.gap = '4px';
-
-      for (const tag of performerData.tags.slice(0, 10)) {
-        const tagChip = document.createElement('span');
-        tagChip.textContent = tag.name;
-        tagChip.style.backgroundColor = 'rgba(255, 255, 255, 0.1)';
-        tagChip.style.padding = '2px 8px';
-        tagChip.style.borderRadius = '4px';
-        tagChip.style.fontSize = '12px';
-        tagChip.style.color = '#FFFFFF';
-        tagsList.appendChild(tagChip);
-      }
-
-      if (performerData.tags.length > 10) {
-        const moreChip = document.createElement('span');
-        moreChip.textContent = `+${performerData.tags.length - 10} more`;
-        moreChip.style.color = 'rgba(255, 255, 255, 0.6)';
-        moreChip.style.fontSize = '12px';
-        tagsList.appendChild(moreChip);
-      }
-
-      tagsSection.appendChild(tagsList);
+    const tagsSection = this.createPerformerOverlayTags(performerData);
+    if (tagsSection) {
       contentSection.appendChild(tagsSection);
     }
 
     // Details
-    if (performerData.details) {
-      const detailsSection = document.createElement('div');
-      detailsSection.style.fontSize = '14px';
-      detailsSection.style.color = 'rgba(255, 255, 255, 0.8)';
-      detailsSection.style.lineHeight = '1.5';
-      detailsSection.style.marginTop = '12px';
-      detailsSection.style.paddingTop = '12px';
-      detailsSection.style.borderTop = '1px solid rgba(255, 255, 255, 0.1)';
-      detailsSection.textContent = performerData.details;
+    const detailsSection = this.createPerformerOverlayDetails(performerData);
+    if (detailsSection) {
       contentSection.appendChild(detailsSection);
     }
 

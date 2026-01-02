@@ -190,13 +190,17 @@ export function setupTouchHandlers(
     handleTouchMove(e, state);
   };
 
+  const applyEventOptions = (e: TouchEvent): void => {
+    if (preventDefault) e.preventDefault();
+    if (stopPropagation) e.stopPropagation();
+    if (stopImmediatePropagation) e.stopImmediatePropagation();
+  };
+
   const handleEnd = (e: TouchEvent) => {
     const result = analyzeTouchEnd(e, state);
 
     if (result.isDoubleTap && onDoubleTap) {
-      if (preventDefault) e.preventDefault();
-      if (stopPropagation) e.stopPropagation();
-      if (stopImmediatePropagation) e.stopImmediatePropagation();
+      applyEventOptions(e);
       onDoubleTap(e);
       // Reset to prevent triple tap
       state.lastTapTime = 0;
@@ -204,9 +208,7 @@ export function setupTouchHandlers(
     }
 
     if (result.isTap && onTap) {
-      if (preventDefault) e.preventDefault();
-      if (stopPropagation) e.stopPropagation();
-      if (stopImmediatePropagation) e.stopImmediatePropagation();
+      applyEventOptions(e);
       onTap(e);
     }
   };
