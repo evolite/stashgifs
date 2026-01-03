@@ -184,7 +184,7 @@ export class FeedContainer {
     this.initialLoadLimit = this.isMobileDevice ? 6 : 8; // Load 6 on mobile, 8 on desktop (reduced to prevent overload)
     
     // Extremely reduced to prevent 8GB+ RAM usage: max 2 on mobile, 2 on desktop
-    this.maxSimultaneousPreloads = this.isMobileDevice ? 2 : 2;
+    this.maxSimultaneousPreloads = 2;
 
     if (this.isMobileDevice) {
       // Mobile: more aggressive memory management
