@@ -120,6 +120,7 @@ export class FeedContainer {
   private readonly loadObservers: Map<string, IntersectionObserver> = new Map(); // Track load observers for cleanup
   private deviceCapabilities: DeviceCapabilities; // Device capabilities for adaptive quality
   private shuffleToggle?: HTMLElement; // Reference to shuffle toggle button
+  private updatePlaceholderVisibilityRef?: () => void; // Reference to updatePlaceholderVisibility function
   // Card snapping state
   private cardSnapWheelHandler?: (e: WheelEvent) => void;
   private cardSnapTouchStartHandler?: (e: TouchEvent) => void;
@@ -1499,6 +1500,24 @@ export class FeedContainer {
     brand.textContent = 'stashgifs';
     
     brandContainer.addEventListener('click', () => {
+      // Clear all filter properties
+      this.selectedTagId = undefined;
+      this.selectedTagName = undefined;
+      this.selectedPerformerId = undefined;
+      this.selectedPerformerName = undefined;
+      this.selectedSavedFilter = undefined;
+      this.currentFilters = undefined;
+      
+      // Clear search input and show helper text
+      const queryInput = this.container.querySelector('.feed-filters__input') as HTMLInputElement;
+      if (queryInput) {
+        queryInput.value = '';
+        if (this.updatePlaceholderVisibilityRef) {
+          this.updatePlaceholderVisibilityRef();
+        }
+      }
+      
+      // Refresh feed (scrolls to top and reloads)
       this.refreshFeed().catch((e) => console.error('Failed to refresh feed', e));
     });
     
@@ -2126,6 +2145,7 @@ export class FeedContainer {
     const shuffleIndicator = inputSetup.shuffleIndicator;
     const randomLeftIcon = inputSetup.randomLeftIcon;
     const updatePlaceholderVisibility = inputSetup.updatePlaceholderVisibility;
+    this.updatePlaceholderVisibilityRef = updatePlaceholderVisibility;
 
     // Append input to wrapper
     inputWrapper.appendChild(queryInput);
