@@ -108,6 +108,7 @@ export interface FeedSettings {
   shortFormMaxDuration?: number; // Maximum duration in seconds for short-form content, default: 120
   shortFormOnly?: boolean; // When true, only load short-form content and skip regular markers
   snapToCards?: boolean; // When true, scroll/swipe snaps to center next/previous card
+  treatMp4AsVideo?: boolean; // When true, .mp4/.m4v files are treated as VideoPost with controls. When false, treated as ImagePost with preview WebM
 }
 
 export interface VideoPostData {

@@ -97,10 +97,20 @@ export class ImagePlayer {
     // Setup looping video properties (reused utility function)
     setupLoopingVideoElement(this.videoElement);
     
-    // Preview videos from Stash are always WebM
-    this.videoElement.setAttribute('type', 'video/webm');
+    // Determine MIME type based on file extension
+    const urlLower = this.imageUrl.toLowerCase();
+    if (urlLower.endsWith('.mp4') || urlLower.endsWith('.m4v')) {
+      this.videoElement.setAttribute('type', 'video/mp4');
+    } else {
+      // Preview videos from Stash are WebM
+      this.videoElement.setAttribute('type', 'video/webm');
+    }
     
     wrapper.appendChild(this.videoElement);
+
+    // Images should always be muted - no audio playback
+    // Keep video muted regardless of global mute state
+    this.videoElement.muted = true;
 
     // Try to play the video when it's ready
     const tryPlay = async (): Promise<void> => {
@@ -133,6 +143,9 @@ export class ImagePlayer {
     this.videoElement.addEventListener('loadeddata', handleLoadedData, { once: true });
     this.videoElement.addEventListener('canplay', handleCanPlay, { once: true });
     this.videoElement.addEventListener('canplaythrough', handleCanPlay, { once: true });
+
+    // Images should always be muted - no audio playback
+    // No need to check for audio or create mute button
 
     this.videoElement.addEventListener('error', (e) => {
       this.hideLoadingIndicator();

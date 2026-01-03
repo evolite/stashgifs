@@ -8,8 +8,8 @@ import { ImagePlayer } from './ImagePlayer.js';
 import { FavoritesManager } from './FavoritesManager.js';
 import { StashAPI } from './StashAPI.js';
 import { VisibilityManager } from './VisibilityManager.js';
-import { getAspectRatioClass, showToast, toAbsoluteUrl } from './utils.js';
-import { IMAGE_BADGE_SVG, EXTERNAL_LINK_SVG } from './icons.js';
+import { getAspectRatioClass, showToast, toAbsoluteUrl, detectVideoFromVisualFiles, isMp4File, getImageUrlForDisplay } from './utils.js';
+import { IMAGE_BADGE_SVG, EXTERNAL_LINK_SVG, HQ_SVG_OUTLINE } from './icons.js';
 import { BasePost } from './BasePost.js';
 
 // Constants
@@ -48,7 +48,8 @@ export class ImagePost extends BasePost {
     api?: StashAPI,
     visibilityManager?: VisibilityManager,
     onPerformerChipClick?: (performerId: number, performerName: string) => void,
-    onTagChipClick?: (tagId: number, tagName: string) => void
+    onTagChipClick?: (tagId: number, tagName: string) => void,
+    onLoadFullVideo?: () => void
   ) {
     super(
       container,
@@ -237,22 +238,8 @@ export class ImagePost extends BasePost {
     }
 
     try {
-      // Image codecs that should be treated as images (not videos)
-      const imageCodecs = ['gif', 'webp', 'apng', 'avif', 'heic', 'heif'];
-      
-      // Check if visual_files has a video_codec that indicates it's a video
-      let isVideo = false;
-      
-      if (this.data.image.visualFiles) {
-        const videoFile = this.data.image.visualFiles.find(vf => vf.video_codec);
-        if (videoFile?.video_codec) {
-          const codec = videoFile.video_codec.toLowerCase();
-          // If it has a video_codec and it's NOT an image codec, it's a video
-          if (!imageCodecs.includes(codec)) {
-            isVideo = true;
-          }
-        }
-      }
+      // Use centralized utility to detect if this is a video
+      const { isVideo } = detectVideoFromVisualFiles(this.data.image.visualFiles);
       
       const isGif = !isVideo && (imageUrl.toLowerCase().endsWith('.gif') || 
                    this.data.image.visualFiles?.some(vf => 
@@ -283,46 +270,18 @@ export class ImagePost extends BasePost {
 
   /**
    * Get image URL from image data
-   * For videos (images with video_codec), use preview path (WebM)
-   * For regular images, use image path with fallback to preview/thumbnail
+   * Primarily returns the URL already set in ImagePostData
+   * Falls back to centralized URL selection utility if not set
    */
   getImageUrl(): string | undefined {
+    // If URL is already set in data, use it (set by FeedContainer with proper settings)
     if (this.data.imageUrl) {
       return this.data.imageUrl;
     }
 
-    // Check if this is a video (has video_codec that's not an image codec)
-    const imageCodecs = ['gif', 'webp', 'apng', 'avif', 'heic', 'heif'];
-    let isVideo = false;
-    
-    if (this.data.image.visualFiles) {
-      const videoFile = this.data.image.visualFiles.find(vf => vf.video_codec);
-      if (videoFile?.video_codec) {
-        const codec = videoFile.video_codec.toLowerCase();
-        // If it has a video_codec and it's NOT an image codec, it's a video
-        if (!imageCodecs.includes(codec)) {
-          isVideo = true;
-        }
-      }
-    }
-
-    // For videos, use preview path (WebM)
-    if (isVideo && this.data.image.paths?.preview) {
-      return toAbsoluteUrl(this.data.image.paths.preview);
-    }
-
-    // For regular images, try paths.image first, then paths.preview, then paths.thumbnail
-    if (this.data.image.paths?.image) {
-      return toAbsoluteUrl(this.data.image.paths.image);
-    }
-    if (this.data.image.paths?.preview) {
-      return toAbsoluteUrl(this.data.image.paths.preview);
-    }
-    if (this.data.image.paths?.thumbnail) {
-      return toAbsoluteUrl(this.data.image.paths.thumbnail);
-    }
-
-    return undefined;
+    // Fallback: use centralized utility (defaults to treatMp4AsVideo=false for fallback)
+    // In practice, this should rarely be needed since FeedContainer sets imageUrl
+    return getImageUrlForDisplay(this.data.image, false);
   }
 
   /**

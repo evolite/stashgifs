@@ -2,6 +2,8 @@
  * Utility functions
  */
 
+import { Image } from './types.js';
+
 /**
  * Throttle function calls
  */
@@ -593,6 +595,12 @@ export function isCellularConnection(): boolean {
 }
 
 /**
+ * Image codecs that should be treated as images (not videos)
+ * These codecs may have animation but should be displayed as images
+ */
+export const IMAGE_CODECS = ['gif', 'webp', 'apng', 'avif', 'heic', 'heif'] as const;
+
+/**
  * Image file extensions that should always be displayed as images (not videos)
  * Even if they have animation or video-like properties
  */
@@ -628,6 +636,121 @@ export function isImageFile(url: string): boolean {
 export function isVideoFile(url: string): boolean {
   const lowerUrl = url.toLowerCase();
   return VIDEO_EXTENSIONS.some(ext => lowerUrl.endsWith(ext));
+}
+
+/**
+ * Check if a codec is an image codec (should be treated as image, not video)
+ * @param codec The codec string to check
+ * @returns true if the codec is an image codec
+ */
+export function isImageCodec(codec: string): boolean {
+  return IMAGE_CODECS.includes(codec.toLowerCase() as typeof IMAGE_CODECS[number]);
+}
+
+/**
+ * Check if a codec is a video codec (not an image codec)
+ * @param codec The codec string to check
+ * @returns true if the codec is a video codec
+ */
+export function isVideoCodec(codec: string): boolean {
+  return !isImageCodec(codec);
+}
+
+/**
+ * Detect if visualFiles indicates a video (has video_codec that's not an image codec)
+ * @param visualFiles Array of visual file information
+ * @returns Object with isVideo boolean and the video file if found
+ */
+export function detectVideoFromVisualFiles(visualFiles?: Array<{
+  path?: string;
+  video_codec?: string;
+  duration?: number;
+}>): { isVideo: boolean; videoFile?: { path?: string; video_codec?: string } } {
+  if (!visualFiles) {
+    return { isVideo: false };
+  }
+
+  const videoFile = visualFiles.find(vf => vf.video_codec);
+  if (!videoFile?.video_codec) {
+    return { isVideo: false };
+  }
+
+  const codec = videoFile.video_codec.toLowerCase();
+  const isVideo = !isImageCodec(codec);
+
+  return {
+    isVideo,
+    videoFile: isVideo ? videoFile : undefined,
+  };
+}
+
+/**
+ * Check if a file path is an MP4 or M4V file
+ * @param path The file path to check
+ * @returns true if the path ends with .mp4 or .m4v
+ */
+export function isMp4File(path?: string): boolean {
+  if (!path) {
+    return false;
+  }
+  const filePath = path.toLowerCase();
+  return filePath.endsWith('.mp4') || filePath.endsWith('.m4v');
+}
+
+/**
+ * Get the appropriate image URL for display based on image data and settings
+ * @param image The image data
+ * @param treatMp4AsVideo Whether MP4/M4V files should be treated as videos (use paths.image) or images (use paths.preview)
+ * @returns The URL to use for display, or undefined if no valid URL found
+ */
+export function getImageUrlForDisplay(image: Image, treatMp4AsVideo: boolean): string | undefined {
+  const baseUrl = globalThis.location.origin;
+  
+  // Detect if this is a video from visualFiles
+  const { isVideo, videoFile } = detectVideoFromVisualFiles(image.visualFiles);
+  
+  // For .m4v and .mp4 files, use the actual video file path (paths.image) if treatMp4AsVideo is enabled
+  // Otherwise, fall through to use preview path (WebM)
+  if (isVideo && videoFile?.path && treatMp4AsVideo) {
+    if (isMp4File(videoFile.path)) {
+      // Use paths.image which should point to the actual file
+      if (image.paths?.image) {
+        const url = image.paths.image.startsWith('http') 
+          ? image.paths.image 
+          : `${baseUrl}${image.paths.image}`;
+        return isValidMediaUrl(url) ? url : undefined;
+      }
+    }
+  }
+
+  // For other videos, use preview path (WebM)
+  if (isVideo && image.paths?.preview) {
+    const url = image.paths.preview.startsWith('http') 
+      ? image.paths.preview 
+      : `${baseUrl}${image.paths.preview}`;
+    return isValidMediaUrl(url) ? url : undefined;
+  }
+
+  // For regular images, try paths.image first, then paths.preview, then paths.thumbnail
+  if (image.paths?.image) {
+    const url = image.paths.image.startsWith('http') 
+      ? image.paths.image 
+      : `${baseUrl}${image.paths.image}`;
+    return isValidMediaUrl(url) ? url : undefined;
+  }
+  if (image.paths?.preview) {
+    const url = image.paths.preview.startsWith('http') 
+      ? image.paths.preview 
+      : `${baseUrl}${image.paths.preview}`;
+    return isValidMediaUrl(url) ? url : undefined;
+  }
+  if (image.paths?.thumbnail) {
+    const url = image.paths.thumbnail.startsWith('http') 
+      ? image.paths.thumbnail 
+      : `${baseUrl}${image.paths.thumbnail}`;
+    return isValidMediaUrl(url) ? url : undefined;
+  }
+  return undefined;
 }
 
 /**

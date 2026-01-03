@@ -26,6 +26,98 @@ export class SettingsPage {
   }
 
   /**
+   * Create an info button with hover tooltip
+   */
+  private createInfoButton(tooltipText: string): HTMLElement {
+    const infoButton = document.createElement('button');
+    infoButton.type = 'button';
+    infoButton.setAttribute('aria-label', 'Information');
+    infoButton.innerHTML = 'ℹ️';
+    infoButton.style.background = 'transparent';
+    infoButton.style.border = 'none';
+    infoButton.style.color = 'rgba(255, 255, 255, 0.6)';
+    infoButton.style.fontSize = '16px';
+    infoButton.style.cursor = 'help';
+    infoButton.style.padding = '0';
+    infoButton.style.width = '20px';
+    infoButton.style.height = '20px';
+    infoButton.style.display = 'flex';
+    infoButton.style.alignItems = 'center';
+    infoButton.style.justifyContent = 'center';
+    infoButton.style.marginLeft = '8px';
+    infoButton.style.position = 'relative';
+    infoButton.style.transition = 'color 0.2s';
+
+    // Hover effect
+    infoButton.addEventListener('mouseenter', () => {
+      infoButton.style.color = 'rgba(255, 255, 255, 0.9)';
+    });
+    infoButton.addEventListener('mouseleave', () => {
+      infoButton.style.color = 'rgba(255, 255, 255, 0.6)';
+    });
+
+    // Create tooltip - append to container to avoid overflow clipping
+    const tooltip = document.createElement('div');
+    tooltip.textContent = tooltipText;
+    tooltip.style.position = 'fixed';
+    tooltip.style.padding = '8px 12px';
+    tooltip.style.backgroundColor = 'rgba(0, 0, 0, 0.95)';
+    tooltip.style.color = '#FFFFFF';
+    tooltip.style.fontSize = '12px';
+    tooltip.style.borderRadius = '6px';
+    tooltip.style.whiteSpace = 'pre-wrap';
+    tooltip.style.maxWidth = '300px';
+    tooltip.style.width = 'max-content';
+    tooltip.style.boxShadow = '0 4px 12px rgba(0, 0, 0, 0.4)';
+    tooltip.style.pointerEvents = 'none';
+    tooltip.style.opacity = '0';
+    tooltip.style.transition = 'opacity 0.2s';
+    tooltip.style.zIndex = '10001';
+    tooltip.style.lineHeight = '1.5';
+    tooltip.style.pointerEvents = 'none';
+    
+    // Append tooltip to container (not button) to avoid overflow clipping
+    this.container.appendChild(tooltip);
+
+    // Update tooltip position on hover
+    const updateTooltipPosition = () => {
+      const buttonRect = infoButton.getBoundingClientRect();
+      const tooltipRect = tooltip.getBoundingClientRect();
+      const containerRect = this.container.getBoundingClientRect();
+      
+      // Position above the button, centered horizontally
+      let left = buttonRect.left + (buttonRect.width / 2) - (tooltipRect.width / 2);
+      let top = buttonRect.top - tooltipRect.height - 8;
+      
+      // Adjust if tooltip would go off screen
+      if (left < containerRect.left + 10) {
+        left = containerRect.left + 10;
+      }
+      if (left + tooltipRect.width > containerRect.right - 10) {
+        left = containerRect.right - tooltipRect.width - 10;
+      }
+      if (top < containerRect.top + 10) {
+        // If not enough space above, show below
+        top = buttonRect.bottom + 8;
+      }
+      
+      tooltip.style.left = `${left}px`;
+      tooltip.style.top = `${top}px`;
+    };
+
+    // Show tooltip on hover
+    infoButton.addEventListener('mouseenter', () => {
+      updateTooltipPosition();
+      tooltip.style.opacity = '1';
+    });
+    infoButton.addEventListener('mouseleave', () => {
+      tooltip.style.opacity = '0';
+    });
+
+    return infoButton;
+  }
+
+  /**
    * Create a modern toggle switch
    */
   private createToggleSwitch(checked: boolean, onChange?: (checked: boolean) => void): { container: HTMLElement; input: HTMLInputElement } {
@@ -166,13 +258,27 @@ export class SettingsPage {
     const imageSection = document.createElement('div');
     imageSection.style.marginBottom = '32px';
 
+    const imageSectionTitleContainer = document.createElement('div');
+    imageSectionTitleContainer.style.display = 'flex';
+    imageSectionTitleContainer.style.alignItems = 'center';
+    imageSectionTitleContainer.style.marginBottom = '16px';
+
     const imageSectionTitle = document.createElement('h3');
     imageSectionTitle.textContent = 'Image feed';
-    imageSectionTitle.style.margin = '0 0 16px 0';
+    imageSectionTitle.style.margin = '0';
     imageSectionTitle.style.color = '#FFFFFF';
     imageSectionTitle.style.fontSize = '18px';
     imageSectionTitle.style.fontWeight = '600';
-    imageSection.appendChild(imageSectionTitle);
+    imageSectionTitleContainer.appendChild(imageSectionTitle);
+
+    const imageFeedInfo = this.createInfoButton(
+      'Displays images and looping videos from your Stash library.\n\n' +
+      'Treated as Images by Stash (not Videos).\n' +
+      'Shown as looping cards without controls or audio.\n' +
+      'Supports: JPG, PNG, GIF, WebM, MP4, M4V'
+    );
+    imageSectionTitleContainer.appendChild(imageFeedInfo);
+    imageSection.appendChild(imageSectionTitleContainer);
 
     // Include images toggle
     const includeImagesContainer = document.createElement('div');
@@ -195,32 +301,26 @@ export class SettingsPage {
 
     imageSection.appendChild(includeImagesContainer);
 
-    // Images only toggle
-    const imagesOnlyContainer = document.createElement('div');
-    imagesOnlyContainer.style.display = 'flex';
-    imagesOnlyContainer.style.justifyContent = 'space-between';
-    imagesOnlyContainer.style.alignItems = 'center';
-    imagesOnlyContainer.style.marginBottom = '16px';
+    // Treat MP4 as video toggle
+    const treatMp4AsVideoContainer = document.createElement('div');
+    treatMp4AsVideoContainer.style.display = 'flex';
+    treatMp4AsVideoContainer.style.justifyContent = 'space-between';
+    treatMp4AsVideoContainer.style.alignItems = 'center';
+    treatMp4AsVideoContainer.style.marginBottom = '16px';
 
-    const imagesOnlyLabel = document.createElement('span');
-    imagesOnlyLabel.textContent = 'Only load images (skip videos)';
-    imagesOnlyLabel.style.color = '#FFFFFF';
-    imagesOnlyLabel.style.fontSize = '14px';
-    imagesOnlyContainer.appendChild(imagesOnlyLabel);
+    const treatMp4AsVideoLabel = document.createElement('span');
+    treatMp4AsVideoLabel.textContent = 'Only load preview images for MP4/M4V';
+    treatMp4AsVideoLabel.style.color = '#FFFFFF';
+    treatMp4AsVideoLabel.style.fontSize = '14px';
+    treatMp4AsVideoContainer.appendChild(treatMp4AsVideoLabel);
 
-    const { container: imagesOnlyToggleContainer, input: imagesOnlyToggle } = this.createToggleSwitch(
-      this.settings.imagesOnly === true,
-      (checked) => {
-        if (checked) {
-          includeImagesToggle.checked = true;
-          includeImagesToggle.dispatchEvent(new Event('change'));
-        }
-        this.saveSettings();
-      }
+    const { container: treatMp4AsVideoToggleContainer, input: treatMp4AsVideoToggle } = this.createToggleSwitch(
+      this.settings.treatMp4AsVideo === false,
+      () => this.saveSettings()
     );
-    imagesOnlyContainer.appendChild(imagesOnlyToggleContainer);
+    treatMp4AsVideoContainer.appendChild(treatMp4AsVideoToggleContainer);
 
-    imageSection.appendChild(imagesOnlyContainer);
+    imageSection.appendChild(treatMp4AsVideoContainer);
 
     // File types input
     const fileTypesContainer = document.createElement('div');
@@ -237,7 +337,7 @@ export class SettingsPage {
 
     const fileTypesInput = document.createElement('input');
     fileTypesInput.type = 'text';
-    fileTypesInput.value = (this.settings.enabledFileTypes || ['.gif']).join(', ');
+    fileTypesInput.value = (this.settings.enabledFileTypes || ['.jpg', '.png', '.gif', '.mp4', '.m4v', '.webm']).join(', ');
     fileTypesInput.style.width = '100%';
     fileTypesInput.style.padding = '12px';
     fileTypesInput.style.borderRadius = '8px';
@@ -296,19 +396,60 @@ export class SettingsPage {
 
     imageSection.appendChild(fileTypesContainer);
 
+    // Images only toggle
+    const imagesOnlyContainer = document.createElement('div');
+    imagesOnlyContainer.style.display = 'flex';
+    imagesOnlyContainer.style.justifyContent = 'space-between';
+    imagesOnlyContainer.style.alignItems = 'center';
+    imagesOnlyContainer.style.marginBottom = '16px';
+
+    const imagesOnlyLabel = document.createElement('span');
+    imagesOnlyLabel.textContent = 'Only load images (skip videos)';
+    imagesOnlyLabel.style.color = '#FFFFFF';
+    imagesOnlyLabel.style.fontSize = '14px';
+    imagesOnlyContainer.appendChild(imagesOnlyLabel);
+
+    const { container: imagesOnlyToggleContainer, input: imagesOnlyToggle } = this.createToggleSwitch(
+      this.settings.imagesOnly === true,
+      (checked) => {
+        if (checked) {
+          includeImagesToggle.checked = true;
+          includeImagesToggle.dispatchEvent(new Event('change'));
+        }
+        this.saveSettings();
+      }
+    );
+    imagesOnlyContainer.appendChild(imagesOnlyToggleContainer);
+
+    imageSection.appendChild(imagesOnlyContainer);
+
     modal.appendChild(imageSection);
 
     // Short Form Content Settings Section
     const shortFormSection = document.createElement('div');
     shortFormSection.style.marginBottom = '32px';
 
+    const shortFormSectionTitleContainer = document.createElement('div');
+    shortFormSectionTitleContainer.style.display = 'flex';
+    shortFormSectionTitleContainer.style.alignItems = 'center';
+    shortFormSectionTitleContainer.style.marginBottom = '16px';
+
     const shortFormSectionTitle = document.createElement('h3');
-    shortFormSectionTitle.textContent = 'Short form content';
-    shortFormSectionTitle.style.margin = '0 0 16px 0';
+    shortFormSectionTitle.textContent = 'Short form Video Content';
+    shortFormSectionTitle.style.margin = '0';
     shortFormSectionTitle.style.color = '#FFFFFF';
     shortFormSectionTitle.style.fontSize = '18px';
     shortFormSectionTitle.style.fontWeight = '600';
-    shortFormSection.appendChild(shortFormSectionTitle);
+    shortFormSectionTitleContainer.appendChild(shortFormSectionTitle);
+
+    const shortFormInfo = this.createInfoButton(
+      'Scenes (videos) below a certain length.\n\n' +
+      'Treated as Videos by Stash (not Images).\n' +
+      'Full video playback with controls.\n' +
+      'Supports HD and non-HD modes.'
+    );
+    shortFormSectionTitleContainer.appendChild(shortFormInfo);
+    shortFormSection.appendChild(shortFormSectionTitleContainer);
 
     // Include in HD mode toggle
     const shortFormHDContainer = document.createElement('div');
@@ -476,6 +617,7 @@ export class SettingsPage {
     (this as any).maxDurationInput = maxDurationInput;
     (this as any).includeImagesToggle = includeImagesToggle;
     (this as any).imagesOnlyToggle = imagesOnlyToggle;
+    (this as any).treatMp4AsVideoToggle = treatMp4AsVideoToggle;
     (this as any).shortFormHDToggle = shortFormHDToggle;
     (this as any).shortFormNonHDToggle = shortFormNonHDToggle;
     (this as any).shortFormOnlyToggle = shortFormOnlyToggle;
@@ -513,13 +655,14 @@ export class SettingsPage {
     const maxDurationInput = (this as any).maxDurationInput as HTMLInputElement | undefined;
     const includeImagesToggle = (this as any).includeImagesToggle as HTMLInputElement | undefined;
     const imagesOnlyToggle = (this as any).imagesOnlyToggle as HTMLInputElement | undefined;
+    const treatMp4AsVideoToggle = (this as any).treatMp4AsVideoToggle as HTMLInputElement | undefined;
     const shortFormHDToggle = (this as any).shortFormHDToggle as HTMLInputElement | undefined;
     const shortFormNonHDToggle = (this as any).shortFormNonHDToggle as HTMLInputElement | undefined;
     const shortFormOnlyToggle = (this as any).shortFormOnlyToggle as HTMLInputElement | undefined;
     const snapToCardsToggle = (this as any).snapToCardsToggle as HTMLInputElement | undefined;
 
     if (!fileTypesInput || !maxDurationInput || !includeImagesToggle || !imagesOnlyToggle || 
-        !shortFormHDToggle || !shortFormNonHDToggle || !shortFormOnlyToggle || !snapToCardsToggle) {
+        !treatMp4AsVideoToggle || !shortFormHDToggle || !shortFormNonHDToggle || !shortFormOnlyToggle || !snapToCardsToggle) {
       return; // Settings not fully initialized yet
     }
 
@@ -534,8 +677,9 @@ export class SettingsPage {
 
     const newSettings: Partial<FeedSettings> = {
       includeImagesInFeed: includeImagesToggle.checked,
-      enabledFileTypes: extensions.length > 0 ? extensions : ['.gif'],
+      enabledFileTypes: extensions.length > 0 ? extensions : ['.jpg', '.png', '.gif', '.mp4', '.m4v', '.webm'],
       imagesOnly: imagesOnlyToggle.checked,
+      treatMp4AsVideo: !treatMp4AsVideoToggle.checked,
       shortFormInHDMode: shortFormHDToggle.checked,
       shortFormInNonHDMode: shortFormNonHDToggle.checked,
       shortFormMaxDuration: validMaxDuration,

@@ -3,7 +3,7 @@
  * Main application container managing the feed
  */
 
-import { SceneMarker, FilterOptions, FeedSettings, VideoPostData, ImagePostData, Image } from './types.js';
+import { SceneMarker, Scene, FilterOptions, FeedSettings, VideoPostData, ImagePostData, Image } from './types.js';
 import { StashAPI } from './StashAPI.js';
 import { VideoPost } from './VideoPost.js';
 import { ImagePost } from './ImagePost.js';
@@ -13,7 +13,7 @@ import { VisibilityManager } from './VisibilityManager.js';
 import { FavoritesManager } from './FavoritesManager.js';
 import { SettingsPage } from './SettingsPage.js';
 import { AudioManager, AudioPriority } from './AudioManager.js';
-import { debounce, isValidMediaUrl, detectDeviceCapabilities, DeviceCapabilities, isStandaloneNavigator, isMobileDevice, getNetworkInfo, isSlowNetwork, isCellularConnection } from './utils.js';
+import { debounce, isValidMediaUrl, detectDeviceCapabilities, DeviceCapabilities, isStandaloneNavigator, isMobileDevice, getNetworkInfo, isSlowNetwork, isCellularConnection, detectVideoFromVisualFiles, isMp4File, getImageUrlForDisplay } from './utils.js';
 import { posterPreloader } from './PosterPreloader.js';
 import { Image as GraphQLImage } from './graphql/types.js';
 import { HQ_SVG_OUTLINE, RANDOM_SVG, SETTINGS_SVG, SHUFFLE_CHECK_SVG } from './icons.js';
@@ -30,7 +30,7 @@ const DEFAULT_SETTINGS: FeedSettings = {
   backgroundPreloadDelay: 150, // ms, delay between videos
   backgroundPreloadFastScrollDelay: 400, // ms, delay during fast scrolling
   backgroundPreloadScrollVelocityThreshold: 2, // pixels/ms, threshold for fast scroll detection
-  enabledFileTypes: ['.gif'], // Default file types to include
+  enabledFileTypes: ['.jpg', '.png', '.gif', '.mp4', '.m4v'], // Default file types to include
   includeImagesInFeed: false, // Whether to include images in feed
   imagesOnly: false,
   includeShortFormContent: false, // Enable/disable short-form content
@@ -402,6 +402,7 @@ export class FeedContainer {
         // Update overlay mute button appearance
         post.updateMuteOverlayButton();
       }
+      // ImagePost videos are always muted (no audio playback), no need to handle here
     }
     
     // Also update AudioManager to ensure consistency
@@ -419,6 +420,7 @@ export class FeedContainer {
       if (post instanceof VideoPost) {
         post.updateMuteOverlayButton();
       }
+      // ImagePost videos are always muted (no audio playback), no mute button to update
     }
   }
 
@@ -1873,7 +1875,8 @@ export class FeedContainer {
           newSettings.shortFormInHDMode !== undefined ||
           newSettings.shortFormInNonHDMode !== undefined ||
           newSettings.shortFormMaxDuration !== undefined ||
-          newSettings.shortFormOnly !== undefined
+          newSettings.shortFormOnly !== undefined ||
+          newSettings.treatMp4AsVideo !== undefined
         ) {
           this.loadVideos(this.currentFilters, false, undefined, true).catch(e => {
             console.error('Failed to reload feed after settings change', e);
@@ -3056,7 +3059,7 @@ export class FeedContainer {
       return { fragment: fragment ?? document.createDocumentFragment(), postContainer: null };
     }
 
-    const postContainer = await this.createImagePost(image, signal);
+    const postContainer = await this.createPostFromImage(image, signal);
     const currentFragment = fragment ?? document.createDocumentFragment();
     
     if (postContainer) {
@@ -3067,9 +3070,19 @@ export class FeedContainer {
   }
 
   /**
-   * Create an image post
+   * Create a post from an image (can be either ImagePost or VideoPost depending on file type and settings)
    */
-  private async createImagePost(image: Image, signal?: AbortSignal): Promise<HTMLElement | null> {
+  private async createPostFromImage(image: Image, signal?: AbortSignal): Promise<HTMLElement | null> {
+    // Use centralized utility to detect video
+    const { isVideo, videoFile } = detectVideoFromVisualFiles(image.visualFiles);
+    
+    // Check if this is a .m4v or .mp4 file and if treatMp4AsVideo setting is enabled
+    const isMp4Video = isVideo && videoFile?.path && isMp4File(videoFile.path) && (this.settings.treatMp4AsVideo !== false);
+    
+    if (isMp4Video) {
+      return this.createVideoPostFromImage(image, signal);
+    }
+
     const imageUrl = this.getImageUrlForPost(image);
     if (!imageUrl) {
       return null;
@@ -3092,56 +3105,74 @@ export class FeedContainer {
   }
 
   /**
-   * Get image URL for post
-   * For videos (images with video_codec), use preview path (WebM)
-   * For regular images, use image path with fallback to preview/thumbnail
+   * Create a VideoPost from an Image (for .m4v/.mp4 files)
+   */
+  private async createVideoPostFromImage(image: Image, signal?: AbortSignal): Promise<HTMLElement | null> {
+    const videoUrl = this.getImageUrlForPost(image);
+    if (!videoUrl) {
+      return null;
+    }
+
+    // Create synthetic SceneMarker from Image
+    const marker = this.createSyntheticMarkerFromImage(image);
+    
+    const postContainer = this.createPostContainer();
+    const post = this.createVideoPostInstance(postContainer, marker, videoUrl, undefined);
+    
+    this.posts.set(marker.id, post);
+    this.postOrder.push(marker.id);
+    this.visibilityManager.observePost(postContainer, marker.id);
+
+    if (signal?.aborted) {
+      return null;
+    }
+
+    this.setupLazyLoading(postContainer, post, marker, videoUrl, signal);
+    return postContainer;
+  }
+
+  /**
+   * Create a synthetic SceneMarker from Image data
+   * This allows MP4/M4V images to be displayed as VideoPost with full video controls
+   */
+  private createSyntheticMarkerFromImage(image: Image): SceneMarker {
+    const markerId = `image-${image.id}`;
+    const duration = image.visualFiles?.find(vf => vf.duration)?.duration ?? 0;
+    
+    // Create Scene object from Image data
+    const scene: Scene = {
+      id: `scene-${image.id}`,
+      title: image.title,
+      date: image.date,
+      rating100: image.rating100,
+      o_counter: image.o_counter,
+      performers: image.performers,
+      tags: image.tags,
+      files: image.visualFiles?.map(vf => ({
+        id: vf.path || `file-${image.id}`,
+        path: vf.path || '',
+        duration: vf.duration,
+        video_codec: vf.video_codec,
+      })),
+      paths: image.paths,
+    };
+
+    return {
+      id: markerId,
+      title: image.title || 'Image Video',
+      seconds: 0,
+      end_seconds: duration > 0 ? duration : undefined,
+      preview: image.paths?.preview,
+      tags: image.tags,
+      scene,
+    };
+  }
+
+  /**
+   * Get image URL for post using centralized utility
    */
   private getImageUrlForPost(image: Image): string | undefined {
-    const baseUrl = globalThis.location.origin;
-    
-    // Check if this is a video (has video_codec that's not an image codec)
-    const imageCodecs = ['gif', 'webp', 'apng', 'avif', 'heic', 'heif'];
-    let isVideo = false;
-    
-    if (image.visualFiles) {
-      const videoFile = image.visualFiles.find(vf => vf.video_codec);
-      if (videoFile?.video_codec) {
-        const codec = videoFile.video_codec.toLowerCase();
-        // If it has a video_codec and it's NOT an image codec, it's a video
-        if (!imageCodecs.includes(codec)) {
-          isVideo = true;
-        }
-      }
-    }
-
-    // For videos, use preview path (WebM)
-    if (isVideo && image.paths?.preview) {
-      const url = image.paths.preview.startsWith('http') 
-        ? image.paths.preview 
-        : `${baseUrl}${image.paths.preview}`;
-      return isValidMediaUrl(url) ? url : undefined;
-    }
-
-    // For regular images, try paths.image first, then paths.preview, then paths.thumbnail
-    if (image.paths?.image) {
-      const url = image.paths.image.startsWith('http') 
-        ? image.paths.image 
-        : `${baseUrl}${image.paths.image}`;
-      return isValidMediaUrl(url) ? url : undefined;
-    }
-    if (image.paths?.preview) {
-      const url = image.paths.preview.startsWith('http') 
-        ? image.paths.preview 
-        : `${baseUrl}${image.paths.preview}`;
-      return isValidMediaUrl(url) ? url : undefined;
-    }
-    if (image.paths?.thumbnail) {
-      const url = image.paths.thumbnail.startsWith('http') 
-        ? image.paths.thumbnail 
-        : `${baseUrl}${image.paths.thumbnail}`;
-      return isValidMediaUrl(url) ? url : undefined;
-    }
-    return undefined;
+    return getImageUrlForDisplay(image, this.settings.treatMp4AsVideo !== false);
   }
 
   /**
@@ -3150,7 +3181,8 @@ export class FeedContainer {
   private createImagePostInstance(
     postContainer: HTMLElement,
     image: Image,
-    imageUrl: string
+    imageUrl: string,
+    onLoadFullVideo?: () => void
   ): ImagePost {
     const postData: ImagePostData = {
       image,
@@ -3879,7 +3911,7 @@ export class FeedContainer {
     }
 
     try {
-      const fileExtensions = this.settings.enabledFileTypes || ['.gif'];
+      const fileExtensions = this.settings.enabledFileTypes || ['.jpg', '.png', '.gif', '.mp4', '.m4v', '.webm'];
       const imageFilters: {
         performerIds?: number[];
         tagIds?: string[];
