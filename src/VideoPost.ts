@@ -10,7 +10,7 @@ import { StashAPI } from './StashAPI.js';
 import { VisibilityManager } from './VisibilityManager.js';
 import { calculateAspectRatio, getAspectRatioClass, isValidMediaUrl, showToast, throttle, toAbsoluteUrl, isMobileDevice } from './utils.js';
 import { posterPreloader } from './PosterPreloader.js';
-import { HQ_SVG_OUTLINE, HQ_SVG_FILLED, PLAY_SVG, MARKER_SVG, STAR_SVG, STAR_SVG_OUTLINE, MARKER_BADGE_SVG, SCENE_BADGE_SVG, VOLUME_MUTED_SVG, VOLUME_UNMUTED_SVG } from './icons.js';
+import { HQ_SVG_OUTLINE, HQ_SVG_FILLED, EXTERNAL_LINK_SVG, MARKER_SVG, STAR_SVG, STAR_SVG_OUTLINE, MARKER_BADGE_SVG, SCENE_BADGE_SVG, VOLUME_MUTED_SVG, VOLUME_UNMUTED_SVG } from './icons.js';
 import { BasePost } from './BasePost.js';
 import { setupTouchHandlers, preventClickAfterTouch } from './utils/touchHandlers.js';
 
@@ -723,7 +723,7 @@ export class VideoPost extends BasePost {
     iconBtn.style.height = '44px';
     iconBtn.style.minWidth = '44px';
     iconBtn.style.minHeight = '44px';
-    iconBtn.innerHTML = PLAY_SVG;
+    iconBtn.innerHTML = EXTERNAL_LINK_SVG;
     
     this.addHoverEffect(iconBtn);
     this.playButton = iconBtn;

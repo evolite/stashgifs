@@ -42,6 +42,13 @@ export abstract class BasePost {
   private performerOverlayAbortController?: AbortController;
   private hadOverlayBefore: boolean = false; // Track if overlay was showing before (for delay logic)
   private performerOverlayScrollHandler?: () => void;
+  // Tag overlay properties
+  private tagOverlay?: HTMLElement;
+  private tagOverlayTimeout?: number;
+  private tagOverlayHideTimeout?: number;
+  private currentHoveredTagId?: string;
+  private tagOverlayAbortController?: AbortController;
+  private hadTagOverlayBefore: boolean = false; // Track if tag overlay was showing before (for delay logic)
 
   constructor(
     container: HTMLElement,
@@ -63,12 +70,15 @@ export abstract class BasePost {
   }
 
   /**
-   * Setup scroll listener to hide performer overlay when user scrolls
+   * Setup scroll listener to hide performer and tag overlays when user scrolls
    */
   private setupPerformerOverlayScrollListener(): void {
     this.performerOverlayScrollHandler = () => {
       if (this.performerOverlay) {
         this.hidePerformerOverlay(true);
+      }
+      if (this.tagOverlay) {
+        this.hideTagOverlay(true);
       }
     };
     
@@ -305,18 +315,21 @@ export abstract class BasePost {
   }
 
   /**
-   * Create image section for performer overlay
+   * Create image section for performer overlay (compact headshot on left, 2:3 aspect ratio matching 1280x1920)
    */
   private createPerformerOverlayImageSection(performerData: PerformerExtended): HTMLElement {
     const imageSection = document.createElement('div');
-    imageSection.style.width = '100%';
-    imageSection.style.height = '200px';
+    imageSection.style.width = '160px';
+    imageSection.style.height = '240px';
+    imageSection.style.minWidth = '160px';
+    imageSection.style.minHeight = '240px';
     imageSection.style.backgroundColor = 'rgba(255, 255, 255, 0.05)';
     imageSection.style.display = 'flex';
     imageSection.style.alignItems = 'center';
     imageSection.style.justifyContent = 'center';
     imageSection.style.overflow = 'hidden';
-    imageSection.style.borderRadius = '8px 8px 0 0';
+    imageSection.style.borderRadius = '8px';
+    imageSection.style.flexShrink = '0';
 
     if (performerData.image_path) {
       const imageSrc = performerData.image_path.startsWith('http')
@@ -329,7 +342,7 @@ export abstract class BasePost {
         img.style.width = '100%';
         img.style.height = '100%';
         img.style.objectFit = 'cover';
-        img.style.objectPosition = 'top center';
+        img.style.objectPosition = 'center center';
         imageSection.appendChild(img);
         return imageSection;
       }
@@ -341,14 +354,14 @@ export abstract class BasePost {
   }
 
   /**
-   * Create name row for performer overlay
+   * Create name row for performer overlay (compact)
    */
   private createPerformerOverlayNameRow(performerData: PerformerExtended): HTMLElement {
     const nameRow = document.createElement('div');
     nameRow.style.display = 'flex';
     nameRow.style.alignItems = 'center';
-    nameRow.style.gap = '8px';
-    nameRow.style.marginBottom = '12px';
+    nameRow.style.gap = '6px';
+    nameRow.style.marginBottom = '8px';
 
     const nameLink = document.createElement('a');
     nameLink.href = this.getPerformerLink(performerData.id);
@@ -356,7 +369,7 @@ export abstract class BasePost {
     nameLink.rel = 'noopener noreferrer';
     nameLink.style.display = 'flex';
     nameLink.style.alignItems = 'center';
-    nameLink.style.gap = '6px';
+    nameLink.style.gap = '4px';
     nameLink.style.textDecoration = 'none';
     nameLink.style.color = '#FFFFFF';
     nameLink.style.cursor = 'pointer';
@@ -370,12 +383,13 @@ export abstract class BasePost {
     const name = document.createElement('h3');
     name.textContent = performerData.name;
     name.style.margin = '0';
-    name.style.fontSize = '20px';
+    name.style.fontSize = '18px';
     name.style.fontWeight = '600';
+    name.style.lineHeight = '1.2';
     nameLink.appendChild(name);
 
     const externalIcon = document.createElement('span');
-    externalIcon.innerHTML = '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" xmlns="http://www.w3.org/2000/svg"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><polyline points="15 3 21 3 21 9"></polyline><line x1="10" y1="14" x2="21" y2="3"></line></svg>';
+    externalIcon.innerHTML = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" xmlns="http://www.w3.org/2000/svg"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><polyline points="15 3 21 3 21 9"></polyline><line x1="10" y1="14" x2="21" y2="3"></line></svg>';
     externalIcon.style.display = 'inline-flex';
     externalIcon.style.alignItems = 'center';
     externalIcon.style.opacity = '0.7';
@@ -389,13 +403,13 @@ export abstract class BasePost {
       favoriteIcon.innerHTML = HEART_SVG_FILLED;
       favoriteIcon.style.display = 'inline-flex';
       favoriteIcon.style.alignItems = 'center';
-      favoriteIcon.style.width = '20px';
-      favoriteIcon.style.height = '20px';
+      favoriteIcon.style.width = '18px';
+      favoriteIcon.style.height = '18px';
       favoriteIcon.style.color = '#FF6B6B';
       const svg = favoriteIcon.querySelector('svg');
       if (svg) {
-        svg.setAttribute('width', '20');
-        svg.setAttribute('height', '20');
+        svg.setAttribute('width', '18');
+        svg.setAttribute('height', '18');
       }
       nameRow.appendChild(favoriteIcon);
     }
@@ -505,16 +519,18 @@ export abstract class BasePost {
     }
 
     const metadataSection = document.createElement('div');
-    metadataSection.style.marginBottom = '12px';
+    metadataSection.style.display = 'flex';
+    metadataSection.style.flexDirection = 'column';
+    metadataSection.style.gap = '4px';
+    metadataSection.style.marginBottom = '8px';
 
     for (const item of metadata) {
       if (item.value) {
         const row = document.createElement('div');
         row.style.display = 'flex';
-        row.style.justifyContent = 'space-between';
         row.style.alignItems = 'center';
-        row.style.marginBottom = '6px';
-        row.style.fontSize = '14px';
+        row.style.gap = '6px';
+        row.style.fontSize = '13px';
 
         const label = document.createElement('span');
         label.textContent = item.label + ':';
@@ -524,7 +540,7 @@ export abstract class BasePost {
         const value = document.createElement('span');
         if (item.isIcon) {
           value.textContent = item.value;
-          value.style.fontSize = '18px';
+          value.style.fontSize = '16px';
           value.style.lineHeight = '1';
         } else {
           value.textContent = item.value;
@@ -549,8 +565,8 @@ export abstract class BasePost {
     }
 
     const tagsSection = document.createElement('div');
-    tagsSection.style.marginBottom = '12px';
-    tagsSection.style.fontSize = '14px';
+    tagsSection.style.marginBottom = '8px';
+    tagsSection.style.fontSize = '13px';
 
     const tagsLabel = document.createElement('div');
     tagsLabel.textContent = 'Tags:';
@@ -606,7 +622,7 @@ export abstract class BasePost {
   }
 
   /**
-   * Create performer overlay card
+   * Create performer overlay card (compact horizontal layout)
    */
   private createPerformerOverlay(performerData: PerformerExtended): HTMLElement {
     const overlay = document.createElement('div');
@@ -617,7 +633,12 @@ export abstract class BasePost {
     overlay.style.border = '1px solid rgba(255, 255, 255, 0.1)';
     overlay.style.borderRadius = '8px';
     overlay.style.boxShadow = '0 8px 32px rgba(0, 0, 0, 0.5)';
-    overlay.style.width = '320px';
+    overlay.style.display = 'flex';
+    overlay.style.flexDirection = 'row';
+    overlay.style.gap = '12px';
+    overlay.style.padding = '12px';
+    overlay.style.width = 'auto';
+    overlay.style.maxWidth = '480px';
     overlay.style.maxHeight = '80vh';
     overlay.style.overflowY = 'auto';
     overlay.style.opacity = '0';
@@ -637,43 +658,20 @@ export abstract class BasePost {
       this.hidePerformerOverlay();
     });
 
-    // Image section
+    // Image section (left side)
     const imageSection = this.createPerformerOverlayImageSection(performerData);
     overlay.appendChild(imageSection);
 
-    // Content section
+    // Content section (right side)
     const contentSection = document.createElement('div');
-    contentSection.style.padding = '16px';
+    contentSection.style.display = 'flex';
+    contentSection.style.flexDirection = 'column';
+    contentSection.style.flex = '1';
+    contentSection.style.minWidth = '0';
 
     // Name and favorite
     const nameRow = this.createPerformerOverlayNameRow(performerData);
     contentSection.appendChild(nameRow);
-
-    // Performer URL (if available)
-    if (performerData.url) {
-      const urlLink = document.createElement('a');
-      urlLink.href = performerData.url;
-      urlLink.target = '_blank';
-      urlLink.rel = 'noopener noreferrer';
-      urlLink.textContent = performerData.url;
-      urlLink.style.display = 'block';
-      urlLink.style.marginTop = '4px';
-      urlLink.style.marginBottom = '12px';
-      urlLink.style.fontSize = '13px';
-      urlLink.style.color = '#4A9EFF';
-      urlLink.style.textDecoration = 'none';
-      urlLink.style.wordBreak = 'break-all';
-      urlLink.style.opacity = '0.8';
-      urlLink.addEventListener('mouseenter', () => {
-        urlLink.style.textDecoration = 'underline';
-        urlLink.style.opacity = '1';
-      });
-      urlLink.addEventListener('mouseleave', () => {
-        urlLink.style.textDecoration = 'none';
-        urlLink.style.opacity = '0.8';
-      });
-      contentSection.appendChild(urlLink);
-    }
 
     // Metadata
     const metadata = this.buildPerformerMetadata(performerData);
@@ -687,13 +685,6 @@ export abstract class BasePost {
     if (tagsSection) {
       contentSection.appendChild(tagsSection);
     }
-
-    // Details
-    const detailsSection = this.createPerformerOverlayDetails(performerData);
-    if (detailsSection) {
-      contentSection.appendChild(detailsSection);
-    }
-
 
     overlay.appendChild(contentSection);
     return overlay;
@@ -878,6 +869,310 @@ export abstract class BasePost {
   }
 
   /**
+   * Create image section for tag overlay (compact square image on left)
+   */
+  private createTagOverlayImageSection(tagData: { id: string; name: string; image_path?: string }): HTMLElement {
+    const imageSection = document.createElement('div');
+    imageSection.style.width = '64px';
+    imageSection.style.height = '64px';
+    imageSection.style.minWidth = '64px';
+    imageSection.style.minHeight = '64px';
+    imageSection.style.backgroundColor = 'rgba(255, 255, 255, 0.05)';
+    imageSection.style.display = 'flex';
+    imageSection.style.alignItems = 'center';
+    imageSection.style.justifyContent = 'center';
+    imageSection.style.overflow = 'hidden';
+    imageSection.style.borderRadius = '8px';
+    imageSection.style.flexShrink = '0';
+
+    if (tagData.image_path) {
+      const imageSrc = tagData.image_path.startsWith('http')
+        ? tagData.image_path
+        : toAbsoluteUrl(tagData.image_path);
+      if (imageSrc) {
+        const img = document.createElement('img');
+        img.src = imageSrc;
+        img.alt = tagData.name;
+        img.style.width = '100%';
+        img.style.height = '100%';
+        img.style.objectFit = 'cover';
+        img.style.objectPosition = 'center center';
+        imageSection.appendChild(img);
+        return imageSection;
+      }
+    }
+    imageSection.textContent = tagData.name.charAt(0).toUpperCase();
+    imageSection.style.fontSize = '32px';
+    imageSection.style.color = 'rgba(255, 255, 255, 0.5)';
+    return imageSection;
+  }
+
+  /**
+   * Create name row for tag overlay
+   */
+  private createTagOverlayNameRow(tagData: { id: string; name: string }): HTMLElement {
+    const nameRow = document.createElement('div');
+    nameRow.style.display = 'flex';
+    nameRow.style.alignItems = 'center';
+    nameRow.style.gap = '6px';
+    nameRow.style.marginBottom = '6px';
+
+    const nameLink = document.createElement('a');
+    nameLink.href = this.getTagLink(tagData.id);
+    nameLink.target = '_blank';
+    nameLink.rel = 'noopener noreferrer';
+    nameLink.style.display = 'flex';
+    nameLink.style.alignItems = 'center';
+    nameLink.style.gap = '4px';
+    nameLink.style.textDecoration = 'none';
+    nameLink.style.color = '#FFFFFF';
+    nameLink.style.cursor = 'pointer';
+    nameLink.addEventListener('mouseenter', () => {
+      nameLink.style.color = '#4A9EFF';
+    });
+    nameLink.addEventListener('mouseleave', () => {
+      nameLink.style.color = '#FFFFFF';
+    });
+
+    const name = document.createElement('h3');
+    name.textContent = tagData.name;
+    name.style.margin = '0';
+    name.style.fontSize = '16px';
+    name.style.fontWeight = '600';
+    name.style.lineHeight = '1.2';
+    nameLink.appendChild(name);
+
+    const externalIcon = document.createElement('span');
+    externalIcon.innerHTML = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" xmlns="http://www.w3.org/2000/svg"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><polyline points="15 3 21 3 21 9"></polyline><line x1="10" y1="14" x2="21" y2="3"></line></svg>';
+    externalIcon.style.display = 'inline-flex';
+    externalIcon.style.alignItems = 'center';
+    externalIcon.style.opacity = '0.7';
+    externalIcon.style.flexShrink = '0';
+    nameLink.appendChild(externalIcon);
+
+    nameRow.appendChild(nameLink);
+    return nameRow;
+  }
+
+  /**
+   * Create description section for tag overlay (optional)
+   */
+  private createTagOverlayDescription(tagData: { description?: string }): HTMLElement | null {
+    if (!tagData.description) {
+      return null;
+    }
+
+    const descriptionSection = document.createElement('div');
+    descriptionSection.style.fontSize = '12px';
+    descriptionSection.style.color = 'rgba(255, 255, 255, 0.7)';
+    descriptionSection.style.lineHeight = '1.4';
+    descriptionSection.style.marginTop = '4px';
+    descriptionSection.textContent = tagData.description;
+    return descriptionSection;
+  }
+
+  /**
+   * Create tag overlay card (compact horizontal layout)
+   */
+  private createTagOverlay(tagData: { id: string; name: string; image_path?: string; description?: string }): HTMLElement {
+    const overlay = document.createElement('div');
+    overlay.className = 'tag-overlay';
+    overlay.style.position = 'fixed';
+    overlay.style.zIndex = '10000';
+    overlay.style.backgroundColor = 'rgba(20, 20, 20, 0.98)';
+    overlay.style.border = '1px solid rgba(255, 255, 255, 0.1)';
+    overlay.style.borderRadius = '8px';
+    overlay.style.boxShadow = '0 8px 32px rgba(0, 0, 0, 0.5)';
+    overlay.style.display = 'flex';
+    overlay.style.flexDirection = 'row';
+    overlay.style.gap = '12px';
+    overlay.style.padding = '12px';
+    overlay.style.width = 'auto';
+    overlay.style.maxWidth = '280px';
+    overlay.style.opacity = '0';
+    overlay.style.transition = 'opacity 0.2s ease';
+    overlay.style.pointerEvents = 'auto';
+
+    // Keep overlay visible when hovering over it
+    overlay.addEventListener('mouseenter', () => {
+      // Cancel any pending hide timeout when hovering over overlay
+      if (this.tagOverlayHideTimeout) {
+        clearTimeout(this.tagOverlayHideTimeout);
+        this.tagOverlayHideTimeout = undefined;
+      }
+    });
+    overlay.addEventListener('mouseleave', () => {
+      this.hideTagOverlay();
+    });
+
+    // Image section (left side)
+    const imageSection = this.createTagOverlayImageSection(tagData);
+    overlay.appendChild(imageSection);
+
+    // Content section (right side)
+    const contentSection = document.createElement('div');
+    contentSection.style.display = 'flex';
+    contentSection.style.flexDirection = 'column';
+    contentSection.style.flex = '1';
+    contentSection.style.minWidth = '0';
+
+    // Name with link
+    const nameRow = this.createTagOverlayNameRow(tagData);
+    contentSection.appendChild(nameRow);
+
+    // Description (optional)
+    const descriptionSection = this.createTagOverlayDescription(tagData);
+    if (descriptionSection) {
+      contentSection.appendChild(descriptionSection);
+    }
+
+    overlay.appendChild(contentSection);
+    return overlay;
+  }
+
+  /**
+   * Show tag overlay on hover
+   */
+  private showTagOverlay(tagId: string, chipElement: HTMLElement): void {
+    // Clear any existing timeout
+    if (this.tagOverlayTimeout) {
+      clearTimeout(this.tagOverlayTimeout);
+      this.tagOverlayTimeout = undefined;
+    }
+
+    // If already showing this tag, don't do anything
+    if (this.currentHoveredTagId === tagId && this.tagOverlay) {
+      return;
+    }
+
+    // Cancel any pending hide timeout (when moving from another chip)
+    if (this.tagOverlayHideTimeout) {
+      clearTimeout(this.tagOverlayHideTimeout);
+      this.tagOverlayHideTimeout = undefined;
+    }
+
+    // Cancel any pending fetch
+    if (this.tagOverlayAbortController) {
+      this.tagOverlayAbortController.abort();
+      this.tagOverlayAbortController = undefined;
+    }
+
+    // Track if we had an overlay before hiding (for delay logic)
+    const hadOverlay = !!this.tagOverlay;
+    
+    // Hide existing overlay immediately (for rapid hover changes)
+    this.hideTagOverlay(true);
+
+    // Set timeout to show overlay (debounce - longer delay on first hover to avoid popping while scrolling)
+    this.currentHoveredTagId = tagId;
+    const isFirstHover = !hadOverlay; // Check if this is truly the first hover (no overlay was showing before)
+    const delay = isFirstHover ? 600 : 50; // 600ms for first hover, 50ms for subsequent hovers
+    const timeoutId = setTimeout(async () => {
+      if (this.currentHoveredTagId !== tagId) {
+        return; // User moved to different tag
+      }
+
+      if (!this.api) {
+        return;
+      }
+
+      // Create abort controller for this request
+      this.tagOverlayAbortController = new AbortController();
+
+      try {
+        // Fetch tag details
+        const tagData = await this.api.getTagDetails(
+          tagId,
+          this.tagOverlayAbortController.signal
+        );
+
+        if (!tagData || this.currentHoveredTagId !== tagId) {
+          return; // User moved to different tag or fetch failed
+        }
+
+        // Create overlay
+        const overlay = this.createTagOverlay(tagData);
+        this.tagOverlay = overlay;
+        document.body.appendChild(overlay);
+
+        // Position overlay
+        this.positionOverlay(overlay, chipElement);
+
+        // Show with fade-in
+        requestAnimationFrame(() => {
+          if (overlay.parentElement) {
+            overlay.style.opacity = '1';
+          }
+        });
+        
+        // Mark that we now have an overlay
+        this.hadTagOverlayBefore = true;
+      } catch (error) {
+        // Ignore abort errors
+        if (error instanceof Error && error.name === 'AbortError') {
+          return;
+        }
+        console.warn('Failed to fetch tag details:', error);
+      }
+    }, delay) as unknown as number;
+    this.tagOverlayTimeout = timeoutId;
+  }
+
+  /**
+   * Hide tag overlay
+   */
+  private hideTagOverlay(immediate: boolean = false): void {
+    if (this.tagOverlayTimeout) {
+      clearTimeout(this.tagOverlayTimeout);
+      this.tagOverlayTimeout = undefined;
+    }
+
+    if (this.tagOverlayHideTimeout) {
+      clearTimeout(this.tagOverlayHideTimeout);
+      this.tagOverlayHideTimeout = undefined;
+    }
+
+    if (this.tagOverlay) {
+      if (immediate) {
+        // Immediately remove from DOM (for rapid hover changes)
+        if (this.tagOverlay.parentElement) {
+          try {
+            this.tagOverlay.remove();
+          } catch {
+            // Element may have already been removed
+          }
+        }
+        this.tagOverlay = undefined;
+      } else {
+        // Fade out then remove (for normal mouse leave)
+        this.tagOverlay.style.opacity = '0';
+        setTimeout(() => {
+          if (this.tagOverlay?.parentElement) {
+            try {
+              this.tagOverlay.remove();
+            } catch {
+              // Element may have already been removed
+            }
+          }
+          this.tagOverlay = undefined;
+        }, 200) as unknown as number;
+      }
+    }
+
+    // Only clear currentHoveredTagId if not immediately hiding (for rapid changes)
+    if (!immediate) {
+      this.currentHoveredTagId = undefined;
+      this.hadTagOverlayBefore = false; // Reset when fully hiding
+    }
+
+    // Cancel any pending fetch
+    if (this.tagOverlayAbortController) {
+      this.tagOverlayAbortController.abort();
+      this.tagOverlayAbortController = undefined;
+    }
+  }
+
+  /**
    * Create a tag chip element (displayed as hashtag with unique styling)
    */
   protected createTagChip(tag: { id: string; name: string }): HTMLElement {
@@ -916,6 +1211,33 @@ export abstract class BasePost {
     });
     
     const isMobile = isMobileDevice();
+    
+    // Add hover overlay handlers for tags (desktop only)
+    if (this.api && !isMobile) {
+      hashtag.addEventListener('mouseenter', () => {
+        // Cancel any pending hide timeout (when moving from another chip)
+        if (this.tagOverlayHideTimeout) {
+          clearTimeout(this.tagOverlayHideTimeout);
+          this.tagOverlayHideTimeout = undefined;
+        }
+        this.showTagOverlay(tag.id, hashtag);
+      });
+      hashtag.addEventListener('mouseleave', (e) => {
+        // Check if we're moving to another tag chip
+        const relatedTarget = e.relatedTarget as HTMLElement | null;
+        const isMovingToAnotherChip = relatedTarget?.closest('.tag-chip') !== null;
+        
+        if (!isMovingToAnotherChip) {
+          // Small delay to allow mouse to move to overlay
+          this.tagOverlayHideTimeout = setTimeout(() => {
+            if (!this.tagOverlay?.matches(':hover')) {
+              this.hideTagOverlay();
+            }
+            this.tagOverlayHideTimeout = undefined;
+          }, 100) as unknown as number;
+        }
+      });
+    }
     
     if (isMobile) {
       // Use unified touch handler utility

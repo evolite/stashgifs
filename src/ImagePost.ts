@@ -9,7 +9,7 @@ import { FavoritesManager } from './FavoritesManager.js';
 import { StashAPI } from './StashAPI.js';
 import { VisibilityManager } from './VisibilityManager.js';
 import { getAspectRatioClass, showToast, toAbsoluteUrl } from './utils.js';
-import { IMAGE_BADGE_SVG } from './icons.js';
+import { IMAGE_BADGE_SVG, EXTERNAL_LINK_SVG } from './icons.js';
 import { BasePost } from './BasePost.js';
 
 // Constants
@@ -279,6 +279,39 @@ export class ImagePost extends BasePost {
   }
 
   /**
+   * Get link to image in Stash
+   */
+  private getImageLink(): string {
+    return `${globalThis.location.origin}/images/${this.data.image.id}`;
+  }
+
+  /**
+   * Create image button to open image in Stash
+   */
+  private createImageButton(): HTMLElement {
+    const imageLink = this.getImageLink();
+    const iconBtn = document.createElement('a');
+    iconBtn.className = 'icon-btn icon-btn--image';
+    iconBtn.href = imageLink;
+    iconBtn.target = '_blank';
+    iconBtn.rel = 'noopener noreferrer';
+    iconBtn.setAttribute('aria-label', 'View full image');
+    iconBtn.title = 'Open image in Stash';
+    this.applyIconButtonStyles(iconBtn);
+    iconBtn.style.color = '#F5C518';
+    iconBtn.style.padding = '0';
+    // Keep 44x44px for touch target
+    iconBtn.style.width = '44px';
+    iconBtn.style.height = '44px';
+    iconBtn.style.minWidth = '44px';
+    iconBtn.style.minHeight = '44px';
+    iconBtn.innerHTML = EXTERNAL_LINK_SVG;
+    
+    this.addHoverEffect(iconBtn);
+    return iconBtn;
+  }
+
+  /**
    * Create footer with action buttons
    */
   private createFooter(): HTMLElement {
@@ -331,6 +364,10 @@ export class ImagePost extends BasePost {
       this.oCountButton = this.createOCountButton();
       buttonGroup.appendChild(this.oCountButton);
     }
+
+    // Image button (open in Stash)
+    const imageBtn = this.createImageButton();
+    buttonGroup.appendChild(imageBtn);
 
     row.appendChild(buttonGroup);
     info.appendChild(row);

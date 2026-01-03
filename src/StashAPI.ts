@@ -523,6 +523,32 @@ export class StashAPI {
     }
   }
 
+  /**
+   * Get detailed tag information by ID
+   */
+  async getTagDetails(tagId: string, signal?: AbortSignal): Promise<{ id: string; name: string; image_path?: string; description?: string; favorite?: boolean } | null> {
+    if (this.isAborted(signal)) return null;
+
+    try {
+      const result = await this.gqlClient.query<FindTagsExtendedResponse>({
+        query: queries.FIND_TAGS_FOR_SELECT,
+        variables: { ids: [tagId], filter: null, tag_filter: null },
+        signal,
+      });
+
+      if (this.isAborted(signal)) return null;
+
+      const tags = result.data?.findTags?.tags ?? [];
+      return tags[0] ?? null;
+    } catch (e: unknown) {
+      if (isAbortError(e) || this.isAborted(signal)) {
+        return null;
+      }
+      this.logSearchError('getTagDetails', e);
+      return null;
+    }
+  }
+
 
   /**
    * Fetch saved marker filters from Stash
