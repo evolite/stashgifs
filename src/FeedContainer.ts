@@ -3093,11 +3093,36 @@ export class FeedContainer {
 
   /**
    * Get image URL for post
+   * For videos (images with video_codec), use preview path (WebM)
+   * For regular images, use image path with fallback to preview/thumbnail
    */
   private getImageUrlForPost(image: Image): string | undefined {
-    // Try paths.image first, then paths.preview, then paths.thumbnail
     const baseUrl = globalThis.location.origin;
     
+    // Check if this is a video (has video_codec that's not an image codec)
+    const imageCodecs = ['gif', 'webp', 'apng', 'avif', 'heic', 'heif'];
+    let isVideo = false;
+    
+    if (image.visualFiles) {
+      const videoFile = image.visualFiles.find(vf => vf.video_codec);
+      if (videoFile?.video_codec) {
+        const codec = videoFile.video_codec.toLowerCase();
+        // If it has a video_codec and it's NOT an image codec, it's a video
+        if (!imageCodecs.includes(codec)) {
+          isVideo = true;
+        }
+      }
+    }
+
+    // For videos, use preview path (WebM)
+    if (isVideo && image.paths?.preview) {
+      const url = image.paths.preview.startsWith('http') 
+        ? image.paths.preview 
+        : `${baseUrl}${image.paths.preview}`;
+      return isValidMediaUrl(url) ? url : undefined;
+    }
+
+    // For regular images, try paths.image first, then paths.preview, then paths.thumbnail
     if (image.paths?.image) {
       const url = image.paths.image.startsWith('http') 
         ? image.paths.image 
@@ -3915,12 +3940,6 @@ export class FeedContainer {
     const height = visualFile?.height;
     const aspectRatio = width && height && height !== 0 ? width / height : undefined;
 
-    const visualFiles = graphqlImage.visual_files?.map(vf => ({
-      path: vf.path,
-      video_codec: vf.video_codec,
-      duration: vf.duration,
-    }));
-
     return {
       id: graphqlImage.id,
       title: graphqlImage.title,
@@ -3937,7 +3956,11 @@ export class FeedContainer {
         name: p.name,
         image_path: p.image_path,
       })),
-      visualFiles,
+      visualFiles: graphqlImage.visual_files?.map(vf => ({
+        path: vf.path,
+        video_codec: vf.video_codec,
+        duration: vf.duration,
+      })),
     };
   }
 

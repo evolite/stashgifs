@@ -39,7 +39,6 @@ import {
   TypedGraphQLClient,
   Image,
   UIConfigurationResponse,
-  GeneralConfigurationResponse,
 } from './graphql/types.js';
 import {
   GraphQLRequestError,
@@ -2300,21 +2299,6 @@ export class StashAPI {
     }
   }
 
-  /**
-   * Get general configuration, including image extensions
-   * @returns Array of image extensions or null if unavailable
-   */
-  async getGeneralConfiguration(): Promise<string[] | null> {
-    try {
-      const result = await this.gqlClient.query<GeneralConfigurationResponse>({
-        query: queries.GET_GENERAL_CONFIGURATION,
-      });
-      return result.data?.configuration?.general?.imageExtensions || null;
-    } catch (error) {
-      console.error('StashAPI: Failed to get general configuration', error);
-      return null;
-    }
-  }
 }
 
 

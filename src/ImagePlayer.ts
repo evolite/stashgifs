@@ -3,7 +3,7 @@
  * Displays GIFs, static images, and looping videos with support for looping and fullscreen
  */
 
-import { isVideoFile, setupLoopingVideoElement } from './utils.js';
+import { setupLoopingVideoElement } from './utils.js';
 
 export class ImagePlayer {
   private readonly container: HTMLElement;
@@ -12,7 +12,6 @@ export class ImagePlayer {
   private readonly imageUrl: string;
   private readonly isGif: boolean;
   private readonly isVideo: boolean;
-  private readonly videoCodec?: string;
   private isLoaded: boolean = false;
   private loadingIndicator?: HTMLElement;
   private wrapper?: HTMLElement;
@@ -21,16 +20,11 @@ export class ImagePlayer {
   constructor(container: HTMLElement, imageUrl: string, options?: {
     isGif?: boolean;
     isVideo?: boolean;
-    videoCodec?: string;
   }) {
     this.container = container;
     this.imageUrl = imageUrl;
-    // Use provided isVideo option, or detect from URL extension
-    this.isVideo = options?.isVideo ?? isVideoFile(imageUrl);
+    this.isVideo = options?.isVideo ?? false;
     this.isGif = options?.isGif ?? (!this.isVideo && imageUrl.toLowerCase().endsWith('.gif'));
-    
-    // Store video codec for MIME type detection
-    this.videoCodec = options?.videoCodec;
     
     this.createMediaElement();
   }
@@ -103,71 +97,130 @@ export class ImagePlayer {
     // Setup looping video properties (reused utility function)
     setupLoopingVideoElement(this.videoElement);
     
-    // Try to determine MIME type from URL extension or codec to help browser decode correctly
-    const lowerUrl = this.imageUrl.toLowerCase();
-    let mimeType: string | undefined;
-    
-    // Check codec first (more reliable)
-    if (this.videoCodec) {
-      const lowerCodec = this.videoCodec.toLowerCase();
-      if (lowerCodec.includes('prores')) {
-        mimeType = 'video/quicktime'; // ProRes is typically in MOV/QuickTime container
-      } else if (lowerCodec.includes('h264') || lowerCodec.includes('avc')) {
-        mimeType = 'video/mp4';
-      } else if (lowerCodec.includes('vp8') || lowerCodec.includes('vp9')) {
-        mimeType = 'video/webm';
-      }
-    }
-    
-    // Fall back to URL extension if codec didn't help
-    if (!mimeType) {
-      if (lowerUrl.includes('.mov') || lowerUrl.includes('quicktime')) {
-        mimeType = 'video/quicktime';
-      } else if (lowerUrl.includes('.mp4') || lowerUrl.includes('.m4v')) {
-        mimeType = 'video/mp4';
-      } else if (lowerUrl.includes('.webm')) {
-        mimeType = 'video/webm';
-      } else if (lowerUrl.includes('.mkv')) {
-        mimeType = 'video/x-matroska';
-      } else if (lowerUrl.includes('.avi')) {
-        mimeType = 'video/x-msvideo';
-      } else if (lowerUrl.includes('.wmv')) {
-        mimeType = 'video/x-ms-wmv';
-      } else if (lowerUrl.includes('.flv') || lowerUrl.includes('.f4v')) {
-        mimeType = 'video/x-flv';
-      }
-    }
-    
-    // Set type attribute to help browser decode
-    if (mimeType) {
-      this.videoElement.setAttribute('type', mimeType);
-    }
+    // Preview videos from Stash are always WebM
+    this.videoElement.setAttribute('type', 'video/webm');
     
     wrapper.appendChild(this.videoElement);
 
-    // Handle video load events
+    // Try to play the video when it's ready
+    const tryPlay = async (): Promise<void> => {
+      if (!this.videoElement) return;
+      
+      try {
+        await this.videoElement.play();
+        this.isLoaded = true;
+        this.hideLoadingIndicator();
+      } catch (error) {
+        // Autoplay blocked - will try again when visible or on user interaction
+        console.log('ImagePlayer: Autoplay blocked, will retry on visibility/interaction', error);
+        this.hideLoadingIndicator();
+      }
+    };
+
+    // Handle video load events - try to play when ready
     const handleLoadedData = () => {
       this.isLoaded = true;
       this.hideLoadingIndicator();
+      tryPlay();
+    };
+
+    const handleCanPlay = () => {
+      this.isLoaded = true;
+      this.hideLoadingIndicator();
+      tryPlay();
+    };
+
+    this.videoElement.addEventListener('loadeddata', handleLoadedData, { once: true });
+    this.videoElement.addEventListener('canplay', handleCanPlay, { once: true });
+    this.videoElement.addEventListener('canplaythrough', handleCanPlay, { once: true });
+
+    this.videoElement.addEventListener('error', (e) => {
+      this.hideLoadingIndicator();
+      const error = this.videoElement?.error;
+      console.error('ImagePlayer: Video error', e, error, {
+        code: error?.code,
+        message: error?.message,
+        url: this.imageUrl,
+      });
       
-      // Try to play the video (autoplay might be blocked)
-      if (this.videoElement) {
-        this.videoElement.play().catch(() => {
-          // Autoplay blocked - video will play when user interacts
+      // WebM is well-supported, so errors are likely network/CORS/file issues
+      this.showVideoError('Failed to load video', 
+        'The video failed to load. This may be due to network issues, CORS restrictions, or file corruption. Please check the console for details.');
+    }, { once: true });
+
+    // Set up IntersectionObserver to play when visible
+    this.setupVisibilityPlayback(wrapper);
+
+    // Try to play on user interaction (scroll, touch, click)
+    this.setupInteractionPlayback();
+
+    // Set src to start loading
+    this.videoElement.src = this.imageUrl;
+  }
+
+  /**
+   * Setup IntersectionObserver to play video when it becomes visible
+   */
+  private setupVisibilityPlayback(wrapper: HTMLElement): void {
+    const observer = new IntersectionObserver(
+      (entries) => {
+        for (const entry of entries) {
+          if (entry.isIntersecting && this.videoElement && this.videoElement.paused) {
+            // Video is visible and paused, try to play
+            this.videoElement.play().catch((error) => {
+              console.log('ImagePlayer: Play failed on visibility', error);
+            });
+          }
+        }
+      },
+      { threshold: 0.1 }
+    );
+
+    observer.observe(wrapper);
+
+    // Store observer for cleanup
+    (wrapper as any).__videoObserver = observer;
+  }
+
+  /**
+   * Setup playback on user interaction (scroll, touch, click)
+   */
+  private setupInteractionPlayback(): void {
+    if (!this.videoElement) return;
+
+    const tryPlayOnInteraction = () => {
+      if (this.videoElement && this.videoElement.paused) {
+        this.videoElement.play().catch((error) => {
+          console.log('ImagePlayer: Play failed on interaction', error);
         });
       }
     };
 
-    this.videoElement.addEventListener('loadeddata', handleLoadedData, { once: true });
-    this.videoElement.addEventListener('canplay', handleLoadedData, { once: true });
+    // Try to play on scroll (user interaction)
+    let scrollTimeout: ReturnType<typeof setTimeout> | undefined;
+    const handleScroll = () => {
+      if (scrollTimeout) clearTimeout(scrollTimeout);
+      scrollTimeout = setTimeout(() => {
+        tryPlayOnInteraction();
+      }, 100);
+    };
 
-    this.videoElement.addEventListener('error', () => {
-      this.hideLoadingIndicator();
-      this.showVideoError();
-    }, { once: true });
+    // Try to play on touch/click
+    const handleInteraction = () => {
+      tryPlayOnInteraction();
+    };
 
-    // Set src to start loading
-    this.videoElement.src = this.imageUrl;
+    globalThis.addEventListener('scroll', handleScroll, { passive: true });
+    globalThis.addEventListener('touchstart', handleInteraction, { passive: true, once: true });
+    globalThis.addEventListener('click', handleInteraction, { once: true });
+
+    // Store cleanup
+    (this.videoElement as any).__interactionCleanup = () => {
+      globalThis.removeEventListener('scroll', handleScroll);
+      globalThis.removeEventListener('touchstart', handleInteraction);
+      globalThis.removeEventListener('click', handleInteraction);
+      if (scrollTimeout) clearTimeout(scrollTimeout);
+    };
   }
 
   private hideLoadingIndicator(): void {
@@ -179,34 +232,13 @@ export class ImagePlayer {
   /**
    * Show error message when video fails to load
    */
-  private showVideoError(): void {
+  private showVideoError(customMessage?: string, customDetails?: string): void {
     if (this.errorMessage || !this.wrapper || this.isGif) {
-      // Don't show error for GIFs or other image formats - they should be displayed as images
       return;
     }
 
-    // Image codecs that should not show video errors
-    const imageCodecs = ['gif', 'webp', 'apng', 'avif', 'heic', 'heif'];
-    
-    if (this.videoCodec && imageCodecs.includes(this.videoCodec.toLowerCase())) {
-      // Don't show error for image codecs - these should be images
-      return;
-    }
-
-    // Determine error message based on codec
-    let message = 'Video format not supported';
-    let details = 'This video cannot be played in your browser.';
-    
-    if (this.videoCodec) {
-      const lowerCodec = this.videoCodec.toLowerCase();
-      if (lowerCodec.includes('prores')) {
-        message = 'ProRes codec not supported';
-        details = 'This video uses ProRes codec which is not supported in web browsers. Please transcode to H.264/MP4 for web playback.';
-      } else if (lowerCodec.includes('hevc') || lowerCodec.includes('h.265') || lowerCodec.includes('h265')) {
-        message = 'HEVC/H.265 codec not supported';
-        details = 'This video uses HEVC codec which may not be supported in all browsers.';
-      }
-    }
+    const message = customMessage || 'Failed to load video';
+    const details = customDetails || 'The video failed to load. This may be due to network issues, CORS restrictions, or file corruption.';
 
     // Create error message element
     this.errorMessage = document.createElement('div');
@@ -251,16 +283,6 @@ export class ImagePlayer {
     errorDetails.style.maxWidth = '400px';
     this.errorMessage.appendChild(errorDetails);
 
-    // Add codec info if available
-    if (this.videoCodec) {
-      const codecInfo = document.createElement('div');
-      codecInfo.textContent = `Codec: ${this.videoCodec}`;
-      codecInfo.style.fontSize = '12px';
-      codecInfo.style.color = 'rgba(255, 255, 255, 0.5)';
-      codecInfo.style.marginTop = '12px';
-      this.errorMessage.appendChild(codecInfo);
-    }
-
     this.wrapper.appendChild(this.errorMessage);
   }
 
@@ -302,6 +324,22 @@ export class ImagePlayer {
    * Destroy the player
    */
   destroy(): void {
+    // Clean up IntersectionObserver
+    if (this.wrapper) {
+      const observer = (this.wrapper as any).__videoObserver;
+      if (observer) {
+        observer.disconnect();
+      }
+    }
+    
+    // Clean up interaction listeners
+    if (this.videoElement) {
+      const cleanup = (this.videoElement as any).__interactionCleanup;
+      if (cleanup) {
+        cleanup();
+      }
+    }
+    
     if (this.wrapper) {
       this.wrapper.remove();
       this.wrapper = undefined;

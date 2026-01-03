@@ -607,7 +607,7 @@ const IMAGE_EXTENSIONS = [
 const VIDEO_EXTENSIONS = [
   '.m4v', '.mp4', '.wmv', '.avi', '.mpg', '.mpeg',
   '.rmvb', '.rm', '.flv', '.asf', '.mkv', '.webm',
-  '.f4v', '.mov'
+  '.f4v', '.mov', '.ogv', '.3gp', '.ts', '.m2v'
 ] as const;
 
 /**
