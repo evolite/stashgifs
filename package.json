@@ -3,6 +3,7 @@
   "version": "5.15.9",
   "description": "StashGifs - TikTok-like vertical scroller interface for Stash.",
   "scripts": {
+    "prebuild": "node scripts/generate-version.js",
     "build": "tsc",
     "watch": "tsc --watch",
     "clean": "rm -rf app/assets/*.js app/assets/*.js.map",

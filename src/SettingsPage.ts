@@ -4,6 +4,7 @@
  */
 
 import { FeedSettings } from './types.js';
+import { VERSION } from './version.js';
 
 export class SettingsPage {
   private readonly container: HTMLElement;
@@ -454,6 +455,21 @@ export class SettingsPage {
     scrollingSection.appendChild(snapToCardsContainer);
 
     modal.appendChild(scrollingSection);
+
+    // Version footer
+    const versionFooter = document.createElement('div');
+    versionFooter.style.marginTop = '32px';
+    versionFooter.style.paddingTop = '24px';
+    versionFooter.style.borderTop = '1px solid rgba(255, 255, 255, 0.1)';
+    versionFooter.style.textAlign = 'center';
+
+    const versionText = document.createElement('div');
+    versionText.textContent = `Version ${VERSION}`;
+    versionText.style.color = 'rgba(255, 255, 255, 0.5)';
+    versionText.style.fontSize = '12px';
+    versionFooter.appendChild(versionText);
+
+    modal.appendChild(versionFooter);
 
     // Store references to inputs for saveSettings method
     (this as any).fileTypesInput = fileTypesInput;
