@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [5.15.13] - 2026-01-03
+
+### Changed
+- Fixed couple of sonarqube issues
+- Update index.yml with hash and date for v5.15.12
+- Bump version to 5.15.12
+- Update index.yml with hash and date for v5.15.11
+- Bump version to 5.15.11
+- Bump version to 5.15.10
+- Made things better
+- Remove deploy.sh and release.sh from git tracking
+- Refactor deployment script and update .gitignore
+
+
 ## [5.15.12] - 2026-01-03
 
 ### Changed

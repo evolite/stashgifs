@@ -4076,91 +4076,127 @@ export class FeedContainer {
   ): Array<{ type: 'marker' | 'image'; data: SceneMarker | Image; date?: string }> {
     const content: Array<{ type: 'marker' | 'image'; data: SceneMarker | Image; date?: string }> = [];
     
-    let markerIdx = 0;
-    let shortFormIdx = 0;
-    let imageIdx = 0;
-    let consecutiveCount = 0;
-    let lastType: ContentType | null = null;
-    const maxConsecutive = 3;
-    
     // Combine markers and shortform into single video array for simpler logic
     const allVideos = [...markers.map(m => ({ type: 'marker' as const, data: m })), ...shortFormMarkers.map(m => ({ type: 'marker' as const, data: m }))];
-    let videoIdx = 0;
     
-    while (videoIdx < allVideos.length || imageIdx < images.length) {
+    const state = {
+      videoIdx: 0,
+      imageIdx: 0,
+      consecutiveCount: 0,
+      lastType: null as ContentType | null,
+      maxConsecutive: 3,
+    };
+    
+    while (state.videoIdx < allVideos.length || state.imageIdx < images.length) {
       // Determine chunk sizes: 3-5 videos, then 1-2 images
       const videoChunkSize = 3 + Math.floor(Math.random() * 3); // 3-5
       const imageChunkSize = 1 + Math.floor(Math.random() * 2); // 1-2
       
       // Add video chunk
-      for (let i = 0; i < videoChunkSize && videoIdx < allVideos.length; i++) {
-        const video = allVideos[videoIdx++];
-        if (video) {
-          content.push({
-            type: 'marker',
-            data: video.data,
-            date: video.data.scene.date,
-          });
-          
-          // Track consecutive count
-          if (lastType === 'marker') {
-            consecutiveCount++;
-            if (consecutiveCount >= maxConsecutive) {
-              break; // Switch to images
-            }
-          } else {
-            consecutiveCount = 1;
-            lastType = 'marker';
-          }
-        }
-      }
+      this.addVideoChunk(content, allVideos, videoChunkSize, state);
       
       // Add image chunk
-      for (let i = 0; i < imageChunkSize && imageIdx < images.length; i++) {
-        const image = images[imageIdx++];
+      this.addImageChunk(content, images, imageChunkSize, state);
+      
+      // If we've run out of one type, add remaining of the other
+      this.addRemainingItems(content, allVideos, images, state);
+    }
+    
+    return content;
+  }
+
+  /**
+   * Add a chunk of video items to the content array
+   */
+  private addVideoChunk(
+    content: Array<{ type: 'marker' | 'image'; data: SceneMarker | Image; date?: string }>,
+    allVideos: Array<{ type: 'marker'; data: SceneMarker }>,
+    chunkSize: number,
+    state: { videoIdx: number; consecutiveCount: number; lastType: ContentType | null; maxConsecutive: number }
+  ): void {
+    for (let i = 0; i < chunkSize && state.videoIdx < allVideos.length; i++) {
+      const video = allVideos[state.videoIdx++];
+      if (!video) continue;
+
+      content.push({
+        type: 'marker',
+        data: video.data,
+        date: video.data.scene.date,
+      });
+      
+      // Track consecutive count
+      if (state.lastType === 'marker') {
+        state.consecutiveCount++;
+        if (state.consecutiveCount >= state.maxConsecutive) {
+          break; // Switch to images
+        }
+      } else {
+        state.consecutiveCount = 1;
+        state.lastType = 'marker';
+      }
+    }
+  }
+
+  /**
+   * Add a chunk of image items to the content array
+   */
+  private addImageChunk(
+    content: Array<{ type: 'marker' | 'image'; data: SceneMarker | Image; date?: string }>,
+    images: Image[],
+    chunkSize: number,
+    state: { imageIdx: number; consecutiveCount: number; lastType: ContentType | null }
+  ): void {
+    for (let i = 0; i < chunkSize && state.imageIdx < images.length; i++) {
+      const image = images[state.imageIdx++];
+      if (!image) continue;
+
+      content.push({
+        type: 'image',
+        data: image,
+        date: image.date,
+      });
+      
+      if (state.lastType === 'image') {
+        state.consecutiveCount++;
+      } else {
+        state.consecutiveCount = 1;
+        state.lastType = 'image';
+      }
+    }
+  }
+
+  /**
+   * Add remaining items when one type has been exhausted
+   */
+  private addRemainingItems(
+    content: Array<{ type: 'marker' | 'image'; data: SceneMarker | Image; date?: string }>,
+    allVideos: Array<{ type: 'marker'; data: SceneMarker }>,
+    images: Image[],
+    state: { videoIdx: number; imageIdx: number }
+  ): void {
+    if (state.videoIdx >= allVideos.length && state.imageIdx < images.length) {
+      while (state.imageIdx < images.length) {
+        const image = images[state.imageIdx++];
         if (image) {
           content.push({
             type: 'image',
             data: image,
             date: image.date,
           });
-          
-          if (lastType === 'image') {
-            consecutiveCount++;
-          } else {
-            consecutiveCount = 1;
-            lastType = 'image';
-          }
         }
       }
-      
-      // If we've run out of one type, add remaining of the other
-      if (videoIdx >= allVideos.length && imageIdx < images.length) {
-        while (imageIdx < images.length) {
-          const image = images[imageIdx++];
-          if (image) {
-            content.push({
-              type: 'image',
-              data: image,
-              date: image.date,
-            });
-          }
-        }
-      } else if (imageIdx >= images.length && videoIdx < allVideos.length) {
-        while (videoIdx < allVideos.length) {
-          const video = allVideos[videoIdx++];
-          if (video) {
-            content.push({
-              type: 'marker',
-              data: video.data,
-              date: video.data.scene.date,
-            });
-          }
+    } else if (state.imageIdx >= images.length && state.videoIdx < allVideos.length) {
+      while (state.videoIdx < allVideos.length) {
+        const video = allVideos[state.videoIdx++];
+        if (video) {
+          content.push({
+            type: 'marker',
+            data: video.data,
+            date: video.data.scene.date,
+          });
         }
       }
     }
-    
-    return content;
   }
 
   /**

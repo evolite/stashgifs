@@ -342,12 +342,12 @@ export class VideoPost extends BasePost {
     }
     
     // Gray out the button when not in HQ mode
-    if (!this.isHQMode) {
-      btn.style.opacity = '0.4';
-      btn.style.pointerEvents = 'none';
-    } else {
+    if (this.isHQMode) {
       btn.style.opacity = '1';
       btn.style.pointerEvents = 'auto';
+    } else {
+      btn.style.opacity = '0.4';
+      btn.style.pointerEvents = 'none';
     }
   }
 

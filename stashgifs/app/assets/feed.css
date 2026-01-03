@@ -770,7 +770,7 @@
 }
 
 .btn--primary {
-  background: linear-gradient(135deg, #6366f1, #8b5cf6);
+  background: linear-gradient(135deg, #4f46e5, #7c3aed);
   color: #ffffff;
   box-shadow: 0 6px 16px rgba(99, 102, 241, 0.35);
 }
@@ -1371,8 +1371,8 @@
   padding: 4px 8px;
   border-radius: 999px;
   border: 1px solid var(--color-separator);
-  background: rgba(33, 150, 243, 0.18);
-  color: rgba(255, 255, 255, 0.95);
+  background: rgba(33, 150, 243, 0.25);
+  color: #ffffff;
   font-size: 12px;
   pointer-events: none;
 }
