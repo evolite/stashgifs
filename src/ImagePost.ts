@@ -8,7 +8,7 @@ import { ImagePlayer } from './ImagePlayer.js';
 import { FavoritesManager } from './FavoritesManager.js';
 import { StashAPI } from './StashAPI.js';
 import { VisibilityManager } from './VisibilityManager.js';
-import { getAspectRatioClass, showToast, toAbsoluteUrl } from './utils.js';
+import { getAspectRatioClass, showToast, toAbsoluteUrl, isVideoFile } from './utils.js';
 import { IMAGE_BADGE_SVG, EXTERNAL_LINK_SVG } from './icons.js';
 import { BasePost } from './BasePost.js';
 
@@ -237,8 +237,37 @@ export class ImagePost extends BasePost {
     }
 
     try {
-      const isGif = imageUrl.toLowerCase().endsWith('.gif');
-      this.player = new ImagePlayer(this.playerContainer, imageUrl, { isGif });
+      // Check if this is a video file
+      // First check URL extension, then check visual_files for video_codec or duration
+      let isVideo = imageUrl.toLowerCase().endsWith('.gif') ? false : isVideoFile(imageUrl);
+      
+      // If URL doesn't have extension, check visual_files
+      if (!isVideo && this.data.image.visualFiles) {
+        // Check for video_codec or duration (indicates video file)
+        isVideo = this.data.image.visualFiles.some(vf => 
+          vf.video_codec || (vf.duration !== undefined && vf.duration !== null)
+        );
+        
+        // Also check file path extension from visual_files
+        if (!isVideo) {
+          isVideo = this.data.image.visualFiles.some(vf => 
+            vf.path && isVideoFile(vf.path)
+          );
+        }
+      }
+      
+      const isGif = !isVideo && imageUrl.toLowerCase().endsWith('.gif');
+      
+      // Get video codec info if available for better MIME type detection
+      const videoCodec = isVideo && this.data.image.visualFiles 
+        ? this.data.image.visualFiles.find(vf => vf.video_codec)?.video_codec 
+        : undefined;
+      
+      this.player = new ImagePlayer(this.playerContainer, imageUrl, { 
+        isGif, 
+        isVideo,
+        videoCodec 
+      });
       this.isLoaded = true;
 
       if (this.visibilityManager && this.data.image.id) {

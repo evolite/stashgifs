@@ -17,6 +17,19 @@ export const GET_UI_CONFIGURATION = `
 `;
 
 /**
+ * Get general configuration
+ */
+export const GET_GENERAL_CONFIGURATION = `
+  query GetGeneralConfiguration {
+    configuration {
+      general {
+        imageExtensions
+      }
+    }
+  }
+`;
+
+/**
  * Check if tags have markers
  */
 export const CHECK_TAGS_HAVE_MARKERS = `

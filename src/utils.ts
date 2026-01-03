@@ -591,3 +591,48 @@ export function isCellularConnection(): boolean {
 
   return networkInfo.type === 'cellular';
 }
+
+/**
+ * Video file extensions that should be rendered as looping videos
+ */
+const VIDEO_EXTENSIONS = [
+  '.m4v', '.mp4', '.wmv', '.avi', '.mpg', '.mpeg',
+  '.rmvb', '.rm', '.flv', '.asf', '.mkv', '.webm',
+  '.f4v', '.mov'
+] as const;
+
+/**
+ * Check if a URL points to a video file based on extension
+ * @param url The URL to check
+ * @returns true if the URL ends with a video extension
+ */
+export function isVideoFile(url: string): boolean {
+  const lowerUrl = url.toLowerCase();
+  return VIDEO_EXTENSIONS.some(ext => lowerUrl.endsWith(ext));
+}
+
+/**
+ * Setup a video element for looping playback (like GIFs)
+ * Configures loop, muted, autoplay, playsInline, and mobile attributes
+ * @param videoElement The video element to configure
+ */
+export function setupLoopingVideoElement(videoElement: HTMLVideoElement): void {
+  // Basic looping video properties
+  videoElement.loop = true;
+  videoElement.muted = true;
+  videoElement.autoplay = true;
+  videoElement.playsInline = true;
+  videoElement.style.objectFit = 'cover';
+  videoElement.style.width = '100%';
+  videoElement.style.height = '100%';
+  videoElement.style.display = 'block';
+  
+  // Mobile-specific attributes (reused from NativeVideoPlayer patterns)
+  videoElement.setAttribute('playsinline', 'true');
+  videoElement.setAttribute('webkit-playsinline', 'true');
+  videoElement.setAttribute('x5-playsinline', 'true');
+  videoElement.setAttribute('x-webkit-airplay', 'allow');
+  
+  // Prevent video element from receiving focus
+  videoElement.setAttribute('tabindex', '-1');
+}

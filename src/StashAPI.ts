@@ -39,6 +39,7 @@ import {
   TypedGraphQLClient,
   Image,
   UIConfigurationResponse,
+  GeneralConfigurationResponse,
 } from './graphql/types.js';
 import {
   GraphQLRequestError,
@@ -370,12 +371,16 @@ export class StashAPI {
       ...(hasSearchTerm ? { q: term.trim() } : { sort: generateRandomSortSeed() })
     };
     
-    const tag_filter: TagFilterInput = {
-      marker_count: {
-        value: hasSearchTerm ? 0 : 10,
-        modifier: 'GREATER_THAN'
-      }
-    };
+    // When searching, remove marker_count filter to show all tags (including newly created ones and tags with only scenes/images)
+    // When not searching (suggestions), keep marker_count > 10 filter to show only popular/relevant tags
+    const tag_filter: TagFilterInput = hasSearchTerm
+      ? {} // No filter - show all tags when searching
+      : {
+          marker_count: {
+            value: 10,
+            modifier: 'GREATER_THAN'
+          }
+        };
     
     const variables = { filter, tag_filter };
 
@@ -2291,6 +2296,22 @@ export class StashAPI {
       return null;
     } catch (error) {
       console.error('StashAPI: Failed to get UI configuration', error);
+      return null;
+    }
+  }
+
+  /**
+   * Get general configuration, including image extensions
+   * @returns Array of image extensions or null if unavailable
+   */
+  async getGeneralConfiguration(): Promise<string[] | null> {
+    try {
+      const result = await this.gqlClient.query<GeneralConfigurationResponse>({
+        query: queries.GET_GENERAL_CONFIGURATION,
+      });
+      return result.data?.configuration?.general?.imageExtensions || null;
+    } catch (error) {
+      console.error('StashAPI: Failed to get general configuration', error);
       return null;
     }
   }

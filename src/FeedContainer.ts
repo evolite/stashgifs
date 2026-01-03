@@ -3895,6 +3895,12 @@ export class FeedContainer {
     const height = visualFile?.height;
     const aspectRatio = width && height && height !== 0 ? width / height : undefined;
 
+    const visualFiles = graphqlImage.visual_files?.map(vf => ({
+      path: vf.path,
+      video_codec: vf.video_codec,
+      duration: vf.duration,
+    }));
+
     return {
       id: graphqlImage.id,
       title: graphqlImage.title,
@@ -3911,6 +3917,7 @@ export class FeedContainer {
         name: p.name,
         image_path: p.image_path,
       })),
+      visualFiles,
     };
   }
 

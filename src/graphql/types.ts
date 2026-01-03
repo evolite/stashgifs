@@ -547,6 +547,17 @@ export interface UIConfigurationResponse {
 }
 
 /**
+ * GeneralConfiguration response
+ */
+export interface GeneralConfigurationResponse {
+  configuration: {
+    general: {
+      imageExtensions: string[];
+    };
+  };
+}
+
+/**
  * ImageIncrementO response
  */
 export interface ImageIncrementOResponse {

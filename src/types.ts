@@ -146,6 +146,11 @@ export interface Image {
   };
   tags?: Tag[];
   performers?: Performer[];
+  visualFiles?: Array<{
+    path?: string;
+    video_codec?: string;
+    duration?: number;
+  }>;
 }
 
 /**
