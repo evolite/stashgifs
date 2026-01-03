@@ -1,7 +1,5 @@
 # Deployment script (contains local paths)
-deploy.ps1
-package.ps1
-
+*.sh
 # Dependencies
 node_modules/
 

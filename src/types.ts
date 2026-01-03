@@ -89,7 +89,6 @@ export interface FilterOptions {
 export interface FeedSettings {
   autoPlay: boolean;
   autoPlayThreshold: number; // 0-1, how much of video must be visible
-  maxConcurrentVideos: number;
   unloadDistance: number; // pixels from viewport to unload
   cardMaxWidth: number; // pixels
   aspectRatio: 'preserve' | '16:9' | '9:16' | '1:1';

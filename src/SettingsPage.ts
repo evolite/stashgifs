@@ -266,7 +266,7 @@ export class SettingsPage {
         .filter(ext => ext.length > 0);
       
       if (extensions.length === 0) {
-        regexPreview.textContent = String.raw`Regex: \.(gif)$`;
+        regexPreview.textContent = String.raw`Regex: (?i)\.(gif)$`;
         return;
       }
 
@@ -275,11 +275,11 @@ export class SettingsPage {
         .filter(ext => /^[a-z0-9]+$/i.test(ext));
       
       if (cleanExtensions.length === 0) {
-        regexPreview.textContent = String.raw`Regex: \.(gif)$`;
+        regexPreview.textContent = String.raw`Regex: (?i)\.(gif)$`;
         return;
       }
 
-      const regex = String.raw`\.(${cleanExtensions.join('|')})$`;
+      const regex = String.raw`(?i)\.(${cleanExtensions.join('|')})$`;
       regexPreview.textContent = `Regex: ${regex}`;
     };
 

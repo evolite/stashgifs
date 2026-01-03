@@ -19,8 +19,8 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
 
 SOURCE_DIR="$SCRIPT_DIR"
-STASHGIFS_SOURCE="$SOURCE_DIR/stashgifs"
-TARGET_DIR="/home/evotech/Services/containers/data/stash/plugins/stashgifs/stashgifs"
+ASSETS_SOURCE="$SOURCE_DIR/stashgifs/app/assets"
+TARGET_ASSETS_DIR="/home/evotech/Services/containers/data/stash/plugins/stashgifs/stashgifs/stashgifs/app/assets"
 
 echo -e "${CYAN}=== StashGifs Deployment Script ===${NC}"
 echo ""
@@ -34,37 +34,45 @@ fi
 echo -e "${GREEN}Build completed successfully!${NC}"
 echo ""
 
-# Step 2: Delete target directory if it exists
-echo -e "${YELLOW}Step 2: Cleaning target directory...${NC}"
-if [[ -d "$TARGET_DIR" ]]; then
-    echo -e "${GRAY}Deleting existing directory: $TARGET_DIR${NC}"
-    rm -rf "$TARGET_DIR"
-    echo -e "${GREEN}Target directory deleted.${NC}"
+# Step 2: Create/clean target assets directory
+echo -e "${YELLOW}Step 2: Preparing target assets directory...${NC}"
+if [[ -d "$TARGET_ASSETS_DIR" ]]; then
+    echo -e "${GRAY}Cleaning existing assets directory: $TARGET_ASSETS_DIR${NC}"
+    rm -rf "$TARGET_ASSETS_DIR"/*
+    rm -rf "$TARGET_ASSETS_DIR"/.* 2>/dev/null || true
+    echo -e "${GREEN}Target assets directory cleaned.${NC}"
 else
-    echo -e "${GRAY}Target directory does not exist, skipping deletion.${NC}"
+    echo -e "${GRAY}Creating target assets directory: $TARGET_ASSETS_DIR${NC}"
+    mkdir -p "$TARGET_ASSETS_DIR"
+    echo -e "${GREEN}Target assets directory created.${NC}"
 fi
 echo ""
 
-# Step 3: Copy source to target
-echo -e "${YELLOW}Step 3: Copying files to target directory...${NC}"
-echo -e "${GRAY}Source: $STASHGIFS_SOURCE${NC}"
-echo -e "${GRAY}Target: $TARGET_DIR${NC}"
+# Step 3: Copy assets to target
+echo -e "${YELLOW}Step 3: Copying assets to target directory...${NC}"
+echo -e "${GRAY}Source: $ASSETS_SOURCE${NC}"
+echo -e "${GRAY}Target: $TARGET_ASSETS_DIR${NC}"
 
-if [[ ! -d "$STASHGIFS_SOURCE" ]]; then
-    echo -e "${RED}Error: Source stashgifs directory not found: $STASHGIFS_SOURCE${NC}" >&2
+if [[ ! -d "$ASSETS_SOURCE" ]]; then
+    echo -e "${RED}Error: Source assets directory not found: $ASSETS_SOURCE${NC}" >&2
     exit 1
 fi
 
-# Copy the stashgifs directory contents to target
-cp -r "$STASHGIFS_SOURCE" "$TARGET_DIR"
+# Copy the contents of assets directory to target (not the directory itself)
+cp -r "$ASSETS_SOURCE"/* "$TARGET_ASSETS_DIR"/
 if [[ $? -ne 0 ]]; then
     echo -e "${RED}Error: Copy failed!${NC}" >&2
     exit 1
 fi
 
-echo -e "${GREEN}Files copied successfully!${NC}"
+# Also copy hidden files if any
+if ls -A "$ASSETS_SOURCE"/.* > /dev/null 2>&1; then
+    cp -r "$ASSETS_SOURCE"/.* "$TARGET_ASSETS_DIR"/ 2>/dev/null || true
+fi
+
+echo -e "${GREEN}Assets copied successfully!${NC}"
 echo ""
 
 echo -e "${CYAN}=== Deployment Complete ===${NC}"
-echo -e "${GREEN}Plugin deployed to: $TARGET_DIR${NC}"
+echo -e "${GREEN}Assets deployed to: $TARGET_ASSETS_DIR${NC}"
 

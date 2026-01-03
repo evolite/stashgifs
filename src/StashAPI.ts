@@ -979,10 +979,16 @@ export class StashAPI {
    * Build scene filter for shuffle mode
    */
   private buildShuffleSceneFilter(filters?: FilterOptions): SceneFilterInput | null {
+    const sceneFilter: SceneFilterInput = {};
+    
     if (filters?.includeScenesWithoutMarkers) {
-      return { has_markers: 'false' };
+      sceneFilter.has_markers = 'false';
     }
-    return null;
+    
+    this.addPerformerFilter(sceneFilter, filters);
+    this.addTagFilter(sceneFilter, filters);
+    
+    return Object.keys(sceneFilter).length > 0 ? sceneFilter : null;
   }
 
   /**
@@ -1318,19 +1324,35 @@ export class StashAPI {
 
   /**
    * Add tag filter to scene filter
+   * Also includes primary_tags if provided, since scenes/images should be filtered
+   * by the same tags used to filter markers
    */
   private addTagFilter(sceneFilter: SceneFilterInput, filters?: FilterOptions): void {
-    if (!filters?.tags || filters.tags.length === 0) {
+    const allTagIds: string[] = [];
+    
+    // Add regular tags
+    if (filters?.tags && filters.tags.length > 0) {
+      const tagIds = this.parseTagIds(filters.tags);
+      allTagIds.push(...tagIds.map(String));
+    }
+    
+    // Add primary_tags (used for marker filtering, but should also filter scenes/images)
+    if (filters?.primary_tags && filters.primary_tags.length > 0) {
+      const primaryTagIds = this.parseTagIds(filters.primary_tags);
+      allTagIds.push(...primaryTagIds.map(String));
+    }
+    
+    if (allTagIds.length === 0) {
       return;
     }
 
-    const tagIds = this.parseTagIds(filters.tags);
-    if (tagIds.length > 0) {
-      sceneFilter.tags = {
-        value: tagIds.map(String),
-        modifier: tagIds.length === 1 ? 'INCLUDES_ALL' : 'INCLUDES'
-      };
-    }
+    // Remove duplicates
+    const uniqueTagIds = Array.from(new Set(allTagIds));
+    
+    sceneFilter.tags = {
+      value: uniqueTagIds,
+      modifier: uniqueTagIds.length === 1 ? 'INCLUDES_ALL' : 'INCLUDES'
+    };
   }
 
   /**
@@ -2096,11 +2118,11 @@ export class StashAPI {
 
   /**
    * Build regex pattern from file extensions
-   * Converts ['.gif', '.webm'] to "\.(gif|webm)$" (case-insensitive)
+   * Converts ['.gif', '.webm'] to "(?i)\.(gif|webm)$" (case-insensitive)
    */
   private buildPathRegex(fileExtensions: string[]): string {
     if (fileExtensions.length === 0) {
-      return String.raw`\.(gif)$`; // Default to .gif if empty
+      return String.raw`(?i)\.(gif)$`; // Default to .gif if empty
     }
     
     // Strip leading dots and validate
@@ -2109,11 +2131,11 @@ export class StashAPI {
       .filter(ext => ext.length > 0 && /^[a-z0-9]+$/i.test(ext));
     
     if (extensions.length === 0) {
-      return String.raw`\.(gif)$`; // Default to .gif if all invalid
+      return String.raw`(?i)\.(gif)$`; // Default to .gif if all invalid
     }
     
-    // Build regex: \.(gif|webm|mp4)$
-    return String.raw`\.(${extensions.join('|')})$`;
+    // Build regex: (?i)\.(gif|webm|mp4)$ (case-insensitive)
+    return String.raw`(?i)\.(${extensions.join('|')})$`;
   }
 
   /**

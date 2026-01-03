@@ -232,16 +232,25 @@ export class VideoPost extends BasePost {
     const container = document.createElement('div');
     container.className = 'video-post__player';
     container.style.position = 'relative';
+    container.style.width = '100%';
 
     // Calculate aspect ratio
+    let aspectRatio: number | undefined;
     let aspectRatioClass = 'aspect-16-9';
     if (this.data.marker.scene.files && this.data.marker.scene.files.length > 0) {
       const file = this.data.marker.scene.files[0];
-      if (file?.width && file?.height) {
-        const ratio = calculateAspectRatio(file.width, file.height);
-        aspectRatioClass = getAspectRatioClass(ratio);
+      if (file?.width && file?.height && file.height > 0) {
+        aspectRatio = calculateAspectRatio(file.width, file.height);
+        aspectRatioClass = getAspectRatioClass(aspectRatio);
       }
     }
+    
+    // Use inline aspectRatio style for better browser compatibility (Chrome/Safari)
+    // Match ImagePost format - use number format like "1.777" for consistency
+    if (aspectRatio && Number.isFinite(aspectRatio)) {
+      container.style.aspectRatio = `${aspectRatio}`;
+    }
+    // Always add CSS class as fallback for older browsers
     container.classList.add(aspectRatioClass);
 
 
@@ -1055,6 +1064,7 @@ export class VideoPost extends BasePost {
     dialog.setAttribute('aria-modal', 'true');
     dialog.setAttribute('aria-hidden', 'true');
     dialog.hidden = true;
+    // Background styles are handled by CSS - no inline styles needed
     this.ratingDialog = dialog;
 
     const dialogHeader = document.createElement('div');
@@ -1125,7 +1135,7 @@ export class VideoPost extends BasePost {
       starBtn.style.border = 'none';
       starBtn.style.background = 'transparent';
       starBtn.style.cursor = 'pointer';
-      starBtn.style.transition = 'transform 120ms ease-in-out';
+      starBtn.style.transition = 'transform 120ms ease-in-out, background 120ms ease-in-out';
       starBtn.style.borderRadius = '6px';
       starBtn.style.flexShrink = '0';
 
@@ -1220,8 +1230,9 @@ export class VideoPost extends BasePost {
     outlineSpan.style.width = '100%';
     outlineSpan.style.height = '100%';
     outlineSpan.style.display = 'block';
-    outlineSpan.style.color = 'var(--rating-star-outline, #888888)';
+    outlineSpan.style.color = 'var(--rating-star-outline, #ffffff)';
     outlineSpan.style.transition = 'opacity 120ms ease-in-out';
+    outlineSpan.style.textShadow = '0 0 4px rgba(0,0,0,0.8), 0 0 2px rgba(0,0,0,0.6)';
 
     const fillSpan = document.createElement('span');
     fillSpan.className = 'rating-dialog__star-fill';
@@ -1235,7 +1246,7 @@ export class VideoPost extends BasePost {
     fillSpan.style.overflow = 'hidden';
     fillSpan.style.whiteSpace = 'nowrap';
     fillSpan.style.color = 'var(--rating-star-fill, #ffda6a)';
-    fillSpan.style.textShadow = '0 0 6px rgba(0,0,0,0.4)';
+    fillSpan.style.textShadow = '0 0 8px rgba(0,0,0,0.8), 0 0 4px rgba(0,0,0,0.6)';
     fillSpan.style.zIndex = '1';
     fillSpan.style.transition = 'width 120ms ease-in-out, opacity 120ms ease-in-out';
 
@@ -1516,6 +1527,9 @@ export class VideoPost extends BasePost {
     button.setAttribute('aria-checked', isChecked ? 'true' : 'false');
     button.tabIndex = isChecked || (!this.hasRating && buttonIndex === 0) ? 0 : -1;
     
+    // Keep background transparent for all stars
+    button.style.background = 'transparent';
+    
     if (fillSpan && outlineSpan) {
       const clipPercent = 100 - fillPercent;
       fillSpan.style.opacity = isFilled ? '1' : '0';
@@ -1524,11 +1538,11 @@ export class VideoPost extends BasePost {
       fillSpan.style.setProperty('-webkit-clip-path', clipInset);
       
       if (fillPercent === 100) {
-        outlineSpan.style.opacity = '0.15';
-      } else if (isFilled) {
         outlineSpan.style.opacity = '0.4';
+      } else if (isFilled) {
+        outlineSpan.style.opacity = '0.65';
       } else {
-        outlineSpan.style.opacity = '0.7';
+        outlineSpan.style.opacity = '1';
       }
     }
     

@@ -21,7 +21,6 @@ import { HQ_SVG_OUTLINE, RANDOM_SVG, SETTINGS_SVG, SHUFFLE_CHECK_SVG, CLEAR_SVG 
 const DEFAULT_SETTINGS: FeedSettings = {
   autoPlay: true, // Enable autoplay for markers
   autoPlayThreshold: 0.2, // Lower threshold - start playing when 20% visible instead of 50%
-  maxConcurrentVideos: 2, // Limit to 2 concurrent videos to prevent 8GB+ RAM usage (will be reduced on mobile)
   unloadDistance: 1000,
   cardMaxWidth: 800,
   aspectRatio: 'preserve',
@@ -94,10 +93,6 @@ export class FeedContainer {
   private postsContainer!: HTMLElement;
   private headerBar?: HTMLElement;
   private selectedSavedFilter?: { id: string; name: string };
-  private eagerPreloadedPosts: Set<string>;
-  private eagerPreloadScheduled: boolean = false;
-  private eagerPreloadHandle?: number;
-  private eagerPreloadCount: number;
   private maxSimultaneousPreloads: number;
   private isMobileDevice: boolean;
   private preloadedTags: Array<{ id: string; name: string }> = [];
@@ -111,8 +106,6 @@ export class FeedContainer {
   private lastScrollTime: number = 0;
   private scrollVelocity: number = 0;
   private currentlyPreloadingCount: number = 0;
-  private mobilePreloadQueue: string[] = [];
-  private mobilePreloadActive: boolean = false;
   private initialLoadLimit: number; // Set in constructor based on device
   private readonly subsequentLoadLimit: number = 12; // Load 12 items on subsequent loads (reduced from 20)
   private placeholderAnimationInterval?: ReturnType<typeof setInterval>; // For scrolling placeholder animation
@@ -127,9 +120,6 @@ export class FeedContainer {
   private readonly loadObservers: Map<string, IntersectionObserver> = new Map(); // Track load observers for cleanup
   private deviceCapabilities: DeviceCapabilities; // Device capabilities for adaptive quality
   private shuffleToggle?: HTMLElement; // Reference to shuffle toggle button
-  private contentRatio?: { markerRatio: number; shortFormRatio: number; imageRatio: number }; // Store initial ratio based on total counts
-  private contentTotals?: { markerTotal: number; shortFormTotal: number; imageTotal: number }; // Store initial totals from API
-  private contentConsumed?: { markers: number; shortForm: number; images: number }; // Track consumed items to maintain ratio
   // Card snapping state
   private cardSnapWheelHandler?: (e: WheelEvent) => void;
   private cardSnapTouchStartHandler?: (e: TouchEvent) => void;
@@ -153,8 +143,6 @@ export class FeedContainer {
     this.favoritesManager = null!; // Will be set in initializeManagers
     this.posts = new Map();
     this.postOrder = [];
-    this.eagerPreloadedPosts = new Set();
-    this.eagerPreloadCount = 0;
     this.maxSimultaneousPreloads = 0;
     this.isMobileDevice = false;
     this.initialLoadLimit = 0;
@@ -178,8 +166,6 @@ export class FeedContainer {
     
     // Setup infinite scroll
     this.setupInfiniteScroll();
-    // Render filter bottom sheet UI
-    this.renderFilterSheet();
     
     // Unlock autoplay on mobile after first user interaction
     this.unlockMobileAutoplay();
@@ -197,20 +183,14 @@ export class FeedContainer {
     // Mobile: reduce initial load for faster perceived performance
     this.initialLoadLimit = this.isMobileDevice ? 6 : 8; // Load 6 on mobile, 8 on desktop (reduced to prevent overload)
     
-    // Disabled eager preload - videos now load on-demand when close to viewport (50px) or on click
-    this.eagerPreloadCount = 0; // No eager preloading - let Intersection Observer handle it
-    // Extremely reduced to prevent 8GB+ RAM usage: max 1 on mobile, 2 on desktop
-    this.maxSimultaneousPreloads = this.isMobileDevice ? 1 : 2;
+    // Extremely reduced to prevent 8GB+ RAM usage: max 2 on mobile, 2 on desktop
+    this.maxSimultaneousPreloads = this.isMobileDevice ? 2 : 2;
 
     if (this.isMobileDevice) {
       // Mobile: more aggressive memory management
       this.settings.backgroundPreloadDelay = 80;
       this.settings.backgroundPreloadFastScrollDelay = 200;
-      // Reduce max concurrent videos on mobile to save memory
-      // Use device capabilities to determine optimal value
       this.deviceCapabilities = detectDeviceCapabilities();
-      // Set to 1 concurrent video for mobile devices
-      this.settings.maxConcurrentVideos = 1;
       
       // Network-aware optimizations for mobile
       this.applyNetworkOptimizations();
@@ -221,7 +201,6 @@ export class FeedContainer {
     
     this.posts = new Map();
     this.postOrder = [];
-    this.eagerPreloadedPosts = new Set();
   }
 
   /**
@@ -458,7 +437,6 @@ export class FeedContainer {
     this.visibilityManager = new VisibilityManager({
       threshold: this.settings.autoPlayThreshold,
       autoPlay: !this.useHDMode, // Enable autoplay in non-HD mode, disable in HD mode
-      maxConcurrent: this.settings.maxConcurrentVideos,
       debug: this.shouldEnableVisibilityDebug(),
       onHoverLoadRequest: (postId: string) => this.triggerVideoLoadOnHover(postId),
     });
@@ -597,13 +575,8 @@ export class FeedContainer {
    */
   private createSectionLabel(label: string, uppercase: boolean = false): HTMLElement {
     const el = document.createElement('div');
+    el.className = uppercase ? 'feed-section-label feed-section-label--uppercase' : 'feed-section-label';
     el.textContent = uppercase ? label.toUpperCase() : label;
-    el.style.width = '100%';
-    el.style.fontSize = uppercase ? '11px' : '15px';
-    el.style.fontWeight = uppercase ? '600' : '500';
-    el.style.letterSpacing = uppercase ? '0.5px' : 'normal';
-    el.style.textTransform = uppercase ? 'uppercase' : 'none';
-    el.style.color = uppercase ? 'rgba(255,255,255,0.6)' : '#FFFFFF';
     return el;
   }
 
@@ -613,25 +586,8 @@ export class FeedContainer {
   private createPillButton(label: string, onSelect: () => void | Promise<void>): HTMLElement {
     const button = document.createElement('button');
     button.type = 'button';
+    button.className = 'feed-pill-button';
     button.textContent = label;
-    button.style.display = 'inline-flex';
-    button.style.alignItems = 'center';
-    button.style.justifyContent = 'center';
-    button.style.padding = '8px 14px';
-    button.style.borderRadius = '999px';
-    button.style.border = '1px solid rgba(255,255,255,0.12)';
-    button.style.background = 'rgba(255,255,255,0.08)';
-    button.style.color = '#FFFFFF';
-    button.style.cursor = 'pointer';
-    button.style.fontSize = '14px';
-    button.style.fontWeight = '500';
-    button.style.transition = 'background 0.2s ease';
-    button.addEventListener('mouseenter', () => {
-      button.style.background = 'rgba(255,255,255,0.12)';
-    });
-    button.addEventListener('mouseleave', () => {
-      button.style.background = 'rgba(255,255,255,0.08)';
-    });
     button.addEventListener('click', (event) => {
       event.preventDefault();
       event.stopPropagation();
@@ -650,46 +606,16 @@ export class FeedContainer {
   ): HTMLElement {
     const button = document.createElement('button');
     button.type = 'button';
-    button.style.width = '100%';
-    button.style.display = 'flex';
-    button.style.alignItems = 'center';
-    button.style.gap = '12px';
-    button.style.padding = '12px';
-    button.style.borderRadius = '12px';
-    button.style.border = 'none';
-    button.style.background = 'transparent';
-    button.style.cursor = 'pointer';
-    button.style.textAlign = 'left';
-    button.style.transition = 'background 0.2s ease';
-    button.addEventListener('mouseenter', () => {
-      button.style.background = 'rgba(255,255,255,0.08)';
-    });
-    button.addEventListener('mouseleave', () => {
-      button.style.background = 'transparent';
-    });
+    button.className = 'feed-list-button';
 
     if (options.leadingText || options.leadingImage) {
       const leading = document.createElement('div');
-      leading.style.width = '36px';
-      leading.style.height = '36px';
-      leading.style.borderRadius = '50%';
-      leading.style.background = 'rgba(255,255,255,0.1)';
-      leading.style.display = 'flex';
-      leading.style.alignItems = 'center';
-      leading.style.justifyContent = 'center';
-      leading.style.fontSize = '16px';
-      leading.style.fontWeight = '600';
-      leading.style.color = 'rgba(255,255,255,0.85)';
-      leading.style.flexShrink = '0';
-      leading.style.overflow = 'hidden';
+      leading.className = 'feed-list-button__leading';
 
       if (options.leadingImage) {
         const img = document.createElement('img');
         img.src = options.leadingImage;
         img.alt = label;
-        img.style.width = '100%';
-        img.style.height = '100%';
-        img.style.objectFit = 'cover';
         leading.appendChild(img);
       } else if (options.leadingText) {
         leading.textContent = options.leadingText;
@@ -699,23 +625,20 @@ export class FeedContainer {
     }
 
     const textContainer = document.createElement('div');
-    textContainer.style.display = 'flex';
-    textContainer.style.flexDirection = 'column';
-    textContainer.style.gap = options.subtitle ? '2px' : '0';
-    textContainer.style.flex = '1';
+    textContainer.className = 'feed-list-button__text';
+    if (!options.subtitle) {
+      textContainer.style.gap = '0';
+    }
 
     const title = document.createElement('div');
+    title.className = 'feed-list-button__title';
     title.textContent = label;
-    title.style.fontSize = '15px';
-    title.style.fontWeight = '500';
-    title.style.color = '#FFFFFF';
     textContainer.appendChild(title);
 
     if (options.subtitle) {
       const subtitle = document.createElement('div');
+      subtitle.className = 'feed-list-button__subtitle';
       subtitle.textContent = options.subtitle;
-      subtitle.style.fontSize = '12px';
-      subtitle.style.color = 'rgba(255,255,255,0.6)';
       textContainer.appendChild(subtitle);
     }
 
@@ -735,12 +658,7 @@ export class FeedContainer {
    */
   private appendEmptyState(target: HTMLElement, message: string): void {
     const emptyState = document.createElement('div');
-    emptyState.style.padding = '12px';
-    emptyState.style.borderRadius = '10px';
-    emptyState.style.background = 'rgba(255,255,255,0.04)';
-    emptyState.style.color = 'rgba(255,255,255,0.7)';
-    emptyState.style.fontSize = '14px';
-    emptyState.style.textAlign = 'center';
+    emptyState.className = 'feed-empty-state';
     emptyState.textContent = message;
     target.appendChild(emptyState);
   }
@@ -915,7 +833,7 @@ export class FeedContainer {
     filtersSection.style.flexDirection = 'column';
     filtersSection.style.gap = '12px';
     filtersSection.style.marginLeft = `${alignmentOffset}px`;
-    filtersSection.appendChild(this.createSectionLabel('Saved Filters', true));
+    filtersSection.appendChild(this.createSectionLabel('Saved Marker Filters', true));
 
     const pillRow = document.createElement('div');
     pillRow.style.display = 'flex';
@@ -957,7 +875,6 @@ export class FeedContainer {
         this.closeSuggestions();
         updateSearchBarDisplay();
         this.currentFilters = { savedFilterId: filter.id, limit: this.initialLoadLimit, offset: 0 };
-        this.clearContentRatio(); // Clear ratio so it's recalculated with new filter
         this.loadVideos(this.currentFilters, false).catch((e) => console.error('Apply saved filter failed', e));
       }));
     }
@@ -1197,7 +1114,7 @@ export class FeedContainer {
       savedSection.style.flexDirection = 'column';
       savedSection.style.gap = '8px';
       savedSection.style.marginLeft = `${alignmentOffsetForResults}px`;
-      savedSection.appendChild(this.createSectionLabel('Matching Saved Filters'));
+      savedSection.appendChild(this.createSectionLabel('Matching Saved Marker Filters'));
       for (const filter of matchingSavedFilters) {
         savedSection.appendChild(
           this.createListButton(filter.name, () => {
@@ -1209,7 +1126,6 @@ export class FeedContainer {
             this.closeSuggestions();
             updateSearchBarDisplay();
             this.currentFilters = { savedFilterId: filter.id, limit: this.initialLoadLimit, offset: 0 };
-            this.clearContentRatio(); // Clear ratio so it's recalculated with new filter
             this.loadVideos(this.currentFilters, false).catch((e) => console.error('Apply saved filter failed', e));
           })
         );
@@ -1266,16 +1182,7 @@ export class FeedContainer {
   ): HTMLElement {
     const chip = document.createElement('button');
     chip.textContent = text;
-    chip.className = 'suggest-chip';
-    chip.style.padding = '6px 10px';
-    chip.style.borderRadius = '999px';
-    chip.style.border = '1px solid rgba(255,255,255,0.12)';
-    chip.style.background = isSelected ? 'rgba(255,255,255,0.1)' : 'rgba(255,255,255,0.05)';
-    chip.style.color = 'inherit';
-    chip.style.fontSize = '13px';
-    chip.style.cursor = 'pointer';
-    chip.addEventListener('mouseenter', () => { chip.style.background = 'rgba(255,255,255,0.1)'; });
-    chip.addEventListener('mouseleave', () => { chip.style.background = isSelected ? 'rgba(255,255,255,0.1)' : 'rgba(255,255,255,0.05)'; });
+    chip.className = isSelected ? 'feed-suggestion-chip feed-suggestion-chip--selected' : 'feed-suggestion-chip';
     chip.addEventListener('click', onClick);
     return chip;
   }
@@ -1285,11 +1192,8 @@ export class FeedContainer {
    */
   private createSuggestionLabel(text: string): HTMLElement {
     const label = document.createElement('div');
+    label.className = 'feed-suggestion-label';
     label.textContent = text;
-    label.style.opacity = '0.75';
-    label.style.fontSize = '12px';
-    label.style.width = '100%';
-    label.style.marginBottom = '6px';
     return label;
   }
 
@@ -1298,10 +1202,7 @@ export class FeedContainer {
    */
   private createSuggestionDivider(): HTMLElement {
     const divider = document.createElement('div');
-    divider.style.width = '100%';
-    divider.style.height = '1px';
-    divider.style.background = 'rgba(255,255,255,0.08)';
-    divider.style.margin = '6px 0';
+    divider.className = 'feed-suggestion-divider';
     return divider;
   }
 
@@ -1317,7 +1218,7 @@ export class FeedContainer {
   ): void {
     if (this.savedFiltersCache.length === 0) return;
 
-    container.appendChild(this.createSuggestionLabel('Saved Filters'));
+    container.appendChild(this.createSuggestionLabel('Saved Marker Filters'));
 
     for (const f of this.savedFiltersCache) {
       const chip = this.createSuggestionChip(f.name, () => {
@@ -1536,7 +1437,11 @@ export class FeedContainer {
     const header = document.createElement('div');
     this.headerBar = header;
     header.className = 'feed-header-bar';
-    header.style.position = 'sticky';
+    
+    // Dynamic styles that must remain inline
+    header.style.maxWidth = `${this.settings.cardMaxWidth + 24}px`;
+    header.style.top = '0';
+    header.style.transform = 'translateY(0)';
     
     const nav = globalThis.navigator;
     const isStandalone = (isStandaloneNavigator(nav) && nav.standalone) || 
@@ -1545,35 +1450,9 @@ export class FeedContainer {
     
     if (isStandalone && isIOS) {
       header.style.top = 'calc(env(safe-area-inset-top, 0px) * 0.7)';
-      header.style.paddingTop = '8px';
-      header.style.paddingBottom = '8px';
-      header.style.paddingLeft = '12px';
-      header.style.paddingRight = '12px';
-    } else {
-      header.style.top = '0';
-      header.style.padding = '8px 12px';
-    }
-    
-    header.style.width = '100%';
-    header.style.maxWidth = `${this.settings.cardMaxWidth + 24}px`;
-    header.style.marginLeft = 'auto';
-    header.style.marginRight = 'auto';
-    
-    if (isStandalone && isIOS) {
       header.style.minHeight = '72px';
       header.style.height = 'auto';
-    } else {
-      header.style.height = '72px';
     }
-    
-    header.style.zIndex = '1001';
-    header.style.display = 'flex';
-    header.style.alignItems = 'center';
-    header.style.justifyContent = 'flex-start';
-    header.style.transition = 'transform 0.24s var(--ease-spring, ease), opacity 0.24s var(--ease-spring, ease)';
-    header.style.boxSizing = 'border-box';
-    header.style.transform = 'translateY(0)';
-    header.style.willChange = 'transform, opacity';
     
     return header;
   }
@@ -1583,17 +1462,8 @@ export class FeedContainer {
    */
   private createHeaderInnerContainer(): HTMLElement {
     const headerInner = document.createElement('div');
-    headerInner.style.display = 'grid';
-    headerInner.style.gridTemplateColumns = 'auto 1fr auto';
-    headerInner.style.alignItems = 'center';
-    headerInner.style.gap = '12px';
-    headerInner.style.width = '100%';
-    headerInner.style.height = '100%';
+    headerInner.className = 'feed-header-inner';
     headerInner.style.maxWidth = `${this.settings.cardMaxWidth}px`;
-    headerInner.style.marginLeft = '0';
-    headerInner.style.marginRight = '0';
-    headerInner.style.boxSizing = 'border-box';
-    headerInner.style.flex = '1 1 auto';
     return headerInner;
   }
 
@@ -1602,13 +1472,7 @@ export class FeedContainer {
    */
   private createSearchArea(): HTMLElement {
     const searchArea = document.createElement('div');
-    searchArea.style.position = 'relative';
-    searchArea.style.width = '100%';
-    searchArea.style.minWidth = '0';
-    searchArea.style.maxWidth = '100%';
-    searchArea.style.overflow = 'hidden';
-    searchArea.style.boxSizing = 'border-box';
-    searchArea.style.marginRight = '0';
+    searchArea.className = 'feed-search-area';
     return searchArea;
   }
 
@@ -1617,15 +1481,8 @@ export class FeedContainer {
    */
   private createTagHeader(): HTMLElement {
     const tagHeader = document.createElement('div');
-    tagHeader.className = 'feed-filters__tag-header';
+    tagHeader.className = 'feed-filters__tag-header feed-tag-header';
     tagHeader.style.display = 'none';
-    tagHeader.style.padding = '12px 14px';
-    tagHeader.style.marginTop = '8px';
-    tagHeader.style.width = '100%';
-    tagHeader.style.boxSizing = 'border-box';
-    tagHeader.style.fontSize = '17px';
-    tagHeader.style.fontWeight = '600';
-    tagHeader.style.color = '#FFFFFF';
     return tagHeader;
   }
 
@@ -1634,37 +1491,12 @@ export class FeedContainer {
    */
   private createBrandContainer(headerInner: HTMLElement): HTMLElement {
     const brandContainer = document.createElement('div');
-    brandContainer.style.display = 'inline-flex';
-    brandContainer.style.alignItems = 'center';
-    brandContainer.style.height = '44px';
-    brandContainer.style.padding = '0 14px';
-    brandContainer.style.borderRadius = '10px';
-    brandContainer.style.border = '1px solid rgba(255,255,255,0.12)';
-    brandContainer.style.background = 'rgba(28, 28, 30, 0.9)';
-    brandContainer.style.cursor = 'pointer';
-    brandContainer.style.transition = 'background 0.2s ease, border-color 0.2s ease, opacity 0.2s ease';
+    brandContainer.className = 'feed-brand-container';
     brandContainer.title = 'Click to refresh feed';
     
     const brand = document.createElement('div');
+    brand.className = 'feed-brand-text';
     brand.textContent = 'stashgifs';
-    brand.style.fontWeight = '700';
-    brand.style.letterSpacing = '0.5px';
-    brand.style.color = '#F5C518';
-    brand.style.fontSize = '17px';
-    brand.style.lineHeight = '1.2';
-    brand.style.userSelect = 'none';
-    brand.style.transition = 'opacity 0.2s ease';
-    
-    brandContainer.addEventListener('mouseenter', () => {
-      brandContainer.style.background = 'rgba(28, 28, 30, 0.95)';
-      brandContainer.style.borderColor = 'rgba(255,255,255,0.16)';
-      brand.style.opacity = '0.9';
-    });
-    brandContainer.addEventListener('mouseleave', () => {
-      brandContainer.style.background = 'rgba(28, 28, 30, 0.9)';
-      brandContainer.style.borderColor = 'rgba(255,255,255,0.12)';
-      brand.style.opacity = '1';
-    });
     
     brandContainer.addEventListener('click', () => {
       this.refreshFeed().catch((e) => console.error('Failed to refresh feed', e));
@@ -1688,11 +1520,7 @@ export class FeedContainer {
     updatePlaceholderVisibility: () => void;
   } {
     const inputWrapper = document.createElement('div');
-    inputWrapper.style.position = 'relative';
-    inputWrapper.style.width = '100%';
-    inputWrapper.style.minWidth = '0';
-    inputWrapper.style.boxSizing = 'border-box';
-    inputWrapper.style.marginRight = '0';
+    inputWrapper.className = 'feed-input-wrapper';
 
     const queryInput = this.createQueryInput();
     const placeholderSetup = this.setupPlaceholderAnimation(queryInput);
@@ -1727,20 +1555,6 @@ export class FeedContainer {
     queryInput.type = 'text';
     queryInput.placeholder = '';
     queryInput.className = 'feed-filters__input';
-    queryInput.style.transition = 'background 0.2s ease, border-color 0.2s ease';
-    queryInput.style.width = '100%';
-    queryInput.style.minWidth = '0';
-    queryInput.style.height = '44px';
-    queryInput.style.padding = '0 14px';
-    queryInput.style.borderRadius = '10px';
-    queryInput.style.border = '1px solid rgba(255,255,255,0.12)';
-    queryInput.style.background = 'rgba(28, 28, 30, 0.9)';
-    queryInput.style.color = 'inherit';
-    queryInput.style.fontSize = '15px';
-    queryInput.style.lineHeight = '1.4';
-    queryInput.style.boxSizing = 'border-box';
-    queryInput.style.color = 'rgba(255, 255, 255, 0.9)';
-    queryInput.style.caretColor = '#FFFFFF';
     return queryInput;
   }
 
@@ -1757,18 +1571,7 @@ export class FeedContainer {
     
     const placeholderWrapper = document.createElement('div');
     placeholderWrapper.id = 'feed-search-placeholder';
-    placeholderWrapper.style.position = 'absolute';
-    placeholderWrapper.style.left = '14px';
-    placeholderWrapper.style.top = '50%';
-    placeholderWrapper.style.transform = 'translateY(-50%)';
-    placeholderWrapper.style.pointerEvents = 'none';
-    placeholderWrapper.style.overflow = 'visible';
-    placeholderWrapper.style.width = 'calc(100% - 28px)';
-    placeholderWrapper.style.height = '20px';
-    placeholderWrapper.style.color = 'rgba(255, 255, 255, 0.5)';
-    placeholderWrapper.style.fontSize = '15px';
-    placeholderWrapper.style.lineHeight = '20px';
-    placeholderWrapper.style.whiteSpace = 'nowrap';
+    placeholderWrapper.className = 'feed-placeholder-wrapper';
     
     const staticText = document.createElement('span');
     staticText.textContent = 'Search ';
@@ -1906,17 +1709,8 @@ export class FeedContainer {
    */
   private createRandomLeftIcon(): HTMLElement {
     const randomLeftIcon = document.createElement('div');
-    randomLeftIcon.style.position = 'absolute';
-    randomLeftIcon.style.left = '14px';
-    randomLeftIcon.style.top = '50%';
-    randomLeftIcon.style.transform = 'translateY(-50%)';
+    randomLeftIcon.className = 'feed-random-left-icon';
     randomLeftIcon.style.display = this.shuffleMode > 0 ? 'inline-flex' : 'none';
-    randomLeftIcon.style.alignItems = 'center';
-    randomLeftIcon.style.gap = '8px';
-    randomLeftIcon.style.color = 'rgba(255,255,255,0.5)';
-    randomLeftIcon.style.fontSize = '15px';
-    randomLeftIcon.style.lineHeight = '20px';
-    randomLeftIcon.style.pointerEvents = 'none';
     
     const randomLeftIconSpan = document.createElement('span');
     randomLeftIconSpan.innerHTML = RANDOM_SVG;
@@ -1935,19 +1729,8 @@ export class FeedContainer {
    */
   private createLoadingSpinner(): HTMLElement {
     const loadingSpinner = document.createElement('div');
-    loadingSpinner.className = 'feed-search-loading';
+    loadingSpinner.className = 'feed-search-loading feed-loading-spinner';
     loadingSpinner.style.display = 'none';
-    loadingSpinner.style.position = 'absolute';
-    loadingSpinner.style.right = '14px';
-    loadingSpinner.style.top = '50%';
-    loadingSpinner.style.transform = 'translateY(-50%)';
-    loadingSpinner.style.width = '16px';
-    loadingSpinner.style.height = '16px';
-    loadingSpinner.style.border = '2px solid rgba(255,255,255,0.3)';
-    loadingSpinner.style.borderTopColor = 'rgba(255,255,255,0.8)';
-    loadingSpinner.style.borderRadius = '50%';
-    loadingSpinner.style.animation = 'spin 0.8s linear infinite';
-    loadingSpinner.style.willChange = 'transform';
     return loadingSpinner;
   }
 
@@ -1957,20 +1740,7 @@ export class FeedContainer {
   private createShuffleIndicator(): HTMLElement {
     const shuffleIndicator = document.createElement('div');
     shuffleIndicator.className = 'feed-random-indicator';
-    shuffleIndicator.style.position = 'absolute';
-    shuffleIndicator.style.right = '40px';
-    shuffleIndicator.style.top = '50%';
-    shuffleIndicator.style.transform = 'translateY(-50%)';
     shuffleIndicator.style.display = 'none';
-    shuffleIndicator.style.alignItems = 'center';
-    shuffleIndicator.style.gap = '6px';
-    shuffleIndicator.style.padding = '4px 8px';
-    shuffleIndicator.style.borderRadius = '999px';
-    shuffleIndicator.style.border = '1px solid rgba(255,255,255,0.12)';
-    shuffleIndicator.style.background = 'rgba(33, 150, 243, 0.18)';
-    shuffleIndicator.style.color = 'rgba(255,255,255,0.85)';
-    shuffleIndicator.style.fontSize = '12px';
-    shuffleIndicator.style.pointerEvents = 'none';
     
     const randomIconSvg = document.createElement('span');
     randomIconSvg.innerHTML = SHUFFLE_CHECK_SVG;
@@ -2827,7 +2597,6 @@ export class FeedContainer {
       includeScenesWithoutMarkers: this.shuffleMode === 2,
     };
     this.currentFilters = newFilters;
-    this.clearContentRatio(); // Clear ratio so it's recalculated with new filters
     await this.loadVideos(newFilters, false, loadSignal, true);
   }
 
@@ -3036,529 +2805,9 @@ export class FeedContainer {
       offset: 0,
     };
     this.currentFilters = newFilters;
-    this.clearContentRatio(); // Clear ratio so it's recalculated with new filters
     this.loadVideos(newFilters, false).catch((e) => console.error('Apply filters failed', e));
   }
 
-  private renderFilterSheet(): void {
-    // Inject a one-time utility style to hide scrollbars while preserving scroll
-    const injectHideScrollbarCSS = () => {
-      if (!document.getElementById('feed-hide-scrollbar')) {
-        const style = document.createElement('style');
-        style.id = 'feed-hide-scrollbar';
-        style.textContent = `.hide-scrollbar{scrollbar-width:none; -ms-overflow-style:none;} .hide-scrollbar::-webkit-scrollbar{display:none;}`;
-        document.head.appendChild(style);
-      }
-    };
-    injectHideScrollbarCSS();
-
-    // Utility: current scrollbar width (accounts for OS/overlay differences)
-    const getScrollbarWidth = (): number => Math.max(0, globalThis.innerWidth - document.documentElement.clientWidth);
-
-    const bar = document.createElement('div');
-    bar.className = 'feed-filters';
-    // Hide scrollbars on the panel itself (mobile full-screen, desktop floating)
-    bar.classList.add('hide-scrollbar');
-    // Base styles; layout (desktop vs mobile) applied below
-    bar.style.position = 'fixed';
-    bar.style.zIndex = '200';
-    bar.style.display = 'grid';
-    bar.style.gridTemplateColumns = '1fr';
-    bar.style.gap = '10px';
-    bar.style.padding = '12px';
-    bar.style.background = 'rgba(18,18,18,0.6)';
-    bar.style.backdropFilter = 'blur(10px)';
-    bar.style.border = '1px solid rgba(255,255,255,0.06)';
-    bar.style.borderRadius = '14px';
-    bar.style.boxShadow = '0 8px 24px rgba(0,0,0,0.35)';
-    bar.style.opacity = '0';
-    bar.style.pointerEvents = 'none';
-    bar.style.transition = 'opacity .18s ease, transform .24s cubic-bezier(.2,.7,0,1)';
-
-    // Backdrop for mobile bottom sheet
-    const backdrop = document.createElement('div');
-    backdrop.style.position = 'fixed';
-    backdrop.style.left = '0';
-    backdrop.style.top = '0';
-    backdrop.style.right = '0';
-    backdrop.style.bottom = '0';
-    backdrop.style.background = 'rgba(0,0,0,0.5)';
-    backdrop.style.zIndex = '190';
-    backdrop.style.opacity = '0';
-    backdrop.style.pointerEvents = 'none';
-    backdrop.style.transition = 'opacity .18s ease';
-
-    // Saved filters dropdown
-    const savedSelect = document.createElement('select');
-    savedSelect.className = 'feed-filters__select';
-    savedSelect.style.width = '100%';
-    savedSelect.style.padding = '12px 14px';
-    savedSelect.style.borderRadius = '12px';
-    savedSelect.style.border = '1px solid rgba(255,255,255,0.08)';
-    savedSelect.style.background = 'rgba(22,22,22,0.9)';
-    savedSelect.style.color = 'inherit';
-    savedSelect.style.fontSize = '14px';
-    const defaultOpt = document.createElement('option');
-    defaultOpt.value = '';
-    defaultOpt.textContent = 'Saved marker filters…';
-    savedSelect.appendChild(defaultOpt);
-
-    // Add Favorites preset option at the beginning
-    const favoritesOpt = document.createElement('option');
-    favoritesOpt.value = '__favorites__';
-    favoritesOpt.textContent = 'Favorites';
-    savedSelect.appendChild(favoritesOpt);
-
-    // Load saved filters lazily when filter sheet opens
-    const loadSavedFilters = async () => {
-      await this.loadSavedFiltersIfNeeded();
-      // Populate dropdown with cached filters
-      for (const f of this.savedFiltersCache) {
-        // Check if option already exists
-        const exists = Array.from(savedSelect.options).some(opt => opt.value === f.id);
-        if (!exists) {
-          const opt = document.createElement('option');
-          opt.value = f.id;
-          opt.textContent = f.name;
-          savedSelect.appendChild(opt);
-        }
-      }
-    };
-
-    // Search input with autocomplete for marker tags
-    const searchWrapper = document.createElement('div');
-    searchWrapper.className = 'feed-filters__search-wrapper';
-    const queryInput = document.createElement('input');
-    queryInput.type = 'text';
-    queryInput.className = 'feed-filters__input';
-    queryInput.placeholder = 'Search markers or choose tags…';
-    queryInput.style.width = '100%';
-    queryInput.style.padding = '12px 42px 12px 14px';
-    queryInput.style.borderRadius = '12px';
-    queryInput.style.border = '1px solid rgba(255,255,255,0.08)';
-    queryInput.style.background = 'rgba(22,22,22,0.95)';
-    queryInput.style.color = 'inherit';
-    queryInput.style.fontSize = '14px';
-    const suggestions = document.createElement('div');
-    suggestions.className = 'feed-filters__suggestions';
-    suggestions.style.position = 'fixed';
-    suggestions.style.setProperty('inset', '0');
-    suggestions.style.top = '0';
-    suggestions.style.left = '0';
-    suggestions.style.right = '0';
-    suggestions.style.bottom = '0';
-    suggestions.style.zIndex = '1000';
-    suggestions.style.display = 'none';
-    suggestions.style.background = 'rgba(0, 0, 0, 0.95)';
-    suggestions.style.backdropFilter = 'blur(20px) saturate(180%)';
-    suggestions.style.setProperty('-webkit-backdrop-filter', 'blur(20px) saturate(180%)');
-    suggestions.style.overflowY = 'auto';
-    suggestions.style.padding = '0';
-    suggestions.style.boxSizing = 'border-box';
-
-    // Tag header to show selected tag
-    const tagHeader = document.createElement('div');
-    tagHeader.className = 'feed-filters__tag-header';
-    tagHeader.style.display = 'none';
-    tagHeader.style.padding = '12px 14px';
-    tagHeader.style.marginTop = '8px';
-    tagHeader.style.width = '100%';
-    tagHeader.style.boxSizing = 'border-box';
-    tagHeader.style.fontSize = '17px';
-    tagHeader.style.fontWeight = '600';
-    tagHeader.style.color = '#FFFFFF';
-    searchWrapper.style.position = 'relative';
-    searchWrapper.appendChild(queryInput);
-    searchWrapper.appendChild(tagHeader);
-    searchWrapper.appendChild(suggestions);
-
-    // Apply button (icon)
-    // Removed the purple apply button; we auto-apply on interactions
-
-    // Clear button (icon)
-    const clearBtn = document.createElement('button');
-    clearBtn.className = 'feed-filters__btn feed-filters__btn--ghost';
-    clearBtn.setAttribute('aria-label', 'Clear filters');
-    clearBtn.style.position = 'absolute';
-    clearBtn.style.right = '8px';
-    clearBtn.style.top = '50%';
-    clearBtn.style.transform = 'translateY(-50%)';
-    clearBtn.style.padding = '6px';
-    clearBtn.style.width = '30px';
-    clearBtn.style.height = '30px';
-    clearBtn.style.display = 'inline-flex';
-    clearBtn.style.alignItems = 'center';
-    clearBtn.style.justifyContent = 'center';
-    clearBtn.style.borderRadius = '999px';
-    clearBtn.style.border = '1px solid rgba(255,255,255,0.12)';
-    clearBtn.style.background = 'rgba(34,34,34,0.9)';
-    clearBtn.style.cursor = 'pointer';
-    clearBtn.style.opacity = '0.8';
-    clearBtn.onmouseenter = () => { clearBtn.style.opacity = '1'; };
-    clearBtn.onmouseleave = () => { clearBtn.style.opacity = '0.8'; };
-    const clearIcon = CLEAR_SVG.replace('width="24"', 'width="16"').replace('height="24"', 'height="16"');
-    clearBtn.innerHTML = clearIcon;
-
-    const apply = async () => {
-      // Clear suggestions when applying a search
-      while (suggestions.firstChild) {
-        suggestions.firstChild.remove();
-      }
-      suggestions.style.display = 'none';
-      await this.applyCurrentSearch().catch((e: unknown) => {
-        if (!(e instanceof Error && e.name === 'AbortError')) {
-          console.error('Apply filters failed', e);
-        }
-      });
-    };
-
-    // Apply immediately when selecting a saved filter
-    savedSelect.addEventListener('change', async () => {
-      if (savedSelect.value) {
-        // Handle Favorites preset
-        if (savedSelect.value === '__favorites__') {
-          // Clear saved filter and other selections
-          this.selectedSavedFilter = undefined;
-          this.selectedPerformerId = undefined;
-          this.selectedPerformerName = undefined;
-          
-          // Find the favorite tag and set it as the selected tag
-          try {
-            const favoriteTag = await this.api.findTagByName('StashGifs Favorite');
-            if (favoriteTag) {
-              this.selectedTagId = Number.parseInt(favoriteTag.id, 10);
-              this.selectedTagName = 'Favorites';
-            } else {
-              console.error('Favorite tag not found');
-              this.selectedTagId = undefined;
-              this.selectedTagName = undefined;
-            }
-          } catch (error) {
-            console.error('Failed to load favorite tag', error);
-            this.selectedTagId = undefined;
-            this.selectedTagName = undefined;
-          }
-        } else {
-          // Handle regular saved filter
-          const match = this.savedFiltersCache.find((f) => f.id === savedSelect.value);
-          if (match) {
-            this.selectedSavedFilter = { id: match.id, name: match.name };
-          }
-          // Clear tag and performer selections when a saved filter is chosen
-          this.selectedTagId = undefined;
-          this.selectedTagName = undefined;
-          this.selectedPerformerId = undefined;
-          this.selectedPerformerName = undefined;
-        }
-      } else {
-        this.selectedSavedFilter = undefined;
-      }
-      updateSearchBarDisplay();
-      apply();
-    });
-    queryInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') apply(); });
-
-    // Debounced suggestions with proper debouncing
-    let suggestPage = 1;
-    let suggestTerm = '';
-    let suggestHasMore = false;
-    
-    // Debounced suggestion fetcher (150ms delay)
-    const debouncedFetchSuggestions2 = debounce((text: string, page: number, forceShow: boolean) => {
-      fetchSuggestions(text, page, forceShow);
-    }, 150);
-    const updateSearchBarDisplay = () => {
-      // Show the active search term in the search bar
-      if (this.selectedTagName) {
-        queryInput.value = this.selectedTagName;
-        // If it's Favorites, select the Favorites option in the dropdown
-        if (this.selectedTagName === 'Favorites') {
-          savedSelect.value = '__favorites__';
-        } else {
-          savedSelect.value = '';
-        }
-      } else if (this.selectedPerformerName) {
-        queryInput.value = this.selectedPerformerName;
-        savedSelect.value = '';
-      } else if (this.selectedSavedFilter) {
-        queryInput.value = this.selectedSavedFilter.name;
-        savedSelect.value = this.selectedSavedFilter.id;
-      } else {
-        queryInput.value = '';
-        savedSelect.value = '';
-      }
-      // Hide tag header since we're showing it in the search bar
-      tagHeader.style.display = 'none';
-    };
-
-    // Don't auto-apply while typing - only apply when user presses Enter or selects a suggestion
-    queryInput.addEventListener('input', () => {
-      const val = queryInput.value.trim();
-      // Only fetch suggestions, don't apply search
-      if (val.length >= 2) {
-        fetchSuggestions(val, 1, false);
-      }
-    });
-
-    const fetchSuggestions = async (text: string, page: number = 1, forceShow: boolean = false) => {
-      // Cancel previous search queries
-      if (this.activeSearchAbortController) {
-        this.activeSearchAbortController.abort();
-      }
-      // Create new AbortController for this search
-      this.activeSearchAbortController = new AbortController();
-      const signal = this.activeSearchAbortController.signal;
-      
-      const trimmedText = text.trim();
-      
-      // Clear suggestions immediately to prevent showing old content
-      while (suggestions.firstChild) {
-        suggestions.firstChild.remove();
-      }
-      
-      // Show suggestions if we have text (2+ chars) OR if forced (on focus)
-      if (!trimmedText || trimmedText.length < 2) {
-        if (forceShow) {
-          await this.renderDefaultSuggestionsChips(
-            suggestions,
-            signal,
-            savedSelect,
-            updateSearchBarDisplay,
-            apply,
-            queryInput,
-            fetchSuggestions
-          );
-        } else {
-          this.closeSuggestions();
-        }
-        return;
-      }
-      // Reset grid when term changes
-      if (trimmedText !== suggestTerm) {
-        suggestPage = 1;
-      }
-      suggestTerm = trimmedText;
-      const pageSize = 24;
-      const items = await this.api.searchMarkerTags(trimmedText, pageSize, signal);
-      if (signal.aborted) return;
-
-      // Render tags as chips
-      this.renderTagsSuggestions(suggestions, items, savedSelect, updateSearchBarDisplay, apply, (text) => fetchSuggestions(text, 1, false), trimmedText);
-
-      // Simple heuristic for more results (if we filled the page)
-      suggestHasMore = items.length >= pageSize;
-
-      // Also surface matching saved filters as chips (unified UX)
-      const term = trimmedText.toLowerCase();
-      await this.loadSavedFiltersIfNeeded();
-      if (signal.aborted) return;
-      const matchingSaved = this.savedFiltersCache.filter((f) => f.name.toLowerCase().includes(term));
-      if (matchingSaved.length) {
-        suggestions.appendChild(this.createSuggestionLabel('Saved Filters'));
-        for (const f of matchingSaved) {
-          const chip = this.createSuggestionChip(f.name, () => {
-            savedSelect.value = f.id;
-            this.selectedSavedFilter = { id: f.id, name: f.name };
-            this.selectedTagId = undefined;
-            this.selectedTagName = undefined;
-            queryInput.value = '';
-            this.closeSuggestions();
-            updateSearchBarDisplay();
-            apply();
-          });
-          suggestions.appendChild(chip);
-        }
-      }
-
-      // Add/load more button
-      const existingMore = suggestions.querySelector('[data-more="1"]');
-      if (existingMore) existingMore.remove();
-      if (suggestHasMore) {
-        const more = this.createMoreResultsButton({
-          container: suggestions,
-          trimmedText,
-          pageSize,
-          signal,
-          savedSelect,
-          updateSearchBarDisplay,
-          apply,
-          refreshSuggestions: fetchSuggestions,
-          onPageIncrement: () => { suggestPage += 1; }
-        });
-        suggestions.appendChild(more);
-      }
-
-      suggestions.style.display = (items.length || matchingSaved?.length) ? 'flex' : 'none';
-    };
-
-    // Prevent clicks on input from bubbling to document click handler
-    // Also fetch fresh suggestions on every click, even if already focused
-    queryInput.addEventListener('click', (e) => {
-      e.stopPropagation();
-      // Always fetch fresh suggestions when clicking the search input
-      fetchSuggestions(queryInput.value, 1, true);
-    });
-    
-    queryInput.addEventListener('focus', () => {
-      fetchSuggestions(queryInput.value, 1, true);
-    });
-    queryInput.addEventListener('input', () => {
-      const text = queryInput.value;
-      // Clear selected tag/filter when user types (they're searching for something new)
-      if (text !== this.selectedTagName && text !== this.selectedPerformerName && text !== this.selectedSavedFilter?.name) {
-        this.selectedTagId = undefined;
-        this.selectedTagName = undefined;
-        this.selectedPerformerId = undefined;
-        this.selectedPerformerName = undefined;
-        this.selectedSavedFilter = undefined;
-      }
-      // Use debounced function for better performance
-      debouncedFetchSuggestions2(text, 1, false);
-    });
-    const handleClickOutsideSearch = (e: Event) => {
-      // Only close if suggestions are currently visible
-      const isSuggestionsVisible = suggestions.style.display !== 'none' && suggestions.style.display !== '';
-      
-      // Don't close if clicking inside searchWrapper or suggestions overlay
-      if (isSuggestionsVisible && !searchWrapper.contains(e.target as Node) && !suggestions.contains(e.target as Node)) {
-        this.closeSuggestions();
-      }
-    };
-    
-    document.addEventListener('click', handleClickOutsideSearch);
-    
-    // On mobile, also listen to touch events to ensure suggestions close when tapping outside
-    const isMobileForSearch = isMobileDevice();
-    if (isMobileForSearch) {
-      document.addEventListener('touchend', handleClickOutsideSearch, { passive: true });
-    }
-
-    clearBtn.addEventListener('click', () => {
-      queryInput.value = '';
-      this.selectedTagId = undefined;
-      this.selectedTagName = undefined;
-      this.selectedPerformerId = undefined;
-      this.selectedPerformerName = undefined;
-      this.selectedSavedFilter = undefined;
-      savedSelect.value = '';
-      updateSearchBarDisplay();
-      this.currentFilters = {};
-      this.clearContentRatio(); // Clear ratio so it's recalculated with cleared filters
-      this.loadVideos({}, false).catch((e) => console.error('Clear filters failed', e));
-    });
-
-    bar.appendChild(savedSelect);
-    bar.appendChild(searchWrapper);
-    searchWrapper.appendChild(clearBtn);
-
-    // Insert backdrop and panel into root container (not scrollable)
-    this.container.appendChild(backdrop);
-    this.container.appendChild(bar);
-
-    // Responsive layout helpers
-    const isMobile = () => globalThis.matchMedia('(max-width: 700px)').matches;
-    const setDesktopLayout = () => {
-      // half-screen top sheet on desktop, avoid covering scrollbar
-      const sbw = getScrollbarWidth();
-      bar.style.left = '0';
-      bar.style.right = `${sbw}px`;
-      bar.style.top = '0';
-      bar.style.bottom = '';
-      bar.style.width = `calc(100vw - ${sbw}px)`;
-      bar.style.maxHeight = '50vh';
-      bar.style.height = '50vh';
-      bar.style.overflow = 'auto';
-      bar.style.borderRadius = '0 0 14px 14px';
-      bar.style.transform = 'translateY(-100%)';
-      suggestions.style.maxHeight = '40vh';
-      suggestions.style.position = 'absolute';
-      // backdrop should not cover scrollbar either
-      backdrop.style.left = '0';
-      backdrop.style.top = '0';
-      backdrop.style.bottom = '0';
-      backdrop.style.right = `${sbw}px`;
-    };
-    const setMobileLayout = () => {
-      // half-screen top sheet on mobile as well
-      const sbw = getScrollbarWidth();
-      bar.style.left = '0';
-      bar.style.right = sbw ? `${sbw}px` : '0';
-      bar.style.top = '0';
-      bar.style.bottom = '';
-      bar.style.width = sbw ? `calc(100vw - ${sbw}px)` : '100vw';
-      bar.style.maxHeight = '50vh';
-      bar.style.height = '50vh';
-      bar.style.overflow = 'auto';
-      bar.style.borderRadius = '0 0 14px 14px';
-      bar.style.transform = 'translateY(-100%)';
-      bar.style.paddingTop = 'calc(12px + env(safe-area-inset-top, 0px))';
-      bar.style.paddingBottom = '';
-      suggestions.style.maxHeight = '40vh';
-      suggestions.style.position = 'absolute';
-      // backdrop should not cover scrollbar either
-      backdrop.style.left = '0';
-      backdrop.style.top = '0';
-      backdrop.style.bottom = '0';
-      backdrop.style.right = sbw ? `${sbw}px` : '0';
-    };
-    const applyLayout = () => {
-      if (isMobile()) setMobileLayout(); else setDesktopLayout();
-      // hide clear button and saved dropdown on mobile for a unified UI
-      clearBtn.style.display = isMobile() ? 'none' : 'inline-flex';
-      savedSelect.style.display = isMobile() ? 'none' : 'block';
-    };
-    applyLayout();
-
-    // Open/close helpers with scroll lock and backdrop
-    let sheetOpen = false;
-    const lockScroll = () => {
-      document.documentElement.style.overflow = 'hidden';
-      document.body.style.overflow = 'hidden';
-      document.body.style.touchAction = 'none';
-    };
-    const unlockScroll = () => {
-      document.documentElement.style.overflow = '';
-      document.body.style.overflow = '';
-      document.body.style.touchAction = '';
-    };
-    const openPanel = () => {
-      sheetOpen = true;
-      bar.style.transform = 'translateY(0)';
-      bar.style.opacity = '1';
-      bar.style.pointerEvents = 'auto';
-      backdrop.style.opacity = '1';
-      backdrop.style.pointerEvents = 'auto';
-      lockScroll();
-      // Load saved filters lazily when panel opens
-      loadSavedFilters().catch((e) => console.warn('Failed to load saved filters on open', e));
-      // Focus input for quick typing on mobile
-      queryInput.focus();
-    };
-    const closePanel = () => {
-      sheetOpen = false;
-      bar.style.transform = 'translateY(-100%)';
-      bar.style.opacity = '1';
-      bar.style.pointerEvents = 'none';
-      backdrop.style.opacity = '0';
-      backdrop.style.pointerEvents = 'none';
-      unlockScroll();
-    };
-    // Backdrop/keyboard close and responsive resize
-    backdrop.addEventListener('click', closePanel);
-    globalThis.addEventListener('keydown', (e) => {
-      if (e.key === 'Escape') closePanel();
-    });
-    globalThis.addEventListener('resize', () => {
-      const wasOpen = sheetOpen;
-      applyLayout();
-      if (wasOpen) {
-        // Re-apply the correct open transform for current layout
-        openPanel();
-      } else {
-        closePanel();
-      }
-    });
-  }
 
   /**
    * Initialize the feed
@@ -4010,14 +3259,6 @@ export class FeedContainer {
     });
   }
 
-  /**
-   * Clear stored content ratio (called when filters change or feed is refreshed)
-   */
-  private clearContentRatio(): void {
-    this.contentRatio = undefined;
-    this.contentTotals = undefined;
-    this.contentConsumed = undefined;
-  }
 
   /**
    * Refresh the entire feed by clearing all posts and reloading from the beginning
@@ -4048,9 +3289,6 @@ export class FeedContainer {
     this.markers = [];
     this.images = [];
     
-    // Clear content ratio so it's recalculated on next load
-    this.clearContentRatio();
-    
     // Reload feed with current filters
     await this.loadVideos(this.currentFilters, false, undefined, true);
   }
@@ -4058,11 +3296,26 @@ export class FeedContainer {
   /**
    * Determine what content types should be loaded
    */
-  private determineContentLoadingFlags(): {
+  private determineContentLoadingFlags(filters?: FilterOptions): {
     shouldLoadMarkers: boolean;
     shouldLoadImages: boolean;
     shouldLoadShortForm: boolean;
   } {
+    // Use provided filters or fall back to currentFilters
+    const activeFilters = filters || this.currentFilters || {};
+    
+    // When using saved filters (marker-specific), only load markers
+    // Saved filters are only for markers, so don't show other content types
+    const isUsingSavedFilter = !!(activeFilters.savedFilterId);
+    
+    if (isUsingSavedFilter) {
+      return {
+        shouldLoadMarkers: true,
+        shouldLoadImages: false,
+        shouldLoadShortForm: false
+      };
+    }
+    
     const shortFormEnabledForCurrentMode = this.shouldLoadShortFormContent();
     const shortFormOnlyActive = this.settings.shortFormOnly === true && shortFormEnabledForCurrentMode;
     
@@ -4086,38 +3339,18 @@ export class FeedContainer {
     shouldLoadMarkers: boolean,
     shouldLoadShortForm: boolean
   ): { markerLimit: number; shortFormLimit: number } {
-    let markerLimit = limit;
-    let shortFormLimit = limit;
-    
     if (shouldLoadMarkers && shouldLoadShortForm) {
-      // If we have a stored ratio, use it to calculate proportional limits
-      if (this.contentRatio) {
-        markerLimit = Math.max(1, Math.round(limit * this.contentRatio.markerRatio));
-        shortFormLimit = Math.max(1, Math.round(limit * this.contentRatio.shortFormRatio));
-        // Ensure we don't exceed the total limit
-        const total = markerLimit + shortFormLimit;
-        if (total > limit) {
-          // Adjust proportionally if we exceed
-          const scale = limit / total;
-          markerLimit = Math.max(1, Math.round(markerLimit * scale));
-          shortFormLimit = Math.max(1, Math.round(shortFormLimit * scale));
-        } else if (total < limit) {
-          // Distribute remaining to maintain ratio
-          const remaining = limit - total;
-          if (this.contentRatio.markerRatio > this.contentRatio.shortFormRatio) {
-            markerLimit += remaining;
-          } else {
-            shortFormLimit += remaining;
-          }
-        }
-      } else {
-        // Fallback: Split limit in half when both are enabled and no ratio available
-        markerLimit = Math.ceil(limit / 2);
-        shortFormLimit = Math.floor(limit / 2);
-      }
+      // Split limit evenly between markers and shortform
+      return {
+        markerLimit: Math.ceil(limit / 2),
+        shortFormLimit: Math.floor(limit / 2)
+      };
     }
     
-    return { markerLimit, shortFormLimit };
+    return {
+      markerLimit: shouldLoadMarkers ? limit : 0,
+      shortFormLimit: shouldLoadShortForm ? limit : 0
+    };
   }
 
   /**
@@ -4198,29 +3431,7 @@ export class FeedContainer {
     const { markers, shortFormMarkers, images } = content;
     const { markerCount, shortFormCount, imageCount } = counts;
     
-    // Calculate and store ratio on initial load (when append is false)
-    if (!append) {
-      const total = markerCount + shortFormCount + imageCount;
-      if (total > 0) {
-        this.contentTotals = {
-          markerTotal: markerCount,
-          shortFormTotal: shortFormCount,
-          imageTotal: imageCount
-        };
-        this.contentRatio = {
-          markerRatio: markerCount / total,
-          shortFormRatio: shortFormCount / total,
-          imageRatio: imageCount / total
-        };
-        this.contentConsumed = {
-          markers: 0,
-          shortForm: 0,
-          images: 0
-        };
-      }
-    }
-    
-    // Merge regular markers, short-form markers, and images chronologically
+    // Merge regular markers, short-form markers, and images
     const mergedContent = this.mergeMarkersShortFormAndImages(markers, shortFormMarkers, images);
 
     const expectedLimit = append ? this.subsequentLoadLimit : (currentFilters.limit || this.initialLoadLimit);
@@ -4297,55 +3508,12 @@ export class FeedContainer {
         return;
       }
 
-      const { shouldLoadMarkers, shouldLoadImages, shouldLoadShortForm } = this.determineContentLoadingFlags();
+      const { shouldLoadMarkers, shouldLoadImages, shouldLoadShortForm } = this.determineContentLoadingFlags(currentFilters);
       
-      // On initial load, fetch counts first to calculate ratio, then fetch with proportional limits
-      let markerLimit: number;
-      let shortFormLimit: number;
-      
-      if (!append && !this.contentRatio && shouldLoadMarkers && shouldLoadShortForm) {
-        // Fetch with minimal limits (1 each) just to get totalCounts
-        const countResults = await this.fetchAllContent({
-          currentFilters,
-          limits: {
-            limit: 1,
-            markerLimit: 1,
-            shortFormLimit: 1
-          },
-          offset: 0,
-          signal,
-          loadingFlags: {
-            shouldLoadMarkers,
-            shouldLoadImages,
-            shouldLoadShortForm
-          }
-        });
-        
-        // Calculate ratio from counts
-        const total = countResults.markerCount + countResults.shortFormCount + countResults.imageCount;
-        if (total > 0) {
-          this.contentTotals = {
-            markerTotal: countResults.markerCount,
-            shortFormTotal: countResults.shortFormCount,
-            imageTotal: countResults.imageCount
-          };
-          this.contentRatio = {
-            markerRatio: countResults.markerCount / total,
-            shortFormRatio: countResults.shortFormCount / total,
-            imageRatio: countResults.imageCount / total
-          };
-          this.contentConsumed = {
-            markers: 0,
-            shortForm: 0,
-            images: 0
-          };
-        }
-      }
-      
-      // Calculate limits (will use stored ratio if available)
+      // Calculate limits (simple split when both markers and shortform are enabled)
       const limits = this.calculateContentLimits(limit, shouldLoadMarkers, shouldLoadShortForm);
-      markerLimit = limits.markerLimit;
-      shortFormLimit = limits.shortFormLimit;
+      const markerLimit = limits.markerLimit;
+      const shortFormLimit = limits.shortFormLimit;
       
       // Debug logging for short-form content
       this.logShortFormSettings(shouldLoadShortForm);
@@ -4679,9 +3847,17 @@ export class FeedContainer {
           .filter(id => !Number.isNaN(id));
       }
 
-      // Apply tag filter if set
+      // Apply tag filter if set (include both tags and primary_tags)
+      const allTagIds: string[] = [];
       if (filters.tags && filters.tags.length > 0) {
-        imageFilters.tagIds = filters.tags;
+        allTagIds.push(...filters.tags);
+      }
+      if (filters.primary_tags && filters.primary_tags.length > 0) {
+        allTagIds.push(...filters.primary_tags);
+      }
+      if (allTagIds.length > 0) {
+        // Remove duplicates
+        imageFilters.tagIds = Array.from(new Set(allTagIds));
       }
 
       const imageFiltersWithOrientation = {
@@ -4889,253 +4065,9 @@ export class FeedContainer {
    * Calculate proportions for content types
    */
   /**
-   * Calculate expected consumption based on ratios
-   */
-  private calculateExpectedConsumption(totalConsumed: number): {
-    expectedMarkerConsumed: number;
-    expectedShortFormConsumed: number;
-    expectedImageConsumed: number;
-  } {
-    if (!this.contentRatio) {
-      return { expectedMarkerConsumed: 0, expectedShortFormConsumed: 0, expectedImageConsumed: 0 };
-    }
-    return {
-      expectedMarkerConsumed: totalConsumed * this.contentRatio.markerRatio,
-      expectedShortFormConsumed: totalConsumed * this.contentRatio.shortFormRatio,
-      expectedImageConsumed: totalConsumed * this.contentRatio.imageRatio
-    };
-  }
-
-  /**
-   * Calculate deviations from expected consumption
-   */
-  private calculateConsumptionDeviations(expected: {
-    expectedMarkerConsumed: number;
-    expectedShortFormConsumed: number;
-    expectedImageConsumed: number;
-  }): {
-    markerDeviation: number;
-    shortFormDeviation: number;
-    imageDeviation: number;
-  } {
-    if (!this.contentConsumed) {
-      return { markerDeviation: 0, shortFormDeviation: 0, imageDeviation: 0 };
-    }
-    return {
-      markerDeviation: expected.expectedMarkerConsumed - this.contentConsumed.markers,
-      shortFormDeviation: expected.expectedShortFormConsumed - this.contentConsumed.shortForm,
-      imageDeviation: expected.expectedImageConsumed - this.contentConsumed.images
-    };
-  }
-
-  /**
-   * Adjust weights based on deviations
-   */
-  private adjustWeightsForDeviations(
-    deviations: { markerDeviation: number; shortFormDeviation: number; imageDeviation: number },
-    remainingMarkers: number,
-    remainingShortForm: number,
-    remainingImages: number
-  ): { markerWeight: number; shortFormWeight: number; imageWeight: number } {
-    if (!this.contentRatio || !this.contentTotals) {
-      return {
-        markerWeight: 0,
-        shortFormWeight: 0,
-        imageWeight: 0
-      };
-    }
-
-    let markerWeight = this.contentRatio.markerRatio;
-    let shortFormWeight = this.contentRatio.shortFormRatio;
-    let imageWeight = this.contentRatio.imageRatio;
-
-    const maxDeviation = Math.max(
-      Math.abs(deviations.markerDeviation),
-      Math.abs(deviations.shortFormDeviation),
-      Math.abs(deviations.imageDeviation)
-    );
-
-    if (maxDeviation > 0) {
-      if (deviations.markerDeviation > 0 && remainingMarkers > 0) {
-        markerWeight += deviations.markerDeviation / this.contentTotals.markerTotal * 0.5;
-      }
-      if (deviations.shortFormDeviation > 0 && remainingShortForm > 0) {
-        shortFormWeight += deviations.shortFormDeviation / this.contentTotals.shortFormTotal * 0.5;
-      }
-      if (deviations.imageDeviation > 0 && remainingImages > 0) {
-        imageWeight += deviations.imageDeviation / this.contentTotals.imageTotal * 0.5;
-      }
-    }
-
-    return { markerWeight, shortFormWeight, imageWeight };
-  }
-
-  /**
-   * Calculate proportions for content mixing
-   * Uses stored ratio from initial load if available, otherwise falls back to remaining items
-   */
-  private calculateProportions(
-    remainingMarkers: number,
-    remainingShortForm: number,
-    remainingImages: number,
-    totalRemaining: number
-  ): { markerRatio: number; shortFormRatio: number } {
-    // If we have a stored ratio, use it adjusted by consumed items
-    if (this.contentRatio && this.contentTotals && this.contentConsumed) {
-      const totalConsumed = this.contentConsumed.markers + this.contentConsumed.shortForm + this.contentConsumed.images;
-      const expected = this.calculateExpectedConsumption(totalConsumed);
-      const deviations = this.calculateConsumptionDeviations(expected);
-      const weights = this.adjustWeightsForDeviations(deviations, remainingMarkers, remainingShortForm, remainingImages);
-
-      // Normalize weights
-      const totalWeight = weights.markerWeight + weights.shortFormWeight + weights.imageWeight;
-      if (totalWeight > 0) {
-        return {
-          markerRatio: weights.markerWeight / totalWeight,
-          shortFormRatio: weights.shortFormWeight / totalWeight
-        };
-      }
-    }
-
-    // Fallback to original behavior: calculate from remaining items
-    return {
-      markerRatio: remainingMarkers / totalRemaining,
-      shortFormRatio: remainingShortForm / totalRemaining
-    };
-  }
-
-  /**
-   * Select content type when max consecutive is reached
-   */
-  private selectContentTypeWhenMaxConsecutive(
-    remaining: { markers: number; shortForm: number; images: number },
-    ratios: { markerRatio: number; shortFormRatio: number },
-    lastType: ContentType
-  ): ContentType {
-    const availableTypes: Array<ContentType> = [];
-    if (remaining.markers > 0 && lastType !== 'marker') availableTypes.push('marker');
-    if (remaining.shortForm > 0 && lastType !== 'shortform') availableTypes.push('shortform');
-    if (remaining.images > 0 && lastType !== 'image') availableTypes.push('image');
-    
-    if (availableTypes.length > 0) {
-      return availableTypes[Math.floor(Math.random() * availableTypes.length)];
-    }
-    
-    // Fallback to proportional selection if no other types available
-    const random = Math.random();
-    if (random < ratios.markerRatio && remaining.markers > 0) {
-      return 'marker';
-    }
-    if (random < ratios.markerRatio + ratios.shortFormRatio && remaining.shortForm > 0) {
-      return 'shortform';
-    }
-    return 'image';
-  }
-
-  /**
-   * Select content type using normal proportional selection
-   */
-  private selectContentTypeProportional(
-    remaining: { markers: number; shortForm: number; images: number },
-    ratios: { markerRatio: number; shortFormRatio: number }
-  ): ContentType {
-    const random = Math.random();
-    if (random < ratios.markerRatio && remaining.markers > 0) {
-      return 'marker';
-    }
-    if (random < ratios.markerRatio + ratios.shortFormRatio && remaining.shortForm > 0) {
-      return 'shortform';
-    }
-    if (remaining.images > 0) {
-      return 'image';
-    }
-    if (remaining.shortForm > 0) {
-      return 'shortform';
-    }
-    return 'marker';
-  }
-
-  /**
-   * Select content type based on proportions and consecutive count constraints
-   */
-  private selectContentType(options: {
-    remaining: {
-      markers: number;
-      shortForm: number;
-      images: number;
-    };
-    ratios: {
-      markerRatio: number;
-      shortFormRatio: number;
-    };
-    constraints: {
-      consecutiveCount: number;
-      maxConsecutive: number;
-      lastType: ContentType | null;
-    };
-  }): ContentType {
-    const { remaining, ratios, constraints } = options;
-    const { consecutiveCount, maxConsecutive, lastType } = constraints;
-    
-    // If we've hit max consecutive, prefer other types
-    if (consecutiveCount >= maxConsecutive && lastType) {
-      return this.selectContentTypeWhenMaxConsecutive(remaining, ratios, lastType);
-    }
-    
-    // Normal proportional selection
-    return this.selectContentTypeProportional(remaining, ratios);
-  }
-
-  /**
-   * Add content items of the selected type to the content array
-   */
-  private addContentItems(options: {
-    content: Array<{ type: 'marker' | 'image'; data: SceneMarker | Image; date?: string }>;
-    selectedType: ContentType;
-    itemsToAdd: number;
-    contentArrays: {
-      markers: SceneMarker[];
-      shortFormMarkers: SceneMarker[];
-      images: Image[];
-    };
-    indices: {
-      markerIndex: { value: number };
-      shortFormIndex: { value: number };
-      imageIndex: { value: number };
-    };
-  }): void {
-    const { content, selectedType, itemsToAdd, contentArrays, indices } = options;
-    const { markers, shortFormMarkers, images } = contentArrays;
-    const { markerIndex, shortFormIndex, imageIndex } = indices;
-    for (let i = 0; i < itemsToAdd; i++) {
-      if (selectedType === 'marker' && markerIndex.value < markers.length) {
-        const marker = markers[markerIndex.value++];
-        content.push({
-          type: 'marker',
-          data: marker,
-          date: marker.scene.date,
-        });
-      } else if (selectedType === 'shortform' && shortFormIndex.value < shortFormMarkers.length) {
-        const shortForm = shortFormMarkers[shortFormIndex.value++];
-        content.push({
-          type: 'marker',
-          data: shortForm,
-          date: shortForm.scene.date,
-        });
-      } else if (selectedType === 'image' && imageIndex.value < images.length) {
-        const image = images[imageIndex.value++];
-        content.push({
-          type: 'image',
-          data: image,
-          date: image.date,
-        });
-      }
-    }
-  }
-
-  /**
-   * Unified mixing algorithm that mixes markers, shortform, and images proportionally
-   * Uses smaller alternations (1-3 items) and prevents any type from dominating
+   * Simple interleaving algorithm that mixes markers, shortform, and images
+   * Shows 3-5 video items (markers/shortform), then 1-2 images, repeat
+   * Prevents more than 3 consecutive items of the same type
    */
   private unifiedMixContent(
     markers: SceneMarker[],
@@ -5144,146 +4076,91 @@ export class FeedContainer {
   ): Array<{ type: 'marker' | 'image'; data: SceneMarker | Image; date?: string }> {
     const content: Array<{ type: 'marker' | 'image'; data: SceneMarker | Image; date?: string }> = [];
     
-    const markerIndex = { value: 0 };
-    const shortFormIndex = { value: 0 };
-    const imageIndex = { value: 0 };
-    
-    // Track consecutive items of the same type to prevent dominance
+    let markerIdx = 0;
+    let shortFormIdx = 0;
+    let imageIdx = 0;
     let consecutiveCount = 0;
     let lastType: ContentType | null = null;
-    const maxConsecutive = 3; // Maximum consecutive items of same type
+    const maxConsecutive = 3;
     
-    while (markerIndex.value < markers.length || shortFormIndex.value < shortFormMarkers.length || imageIndex.value < images.length) {
-      // Calculate remaining counts
-      const remainingMarkers = markers.length - markerIndex.value;
-      const remainingShortForm = shortFormMarkers.length - shortFormIndex.value;
-      const remainingImages = images.length - imageIndex.value;
-      const totalRemaining = remainingMarkers + remainingShortForm + remainingImages;
+    // Combine markers and shortform into single video array for simpler logic
+    const allVideos = [...markers.map(m => ({ type: 'marker' as const, data: m })), ...shortFormMarkers.map(m => ({ type: 'marker' as const, data: m }))];
+    let videoIdx = 0;
+    
+    while (videoIdx < allVideos.length || imageIdx < images.length) {
+      // Determine chunk sizes: 3-5 videos, then 1-2 images
+      const videoChunkSize = 3 + Math.floor(Math.random() * 3); // 3-5
+      const imageChunkSize = 1 + Math.floor(Math.random() * 2); // 1-2
       
-      if (totalRemaining === 0) break;
-      
-      // Calculate proportions
-      const { markerRatio, shortFormRatio } = this.calculateProportions(
-        remainingMarkers,
-        remainingShortForm,
-        remainingImages,
-        totalRemaining
-      );
-      
-      // Determine how many items to add from selected type (1-3 items)
-      const itemsToAdd = 1 + Math.floor(Math.random() * 3); // 1-3 items
-      
-      // Select type based on proportions, but avoid too many consecutive items
-      const selectedType = this.selectContentType({
-        remaining: {
-          markers: remainingMarkers,
-          shortForm: remainingShortForm,
-          images: remainingImages
-        },
-        ratios: {
-          markerRatio,
-          shortFormRatio
-        },
-        constraints: {
-          consecutiveCount,
-          maxConsecutive,
-          lastType
+      // Add video chunk
+      for (let i = 0; i < videoChunkSize && videoIdx < allVideos.length; i++) {
+        const video = allVideos[videoIdx++];
+        if (video) {
+          content.push({
+            type: 'marker',
+            data: video.data,
+            date: video.data.scene.date,
+          });
+          
+          // Track consecutive count
+          if (lastType === 'marker') {
+            consecutiveCount++;
+            if (consecutiveCount >= maxConsecutive) {
+              break; // Switch to images
+            }
+          } else {
+            consecutiveCount = 1;
+            lastType = 'marker';
+          }
         }
-      });
-      
-      // Update consecutive count
-      if (selectedType === lastType) {
-        consecutiveCount++;
-      } else {
-        consecutiveCount = 1;
-        lastType = selectedType;
       }
       
-      // Calculate remaining for selected type and add items
-      const actualItemsToAdd = this.processSelectedContentType({
-        selectedType,
-        remainingMarkers,
-        remainingShortForm,
-        remainingImages,
-        itemsToAdd,
-        content,
-        markers,
-        shortFormMarkers,
-        images,
-        markerIndex,
-        shortFormIndex,
-        imageIndex
-      });
+      // Add image chunk
+      for (let i = 0; i < imageChunkSize && imageIdx < images.length; i++) {
+        const image = images[imageIdx++];
+        if (image) {
+          content.push({
+            type: 'image',
+            data: image,
+            date: image.date,
+          });
+          
+          if (lastType === 'image') {
+            consecutiveCount++;
+          } else {
+            consecutiveCount = 1;
+            lastType = 'image';
+          }
+        }
+      }
       
-      // Track consumed items for ratio maintenance
-      this.trackContentConsumption(selectedType, actualItemsToAdd);
+      // If we've run out of one type, add remaining of the other
+      if (videoIdx >= allVideos.length && imageIdx < images.length) {
+        while (imageIdx < images.length) {
+          const image = images[imageIdx++];
+          if (image) {
+            content.push({
+              type: 'image',
+              data: image,
+              date: image.date,
+            });
+          }
+        }
+      } else if (imageIdx >= images.length && videoIdx < allVideos.length) {
+        while (videoIdx < allVideos.length) {
+          const video = allVideos[videoIdx++];
+          if (video) {
+            content.push({
+              type: 'marker',
+              data: video.data,
+              date: video.data.scene.date,
+            });
+          }
+        }
+      }
     }
     
     return content;
-  }
-
-  /**
-   * Calculate remaining items for selected type and add them to content
-   */
-  private processSelectedContentType(options: {
-    selectedType: ContentType;
-    remainingMarkers: number;
-    remainingShortForm: number;
-    remainingImages: number;
-    itemsToAdd: number;
-    content: Array<{ type: 'marker' | 'image'; data: SceneMarker | Image; date?: string }>;
-    markers: SceneMarker[];
-    shortFormMarkers: SceneMarker[];
-    images: Image[];
-    markerIndex: { value: number };
-    shortFormIndex: { value: number };
-    imageIndex: { value: number };
-  }): number {
-    const { selectedType, remainingMarkers, remainingShortForm, remainingImages, itemsToAdd, content, markers, shortFormMarkers, images, markerIndex, shortFormIndex, imageIndex } = options;
-    
-    let remainingForType: number;
-    if (selectedType === 'marker') {
-      remainingForType = remainingMarkers;
-    } else if (selectedType === 'shortform') {
-      remainingForType = remainingShortForm;
-    } else {
-      remainingForType = remainingImages;
-    }
-    const actualItemsToAdd = Math.min(itemsToAdd, remainingForType);
-    
-    // Add items from selected type
-    this.addContentItems({
-      content,
-      selectedType,
-      itemsToAdd: actualItemsToAdd,
-      contentArrays: {
-        markers,
-        shortFormMarkers,
-        images
-      },
-      indices: {
-        markerIndex,
-        shortFormIndex,
-        imageIndex
-      }
-    });
-    
-    return actualItemsToAdd;
-  }
-
-  /**
-   * Track consumed items for ratio maintenance
-   */
-  private trackContentConsumption(selectedType: ContentType, actualItemsToAdd: number): void {
-    if (!this.contentConsumed) return;
-    
-    if (selectedType === 'marker') {
-      this.contentConsumed.markers += actualItemsToAdd;
-    } else if (selectedType === 'shortform') {
-      this.contentConsumed.shortForm += actualItemsToAdd;
-    } else if (selectedType === 'image') {
-      this.contentConsumed.images += actualItemsToAdd;
-    }
   }
 
   /**
@@ -5631,13 +4508,9 @@ export class FeedContainer {
     }
     this.posts.clear();
     this.postOrder = [];
-    this.eagerPreloadedPosts.clear();
     this.activePreloadPosts.clear();
     this.backgroundPreloadPriorityQueue = [];
     this.currentlyPreloadingCount = 0;
-    this.mobilePreloadQueue = [];
-    this.mobilePreloadActive = false;
-    this.cancelScheduledPreload();
     // Don't clear posts container - let browser handle cleanup naturally
     // if (this.postsContainer) {
     //   // Clear posts efficiently
@@ -5722,7 +4595,6 @@ export class FeedContainer {
       if (isNativeVideoPlayer(player)) {
         // Register with visibility manager (only video players)
         this.visibilityManager.registerPlayer(marker.id, player);
-        this.eagerPreloadedPosts.add(marker.id);
       }
     }
     
@@ -5783,93 +4655,6 @@ export class FeedContainer {
     return false;
   }
 
-  private scheduleEagerPreload(): void {
-    if (this.eagerPreloadScheduled) {
-      return;
-    }
-
-    const execute = () => {
-      this.eagerPreloadScheduled = false;
-      this.eagerPreloadHandle = undefined;
-      this.runEagerPreload();
-    };
-
-    if (globalThis.window === undefined) {
-      execute();
-      return;
-    }
-
-    this.eagerPreloadScheduled = true;
-    this.eagerPreloadHandle = globalThis.setTimeout(execute, 32) as unknown as number;
-  }
-
-  private runEagerPreload(): void {
-    const orderedPosts = this.postOrder
-      .map((id) => this.posts.get(id))
-      .filter((post): post is VideoPost => !!post);
-
-    if (!orderedPosts.length) {
-      return;
-    }
-
-    let started = 0;
-    const budget = Math.max(1, this.maxSimultaneousPreloads);
-
-    for (let index = 0; index < orderedPosts.length && index < this.eagerPreloadCount; index++) {
-      const post = orderedPosts[index];
-      if (!post) continue;
-      const postId = post.getPostId();
-
-      if (this.eagerPreloadedPosts.has(postId)) {
-        continue;
-      }
-
-      if (!post.hasVideoSource()) {
-        this.eagerPreloadedPosts.add(postId);
-        continue;
-      }
-
-      const player = post.preload();
-      this.eagerPreloadedPosts.add(postId);
-
-      if (isNativeVideoPlayer(player)) {
-        // Only register video players with visibility manager
-        this.visibilityManager.registerPlayer(postId, player);
-        started += 1;
-      }
-
-      if (started >= budget) {
-        break;
-      }
-    }
-
-    const hasPending = orderedPosts
-      .slice(0, this.eagerPreloadCount)
-      .some((post) => {
-        const postId = post.getPostId();
-        if (this.eagerPreloadedPosts.has(postId)) {
-          return false;
-        }
-        return post.hasVideoSource() && !post.isPlayerLoaded();
-      });
-
-    if (hasPending) {
-      this.scheduleEagerPreload();
-    }
-  }
-
-  private cancelScheduledPreload(): void {
-    if (!this.eagerPreloadHandle) {
-      return;
-    }
-
-    if (globalThis.window !== undefined) {
-      globalThis.clearTimeout(this.eagerPreloadHandle);
-    }
-
-    this.eagerPreloadHandle = undefined;
-    this.eagerPreloadScheduled = false;
-  }
 
   /**
    * Calculate distance of element from viewport
@@ -5954,12 +4739,6 @@ export class FeedContainer {
         continue;
       }
 
-      // Check if already in eager preload set
-      if (this.eagerPreloadedPosts.has(postId)) {
-        this.backgroundPreloadPriorityQueue.shift();
-        continue;
-      }
-
       return postId;
     }
 
@@ -6039,75 +4818,6 @@ export class FeedContainer {
     });
   }
 
-  /**
-   * Process mobile preload queue with controlled concurrency
-   */
-  private processMobilePreloadQueue(): void {
-    if (this.mobilePreloadQueue.length === 0) {
-      this.mobilePreloadActive = false;
-      return;
-    }
-
-    // Check if we've reached max concurrent preloads
-    if (this.currentlyPreloadingCount >= this.maxSimultaneousPreloads) {
-      // Retry after a short delay
-      globalThis.setTimeout(() => {
-        this.processMobilePreloadQueue();
-      }, 100);
-      return;
-    }
-
-    const postId = this.mobilePreloadQueue.shift();
-    if (!postId) {
-      this.mobilePreloadActive = false;
-      return;
-    }
-
-    // Check if post is still in viewport before preloading
-    if (!this.isPostInViewport(postId)) {
-      this.processMobilePreloadQueue();
-      return;
-    }
-
-    const post = this.posts.get(postId);
-    if (!post || post.isPlayerLoaded() || !post.hasVideoSource()) {
-      // Skip and continue
-      this.processMobilePreloadQueue();
-      return;
-    }
-
-    // Mark as active
-    this.currentlyPreloadingCount++;
-    this.activePreloadPosts.add(postId);
-
-    // Preload the video
-    try {
-      const player = post.preload();
-      if (isNativeVideoPlayer(player)) {
-        // Only register video players with visibility manager
-        this.visibilityManager.registerPlayer(postId, player);
-        this.trackBackgroundPreload(postId, player);
-      } else {
-        this.currentlyPreloadingCount = Math.max(0, this.currentlyPreloadingCount - 1);
-        this.activePreloadPosts.delete(postId);
-      }
-    } catch (error) {
-      console.warn('Mobile preload failed for post', postId, error);
-      this.currentlyPreloadingCount = Math.max(0, this.currentlyPreloadingCount - 1);
-      this.activePreloadPosts.delete(postId);
-    }
-
-    // Continue processing queue with a small delay to prevent network congestion
-    // Add delay between queue items on mobile to space out requests
-    const delay = this.isMobileDevice ? 150 : 0;
-    if (delay > 0) {
-      globalThis.setTimeout(() => {
-        this.processMobilePreloadQueue();
-      }, delay);
-    } else {
-      this.processMobilePreloadQueue();
-    }
-  }
 
   /**
    * Check if a post is currently in or near the viewport
@@ -6139,15 +4849,10 @@ export class FeedContainer {
         this.currentlyPreloadingCount = Math.max(0, this.currentlyPreloadingCount - 1);
       }
       
-      // Remove from queues
+      // Remove from queue
       const queueIndex = this.backgroundPreloadPriorityQueue.indexOf(postId);
       if (queueIndex !== -1) {
         this.backgroundPreloadPriorityQueue.splice(queueIndex, 1);
-      }
-      
-      const mobileIndex = this.mobilePreloadQueue.indexOf(postId);
-      if (mobileIndex !== -1) {
-        this.mobilePreloadQueue.splice(mobileIndex, 1);
       }
     }
   }
@@ -6195,8 +4900,6 @@ export class FeedContainer {
       return;
     }
 
-    // Mark as preloaded to avoid duplicates
-    this.eagerPreloadedPosts.add(postId);
 
     // Preload the video
     try {
@@ -7463,7 +6166,6 @@ export class FeedContainer {
     this.visibilityManager = new VisibilityManager({
       threshold: this.settings.autoPlayThreshold,
       autoPlay: this.settings.autoPlay,
-      maxConcurrent: this.settings.maxConcurrentVideos,
     });
 
     // Re-observe all posts
