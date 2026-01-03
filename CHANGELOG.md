@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [5.17.0] - 2026-01-03
+
+### Changed
+- Simplified videos is images playback, now just plays the preview
+- Excluded image codecs from video detection — even if visualFiles has a video_codec or duration, image formats are treated as images
+- Excluded image codecs from video detection — even if visualFiles has a video_codec or duration, image formats are treated as images
+- Clicking the stashgifs logo now clears all filters
+- Added support for video exttensions as images (H.264/MP4 or WebM primarily)
+- Updated description
+
 ## [5.16.0] - 2026-01-03
 
 ## [5.15.15] - 2026-01-03
