@@ -762,6 +762,38 @@ export class StashAPI {
   }
 
   /**
+   * Extract tag and performer IDs from filters consistently
+   * Handles both tags and primary_tags for unified filtering
+   */
+  extractTagAndPerformerFilters(filters?: FilterOptions): {
+    tagIds: string[];
+    performerIds: number[];
+  } {
+    const tagIds: string[] = [];
+    const performerIds: number[] = [];
+    
+    // Extract tags (include both tags and primary_tags)
+    if (filters?.tags && filters.tags.length > 0) {
+      const parsed = this.parseTagIds(filters.tags);
+      tagIds.push(...parsed.map(String));
+    }
+    if (filters?.primary_tags && filters.primary_tags.length > 0) {
+      const parsed = this.parseTagIds(filters.primary_tags);
+      tagIds.push(...parsed.map(String));
+    }
+    
+    // Extract performers
+    if (filters?.performers && filters.performers.length > 0) {
+      performerIds.push(...this.parseTagIds(filters.performers));
+    }
+    
+    return {
+      tagIds,
+      performerIds
+    };
+  }
+
+  /**
    * Build find filter for main query
    */
   private buildFindFilter(
@@ -821,13 +853,11 @@ export class StashAPI {
    * Apply tag filter to scene marker filter
    */
   private applyTagFilter(filters: FilterOptions | undefined, sceneMarkerFilter: SceneMarkerFilterInput): void {
-    if (!filters?.tags || filters.tags.length === 0) return;
-    
-    const tagIds = this.parseTagIds(filters.tags);
+    const { tagIds } = this.extractTagAndPerformerFilters(filters);
     if (tagIds.length === 0) return;
     
     sceneMarkerFilter.tags = {
-      value: tagIds.map(String),
+      value: tagIds,
       excludes: [],
       modifier: tagIds.length === 1 ? 'INCLUDES_ALL' : 'INCLUDES',
       depth: 0
@@ -840,14 +870,12 @@ export class StashAPI {
    * Apply performer filter to scene marker filter
    */
   private applyPerformerFilter(filters: FilterOptions | undefined, sceneMarkerFilter: SceneMarkerFilterInput): void {
-    if (!filters?.performers || filters.performers.length === 0) return;
-    
-    const performerIds = this.parseTagIds(filters.performers);
+    const { performerIds } = this.extractTagAndPerformerFilters(filters);
     if (performerIds.length === 0) return;
     
     sceneMarkerFilter.performers = { 
       value: performerIds,
-      modifier: performerIds.length > 1 ? 'INCLUDES_ALL' : 'INCLUDES' 
+      modifier: performerIds.length === 1 ? 'INCLUDES_ALL' : 'INCLUDES' 
     };
     
     // Applying performer filter
@@ -1363,17 +1391,15 @@ export class StashAPI {
    * Add performer filter to scene filter
    */
   private addPerformerFilter(sceneFilter: SceneFilterInput, filters?: FilterOptions): void {
-    if (!filters?.performers || filters.performers.length === 0) {
+    const { performerIds } = this.extractTagAndPerformerFilters(filters);
+    if (performerIds.length === 0) {
       return;
     }
 
-    const performerIds = this.parseTagIds(filters.performers);
-    if (performerIds.length > 0) {
-      sceneFilter.performers = {
-        value: performerIds,
-        modifier: performerIds.length > 1 ? 'INCLUDES_ALL' : 'INCLUDES'
-      };
-    }
+    sceneFilter.performers = {
+      value: performerIds,
+      modifier: performerIds.length === 1 ? 'INCLUDES_ALL' : 'INCLUDES'
+    };
   }
 
   /**
@@ -1382,30 +1408,14 @@ export class StashAPI {
    * by the same tags used to filter markers
    */
   private addTagFilter(sceneFilter: SceneFilterInput, filters?: FilterOptions): void {
-    const allTagIds: string[] = [];
-    
-    // Add regular tags
-    if (filters?.tags && filters.tags.length > 0) {
-      const tagIds = this.parseTagIds(filters.tags);
-      allTagIds.push(...tagIds.map(String));
-    }
-    
-    // Add primary_tags (used for marker filtering, but should also filter scenes/images)
-    if (filters?.primary_tags && filters.primary_tags.length > 0) {
-      const primaryTagIds = this.parseTagIds(filters.primary_tags);
-      allTagIds.push(...primaryTagIds.map(String));
-    }
-    
-    if (allTagIds.length === 0) {
+    const { tagIds } = this.extractTagAndPerformerFilters(filters);
+    if (tagIds.length === 0) {
       return;
     }
-
-    // Remove duplicates
-    const uniqueTagIds = Array.from(new Set(allTagIds));
     
     sceneFilter.tags = {
-      value: uniqueTagIds,
-      modifier: uniqueTagIds.length === 1 ? 'INCLUDES_ALL' : 'INCLUDES'
+      value: tagIds,
+      modifier: tagIds.length === 1 ? 'INCLUDES_ALL' : 'INCLUDES'
     };
   }
 

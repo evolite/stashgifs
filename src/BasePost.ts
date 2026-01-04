@@ -26,8 +26,8 @@ export abstract class BasePost {
   protected readonly api?: StashAPI;
   protected readonly visibilityManager?: VisibilityManager;
   protected readonly hoverHandlers: Map<HTMLElement, HoverHandlers> = new Map();
-  protected readonly onPerformerChipClick?: (performerId: number, performerName: string) => void;
-  protected readonly onTagChipClick?: (tagId: number, tagName: string) => void;
+  protected readonly onPerformerChipClick?: (performerId: number, performerName: string) => void | Promise<void>;
+  protected readonly onTagChipClick?: (tagId: number, tagName: string) => void | Promise<void>;
   protected addTagButton?: HTMLElement;
   protected heartButton?: HTMLElement;
   protected isFavorite: boolean = false;
@@ -55,8 +55,8 @@ export abstract class BasePost {
     favoritesManager?: FavoritesManager,
     api?: StashAPI,
     visibilityManager?: VisibilityManager,
-    onPerformerChipClick?: (performerId: number, performerName: string) => void,
-    onTagChipClick?: (tagId: number, tagName: string) => void
+    onPerformerChipClick?: (performerId: number, performerName: string) => void | Promise<void>,
+    onTagChipClick?: (tagId: number, tagName: string) => void | Promise<void>
   ) {
     this.container = container;
     this.favoritesManager = favoritesManager;

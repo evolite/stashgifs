@@ -2241,6 +2241,11 @@ export class FeedContainer {
       try {
         updateSearchBarDisplay();
         await this.applyCurrentSearch();
+        // Scroll to top (same approach as refreshFeed)
+        globalThis.scrollTo(0, 0);
+        if (this.scrollContainer) {
+          this.scrollContainer.scrollTop = 0;
+        }
       } catch (e: unknown) {
         if (!(e instanceof Error && e.name === 'AbortError')) {
           console.error('Apply filters failed', e);
@@ -2562,7 +2567,7 @@ export class FeedContainer {
   /**
    * Handle performer chip click - clear filters and set performer filter
    */
-  private handlePerformerChipClick(performerId: number, performerName: string): void {
+  private async handlePerformerChipClick(performerId: number, performerName: string): Promise<void> {
     // Disable chip interactions in random mode
     if (this.shuffleMode > 0) return;
     // Clear all filters
@@ -2573,15 +2578,18 @@ export class FeedContainer {
     this.selectedPerformerId = performerId;
     this.selectedPerformerName = performerName;
     // Apply filters
-    this.applyFilters();
-    // Scroll to top
-    globalThis.scrollTo({ top: 0, behavior: 'smooth' });
+    await this.applyFilters();
+    // Scroll to top (same approach as refreshFeed)
+    globalThis.scrollTo(0, 0);
+    if (this.scrollContainer) {
+      this.scrollContainer.scrollTop = 0;
+    }
   }
 
   /**
    * Handle tag chip click - clear filters and set tag filter
    */
-  private handleTagChipClick(tagId: number, tagName: string): void {
+  private async handleTagChipClick(tagId: number, tagName: string): Promise<void> {
     // Disable chip interactions in random mode
     if (this.shuffleMode > 0) return;
     // Clear all filters
@@ -2592,9 +2600,12 @@ export class FeedContainer {
     this.selectedTagId = tagId;
     this.selectedTagName = tagName;
     // Apply filters
-    this.applyFilters();
-    // Scroll to top
-    globalThis.scrollTo({ top: 0, behavior: 'smooth' });
+    await this.applyFilters();
+    // Scroll to top (same approach as refreshFeed)
+    globalThis.scrollTo(0, 0);
+    if (this.scrollContainer) {
+      this.scrollContainer.scrollTop = 0;
+    }
   }
 
   /**
@@ -2605,6 +2616,11 @@ export class FeedContainer {
     if (activeEl?.classList?.contains('feed-filters__input')) {
       const input = activeEl as HTMLInputElement;
       return input.value?.trim() || undefined;
+    }
+    // Fallback: query the input element directly even if not focused
+    const queryInput = this.container.querySelector('.feed-filters__input') as HTMLInputElement;
+    if (queryInput) {
+      return queryInput.value?.trim() || undefined;
     }
     return undefined;
   }
@@ -3240,6 +3256,13 @@ export class FeedContainer {
   private initializeLoadState(append: boolean): void {
     this.isLoading = true;
     if (!append) {
+      // Clear all cached content when starting a new search/filter
+      this.clearPosts();
+      if (this.postsContainer) {
+        this.postsContainer.innerHTML = '';
+      }
+      this.markers = [];
+      this.images = [];
       this.showSkeletonLoaders();
       this.currentPage = 1;
       this.hasMore = true;
@@ -3400,9 +3423,14 @@ export class FeedContainer {
     // It's already included naturally as scenes, so loading it separately would cause duplication
     const shouldLoadShortForm = this.shuffleMode === 0 && (shortFormEnabledForCurrentMode || shortFormOnlyActive);
     
+    // When filtering by tags or performers, include all content types that support these filters
+    // Images and short form content both support tag/performer filtering
+    const shouldLoadMarkers = !(this.settings.imagesOnly ?? false) && !shortFormOnlyActive;
+    const shouldLoadImages = this.shouldLoadImages() || (this.settings.imagesOnly ?? false);
+    
     return {
-      shouldLoadMarkers: !(this.settings.imagesOnly ?? false) && !shortFormOnlyActive,
-      shouldLoadImages: this.shouldLoadImages() || (this.settings.imagesOnly ?? false),
+      shouldLoadMarkers,
+      shouldLoadImages,
       shouldLoadShortForm
     };
   }
@@ -3691,10 +3719,8 @@ export class FeedContainer {
       this.markers = [];
     }
     
-    // Process images
-    if (images.length > 0) {
-      this.images = images;
-    }
+    // Process images - always replace to clear old cached images
+    this.images = images;
   }
 
   /**
@@ -3912,29 +3938,21 @@ export class FeedContainer {
 
     try {
       const fileExtensions = this.settings.enabledFileTypes || ['.jpg', '.png', '.gif', '.mp4', '.m4v', '.webm'];
+      
+      // Use unified filter extraction for consistent filtering
+      const { tagIds, performerIds } = this.api.extractTagAndPerformerFilters(filters);
+      
       const imageFilters: {
         performerIds?: number[];
         tagIds?: string[];
       } = {};
 
-      // Apply performer filter if set
-      if (filters.performers && filters.performers.length > 0) {
-        imageFilters.performerIds = filters.performers
-          .map(p => Number.parseInt(p, 10))
-          .filter(id => !Number.isNaN(id));
+      if (performerIds.length > 0) {
+        imageFilters.performerIds = performerIds;
       }
 
-      // Apply tag filter if set (include both tags and primary_tags)
-      const allTagIds: string[] = [];
-      if (filters.tags && filters.tags.length > 0) {
-        allTagIds.push(...filters.tags);
-      }
-      if (filters.primary_tags && filters.primary_tags.length > 0) {
-        allTagIds.push(...filters.primary_tags);
-      }
-      if (allTagIds.length > 0) {
-        // Remove duplicates
-        imageFilters.tagIds = Array.from(new Set(allTagIds));
+      if (tagIds.length > 0) {
+        imageFilters.tagIds = tagIds;
       }
 
       const imageFiltersWithOrientation = {
