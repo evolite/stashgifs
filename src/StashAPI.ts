@@ -57,80 +57,6 @@ interface StashPluginApi {
   apiKey?: string;
 }
 
-/**
- * LRU Cache implementation for tracking access order
- * Uses Map to maintain insertion order (most recently accessed at end)
- */
-class LRUCache<K, V> {
-  private readonly cache: Map<K, V>;
-  private readonly maxSize: number;
-
-  constructor(maxSize: number) {
-    this.cache = new Map();
-    this.maxSize = maxSize;
-  }
-
-  /**
-   * Get value from cache and move to end (most recently used)
-   */
-  get(key: K): V | undefined {
-    const value = this.cache.get(key);
-    if (value !== undefined) {
-      // Move to end (most recently used)
-      this.cache.delete(key);
-      this.cache.set(key, value);
-    }
-    return value;
-  }
-
-  /**
-   * Set value in cache, evicting least recently used if at capacity
-   */
-  set(key: K, value: V): void {
-    if (this.cache.has(key)) {
-      // Update existing: remove and re-add to end
-      this.cache.delete(key);
-    } else if (this.cache.size >= this.maxSize) {
-      // Evict least recently used (first item in Map)
-      const firstKey = this.cache.keys().next().value;
-      if (firstKey !== undefined) {
-        this.cache.delete(firstKey);
-      }
-    }
-    this.cache.set(key, value);
-  }
-
-  /**
-   * Check if key exists in cache (without updating access order)
-   */
-  has(key: K): boolean {
-    return this.cache.has(key);
-  }
-
-  /**
-   * Delete key from cache
-   */
-  delete(key: K): boolean {
-    return this.cache.delete(key);
-  }
-
-  /**
-   * Get current size of cache
-   */
-  get size(): number {
-    return this.cache.size;
-  }
-
-  /**
-   * Clear all entries
-   */
-  clear(): void {
-    this.cache.clear();
-  }
-}
-
-// Constants for random sorting
-const RANDOM_SORT_MULTIPLIER = 1000000;
 
 /**
  * Generate a random sort seed in the format random_<8-digit-number>
@@ -144,10 +70,6 @@ export function generateRandomSortSeed(): string {
 export class StashAPI {
   private readonly baseUrl: string;
   private readonly apiKey?: string;
-  // Cache for tags/performers that have markers (to avoid repeated checks)
-  // Using LRU cache to track access order and intelligently evict least recently used
-  private readonly tagsWithMarkersCache: LRUCache<number, boolean>;
-  private readonly performersWithMarkersCache: LRUCache<number, boolean>;
   private readonly pluginApi?: StashPluginApi;
   // Centralized GraphQL client
   private readonly gqlClient: GraphQLClient;
@@ -156,7 +78,6 @@ export class StashAPI {
   private readonly CACHE_TTL = 5 * 60 * 1000; // 5 minutes
   private cacheCleanupInterval?: ReturnType<typeof setInterval>;
   private readonly MAX_CACHE_SIZE = 1000; // Maximum cache entries before cleanup
-  private readonly MAX_TAG_CACHE_SIZE = 1000; // Maximum tag/performer cache entries (used for LRU cache)
 
   constructor(baseUrl?: string, apiKey?: string) {
     // Get from globalThis if available (Stash plugin context)
@@ -185,10 +106,6 @@ export class StashAPI {
       pluginApi: this.pluginApi,
     });
     
-    // Initialize LRU caches
-    this.tagsWithMarkersCache = new LRUCache(this.MAX_TAG_CACHE_SIZE);
-    this.performersWithMarkersCache = new LRUCache(this.MAX_TAG_CACHE_SIZE);
-    
     // Start periodic cache cleanup
     this.startCacheCleanup();
   }
@@ -216,7 +133,7 @@ export class StashAPI {
       }
     }
     
-    // Limit search cache size (LRU: remove oldest entries if over limit)
+    // Limit search cache size (remove oldest entries if over limit)
     if (this.searchCache.size > this.MAX_CACHE_SIZE) {
       const entries = Array.from(this.searchCache.entries())
         .sort((a, b) => a[1].timestamp - b[1].timestamp);
@@ -225,10 +142,6 @@ export class StashAPI {
         this.searchCache.delete(key);
       }
     }
-    
-    // LRU caches automatically evict least recently used items when at capacity
-    // No manual cleanup needed - LRU handles eviction on set()
-    // The cleanup here is just for the search cache which uses TTL
   }
 
   /**
@@ -282,11 +195,19 @@ export class StashAPI {
   private normalizeTagField(fieldValue: unknown, asString: boolean): unknown {
     if (!fieldValue) return undefined;
 
+    const extractId = (x: unknown): unknown => {
+      if (typeof x === 'object' && x !== null) {
+        const obj = x as { id?: unknown; value?: unknown };
+        return obj.id ?? obj.value ?? x;
+      }
+      return x;
+    };
+
     const normalizeIdArray = (val: unknown): number[] | undefined => {
       if (!val) return undefined;
       const arr = Array.isArray(val) ? val : [val];
       const ids = arr
-        .map((x) => (typeof x === 'object' && x !== null ? ((x as { id?: unknown; value?: unknown }).id ?? (x as { id?: unknown; value?: unknown }).value ?? x) : x))
+        .map(extractId)
         .map((x) => Number.parseInt(String(x), 10))
         .filter((n) => !Number.isNaN(n));
       return ids.length > 0 ? ids : undefined;
@@ -326,12 +247,11 @@ export class StashAPI {
    * Includes request deduplication and caching
    */
   async searchMarkerTags(term: string, limit: number = 10, signal?: AbortSignal): Promise<Array<{ id: string; name: string }>> {
-    // Skip caching for empty terms to ensure fresh random suggestions
     const isEmptyTerm = !term || term.trim() === '';
+    const cacheKey = `tags:${term}:${limit}`;
     
     // Check cache first (only for non-empty terms)
     if (!isEmptyTerm) {
-      const cacheKey = `tags:${term}:${limit}`;
       const cached = this.searchCache.get(cacheKey);
       if (cached && Date.now() - cached.timestamp < this.CACHE_TTL) {
         return cached.data as Promise<Array<{ id: string; name: string }>>;
@@ -339,20 +259,14 @@ export class StashAPI {
     }
     
     // Create new request (deduplication handled by GraphQL client)
-    const request = this._searchMarkerTags(term, limit, signal);
+    const result = await this._searchMarkerTags(term, limit, signal);
     
-    try {
-      const result = await request;
-      // Cache the result (only for non-empty terms)
-      if (!isEmptyTerm) {
-        const cacheKey = `tags:${term}:${limit}`;
-        this.searchCache.set(cacheKey, { data: result, timestamp: Date.now() });
-      }
-      return result;
-    } catch (error: unknown) {
-      // Re-throw to maintain error handling
-      throw error;
+    // Cache the result (only for non-empty terms)
+    if (!isEmptyTerm) {
+      this.searchCache.set(cacheKey, { data: result, timestamp: Date.now() });
     }
+    
+    return result;
   }
   
   /**
@@ -427,12 +341,11 @@ export class StashAPI {
    * Includes request deduplication and caching
    */
   async searchPerformers(term: string, limit: number = 10, signal?: AbortSignal): Promise<Array<{ id: string; name: string; image_path?: string }>> {
-    // Skip caching for empty terms to ensure fresh random suggestions
     const isEmptyTerm = !term || term.trim() === '';
+    const cacheKey = `performers:${term}:${limit}`;
     
     // Check cache first (only for non-empty terms)
     if (!isEmptyTerm) {
-      const cacheKey = `performers:${term}:${limit}`;
       const cached = this.searchCache.get(cacheKey);
       if (cached && Date.now() - cached.timestamp < this.CACHE_TTL) {
         return cached.data as Promise<Array<{ id: string; name: string; image_path?: string }>>;
@@ -440,20 +353,14 @@ export class StashAPI {
     }
     
     // Create new request (deduplication handled by GraphQL client)
-    const request = this._searchPerformers(term, limit, signal);
+    const result = await this._searchPerformers(term, limit, signal);
     
-    try {
-      const result = await request;
-      // Cache the result (only for non-empty terms)
-      if (!isEmptyTerm) {
-        const cacheKey = `performers:${term}:${limit}`;
-        this.searchCache.set(cacheKey, { data: result, timestamp: Date.now() });
-      }
-      return result;
-    } catch (error: unknown) {
-      // Re-throw to maintain error handling
-      throw error;
+    // Cache the result (only for non-empty terms)
+    if (!isEmptyTerm) {
+      this.searchCache.set(cacheKey, { data: result, timestamp: Date.now() });
     }
+    
+    return result;
   }
   
   /**
@@ -723,8 +630,8 @@ export class StashAPI {
       Object.assign(countFilter, savedFilterCriteria.find_filter);
     }
     
-    if (filters?.query && filters.query.trim() !== '') {
-      countFilter.q = filters.query;
+    if (filters?.query?.trim()) {
+      countFilter.q = filters.query.trim();
     }
     
     return countFilter;
@@ -734,10 +641,9 @@ export class StashAPI {
    * Build count scene filter for random page calculation
    */
   private buildCountSceneFilter(filters: FilterOptions | undefined, savedFilterCriteria: GetSavedFilterResponse['findSavedFilter']): SceneMarkerFilterInput {
-    const countSceneFilterRaw = savedFilterCriteria?.object_filter || {};
-    const countSceneFilter = this.normalizeMarkerFilter(countSceneFilterRaw);
+    const countSceneFilter = this.normalizeMarkerFilter(savedFilterCriteria?.object_filter || {});
     
-    if (!filters?.savedFilterId && filters?.tags && filters.tags.length > 0) {
+    if (!filters?.savedFilterId && filters?.tags?.length) {
       const tagIds = this.parseTagIds(filters.tags);
       if (tagIds.length > 0) {
         countSceneFilter.tags = {
@@ -802,7 +708,6 @@ export class StashAPI {
     page: number,
     limit: number
   ): FindFilterInput {
-    // Reuse existing sort seed for pagination, or generate new one for first page
     const sortSeed = filters?.sortSeed || generateRandomSortSeed();
     
     const filter: FindFilterInput = {
@@ -817,9 +722,9 @@ export class StashAPI {
     
     if (filters?.query && filters.query.trim() !== '') {
       filter.q = filters.query;
-      // Applying query filter
     }
     
+    // Ensure page and per_page are set correctly (may have been overridden by saved filter)
     filter.page = page;
     filter.per_page = limit;
     
@@ -838,8 +743,7 @@ export class StashAPI {
     const sceneMarkerFilter = this.normalizeMarkerFilter(sceneMarkerFilterRaw);
     
     if (!filters?.savedFilterId) {
-      this.applyTagFilter(filters, sceneMarkerFilter);
-      this.applyPerformerFilter(filters, sceneMarkerFilter);
+      this.applyTagAndPerformerFilters(filters, sceneMarkerFilter);
     }
     
     if (filters?.studios && filters.studios.length > 0) {
@@ -850,47 +754,36 @@ export class StashAPI {
   }
 
   /**
-   * Apply tag filter to scene marker filter
+   * Apply tag and performer filters to a filter object
    */
-  private applyTagFilter(filters: FilterOptions | undefined, sceneMarkerFilter: SceneMarkerFilterInput): void {
-    const { tagIds } = this.extractTagAndPerformerFilters(filters);
-    if (tagIds.length === 0) return;
+  private applyTagAndPerformerFilters(
+    filters: FilterOptions | undefined,
+    targetFilter: SceneMarkerFilterInput | SceneFilterInput
+  ): void {
+    const { tagIds, performerIds } = this.extractTagAndPerformerFilters(filters);
     
-    sceneMarkerFilter.tags = {
-      value: tagIds,
-      excludes: [],
-      modifier: tagIds.length === 1 ? 'INCLUDES_ALL' : 'INCLUDES',
-      depth: 0
-    };
+    if (tagIds.length > 0) {
+      if ('tags' in targetFilter) {
+        (targetFilter as SceneMarkerFilterInput).tags = {
+          value: tagIds,
+          excludes: [],
+          modifier: tagIds.length === 1 ? 'INCLUDES_ALL' : 'INCLUDES',
+          depth: 0
+        };
+      } else {
+        (targetFilter as SceneFilterInput).tags = {
+          value: tagIds,
+          modifier: tagIds.length === 1 ? 'INCLUDES_ALL' : 'INCLUDES'
+        };
+      }
+    }
     
-    // Applying tags filter
-  }
-
-  /**
-   * Apply performer filter to scene marker filter
-   */
-  private applyPerformerFilter(filters: FilterOptions | undefined, sceneMarkerFilter: SceneMarkerFilterInput): void {
-    const { performerIds } = this.extractTagAndPerformerFilters(filters);
-    if (performerIds.length === 0) return;
-    
-    sceneMarkerFilter.performers = { 
-      value: performerIds,
-      modifier: performerIds.length === 1 ? 'INCLUDES_ALL' : 'INCLUDES' 
-    };
-    
-    // Applying performer filter
-  }
-
-  /**
-   * Execute marker query with retry logic
-   */
-  private async executeMarkerQuery(
-    filter: FindFilterInput,
-    sceneMarkerFilter: SceneMarkerFilterInput,
-    signal?: AbortSignal
-  ): Promise<SceneMarker[]> {
-    const { markers } = await this.executeMarkerQueryWithCount(filter, sceneMarkerFilter, signal);
-    return markers;
+    if (performerIds.length > 0) {
+      targetFilter.performers = {
+        value: performerIds,
+        modifier: performerIds.length === 1 ? 'INCLUDES_ALL' : 'INCLUDES'
+      };
+    }
   }
 
   /**
@@ -922,18 +815,6 @@ export class StashAPI {
     }
     
     return { markers, totalCount };
-  }
-
-  /**
-   * Retry marker query with page 1
-   */
-  private async retryMarkerQuery(
-    filter: FindFilterInput,
-    sceneMarkerFilter: SceneMarkerFilterInput,
-    signal?: AbortSignal
-  ): Promise<SceneMarker[]> {
-    const { markers } = await this.retryMarkerQueryWithCount(filter, sceneMarkerFilter, signal);
-    return markers;
   }
 
   /**
@@ -1059,8 +940,7 @@ export class StashAPI {
       sceneFilter.has_markers = 'false';
     }
     
-    this.addPerformerFilter(sceneFilter, filters);
-    this.addTagFilter(sceneFilter, filters);
+    this.applyTagAndPerformerFilters(filters, sceneFilter);
     
     return Object.keys(sceneFilter).length > 0 ? sceneFilter : null;
   }
@@ -1236,215 +1116,6 @@ export class StashAPI {
     return { maxPage, totalCount };
   }
 
-  /**
-   * Generate unique random page numbers (legacy method, kept for backwards compatibility)
-   */
-  private generateUniqueRandomPages(pagesToFetch: number, maxPage: number): number[] {
-    const selectedPages = new Set<number>();
-    
-    // Generate unique random pages
-    while (selectedPages.size < pagesToFetch && selectedPages.size < maxPage) {
-      const randomPage = Math.floor(Math.random() * maxPage) + 1;
-      selectedPages.add(randomPage);
-    }
-    
-    // If we don't have enough unique pages, fill with sequential pages
-    if (selectedPages.size < pagesToFetch) {
-      for (let page = 1; page <= maxPage && selectedPages.size < pagesToFetch; page++) {
-        selectedPages.add(page);
-      }
-    }
-    
-    return Array.from(selectedPages);
-  }
-
-  /**
-   * Generate pages for a specific offset using deterministic randomness
-   * Ensures pagination progression while maintaining variety
-   */
-  private generatePagesForOffset(
-    basePage: number,
-    pageRange: number,
-    pagesToFetch: number,
-    maxPage: number,
-    offset: number
-  ): number[] {
-    const selectedPages = new Set<number>();
-    
-    // Calculate page range bounds
-    const minPage = Math.max(1, basePage - pageRange);
-    const maxPageInRange = Math.min(maxPage, basePage + pageRange);
-    const availablePages = maxPageInRange - minPage + 1;
-    
-    // Use offset as seed for deterministic randomness
-    // Same offset always generates same pages, but different offsets get different pages
-    let seed = offset;
-    const seededRandom = () => {
-      seed = (seed * 9301 + 49297) % 233280;
-      return seed / 233280;
-    };
-    
-    // Generate unique pages within the range
-    while (selectedPages.size < pagesToFetch && selectedPages.size < availablePages) {
-      const randomValue = seededRandom();
-      const pageInRange = Math.floor(randomValue * availablePages);
-      const page = minPage + pageInRange;
-      selectedPages.add(page);
-    }
-    
-    // If we don't have enough unique pages in range, fill with sequential pages from the range
-    if (selectedPages.size < pagesToFetch) {
-      for (let page = minPage; page <= maxPageInRange && selectedPages.size < pagesToFetch; page++) {
-        selectedPages.add(page);
-      }
-    }
-    
-    // If still not enough, fall back to any available pages
-    if (selectedPages.size < pagesToFetch) {
-      for (let page = 1; page <= maxPage && selectedPages.size < pagesToFetch; page++) {
-        selectedPages.add(page);
-      }
-    }
-    
-    return Array.from(selectedPages);
-  }
-
-  /**
-   * Fetch multiple pages of scenes with error handling
-   */
-  private async fetchShortFormPages(
-    selectedPages: number[],
-    scenesPerPage: number,
-    sceneFilter: SceneFilterInput | null,
-    maxPage: number,
-    signal?: AbortSignal
-  ): Promise<Array<{ scenes: Scene[]; page: number }>> {
-    const fetchPromises: Array<Promise<{ scenes: Scene[]; page: number }>> = [];
-    
-    for (const randomPage of selectedPages) {
-      const filter: FindFilterInput = {
-        per_page: scenesPerPage,
-        page: randomPage,
-        sort: generateRandomSortSeed(), // Different random seed for each page
-      };
-      
-      // Wrap fetchScenesQuery with error handling
-      fetchPromises.push(
-        this.fetchScenesQuery(filter, sceneFilter, signal)
-          .then((scenes) => {
-            return { scenes, page: randomPage };
-          })
-          .catch((error: unknown) => {
-            console.error('[ShortForm] Error fetching page', randomPage, ':', error);
-            return { scenes: [], page: randomPage };
-          })
-      );
-    }
-    
-    return await Promise.all(fetchPromises);
-  }
-
-  /**
-   * Combine scenes from multiple pages and remove duplicates
-   */
-  private combineAndDeduplicateScenes(
-    allPageResults: Array<{ scenes: Scene[]; page: number }>
-  ): Scene[] {
-    const sceneMap = new Map<string, Scene>();
-    let totalFetched = 0;
-    
-    for (const { scenes } of allPageResults) {
-      totalFetched += scenes.length;
-      for (const scene of scenes) {
-        if (scene.id) {
-          sceneMap.set(scene.id, scene);
-        }
-      }
-    }
-    
-    const allScenes = Array.from(sceneMap.values());
-    return allScenes;
-  }
-
-  /**
-   * Filter scenes by duration, shuffle, and limit
-   */
-  private filterAndShuffleShortFormScenes(
-    allScenes: Scene[],
-    maxDuration: number,
-    limit: number
-  ): Scene[] {
-    const shortFormScenes = this.filterShortFormScenes(allScenes, maxDuration);
-    
-    if (shortFormScenes.length === 0) {
-      console.warn('[ShortForm] No scenes match duration criteria');
-      return [];
-    }
-    
-    // Shuffle the filtered results with a fresh random seed each time
-    const shuffled = this.shuffleArray([...shortFormScenes]);
-    
-    // Limit to requested amount
-    const limitedScenes = shuffled.slice(0, limit);
-    
-    return limitedScenes;
-  }
-
-  /**
-   * Shuffle an array using Fisher-Yates algorithm
-   */
-  private shuffleArray<T>(array: T[]): T[] {
-    const shuffled = [...array];
-    for (let i = shuffled.length - 1; i > 0; i--) {
-      const j = Math.floor(Math.random() * (i + 1));
-      [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
-    }
-    return shuffled;
-  }
-
-  /**
-   * Add duration filter to scene filter
-   */
-  private addDurationFilter(sceneFilter: SceneFilterInput, maxDuration?: number): void {
-    if (maxDuration !== undefined && maxDuration > 0) {
-      sceneFilter.duration = {
-        value: maxDuration,
-        modifier: 'LESS_THAN'
-      };
-    }
-  }
-
-  /**
-   * Add performer filter to scene filter
-   */
-  private addPerformerFilter(sceneFilter: SceneFilterInput, filters?: FilterOptions): void {
-    const { performerIds } = this.extractTagAndPerformerFilters(filters);
-    if (performerIds.length === 0) {
-      return;
-    }
-
-    sceneFilter.performers = {
-      value: performerIds,
-      modifier: performerIds.length === 1 ? 'INCLUDES_ALL' : 'INCLUDES'
-    };
-  }
-
-  /**
-   * Add tag filter to scene filter
-   * Also includes primary_tags if provided, since scenes/images should be filtered
-   * by the same tags used to filter markers
-   */
-  private addTagFilter(sceneFilter: SceneFilterInput, filters?: FilterOptions): void {
-    const { tagIds } = this.extractTagAndPerformerFilters(filters);
-    if (tagIds.length === 0) {
-      return;
-    }
-    
-    sceneFilter.tags = {
-      value: tagIds,
-      modifier: tagIds.length === 1 ? 'INCLUDES_ALL' : 'INCLUDES'
-    };
-  }
 
   /**
    * Build scene filter for short-form content
@@ -1457,9 +1128,14 @@ export class StashAPI {
       }
     };
 
-    this.addDurationFilter(sceneFilter, maxDuration);
-    this.addPerformerFilter(sceneFilter, filters);
-    this.addTagFilter(sceneFilter, filters);
+    if (maxDuration !== undefined && maxDuration > 0) {
+      sceneFilter.duration = {
+        value: maxDuration,
+        modifier: 'LESS_THAN'
+      };
+    }
+
+    this.applyTagAndPerformerFilters(filters, sceneFilter);
 
     return Object.keys(sceneFilter).length > 0 ? sceneFilter : null;
   }
@@ -1563,60 +1239,41 @@ export class StashAPI {
 
   /**
    * Get video URL for a scene
+   * Tries multiple sources in order: sceneStreams, stream path, file path
    */
   getVideoUrl(scene: Scene): string | undefined {
-    const url = this.trySceneStreams(scene) || 
-                this.tryStreamPath(scene) || 
-                this.tryFilePath(scene);
-    
-    return url ? this.addCacheBusting(url) : undefined;
-  }
-
-  /**
-   * Try to get URL from scene streams
-   */
-  private trySceneStreams(scene: Scene): string | undefined {
-    if (!scene.sceneStreams || scene.sceneStreams.length === 0) {
-      return undefined;
+    // Try scene streams first
+    if (scene.sceneStreams && scene.sceneStreams.length > 0) {
+      const streamUrl = scene.sceneStreams[0]?.url?.trim();
+      if (streamUrl) {
+        const url = this.buildUrl(streamUrl);
+        if (isValidMediaUrl(url)) {
+          return this.addCacheBusting(url);
+        }
+      }
     }
     
-    const streamUrl = scene.sceneStreams[0]?.url;
-    if (!streamUrl || streamUrl.trim().length === 0) {
-      return undefined;
-    }
-    
-    const url = this.buildUrl(streamUrl);
-    return isValidMediaUrl(url) ? url : undefined;
-  }
-
-  /**
-   * Try to get URL from stream path
-   */
-  private tryStreamPath(scene: Scene): string | undefined {
+    // Try stream path
     const streamPath = scene.paths?.stream?.trim();
-    if (!streamPath || streamPath.length === 0) {
-      return undefined;
+    if (streamPath) {
+      const url = this.buildUrl(streamPath);
+      if (isValidMediaUrl(url)) {
+        return this.addCacheBusting(url);
+      }
     }
     
-    const url = this.buildUrl(streamPath);
-    return isValidMediaUrl(url) ? url : undefined;
-  }
-
-  /**
-   * Try to get URL from file path
-   */
-  private tryFilePath(scene: Scene): string | undefined {
-    if (!scene.files || scene.files.length === 0) {
-      return undefined;
+    // Try file path as last resort
+    if (scene.files && scene.files.length > 0) {
+      const filePath = scene.files[0]?.path?.trim();
+      if (filePath) {
+        const url = this.buildUrl(filePath);
+        if (isValidMediaUrl(url)) {
+          return this.addCacheBusting(url);
+        }
+      }
     }
     
-    const filePath = scene.files[0]?.path?.trim();
-    if (!filePath || filePath.length === 0) {
-      return undefined;
-    }
-    
-    const url = this.buildUrl(filePath);
-    return isValidMediaUrl(url) ? url : undefined;
+    return undefined;
   }
 
   /**
