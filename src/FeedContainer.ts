@@ -878,6 +878,11 @@ export class FeedContainer {
         this.closeSuggestions();
         updateSearchBarDisplay();
         this.currentFilters = { savedFilterId: filter.id, limit: this.initialLoadLimit, offset: 0 };
+        // Scroll to top (same approach as refreshFeed)
+        globalThis.scrollTo(0, 0);
+        if (this.scrollContainer) {
+          this.scrollContainer.scrollTop = 0;
+        }
         this.loadVideos(this.currentFilters, false).catch((e) => console.error('Apply saved filter failed', e));
       }));
     }
