@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [5.21.0] - 2026-01-04
+
+### Changed
+- Improved API logic and small layout changes
+- Improved caching and filtering
+- Added performer country as flags on performer image liek Stash does it, and some small graphical fixes
+- Improved StashAPI funcitons
+- Improved pagination
+- Scroll bar shoudl now always return to the top when applying a new filter
+- Improved filtering logic
+
 ## [5.20.0] - 2026-01-04
 
 ### Changed
