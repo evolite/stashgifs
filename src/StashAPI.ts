@@ -50,6 +50,7 @@ import {
 import { GraphQLClient } from './graphql/client.js';
 
 type Orientation = 'landscape' | 'portrait' | 'square' | null;
+type ImageOrientation = 'landscape' | 'portrait' | 'square';
 
 interface StashPluginApi {
   GQL: {
@@ -1789,20 +1790,16 @@ export class StashAPI {
    * @param signal Optional abort signal
    * @returns Created marker data
    */
-  async createSceneMarker(
+  /**
+   * Validate createSceneMarker input parameters
+   */
+  private validateCreateSceneMarkerInput(
     sceneId: string,
     seconds: number,
     primaryTagId: string,
-    title: string = '',
-    endSeconds?: number | null,
-    tagIds: string[] = [],
-    signal?: AbortSignal
-  ): Promise<{ id: string; title: string; seconds: number; end_seconds?: number; stream?: string; preview?: string; scene: { id: string; title?: string; files?: Array<{ width?: number; height?: number; path?: string }>; performers?: Array<{ id: string; name: string; image_path?: string }> } | Scene; primary_tag: { id: string; name: string }; tags: Array<{ id: string; name: string }> }> {
-    if (this.isAborted(signal)) {
-      throw new Error('Operation aborted');
-    }
-    
-    // Input validation
+    endSeconds: number | null | undefined,
+    tagIds: string[]
+  ): void {
     if (!sceneId || typeof sceneId !== 'string' || sceneId.trim() === '') {
       throw new Error('createSceneMarker: sceneId is required and must be a non-empty string');
     }
@@ -1821,8 +1818,25 @@ export class StashAPI {
       }
     }
     if (!Array.isArray(tagIds)) {
-      throw new Error('createSceneMarker: tagIds must be an array');
+      throw new TypeError('createSceneMarker: tagIds must be an array');
     }
+  }
+
+  async createSceneMarker(
+    sceneId: string,
+    seconds: number,
+    primaryTagId: string,
+    title: string = '',
+    endSeconds?: number | null,
+    tagIds: string[] = [],
+    signal?: AbortSignal
+  ): Promise<{ id: string; title: string; seconds: number; end_seconds?: number; stream?: string; preview?: string; scene: { id: string; title?: string; files?: Array<{ width?: number; height?: number; path?: string }>; performers?: Array<{ id: string; name: string; image_path?: string }> } | Scene; primary_tag: { id: string; name: string }; tags: Array<{ id: string; name: string }> }> {
+    if (this.isAborted(signal)) {
+      throw new Error('Operation aborted');
+    }
+    
+    // Input validation
+    this.validateCreateSceneMarkerInput(sceneId, seconds, primaryTagId, endSeconds, tagIds);
     
     const variables = {
       title,
@@ -1960,7 +1974,7 @@ export class StashAPI {
    */
   private filterImagesByOrientation(
     images: Image[],
-    orientationFilter: ('landscape' | 'portrait' | 'square')[]
+    orientationFilter: ImageOrientation[]
   ): Image[] {
     if (orientationFilter.length === 0) {
       return images;
@@ -1988,7 +2002,7 @@ export class StashAPI {
    */
   private filterByOrientation<T>(
     items: T[],
-    orientationFilter: ('landscape' | 'portrait' | 'square')[] | undefined,
+    orientationFilter: ImageOrientation[] | undefined,
     getWidth: (item: T) => number | undefined,
     getHeight: (item: T) => number | undefined
   ): T[] {
@@ -2046,7 +2060,7 @@ export class StashAPI {
     filters?: {
       performerIds?: number[];
       tagIds?: string[];
-      orientationFilter?: ('landscape' | 'portrait' | 'square')[];
+      orientationFilter?: ImageOrientation[];
       sortSeed?: string;
     },
     limit: number = 40,
@@ -2057,7 +2071,7 @@ export class StashAPI {
 
     // Input validation
     if (!Array.isArray(fileExtensions)) {
-      throw new Error('findImages: fileExtensions must be an array');
+      throw new TypeError('findImages: fileExtensions must be an array');
     }
     if (typeof limit !== 'number' || !Number.isFinite(limit) || limit < 1) {
       throw new TypeError('findImages: limit must be a positive number');

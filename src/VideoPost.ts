@@ -3,7 +3,7 @@
  * Individual video post card in the feed
  */
 
-import { VideoPostData, Scene } from './types.js';
+import { VideoPostData, Scene, SceneMarker } from './types.js';
 import { NativeVideoPlayer } from './NativeVideoPlayer.js';
 import { FavoritesManager } from './FavoritesManager.js';
 import { StashAPI } from './StashAPI.js';
@@ -347,6 +347,42 @@ export class VideoPost extends BasePost {
   }
 
   /**
+   * Build URL with cache-busting parameter
+   */
+  private buildUrlWithCacheBusting(path: string): string | undefined {
+    const baseUrl = toAbsoluteUrl(path);
+    if (!baseUrl) return undefined;
+    const separator = baseUrl.includes('?') ? '&' : '?';
+    return `${baseUrl}${separator}t=${Date.now()}`;
+  }
+
+  /**
+   * Get poster URL for image-based markers
+   */
+  private getImageBasedMarkerPoster(marker: SceneMarker): string | undefined {
+    const imagePaths = marker?.scene?.paths as { thumbnail?: string; preview?: string; image?: string } | undefined;
+    const thumbnail = imagePaths?.thumbnail;
+    if (thumbnail) {
+      const url = this.buildUrlWithCacheBusting(thumbnail);
+      if (url) return url;
+    }
+    const preview = imagePaths?.preview;
+    if (preview) {
+      return this.buildUrlWithCacheBusting(preview);
+    }
+    return undefined;
+  }
+
+  /**
+   * Get poster URL for synthetic/short form markers
+   */
+  private getSyntheticMarkerPoster(marker: SceneMarker): string | undefined {
+    const p = marker?.scene?.paths?.screenshot;
+    if (!p) return undefined;
+    return this.buildUrlWithCacheBusting(p);
+  }
+
+  /**
    * Get poster URL for the video
    * Only uses screenshots - never preview or webp
    * Returns undefined if screenshot is unavailable (will trigger first frame fallback)
@@ -357,50 +393,22 @@ export class VideoPost extends BasePost {
     
     // Handle image-based markers (marker.id starts with 'image-')
     if (markerId && typeof markerId === 'string' && markerId.startsWith('image-')) {
-      // For image-based markers, use image thumbnail or preview as fallback
-      // Note: scene.paths is actually Image.paths for synthetic markers, which has thumbnail/image properties
-      const imagePaths = m?.scene?.paths as { thumbnail?: string; preview?: string; image?: string } | undefined;
-      const thumbnail = imagePaths?.thumbnail;
-      if (thumbnail) {
-        const baseUrl = toAbsoluteUrl(thumbnail);
-        if (baseUrl) {
-          const separator = baseUrl.includes('?') ? '&' : '?';
-          return `${baseUrl}${separator}t=${Date.now()}`;
-        }
-      }
-      // Fallback to preview if thumbnail unavailable
-      const preview = imagePaths?.preview;
-      if (preview) {
-        const baseUrl = toAbsoluteUrl(preview);
-        if (baseUrl) {
-          const separator = baseUrl.includes('?') ? '&' : '?';
-          return `${baseUrl}${separator}t=${Date.now()}`;
-        }
-      }
-      return undefined;
+      return this.getImageBasedMarkerPoster(m);
     }
     
     // Skip synthetic markers and short form markers - they don't have screenshots in Stash
     if (markerId && typeof markerId === 'string' && (markerId.startsWith('synthetic-') || markerId.startsWith('shortform-'))) {
-      // For synthetic/short form markers, only use scene screenshot
-      const p = m?.scene?.paths?.screenshot;
-      if (!p) return undefined;
-      const baseUrl = toAbsoluteUrl(p);
-      if (!baseUrl) return undefined;
-      const separator = baseUrl.includes('?') ? '&' : '?';
-      return `${baseUrl}${separator}t=${Date.now()}`;
+      return this.getSyntheticMarkerPoster(m);
     }
+    
     // Prefer preloaded poster from batch prefetch (commit parity)
     const cached = posterPreloader.getPosterForMarker(m);
     if (cached) return cached;
+    
     // Only use screenshot if not preloaded
     const p = m?.scene?.paths?.screenshot;
     if (!p) return undefined;
-    // Add cache-busting to prevent 304 responses with empty/corrupted cache
-    const baseUrl = toAbsoluteUrl(p);
-    if (!baseUrl) return undefined;
-    const separator = baseUrl.includes('?') ? '&' : '?';
-    return `${baseUrl}${separator}t=${Date.now()}`;
+    return this.buildUrlWithCacheBusting(p);
   }
 
   /**

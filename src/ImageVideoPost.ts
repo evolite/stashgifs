@@ -658,7 +658,7 @@ export class ImageVideoPost extends BasePost {
 
     try {
       // For non-HD videos, don't pass startTime (allows browser to show first frame naturally)
-      const finalStartTime = this.isHQMode ? undefined : undefined;
+      const finalStartTime = undefined;
       
       // Respect global mute state when creating player
       // For non-HD videos, always muted (preview videos don't have audio)

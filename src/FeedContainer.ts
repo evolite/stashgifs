@@ -64,6 +64,11 @@ function isNativeVideoPlayer(player: NativeVideoPlayer | ImagePlayer | undefined
  */
 type ContentType = 'marker' | 'shortform' | 'image';
 
+/**
+ * Union type for all post types
+ */
+type PostType = VideoPost | ImagePost | ImageVideoPost;
+
 export class FeedContainer {
   private static readonly CONTENT_LOAD_LIMIT: number = 4;
   private readonly container: HTMLElement;
@@ -71,7 +76,7 @@ export class FeedContainer {
   private readonly api: StashAPI;
   private visibilityManager: VisibilityManager;
   private favoritesManager: FavoritesManager;
-  private posts: Map<string, VideoPost | ImagePost | ImageVideoPost>;
+  private posts: Map<string, PostType>;
   private postOrder: string[];
   private images: Image[] = [];
   private settings: FeedSettings;
@@ -388,28 +393,28 @@ export class FeedContainer {
   }
 
   /**
+   * Apply mute state to a video post
+   */
+  private applyMuteStateToPost(post: VideoPost | ImageVideoPost): void {
+    const player = post.getPlayer();
+    if (player) {
+      // Apply mute state immediately, even if video isn't playing
+      // This ensures the mute state is correct when user toggles it
+      player.setMuted(this.globalMuteState);
+    }
+    // Update overlay mute button appearance
+    post.updateMuteOverlayButton();
+  }
+
+  /**
    * Apply global mute state to all existing video players
    */
   private applyGlobalMuteState(): void {
     for (const post of this.posts.values()) {
       if (post instanceof VideoPost) {
-        const player = post.getPlayer();
-        if (player) {
-          // Apply mute state immediately, even if video isn't playing
-          // This ensures the mute state is correct when user toggles it
-          player.setMuted(this.globalMuteState);
-        }
-        // Update overlay mute button appearance
-        post.updateMuteOverlayButton();
+        this.applyMuteStateToPost(post);
       } else if (post instanceof ImageVideoPost) {
-        const player = post.getPlayer();
-        if (player) {
-          // Apply mute state immediately, even if video isn't playing
-          // This ensures the mute state is correct when user toggles it
-          player.setMuted(this.globalMuteState);
-        }
-        // Update overlay mute button appearance
-        post.updateMuteOverlayButton();
+        this.applyMuteStateToPost(post);
       }
       // ImagePost videos are always muted (no audio playback), no need to handle here
     }
@@ -426,9 +431,7 @@ export class FeedContainer {
    */
   private updateAllMuteButtons(): void {
     for (const post of this.posts.values()) {
-      if (post instanceof VideoPost) {
-        post.updateMuteOverlayButton();
-      } else if (post instanceof ImageVideoPost) {
+      if (post instanceof VideoPost || post instanceof ImageVideoPost) {
         post.updateMuteOverlayButton();
       }
       // ImagePost videos are always muted (no audio playback), no mute button to update
@@ -1430,25 +1433,24 @@ export class FeedContainer {
     more.style.cursor = 'pointer';
     more.style.width = '100%';
     more.style.marginTop = '4px';
-    more.addEventListener('click', () => {
-      void (async () => {
-        params.onPageIncrement();
-        const next = await this.api.searchMarkerTags(params.trimmedText, params.pageSize, params.signal);
-        if (params.signal.aborted) return;
-        this.renderTagsSuggestions(
-          params.container,
-          next,
-          params.savedSelect,
-          params.updateSearchBarDisplay,
-          params.apply,
-          (text) => { params.refreshSuggestions(text, 1, false).catch(() => {}); },
-          params.trimmedText
-        );
-        if (next.length < params.pageSize) {
-          more.remove();
-        }
-      })();
-    });
+    const handleMoreClick = async (): Promise<void> => {
+      params.onPageIncrement();
+      const next = await this.api.searchMarkerTags(params.trimmedText, params.pageSize, params.signal);
+      if (params.signal.aborted) return;
+      this.renderTagsSuggestions(
+        params.container,
+        next,
+        params.savedSelect,
+        params.updateSearchBarDisplay,
+        params.apply,
+        (text) => { params.refreshSuggestions(text, 1, false).catch(() => {}); },
+        params.trimmedText
+      );
+      if (next.length < params.pageSize) {
+        more.remove();
+      }
+    };
+    more.addEventListener('click', () => { void handleMoreClick(); });
     return more;
   }
 
@@ -3188,8 +3190,8 @@ export class FeedContainer {
         favoritesManager: this.favoritesManager,
         api: this.api,
         visibilityManager: this.visibilityManager,
-        onPerformerChipClick: (performerId, performerName) => this.handlePerformerChipClick(performerId, performerName),
-        onTagChipClick: (tagId, tagName) => this.handleTagChipClick(tagId, tagName),
+        onPerformerChipClick: (performerId, performerName) => { void this.handlePerformerChipClick(performerId, performerName); },
+        onTagChipClick: (tagId, tagName) => { void this.handleTagChipClick(tagId, tagName); },
         onCancelRequests: () => this.cancelAllPendingRequests(),
         onMuteToggle: (isMuted: boolean) => this.setGlobalMuteState(isMuted),
         getGlobalMuteState: () => this.getGlobalMuteState(),
@@ -3242,6 +3244,43 @@ export class FeedContainer {
   }
 
   /**
+   * Get MP4 video URL for image post
+   */
+  private getMp4VideoUrlForImage(image: Image, baseUrl: string): string | undefined {
+    if (this.useHDMode) {
+      // HD mode: use full video file (paths.image)
+      if (image.paths?.image) {
+        const url = image.paths.image.startsWith('http') 
+          ? image.paths.image 
+          : `${baseUrl}${image.paths.image}`;
+        if (isValidMediaUrl(url)) {
+          return url;
+        }
+      }
+    } else {
+      // Non-HD mode: use preview (WebM preview)
+      if (image.paths?.preview) {
+        const url = image.paths.preview.startsWith('http') 
+          ? image.paths.preview 
+          : `${baseUrl}${image.paths.preview}`;
+        if (isValidMediaUrl(url)) {
+          return url;
+        }
+      }
+      // Fallback to full video if preview unavailable
+      if (image.paths?.image) {
+        const url = image.paths.image.startsWith('http') 
+          ? image.paths.image 
+          : `${baseUrl}${image.paths.image}`;
+        if (isValidMediaUrl(url)) {
+          return url;
+        }
+      }
+    }
+    return undefined;
+  }
+
+  /**
    * Get image URL for post
    * For MP4/M4V images: returns preview (non-HD) or full video (HD) based on useHDMode
    * For regular images: uses centralized utility
@@ -3256,36 +3295,9 @@ export class FeedContainer {
     const isMp4Video = isVideo && videoFile?.path && isMp4File(videoFile.path);
     
     if (isMp4Video) {
-      // For MP4 videos, select URL based on HD mode (mirroring getVideoUrlForPost pattern)
-      if (this.useHDMode) {
-        // HD mode: use full video file (paths.image)
-        if (image.paths?.image) {
-          const url = image.paths.image.startsWith('http') 
-            ? image.paths.image 
-            : `${baseUrl}${image.paths.image}`;
-          if (isValidMediaUrl(url)) {
-            return url;
-          }
-        }
-      } else {
-        // Non-HD mode: use preview (WebM preview)
-        if (image.paths?.preview) {
-          const url = image.paths.preview.startsWith('http') 
-            ? image.paths.preview 
-            : `${baseUrl}${image.paths.preview}`;
-          if (isValidMediaUrl(url)) {
-            return url;
-          }
-        }
-        // Fallback to full video if preview unavailable
-        if (image.paths?.image) {
-          const url = image.paths.image.startsWith('http') 
-            ? image.paths.image 
-            : `${baseUrl}${image.paths.image}`;
-          if (isValidMediaUrl(url)) {
-            return url;
-          }
-        }
+      const mp4Url = this.getMp4VideoUrlForImage(image, baseUrl);
+      if (mp4Url) {
+        return mp4Url;
       }
     }
     
@@ -3315,8 +3327,8 @@ export class FeedContainer {
         favoritesManager: this.favoritesManager,
         api: this.api,
         visibilityManager: this.visibilityManager,
-        onPerformerChipClick: (performerId, performerName) => this.handlePerformerChipClick(performerId, performerName),
-        onTagChipClick: (tagId, tagName) => this.handleTagChipClick(tagId, tagName),
+        onPerformerChipClick: (performerId, performerName) => { void this.handlePerformerChipClick(performerId, performerName); },
+        onTagChipClick: (tagId, tagName) => { void this.handleTagChipClick(tagId, tagName); },
         onLoadFullVideo: undefined,
         ratingSystemConfig: this.ratingSystemConfig
       }
@@ -3682,7 +3694,7 @@ export class FeedContainer {
     imageCount: number;
     shortFormCount: number;
   }> {
-    const { currentFilters, limits, offset, signal, loadingFlags, append } = options;
+    const { currentFilters, limits, signal, loadingFlags, append } = options;
     const { limit, markerLimit, shortFormLimit } = limits;
     const { shouldLoadMarkers, shouldLoadImages, shouldLoadShortForm } = loadingFlags;
     
@@ -3735,7 +3747,7 @@ export class FeedContainer {
     // To get the total offset, we need: (page-1)*24 + unfilteredOffsetConsumed
     if (shouldLoadShortForm && 'unfilteredOffsetConsumed' in shortFormResult) {
       const scenesPerPage = 24;
-      const unfilteredOffsetConsumed = shortFormResult.unfilteredOffsetConsumed as number;
+      const unfilteredOffsetConsumed = typeof shortFormResult.unfilteredOffsetConsumed === 'number' ? shortFormResult.unfilteredOffsetConsumed : 0;
       if (append) {
         // Calculate which page we fetched
         const page = Math.floor(this.shortFormUnfilteredOffset / scenesPerPage) + 1;
@@ -4787,8 +4799,8 @@ export class FeedContainer {
         favoritesManager: this.favoritesManager,
         api: this.api,
         visibilityManager: this.visibilityManager,
-        onPerformerChipClick: (performerId, performerName) => this.handlePerformerChipClick(performerId, performerName),
-        onTagChipClick: (tagId, tagName) => this.handleTagChipClick(tagId, tagName),
+        onPerformerChipClick: (performerId, performerName) => { void this.handlePerformerChipClick(performerId, performerName); },
+        onTagChipClick: (tagId, tagName) => { void this.handleTagChipClick(tagId, tagName); },
         useShuffleMode: this.shuffleMode > 0,
         onCancelRequests: () => this.cancelAllPendingRequests(),
         onMuteToggle: (isMuted: boolean) => this.setGlobalMuteState(isMuted),
