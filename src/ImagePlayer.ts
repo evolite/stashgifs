@@ -128,21 +128,15 @@ export class ImagePlayer {
     };
 
     // Handle video load events - try to play when ready
-    const handleLoadedData = () => {
+    const handleVideoReady = () => {
       this.isLoaded = true;
       this.hideLoadingIndicator();
       tryPlay();
     };
 
-    const handleCanPlay = () => {
-      this.isLoaded = true;
-      this.hideLoadingIndicator();
-      tryPlay();
-    };
-
-    this.videoElement.addEventListener('loadeddata', handleLoadedData, { once: true });
-    this.videoElement.addEventListener('canplay', handleCanPlay, { once: true });
-    this.videoElement.addEventListener('canplaythrough', handleCanPlay, { once: true });
+    this.videoElement.addEventListener('loadeddata', handleVideoReady, { once: true });
+    this.videoElement.addEventListener('canplay', handleVideoReady, { once: true });
+    this.videoElement.addEventListener('canplaythrough', handleVideoReady, { once: true });
 
     // Images should always be muted - no audio playback
     // No need to check for audio or create mute button
@@ -178,7 +172,7 @@ export class ImagePlayer {
     const observer = new IntersectionObserver(
       (entries) => {
         for (const entry of entries) {
-          if (entry.isIntersecting && this.videoElement && this.videoElement.paused) {
+          if (entry.isIntersecting && this.videoElement?.paused) {
             // Video is visible and paused, try to play
             this.videoElement.play().catch((error) => {
               console.log('ImagePlayer: Play failed on visibility', error);
@@ -202,7 +196,7 @@ export class ImagePlayer {
     if (!this.videoElement) return;
 
     const tryPlayOnInteraction = () => {
-      if (this.videoElement && this.videoElement.paused) {
+      if (this.videoElement?.paused) {
         this.videoElement.play().catch((error) => {
           console.log('ImagePlayer: Play failed on interaction', error);
         });
@@ -245,13 +239,13 @@ export class ImagePlayer {
   /**
    * Show error message when video fails to load
    */
-  private showVideoError(customMessage?: string, customDetails?: string): void {
+  private showVideoError(customMessage: string = 'Failed to load video', customDetails: string = 'The video failed to load. This may be due to network issues, CORS restrictions, or file corruption.'): void {
     if (this.errorMessage || !this.wrapper || this.isGif) {
       return;
     }
 
-    const message = customMessage || 'Failed to load video';
-    const details = customDetails || 'The video failed to load. This may be due to network issues, CORS restrictions, or file corruption.';
+    const message = customMessage;
+    const details = customDetails;
 
     // Create error message element
     this.errorMessage = document.createElement('div');

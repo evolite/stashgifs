@@ -521,6 +521,7 @@ export interface ImageUpdateInput {
   id: string;
   tag_ids?: string[];
   o_counter?: number;
+  rating100?: number;
 }
 
 /**

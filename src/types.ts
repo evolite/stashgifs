@@ -109,7 +109,6 @@ export interface FeedSettings {
   shortFormMaxDuration?: number; // Maximum duration in seconds for short-form content, default: 120
   shortFormOnly?: boolean; // When true, only load short-form content and skip regular markers
   snapToCards?: boolean; // When true, scroll/swipe snaps to center next/previous card
-  treatMp4AsVideo?: boolean; // When true, .mp4/.m4v files are treated as VideoPost with controls. When false, treated as ImagePost with preview WebM
 }
 
 export interface VideoPostData {
@@ -152,6 +151,8 @@ export interface Image {
     path?: string;
     video_codec?: string;
     duration?: number;
+    width?: number;
+    height?: number;
   }>;
 }
 
@@ -164,3 +165,12 @@ export interface ImagePostData {
   aspectRatio?: number; // width/height
 }
 
+
+/**
+ * ImageVideoPostData - Data structure for image videos (MP4/M4V images treated as videos)
+ */
+export interface ImageVideoPostData {
+  image: Image;
+  videoUrl?: string;
+  aspectRatio?: number; // width/height
+}

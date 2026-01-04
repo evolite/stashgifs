@@ -471,7 +471,7 @@ export abstract class BasePost {
    * Convert ISO 3166-1 alpha-2 country code to flag emoji
    */
   private getCountryFlag(countryCode: string): string {
-    if (!countryCode || countryCode.length !== 2) {
+    if (!countryCode?.length || countryCode.length !== 2) {
       return '';
     }
     
@@ -481,11 +481,11 @@ export abstract class BasePost {
     const base = 0x1F1E6;
     const offset = 0x41; // 'A'
     
-    const firstChar = code.charCodeAt(0);
-    const secondChar = code.charCodeAt(1);
+    const firstChar = code.codePointAt(0);
+    const secondChar = code.codePointAt(1);
     
     // Validate that both characters are letters
-    if (firstChar < 0x41 || firstChar > 0x5A || secondChar < 0x41 || secondChar > 0x5A) {
+    if (firstChar === undefined || secondChar === undefined || firstChar < 0x41 || firstChar > 0x5A || secondChar < 0x41 || secondChar > 0x5A) {
       return '';
     }
     

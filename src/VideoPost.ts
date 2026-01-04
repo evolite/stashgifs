@@ -10,7 +10,7 @@ import { StashAPI } from './StashAPI.js';
 import { VisibilityManager } from './VisibilityManager.js';
 import { calculateAspectRatio, getAspectRatioClass, isValidMediaUrl, showToast, throttle, toAbsoluteUrl, isMobileDevice } from './utils.js';
 import { posterPreloader } from './PosterPreloader.js';
-import { HQ_SVG_OUTLINE, HQ_SVG_FILLED, EXTERNAL_LINK_SVG, MARKER_SVG, STAR_SVG, STAR_SVG_OUTLINE, MARKER_BADGE_SVG, SCENE_BADGE_SVG, VOLUME_MUTED_SVG, VOLUME_UNMUTED_SVG } from './icons.js';
+import { HQ_SVG_OUTLINE, HQ_SVG_FILLED, EXTERNAL_LINK_SVG, MARKER_SVG, STAR_SVG, STAR_SVG_OUTLINE, MARKER_BADGE_SVG, SCENE_BADGE_SVG, IMAGE_BADGE_SVG, VOLUME_MUTED_SVG, VOLUME_UNMUTED_SVG } from './icons.js';
 import { BasePost } from './BasePost.js';
 import { setupTouchHandlers, preventClickAfterTouch } from './utils/touchHandlers.js';
 
@@ -341,14 +341,9 @@ export class VideoPost extends BasePost {
       btn.setAttribute('aria-label', 'Mute');
     }
     
-    // Gray out the button when not in HQ mode
-    if (this.isHQMode) {
-      btn.style.opacity = '1';
-      btn.style.pointerEvents = 'auto';
-    } else {
-      btn.style.opacity = '0.4';
-      btn.style.pointerEvents = 'none';
-    }
+    // Always keep mute button active (marker previews can have audio)
+    btn.style.opacity = '1';
+    btn.style.pointerEvents = 'auto';
   }
 
   /**
@@ -358,8 +353,34 @@ export class VideoPost extends BasePost {
    */
   private getPosterUrl(): string | undefined {
     const m = this.data.marker;
-    // Skip synthetic markers and short form markers - they don't have screenshots in Stash
     const markerId = m?.id;
+    
+    // Handle image-based markers (marker.id starts with 'image-')
+    if (markerId && typeof markerId === 'string' && markerId.startsWith('image-')) {
+      // For image-based markers, use image thumbnail or preview as fallback
+      // Note: scene.paths is actually Image.paths for synthetic markers, which has thumbnail/image properties
+      const imagePaths = m?.scene?.paths as { thumbnail?: string; preview?: string; image?: string } | undefined;
+      const thumbnail = imagePaths?.thumbnail;
+      if (thumbnail) {
+        const baseUrl = toAbsoluteUrl(thumbnail);
+        if (baseUrl) {
+          const separator = baseUrl.includes('?') ? '&' : '?';
+          return `${baseUrl}${separator}t=${Date.now()}`;
+        }
+      }
+      // Fallback to preview if thumbnail unavailable
+      const preview = imagePaths?.preview;
+      if (preview) {
+        const baseUrl = toAbsoluteUrl(preview);
+        if (baseUrl) {
+          const separator = baseUrl.includes('?') ? '&' : '?';
+          return `${baseUrl}${separator}t=${Date.now()}`;
+        }
+      }
+      return undefined;
+    }
+    
+    // Skip synthetic markers and short form markers - they don't have screenshots in Stash
     if (markerId && typeof markerId === 'string' && (markerId.startsWith('synthetic-') || markerId.startsWith('shortform-'))) {
       // For synthetic/short form markers, only use scene screenshot
       const p = m?.scene?.paths?.screenshot;
@@ -562,6 +583,14 @@ export class VideoPost extends BasePost {
    * Create an icon badge describing the content type
    */
   private createContentBadgeIcon(): HTMLElement | null {
+    // Check if this is an image-based marker (marker.id starts with 'image-')
+    const markerId = this.data.marker.id;
+    const isImageMarker = typeof markerId === 'string' && markerId.startsWith('image-');
+    
+    if (isImageMarker) {
+      return this.buildBadgeIcon(IMAGE_BADGE_SVG, 'Image');
+    }
+    
     const isShortForm = this.isShortFormContent();
     const isSynthetic = this.isSyntheticMarker();
 
@@ -974,7 +1003,7 @@ export class VideoPost extends BasePost {
   private updateHQButton(button: HTMLElement): void {
     if (this.isHQMode) {
       button.innerHTML = HQ_SVG_FILLED;
-      button.style.color = '#4CAF50';
+      button.style.color = '#F5C518';
       button.title = 'HD video loaded';
     } else {
       button.innerHTML = HQ_SVG_OUTLINE;
@@ -2036,8 +2065,28 @@ export class VideoPost extends BasePost {
       throw new Error('API not available');
     }
 
-    // Get full scene video URL
-    const sceneVideoUrl = this.api.getVideoUrl(this.data.marker.scene);
+    // Detect if this is an image-based marker (marker.id starts with 'image-')
+    const markerId = this.data.marker.id;
+    const isImageMarker = typeof markerId === 'string' && markerId.startsWith('image-');
+    
+    let sceneVideoUrl: string | undefined;
+    
+    if (isImageMarker) {
+      // For image-based markers, use paths.image (full MP4/M4V file)
+      // Note: scene.paths is actually Image.paths for synthetic markers, which has image property
+      const imagePaths = this.data.marker.scene?.paths as { image?: string; preview?: string; thumbnail?: string } | undefined;
+      const imagePath = imagePaths?.image;
+      if (!imagePath) {
+        throw new Error('Image video URL not available');
+      }
+      sceneVideoUrl = imagePath.startsWith('http') 
+        ? imagePath 
+        : toAbsoluteUrl(imagePath);
+    } else {
+      // For regular markers, use getVideoUrl (full scene video)
+      sceneVideoUrl = this.api.getVideoUrl(this.data.marker.scene);
+    }
+    
     if (!sceneVideoUrl || !isValidMediaUrl(sceneVideoUrl)) {
       throw new Error('Scene video URL not available');
     }
@@ -2143,8 +2192,12 @@ export class VideoPost extends BasePost {
         ? (startTime ?? this.data.startTime ?? this.data.marker.seconds)
         : undefined;
       
+      // Respect global mute state when creating player
+      // Marker previews can have audio, so respect global mute state
+      const shouldBeMuted = this.getGlobalMuteState ? this.getGlobalMuteState() : true;
+      
       this.player = new NativeVideoPlayer(playerContainer, videoUrl, {
-        muted: true,
+        muted: shouldBeMuted,
         autoplay: false,
         startTime: finalStartTime,
         endTime: endTime ?? this.data.endTime ?? this.data.marker.end_seconds,

@@ -3,10 +3,11 @@
  * Main application container managing the feed
  */
 
-import { SceneMarker, Scene, FilterOptions, FeedSettings, VideoPostData, ImagePostData, Image } from './types.js';
+import { SceneMarker, Scene, FilterOptions, FeedSettings, VideoPostData, ImagePostData, ImageVideoPostData, Image } from './types.js';
 import { StashAPI, generateRandomSortSeed } from './StashAPI.js';
 import { VideoPost } from './VideoPost.js';
 import { ImagePost } from './ImagePost.js';
+import { ImageVideoPost } from './ImageVideoPost.js';
 import { NativeVideoPlayer } from './NativeVideoPlayer.js';
 import { ImagePlayer } from './ImagePlayer.js';
 import { VisibilityManager } from './VisibilityManager.js';
@@ -16,7 +17,7 @@ import { AudioManager, AudioPriority } from './AudioManager.js';
 import { debounce, isValidMediaUrl, detectDeviceCapabilities, DeviceCapabilities, isStandaloneNavigator, isMobileDevice, getNetworkInfo, isSlowNetwork, isCellularConnection, detectVideoFromVisualFiles, isMp4File, getImageUrlForDisplay } from './utils.js';
 import { posterPreloader } from './PosterPreloader.js';
 import { Image as GraphQLImage } from './graphql/types.js';
-import { HQ_SVG_OUTLINE, RANDOM_SVG, SETTINGS_SVG, SHUFFLE_CHECK_SVG } from './icons.js';
+import { HQ_SVG_OUTLINE, HQ_SVG_FILLED, RANDOM_SVG, SETTINGS_SVG, SHUFFLE_CHECK_SVG } from './icons.js';
 
 const DEFAULT_SETTINGS: FeedSettings = {
   autoPlay: true, // Enable autoplay for markers
@@ -70,7 +71,7 @@ export class FeedContainer {
   private readonly api: StashAPI;
   private visibilityManager: VisibilityManager;
   private favoritesManager: FavoritesManager;
-  private posts: Map<string, VideoPost | ImagePost>;
+  private posts: Map<string, VideoPost | ImagePost | ImageVideoPost>;
   private postOrder: string[];
   private images: Image[] = [];
   private settings: FeedSettings;
@@ -400,6 +401,15 @@ export class FeedContainer {
         }
         // Update overlay mute button appearance
         post.updateMuteOverlayButton();
+      } else if (post instanceof ImageVideoPost) {
+        const player = post.getPlayer();
+        if (player) {
+          // Apply mute state immediately, even if video isn't playing
+          // This ensures the mute state is correct when user toggles it
+          player.setMuted(this.globalMuteState);
+        }
+        // Update overlay mute button appearance
+        post.updateMuteOverlayButton();
       }
       // ImagePost videos are always muted (no audio playback), no need to handle here
     }
@@ -417,6 +427,8 @@ export class FeedContainer {
   private updateAllMuteButtons(): void {
     for (const post of this.posts.values()) {
       if (post instanceof VideoPost) {
+        post.updateMuteOverlayButton();
+      } else if (post instanceof ImageVideoPost) {
         post.updateMuteOverlayButton();
       }
       // ImagePost videos are always muted (no audio playback), no mute button to update
@@ -751,15 +763,15 @@ export class FeedContainer {
     // HD toggle button
     const hdBtn = document.createElement('button');
     hdBtn.type = 'button';
-    hdBtn.innerHTML = HQ_SVG_OUTLINE;
+    hdBtn.innerHTML = this.useHDMode ? HQ_SVG_FILLED : HQ_SVG_OUTLINE;
     hdBtn.title = this.useHDMode ? 'HD Video: On' : 'HD Video: Off';
     hdBtn.style.padding = '10px';
     hdBtn.style.width = '44px';
     hdBtn.style.height = '44px';
     hdBtn.style.borderRadius = '10px';
-    hdBtn.style.border = this.useHDMode ? '1px solid rgba(76, 175, 80, 0.55)' : '1px solid rgba(255,255,255,0.06)';
-    hdBtn.style.background = this.useHDMode ? 'rgba(76, 175, 80, 0.25)' : 'rgba(28, 28, 30, 0.6)';
-    hdBtn.style.color = this.useHDMode ? '#C8E6C9' : 'rgba(255,255,255,0.4)';
+    hdBtn.style.border = this.useHDMode ? '1px solid rgba(245, 197, 24, 0.55)' : '1px solid rgba(255,255,255,0.06)';
+    hdBtn.style.background = this.useHDMode ? 'rgba(245, 197, 24, 0.25)' : 'rgba(28, 28, 30, 0.6)';
+    hdBtn.style.color = this.useHDMode ? '#F5C518' : 'rgba(255,255,255,0.4)';
     hdBtn.style.cursor = 'pointer';
     hdBtn.style.display = 'inline-flex';
     hdBtn.style.alignItems = 'center';
@@ -787,9 +799,10 @@ export class FeedContainer {
     setRandomBtnState();
 
     const updateButtonStates = () => {
-      hdBtn.style.background = this.useHDMode ? 'rgba(76, 175, 80, 0.25)' : 'rgba(28, 28, 30, 0.6)';
-      hdBtn.style.border = this.useHDMode ? '1px solid rgba(76, 175, 80, 0.55)' : '1px solid rgba(255,255,255,0.06)';
-      hdBtn.style.color = this.useHDMode ? '#C8E6C9' : 'rgba(255,255,255,0.4)';
+      hdBtn.innerHTML = this.useHDMode ? HQ_SVG_FILLED : HQ_SVG_OUTLINE;
+      hdBtn.style.background = this.useHDMode ? 'rgba(245, 197, 24, 0.25)' : 'rgba(28, 28, 30, 0.6)';
+      hdBtn.style.border = this.useHDMode ? '1px solid rgba(245, 197, 24, 0.55)' : '1px solid rgba(255,255,255,0.06)';
+      hdBtn.style.color = this.useHDMode ? '#F5C518' : 'rgba(255,255,255,0.4)';
       hdBtn.title = this.useHDMode ? 'HD Video: On' : 'HD Video: Off';
       setRandomBtnState();
     };
@@ -799,7 +812,7 @@ export class FeedContainer {
       updateButtonStates();
     });
 
-    randomBtn.addEventListener('click', async () => {
+    randomBtn.addEventListener('click', () => {
       const willBeOn = this.shuffleMode === 0;
       if (willBeOn && !this.useHDMode) {
         onHDToggleClick();
@@ -813,7 +826,7 @@ export class FeedContainer {
       this.currentPage = 1;
       this.hasMore = true;
       this.isLoading = false;
-      await this.loadVideos(this.currentFilters, false, undefined, true);
+      void this.loadVideos(this.currentFilters, false, undefined, true);
     });
 
     playbackSection.appendChild(hdBtn);
@@ -1417,22 +1430,24 @@ export class FeedContainer {
     more.style.cursor = 'pointer';
     more.style.width = '100%';
     more.style.marginTop = '4px';
-    more.addEventListener('click', async () => {
-      params.onPageIncrement();
-      const next = await this.api.searchMarkerTags(params.trimmedText, params.pageSize, params.signal);
-      if (params.signal.aborted) return;
-      this.renderTagsSuggestions(
-        params.container,
-        next,
-        params.savedSelect,
-        params.updateSearchBarDisplay,
-        params.apply,
-        (text) => { params.refreshSuggestions(text, 1, false).catch(() => {}); },
-        params.trimmedText
-      );
-      if (next.length < params.pageSize) {
-        more.remove();
-      }
+    more.addEventListener('click', () => {
+      void (async () => {
+        params.onPageIncrement();
+        const next = await this.api.searchMarkerTags(params.trimmedText, params.pageSize, params.signal);
+        if (params.signal.aborted) return;
+        this.renderTagsSuggestions(
+          params.container,
+          next,
+          params.savedSelect,
+          params.updateSearchBarDisplay,
+          params.apply,
+          (text) => { params.refreshSuggestions(text, 1, false).catch(() => {}); },
+          params.trimmedText
+        );
+        if (next.length < params.pageSize) {
+          more.remove();
+        }
+      })();
     });
     return more;
   }
@@ -1879,8 +1894,7 @@ export class FeedContainer {
           newSettings.shortFormInHDMode !== undefined ||
           newSettings.shortFormInNonHDMode !== undefined ||
           newSettings.shortFormMaxDuration !== undefined ||
-          newSettings.shortFormOnly !== undefined ||
-          newSettings.treatMp4AsVideo !== undefined
+          newSettings.shortFormOnly !== undefined
         ) {
           this.loadVideos(this.currentFilters, false, undefined, true).catch(e => {
             console.error('Failed to reload feed after settings change', e);
@@ -3096,8 +3110,8 @@ export class FeedContainer {
     // Use centralized utility to detect video
     const { isVideo, videoFile } = detectVideoFromVisualFiles(image.visualFiles);
     
-    // Check if this is a .m4v or .mp4 file and if treatMp4AsVideo setting is enabled
-    const isMp4Video = isVideo && videoFile?.path && isMp4File(videoFile.path) && (this.settings.treatMp4AsVideo !== false);
+    // Check if this is a .m4v or .mp4 file (always treat as video, behavior controlled by HD mode)
+    const isMp4Video = isVideo && videoFile?.path && isMp4File(videoFile.path);
     
     if (isMp4Video) {
       return this.createVideoPostFromImage(image, signal);
@@ -3133,22 +3147,59 @@ export class FeedContainer {
       return null;
     }
 
-    // Create synthetic SceneMarker from Image
-    const marker = this.createSyntheticMarkerFromImage(image);
-    
     const postContainer = this.createPostContainer();
-    const post = this.createVideoPostInstance(postContainer, marker, videoUrl, undefined);
+    const post = this.createImageVideoPostInstance(postContainer, image, videoUrl);
     
-    this.posts.set(marker.id, post);
-    this.postOrder.push(marker.id);
-    this.visibilityManager.observePost(postContainer, marker.id);
+    this.posts.set(image.id, post);
+    this.postOrder.push(image.id);
+    this.visibilityManager.observePost(postContainer, image.id);
 
     if (signal?.aborted) {
       return null;
     }
 
-    this.setupLazyLoading(postContainer, post, marker, videoUrl, signal);
+    // Set HQ mode if feed-level HD is enabled (mirroring regular marker behavior)
+    if (this.useHDMode) {
+      post.setHQMode(true);
+    }
+
+    this.setupLazyLoadingForImageVideo(postContainer, post, image, videoUrl, signal);
     return postContainer;
+  }
+
+  /**
+   * Create ImageVideoPost instance
+   */
+  private createImageVideoPostInstance(
+    postContainer: HTMLElement,
+    image: Image,
+    videoUrl: string
+  ): ImageVideoPost {
+    const postData: ImageVideoPostData = {
+      image,
+      videoUrl,
+      aspectRatio: image.aspectRatio ?? (image.width && image.height ? image.width / image.height : undefined),
+    };
+
+    const post = new ImageVideoPost(
+      postContainer,
+      postData,
+      {
+        favoritesManager: this.favoritesManager,
+        api: this.api,
+        visibilityManager: this.visibilityManager,
+        onPerformerChipClick: (performerId, performerName) => this.handlePerformerChipClick(performerId, performerName),
+        onTagChipClick: (tagId, tagName) => this.handleTagChipClick(tagId, tagName),
+        onCancelRequests: () => this.cancelAllPendingRequests(),
+        onMuteToggle: (isMuted: boolean) => this.setGlobalMuteState(isMuted),
+        getGlobalMuteState: () => this.getGlobalMuteState(),
+        ratingSystemConfig: this.ratingSystemConfig,
+      }
+    );
+    
+    post.initialize();
+    
+    return post;
   }
 
   /**
@@ -3173,6 +3224,8 @@ export class FeedContainer {
         path: vf.path || '',
         duration: vf.duration,
         video_codec: vf.video_codec,
+        width: vf.width ?? image.width,
+        height: vf.height ?? image.height,
       })),
       paths: image.paths,
     };
@@ -3189,10 +3242,55 @@ export class FeedContainer {
   }
 
   /**
-   * Get image URL for post using centralized utility
+   * Get image URL for post
+   * For MP4/M4V images: returns preview (non-HD) or full video (HD) based on useHDMode
+   * For regular images: uses centralized utility
    */
   private getImageUrlForPost(image: Image): string | undefined {
-    return getImageUrlForDisplay(image, this.settings.treatMp4AsVideo !== false);
+    const baseUrl = globalThis.location.origin;
+    
+    // Detect if this is a video from visualFiles
+    const { isVideo, videoFile } = detectVideoFromVisualFiles(image.visualFiles);
+    
+    // Check if this is a .m4v or .mp4 file (always treat as video, behavior controlled by HD mode)
+    const isMp4Video = isVideo && videoFile?.path && isMp4File(videoFile.path);
+    
+    if (isMp4Video) {
+      // For MP4 videos, select URL based on HD mode (mirroring getVideoUrlForPost pattern)
+      if (this.useHDMode) {
+        // HD mode: use full video file (paths.image)
+        if (image.paths?.image) {
+          const url = image.paths.image.startsWith('http') 
+            ? image.paths.image 
+            : `${baseUrl}${image.paths.image}`;
+          if (isValidMediaUrl(url)) {
+            return url;
+          }
+        }
+      } else {
+        // Non-HD mode: use preview (WebM preview)
+        if (image.paths?.preview) {
+          const url = image.paths.preview.startsWith('http') 
+            ? image.paths.preview 
+            : `${baseUrl}${image.paths.preview}`;
+          if (isValidMediaUrl(url)) {
+            return url;
+          }
+        }
+        // Fallback to full video if preview unavailable
+        if (image.paths?.image) {
+          const url = image.paths.image.startsWith('http') 
+            ? image.paths.image 
+            : `${baseUrl}${image.paths.image}`;
+          if (isValidMediaUrl(url)) {
+            return url;
+          }
+        }
+      }
+    }
+    
+    // For regular images, use centralized utility (always treat MP4 as video)
+    return getImageUrlForDisplay(image, true);
   }
 
   /**
@@ -3213,11 +3311,15 @@ export class FeedContainer {
     const post = new ImagePost(
       postContainer,
       postData,
-      this.favoritesManager,
-      this.api,
-      this.visibilityManager,
-      (performerId, performerName) => this.handlePerformerChipClick(performerId, performerName),
-      (tagId, tagName) => this.handleTagChipClick(tagId, tagName)
+      {
+        favoritesManager: this.favoritesManager,
+        api: this.api,
+        visibilityManager: this.visibilityManager,
+        onPerformerChipClick: (performerId, performerName) => this.handlePerformerChipClick(performerId, performerName),
+        onTagChipClick: (tagId, tagName) => this.handleTagChipClick(tagId, tagName),
+        onLoadFullVideo: undefined,
+        ratingSystemConfig: this.ratingSystemConfig
+      }
     );
     
     post.initialize();
@@ -3252,6 +3354,79 @@ export class FeedContainer {
 
     observer.observe(postContainer);
     this.loadObservers.set(image.id, observer);
+  }
+
+  /**
+   * Setup lazy loading for image video post
+   */
+  private setupLazyLoadingForImageVideo(
+    postContainer: HTMLElement,
+    post: ImageVideoPost,
+    image: Image,
+    videoUrl: string,
+    signal?: AbortSignal
+  ): void {
+    const lazyLoadDistance = this.getLazyLoadDistance();
+    const rootMargin = this.isMobileDevice 
+      ? lazyLoadDistance 
+      : this.getDesktopRootMargin(lazyLoadDistance);
+    
+    this.createLazyLoadObserverForImageVideo(postContainer, post, image, rootMargin, signal);
+  }
+
+  /**
+   * Create and setup intersection observer for lazy loading image videos
+   */
+  private createLazyLoadObserverForImageVideo(
+    postContainer: HTMLElement,
+    post: ImageVideoPost,
+    image: Image,
+    rootMargin: string,
+    signal?: AbortSignal
+  ): void {
+    const loadObserver = new IntersectionObserver(
+      (entries) => {
+        for (const entry of entries) {
+          if (entry.isIntersecting) {
+            this.handleImageVideoLoad(entry, post, image, loadObserver, signal);
+          }
+        }
+      },
+      { rootMargin, threshold: 0 }
+    );
+    
+    this.loadObservers.set(image.id, loadObserver);
+    loadObserver.observe(postContainer);
+  }
+
+  /**
+   * Handle image video loading when intersection observer triggers
+   */
+  private handleImageVideoLoad(
+    entry: IntersectionObserverEntry,
+    post: ImageVideoPost,
+    image: Image,
+    loadObserver: IntersectionObserver,
+    signal?: AbortSignal
+  ): void {
+    if (signal?.aborted) {
+      loadObserver.disconnect();
+      this.loadObservers.delete(image.id);
+      return;
+    }
+    
+    const player = post.preload();
+    if (isNativeVideoPlayer(player)) {
+      // Register video players with visibility manager
+      this.visibilityManager.registerPlayer(image.id, player);
+    } else {
+      // Player creation failed - hide the post to avoid showing black screen
+      console.warn('FeedContainer: Player not created, hiding post', { imageId: image.id });
+      post.hidePost();
+    }
+    
+    loadObserver.disconnect();
+    this.loadObservers.delete(image.id);
   }
 
   /**
@@ -4109,6 +4284,8 @@ export class FeedContainer {
         path: vf.path,
         video_codec: vf.video_codec,
         duration: vf.duration,
+        width: (vf as { width?: number }).width,
+        height: (vf as { height?: number }).height,
       })),
     };
   }
@@ -5332,7 +5509,7 @@ export class FeedContainer {
   /**
    * Destroy a post's video player
    */
-  private destroyPostPlayer(post: VideoPost | ImagePost): void {
+  private destroyPostPlayer(post: VideoPost | ImagePost | ImageVideoPost): void {
     const player = post.getPlayer();
     if (!player) {
       return;
@@ -5445,7 +5622,7 @@ export class FeedContainer {
    * Check if a post is near the viewport
    */
   private isPostNearViewport(
-    post: VideoPost | ImagePost,
+    post: VideoPost | ImagePost | ImageVideoPost,
     viewportTop: number,
     viewportBottom: number,
     margin: number
@@ -5477,7 +5654,7 @@ export class FeedContainer {
    * Check if a post is far from the viewport
    */
   private isPostFarFromViewport(
-    post: VideoPost | ImagePost,
+    post: VideoPost | ImagePost | ImageVideoPost,
     viewportTop: number,
     viewportBottom: number,
     unloadDistance: number
@@ -5526,7 +5703,7 @@ export class FeedContainer {
    * Check if a post is immediately visible in the viewport
    */
   private isPostImmediatelyVisible(
-    post: VideoPost | ImagePost,
+    post: VideoPost | ImagePost | ImageVideoPost,
     viewportTop: number,
     viewportBottom: number
   ): boolean {
@@ -5541,7 +5718,7 @@ export class FeedContainer {
   /**
    * Unload a post's video if it's loaded
    */
-  private unloadPostVideo(post: VideoPost | ImagePost): void {
+  private unloadPostVideo(post: VideoPost | ImagePost | ImageVideoPost): void {
     const player = post.getPlayer();
     // Only unload video players (images don't need unloading)
     if (isNativeVideoPlayer(player) && !player.getIsUnloaded()) {

@@ -49,6 +49,8 @@ import {
 } from './graphql/errors.js';
 import { GraphQLClient } from './graphql/client.js';
 
+type Orientation = 'landscape' | 'portrait' | 'square' | null;
+
 interface StashPluginApi {
   GQL: {
     useFindScenesQuery?: (variables: unknown) => { data?: unknown; loading: boolean };
@@ -214,7 +216,7 @@ export class StashAPI {
    */
   private buildCacheKey(prefix: string, term: string, limit: number): string {
     // Escape colons and other special characters that could cause collisions
-    const escapedTerm = term.replace(/:/g, '::').replace(/\|/g, '||');
+    const escapedTerm = term.replaceAll(':', '::').replaceAll('|', '||');
     return `${prefix}|${escapedTerm}|${limit}`;
   }
 
@@ -1166,37 +1168,44 @@ export class StashAPI {
    */
   getVideoUrl(scene: Scene): string | undefined {
     // Try scene streams first
-    if (scene.sceneStreams && scene.sceneStreams.length > 0) {
-      const streamUrl = scene.sceneStreams[0]?.url?.trim();
-      if (streamUrl) {
-        const url = this.buildUrl(streamUrl);
-        if (isValidMediaUrl(url)) {
-          return this.addCacheBusting(url);
-        }
-      }
-    }
+    const streamUrl = this.tryGetUrlFromStreams(scene);
+    if (streamUrl) return streamUrl;
     
     // Try stream path
-    const streamPath = scene.paths?.stream?.trim();
-    if (streamPath) {
-      const url = this.buildUrl(streamPath);
-      if (isValidMediaUrl(url)) {
-        return this.addCacheBusting(url);
-      }
-    }
+    const streamPathUrl = this.tryGetUrlFromPath(scene.paths?.stream);
+    if (streamPathUrl) return streamPathUrl;
     
     // Try file path as last resort
-    if (scene.files && scene.files.length > 0) {
-      const filePath = scene.files[0]?.path?.trim();
-      if (filePath) {
-        const url = this.buildUrl(filePath);
-        if (isValidMediaUrl(url)) {
-          return this.addCacheBusting(url);
-        }
-      }
-    }
+    const filePathUrl = this.tryGetUrlFromFiles(scene.files);
+    if (filePathUrl) return filePathUrl;
     
     return undefined;
+  }
+
+  private tryGetUrlFromStreams(scene: Scene): string | undefined {
+    if (!scene.sceneStreams?.length) return undefined;
+    const streamUrl = scene.sceneStreams[0]?.url?.trim();
+    if (!streamUrl) return undefined;
+    return this.buildAndValidateUrl(streamUrl);
+  }
+
+  private tryGetUrlFromPath(path?: string | null): string | undefined {
+    const trimmedPath = path?.trim();
+    if (!trimmedPath) return undefined;
+    return this.buildAndValidateUrl(trimmedPath);
+  }
+
+  private tryGetUrlFromFiles(files?: Array<{ path?: string | null }>): string | undefined {
+    if (!files?.length) return undefined;
+    const filePath = files[0]?.path?.trim();
+    if (!filePath) return undefined;
+    return this.buildAndValidateUrl(filePath);
+  }
+
+  private buildAndValidateUrl(path: string): string | undefined {
+    const url = this.buildUrl(path);
+    if (!isValidMediaUrl(url)) return undefined;
+    return this.addCacheBusting(url);
   }
 
   /**
@@ -1647,7 +1656,7 @@ export class StashAPI {
       throw new Error('updateSceneRating: sceneId is required and must be a non-empty string');
     }
     if (typeof rating10 !== 'number' || !Number.isFinite(rating10)) {
-      throw new Error('updateSceneRating: rating10 must be a finite number');
+      throw new TypeError('updateSceneRating: rating10 must be a finite number');
     }
     
     const normalized = Number.isFinite(rating10) ? rating10 : 0;
@@ -1677,6 +1686,55 @@ export class StashAPI {
         return 0;
       }
       this.logError('updateSceneRating', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Update image rating
+   * @param imageId Image ID
+   * @param rating10 Rating value (0-10 scale)
+   * @param signal Optional abort signal
+   * @returns Updated rating100 value (0-100 scale)
+   */
+  async updateImageRating(imageId: string, rating10: number, signal?: AbortSignal): Promise<number> {
+    if (this.isAborted(signal)) return 0;
+    
+    // Input validation
+    if (!imageId || typeof imageId !== 'string' || imageId.trim() === '') {
+      throw new Error('updateImageRating: imageId is required and must be a non-empty string');
+    }
+    if (typeof rating10 !== 'number' || !Number.isFinite(rating10)) {
+      throw new TypeError('updateImageRating: rating10 must be a finite number');
+    }
+    
+    const normalized = Number.isFinite(rating10) ? rating10 : 0;
+    const clamped = Math.min(10, Math.max(0, normalized));
+    const rating100 = Math.round(clamped * 10);
+
+    const variables = {
+      input: {
+        id: imageId,
+        rating100,
+      },
+    };
+
+    try {
+      await this.gqlClient.mutate<{ imageUpdate: { id: string } }>({
+        mutation: mutations.IMAGE_UPDATE,
+        variables,
+        signal,
+      });
+      
+      if (this.isAborted(signal)) return 0;
+
+      // ImageUpdateResponse doesn't include rating100, so we return the value we set
+      return rating100;
+    } catch (error) {
+      if (isAbortError(error) || this.isAborted(signal)) {
+        return 0;
+      }
+      this.logError('updateImageRating', error);
       throw error;
     }
   }
@@ -1749,14 +1807,14 @@ export class StashAPI {
       throw new Error('createSceneMarker: sceneId is required and must be a non-empty string');
     }
     if (typeof seconds !== 'number' || !Number.isFinite(seconds) || seconds < 0) {
-      throw new Error('createSceneMarker: seconds must be a non-negative number');
+      throw new TypeError('createSceneMarker: seconds must be a non-negative number');
     }
     if (!primaryTagId || typeof primaryTagId !== 'string' || primaryTagId.trim() === '') {
       throw new Error('createSceneMarker: primaryTagId is required and must be a non-empty string');
     }
     if (endSeconds !== null && endSeconds !== undefined) {
       if (typeof endSeconds !== 'number' || !Number.isFinite(endSeconds) || endSeconds < 0) {
-        throw new Error('createSceneMarker: endSeconds must be a non-negative number or null');
+        throw new TypeError('createSceneMarker: endSeconds must be a non-negative number or null');
       }
       if (endSeconds < seconds) {
         throw new Error('createSceneMarker: endSeconds must be greater than or equal to seconds');
@@ -1864,7 +1922,7 @@ export class StashAPI {
    * @param height Height in pixels
    * @returns 'landscape', 'portrait', or 'square'
    */
-  private getOrientation(width?: number, height?: number): 'landscape' | 'portrait' | 'square' | null {
+  private getOrientation(width?: number, height?: number): Orientation {
     if (!width || !height || width <= 0 || height <= 0) {
       return null;
     }
@@ -1910,7 +1968,7 @@ export class StashAPI {
     
     return images.filter(image => {
       const dimensions = this.getImageDimensions(image);
-      if (!dimensions || !dimensions.width || !dimensions.height) {
+      if (!dimensions?.width || !dimensions?.height) {
         // If orientation cannot be determined, include the image
         return true;
       }
@@ -2002,10 +2060,10 @@ export class StashAPI {
       throw new Error('findImages: fileExtensions must be an array');
     }
     if (typeof limit !== 'number' || !Number.isFinite(limit) || limit < 1) {
-      throw new Error('findImages: limit must be a positive number');
+      throw new TypeError('findImages: limit must be a positive number');
     }
     if (typeof offset !== 'number' || !Number.isFinite(offset) || offset < 0) {
-      throw new Error('findImages: offset must be a non-negative number');
+      throw new TypeError('findImages: offset must be a non-negative number');
     }
 
     // Build regex pattern from file extensions

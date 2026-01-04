@@ -274,8 +274,8 @@ export class SettingsPage {
     const imageFeedInfo = this.createInfoButton(
       'Displays images and looping videos from your Stash library.\n\n' +
       'Treated as Images by Stash (not Videos).\n' +
-      'Shown as looping cards without controls or audio.\n' +
-      'Supports: JPG, PNG, GIF, WebM, MP4, M4V'
+      'Includes video controls and can be upgraded to HD mode with audio support.\n' +
+      'Supports a variety of web video extensions like mp4, m4v, webm, etc.'
     );
     imageSectionTitleContainer.appendChild(imageFeedInfo);
     imageSection.appendChild(imageSectionTitleContainer);
@@ -300,27 +300,6 @@ export class SettingsPage {
     includeImagesContainer.appendChild(includeImagesToggleContainer);
 
     imageSection.appendChild(includeImagesContainer);
-
-    // Treat MP4 as video toggle
-    const treatMp4AsVideoContainer = document.createElement('div');
-    treatMp4AsVideoContainer.style.display = 'flex';
-    treatMp4AsVideoContainer.style.justifyContent = 'space-between';
-    treatMp4AsVideoContainer.style.alignItems = 'center';
-    treatMp4AsVideoContainer.style.marginBottom = '16px';
-
-    const treatMp4AsVideoLabel = document.createElement('span');
-    treatMp4AsVideoLabel.textContent = 'Only load preview images for MP4/M4V';
-    treatMp4AsVideoLabel.style.color = '#FFFFFF';
-    treatMp4AsVideoLabel.style.fontSize = '14px';
-    treatMp4AsVideoContainer.appendChild(treatMp4AsVideoLabel);
-
-    const { container: treatMp4AsVideoToggleContainer, input: treatMp4AsVideoToggle } = this.createToggleSwitch(
-      this.settings.treatMp4AsVideo === false,
-      () => this.saveSettings()
-    );
-    treatMp4AsVideoContainer.appendChild(treatMp4AsVideoToggleContainer);
-
-    imageSection.appendChild(treatMp4AsVideoContainer);
 
     // File types input
     const fileTypesContainer = document.createElement('div');
@@ -617,7 +596,6 @@ export class SettingsPage {
     (this as any).maxDurationInput = maxDurationInput;
     (this as any).includeImagesToggle = includeImagesToggle;
     (this as any).imagesOnlyToggle = imagesOnlyToggle;
-    (this as any).treatMp4AsVideoToggle = treatMp4AsVideoToggle;
     (this as any).shortFormHDToggle = shortFormHDToggle;
     (this as any).shortFormNonHDToggle = shortFormNonHDToggle;
     (this as any).shortFormOnlyToggle = shortFormOnlyToggle;
@@ -655,14 +633,13 @@ export class SettingsPage {
     const maxDurationInput = (this as any).maxDurationInput as HTMLInputElement | undefined;
     const includeImagesToggle = (this as any).includeImagesToggle as HTMLInputElement | undefined;
     const imagesOnlyToggle = (this as any).imagesOnlyToggle as HTMLInputElement | undefined;
-    const treatMp4AsVideoToggle = (this as any).treatMp4AsVideoToggle as HTMLInputElement | undefined;
     const shortFormHDToggle = (this as any).shortFormHDToggle as HTMLInputElement | undefined;
     const shortFormNonHDToggle = (this as any).shortFormNonHDToggle as HTMLInputElement | undefined;
     const shortFormOnlyToggle = (this as any).shortFormOnlyToggle as HTMLInputElement | undefined;
     const snapToCardsToggle = (this as any).snapToCardsToggle as HTMLInputElement | undefined;
 
     if (!fileTypesInput || !maxDurationInput || !includeImagesToggle || !imagesOnlyToggle || 
-        !treatMp4AsVideoToggle || !shortFormHDToggle || !shortFormNonHDToggle || !shortFormOnlyToggle || !snapToCardsToggle) {
+        !shortFormHDToggle || !shortFormNonHDToggle || !shortFormOnlyToggle || !snapToCardsToggle) {
       return; // Settings not fully initialized yet
     }
 
@@ -679,7 +656,6 @@ export class SettingsPage {
       includeImagesInFeed: includeImagesToggle.checked,
       enabledFileTypes: extensions.length > 0 ? extensions : ['.jpg', '.png', '.gif', '.mp4', '.m4v', '.webm'],
       imagesOnly: imagesOnlyToggle.checked,
-      treatMp4AsVideo: !treatMp4AsVideoToggle.checked,
       shortFormInHDMode: shortFormHDToggle.checked,
       shortFormInNonHDMode: shortFormNonHDToggle.checked,
       shortFormMaxDuration: validMaxDuration,

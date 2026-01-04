@@ -1,16 +1,17 @@
 /**
- * Image Post Component
- * Individual image/GIF post card in the feed
+ * Image Video Post Component
+ * MP4/M4V images displayed as videos with preview/HD upgrade capability
  */
 
-import { ImagePostData } from './types.js';
-import { ImagePlayer } from './ImagePlayer.js';
+import { ImageVideoPostData } from './types.js';
+import { NativeVideoPlayer } from './NativeVideoPlayer.js';
 import { FavoritesManager } from './FavoritesManager.js';
 import { StashAPI } from './StashAPI.js';
 import { VisibilityManager } from './VisibilityManager.js';
-import { getAspectRatioClass, showToast, detectVideoFromVisualFiles, getImageUrlForDisplay, throttle } from './utils.js';
-import { IMAGE_BADGE_SVG, EXTERNAL_LINK_SVG, STAR_SVG, STAR_SVG_OUTLINE } from './icons.js';
+import { calculateAspectRatio, getAspectRatioClass, isValidMediaUrl, showToast, toAbsoluteUrl, isMobileDevice, throttle } from './utils.js';
+import { IMAGE_BADGE_SVG, EXTERNAL_LINK_SVG, HQ_SVG_OUTLINE, HQ_SVG_FILLED, VOLUME_MUTED_SVG, VOLUME_UNMUTED_SVG, STAR_SVG, STAR_SVG_OUTLINE } from './icons.js';
 import { BasePost } from './BasePost.js';
+import { setupTouchHandlers, preventClickAfterTouch } from './utils/touchHandlers.js';
 
 // Constants
 const FAVORITE_TAG_NAME = 'StashGifs Favorite';
@@ -20,19 +21,39 @@ const RATING_DIALOG_MAX_WIDTH = 900;
 const RATING_DIALOG_MIN_WIDTH = 160;
 const RESIZE_THROTTLE_MS = 100;
 
-const OCOUNT_DIGIT_WIDTH_PX = 8; // Approximate pixels per digit for 14px font
-const OCOUNT_MIN_WIDTH_PX = 14;
-const OCOUNT_THREE_DIGIT_PADDING = 10;
-const OCOUNT_DEFAULT_PADDING = 8;
+interface ImageVideoPostOptions {
+  onMuteToggle?: (isMuted: boolean) => void;
+  getGlobalMuteState?: () => boolean;
+  favoritesManager?: FavoritesManager;
+  api?: StashAPI;
+  visibilityManager?: VisibilityManager;
+  onPerformerChipClick?: (performerId: number, performerName: string) => void;
+  onTagChipClick?: (tagId: number, tagName: string) => void;
+  onCancelRequests?: () => void;
+  ratingSystemConfig?: { type?: string; starPrecision?: string } | null;
+}
 
-export class ImagePost extends BasePost {
-  private readonly data: ImagePostData;
-  private player?: ImagePlayer;
+export class ImageVideoPost extends BasePost {
+  private readonly data: ImageVideoPostData;
+  private player?: NativeVideoPlayer;
   private isLoaded: boolean = false;
+  private hqButton?: HTMLElement;
+  private isHQMode: boolean = false;
+  private videoLoadingIndicator?: HTMLElement;
+  private loadErrorCount: number = 0;
+  private hasFailedPermanently: boolean = false;
+  private errorPlaceholder?: HTMLElement;
+  private retryTimeoutId?: number;
+  private loadErrorCheckIntervalId?: ReturnType<typeof setInterval>;
+  
+  private readonly onCancelRequests?: () => void;
+  private readonly onMuteToggle?: (isMuted: boolean) => void;
+  private readonly getGlobalMuteState?: () => boolean;
   
   private playerContainer?: HTMLElement;
   private footer?: HTMLElement;
   private buttonGroup?: HTMLElement;
+  private muteOverlayButton?: HTMLElement;
   
   // Add tag dialog state
   private addTagDialog?: HTMLElement;
@@ -44,7 +65,6 @@ export class ImagePost extends BasePost {
   private selectedTagName?: string;
   private autocompleteDebounceTimer?: ReturnType<typeof setTimeout>;
   private tagSearchLoadingTimer?: ReturnType<typeof setTimeout>;
-  private readonly isTagSearchLoading: boolean = false;
   
   // Rating state
   private ratingValue: number = 0;
@@ -71,16 +91,8 @@ export class ImagePost extends BasePost {
 
   constructor(
     container: HTMLElement,
-    data: ImagePostData,
-    options?: {
-      favoritesManager?: FavoritesManager;
-      api?: StashAPI;
-      visibilityManager?: VisibilityManager;
-      onPerformerChipClick?: (performerId: number, performerName: string) => void;
-      onTagChipClick?: (tagId: number, tagName: string) => void;
-      onLoadFullVideo?: () => void;
-      ratingSystemConfig?: { type?: string; starPrecision?: string } | null;
-    }
+    data: ImageVideoPostData,
+    options?: ImageVideoPostOptions
   ) {
     super(
       container,
@@ -92,6 +104,9 @@ export class ImagePost extends BasePost {
     );
     this.data = data;
     this.oCount = this.data.image.o_counter || 0;
+    this.onCancelRequests = options?.onCancelRequests;
+    this.onMuteToggle = options?.onMuteToggle;
+    this.getGlobalMuteState = options?.getGlobalMuteState;
     this.ratingSystemConfig = options?.ratingSystemConfig;
     
     // Initialize rating from image data
@@ -118,10 +133,10 @@ export class ImagePost extends BasePost {
   }
 
   /**
-   * Render the complete image post structure
+   * Render the complete image video post structure
    */
   private render(): void {
-    this.container.className = 'image-post';
+    this.container.className = 'video-post';
     this.container.dataset.postId = this.data.image.id;
     // Clear container
     while (this.container.firstChild) {
@@ -141,79 +156,6 @@ export class ImagePost extends BasePost {
     const footer = this.createFooter();
     this.container.appendChild(footer);
     this.footer = footer;
-  }
-
-  /**
-   * Create the player container
-   */
-  private createPlayerContainer(): HTMLElement {
-    const container = document.createElement('div');
-    container.className = 'video-post__player';
-    container.style.position = 'relative';
-
-    // Calculate aspect ratio
-    const aspectRatio = this.getTargetAspectRatio();
-    if (aspectRatio) {
-      container.style.aspectRatio = `${aspectRatio}`;
-    } else {
-      let aspectRatioClass = 'aspect-16-9';
-      if (this.data.aspectRatio) {
-        aspectRatioClass = getAspectRatioClass(this.data.aspectRatio);
-      }
-      container.classList.add(aspectRatioClass);
-    }
-
-    return container;
-  }
-  private getTargetAspectRatio(): number | undefined {
-    if (this.data.aspectRatio && Number.isFinite(this.data.aspectRatio)) {
-      return this.data.aspectRatio;
-    }
-    const imageAspectRatio =
-      this.data.image.aspectRatio ??
-      (this.data.image.width && this.data.image.height && this.data.image.height !== 0
-        ? this.data.image.width / this.data.image.height
-        : undefined);
-    return imageAspectRatio;
-  }
-
-  /**
-   * Add performer chips to the chips container
-   */
-  private addPerformerChips(chips: HTMLElement): void {
-    if (!this.data.image.performers || this.data.image.performers.length === 0) {
-      return;
-    }
-    
-    for (const performer of this.data.image.performers) {
-      const chip = this.createPerformerChip(performer);
-      chips.appendChild(chip);
-    }
-  }
-
-  /**
-   * Add tag chips to the chips container
-   */
-  private addTagChipsToHeader(chips: HTMLElement): void {
-    if (!this.data.image.tags?.length) {
-      return;
-    }
-    
-    const hasPerformers = this.data.image.performers && this.data.image.performers.length > 0;
-    let isFirstTag = true;
-    
-    for (const tag of this.data.image.tags) {
-      if (!tag?.id || !tag?.name || tag.name === FAVORITE_TAG_NAME) {
-        continue;
-      }
-      
-      const chip = this.createTagChip(tag);
-      if (hasPerformers && isFirstTag) {
-        chip.style.marginLeft = '8px';
-        isFirstTag = false;
-      }
-      chips.appendChild(chip);
-    }
   }
 
   /**
@@ -238,8 +180,16 @@ export class ImagePost extends BasePost {
     const badge = this.createImageBadgeIcon();
     chips.appendChild(badge);
     
-    this.addPerformerChips(chips);
-    this.addTagChipsToHeader(chips);
+    // Add performer chips
+    if (this.data.image.performers && this.data.image.performers.length > 0) {
+      for (const performer of this.data.image.performers) {
+        const chip = this.createPerformerChip(performer);
+        chips.appendChild(chip);
+      }
+    }
+
+    // Add tag chips
+    this.addTagChips(chips);
 
     header.appendChild(chips);
     return header;
@@ -266,100 +216,71 @@ export class ImagePost extends BasePost {
     return badge;
   }
 
-
-
-
   /**
-   * Load the image player
+   * Add tag chips to the chips container
    */
-  loadPlayer(imageUrl: string): ImagePlayer | undefined {
-    if (this.isLoaded) {
-      return this.player;
+  private addTagChips(chips: HTMLElement): void {
+    if (!this.data.image.tags?.length) {
+      return;
     }
-
-    if (!this.playerContainer) {
-      console.error('ImagePost: Player container not found');
-      return undefined;
-    }
-
-    try {
-      // Use centralized utility to detect if this is a video
-      const { isVideo } = detectVideoFromVisualFiles(this.data.image.visualFiles);
-      
-      const isGif = !isVideo && (imageUrl.toLowerCase().endsWith('.gif') || 
-                   this.data.image.visualFiles?.some(vf => 
-                     vf.path?.toLowerCase().endsWith('.gif') || 
-                     vf.video_codec?.toLowerCase() === 'gif'
-                   ));
-      
-      this.player = new ImagePlayer(this.playerContainer, imageUrl, { 
-        isGif, 
-        isVideo
-      });
-      this.isLoaded = true;
-
-      if (this.visibilityManager && this.data.image.id) {
-        // Register with visibility manager if needed
-      }
-
-      return this.player;
-    } catch (error) {
-      console.error('ImagePost: Failed to create image player', {
-        error,
-        imageUrl,
-        imageId: this.data.image.id,
-      });
-      return undefined;
-    }
-  }
-
-  /**
-   * Get image URL from image data
-   * Primarily returns the URL already set in ImagePostData
-   * Falls back to centralized URL selection utility if not set
-   */
-  getImageUrl(): string | undefined {
-    // If URL is already set in data, use it (set by FeedContainer with proper settings)
-    if (this.data.imageUrl) {
-      return this.data.imageUrl;
-    }
-
-    // Fallback: use centralized utility (defaults to treatMp4AsVideo=false for fallback)
-    // In practice, this should rarely be needed since FeedContainer sets imageUrl
-    return getImageUrlForDisplay(this.data.image, false);
-  }
-
-  /**
-   * Get link to image in Stash
-   */
-  private getImageLink(): string {
-    return `${globalThis.location.origin}/images/${this.data.image.id}`;
-  }
-
-  /**
-   * Create image button to open image in Stash
-   */
-  private createImageButton(): HTMLElement {
-    const imageLink = this.getImageLink();
-    const iconBtn = document.createElement('a');
-    iconBtn.className = 'icon-btn icon-btn--image';
-    iconBtn.href = imageLink;
-    iconBtn.target = '_blank';
-    iconBtn.rel = 'noopener noreferrer';
-    iconBtn.setAttribute('aria-label', 'View full image');
-    iconBtn.title = 'Open image in Stash';
-    this.applyIconButtonStyles(iconBtn);
-    iconBtn.style.color = '#F5C518';
-    iconBtn.style.padding = '0';
-    // Keep 44x44px for touch target
-    iconBtn.style.width = '44px';
-    iconBtn.style.height = '44px';
-    iconBtn.style.minWidth = '44px';
-    iconBtn.style.minHeight = '44px';
-    iconBtn.innerHTML = EXTERNAL_LINK_SVG;
     
-    this.addHoverEffect(iconBtn);
-    return iconBtn;
+    const hasPerformers = this.data.image.performers && this.data.image.performers.length > 0;
+    let isFirstTag = true;
+    
+    for (const tag of this.data.image.tags) {
+      if (!tag?.id || !tag?.name || tag.name === FAVORITE_TAG_NAME) {
+        continue;
+      }
+      
+      const chip = this.createTagChip(tag);
+      if (hasPerformers && isFirstTag) {
+        chip.style.marginLeft = '8px';
+        isFirstTag = false;
+      }
+      chips.appendChild(chip);
+    }
+  }
+
+  /**
+   * Create the player container with loading indicator
+   */
+  private createPlayerContainer(): HTMLElement {
+    const container = document.createElement('div');
+    container.className = 'video-post__player';
+    container.style.position = 'relative';
+    container.style.width = '100%';
+
+    // Calculate aspect ratio from image dimensions
+    let aspectRatio: number | undefined;
+    let aspectRatioClass = 'aspect-16-9';
+    if (this.data.image.width && this.data.image.height && this.data.image.height > 0) {
+      aspectRatio = calculateAspectRatio(this.data.image.width, this.data.image.height);
+      aspectRatioClass = getAspectRatioClass(aspectRatio);
+    } else if (this.data.aspectRatio && Number.isFinite(this.data.aspectRatio)) {
+      aspectRatio = this.data.aspectRatio;
+      if (aspectRatio !== undefined) {
+        aspectRatioClass = getAspectRatioClass(aspectRatio);
+      }
+    }
+    
+    // Use inline aspectRatio style for better browser compatibility
+    if (aspectRatio && Number.isFinite(aspectRatio)) {
+      container.style.aspectRatio = `${aspectRatio}`;
+    }
+    // Always add CSS class as fallback for older browsers
+    container.classList.add(aspectRatioClass);
+
+    // Loading indicator for video
+    const loading = document.createElement('div');
+    loading.className = 'video-post__loading';
+    const spinner = document.createElement('div');
+    spinner.className = 'spinner';
+    loading.appendChild(spinner);
+    loading.style.display = this.isLoaded ? 'none' : 'flex';
+    container.appendChild(loading);
+    this.videoLoadingIndicator = loading;
+
+    return container;
   }
 
   /**
@@ -420,6 +341,16 @@ export class ImagePost extends BasePost {
     const ratingControl = this.createRatingSection();
     buttonGroup.appendChild(ratingControl);
 
+    // HQ button (upgrade to HD)
+    if (this.api && !this.isHQMode) {
+      this.hqButton = this.createHQButton();
+      buttonGroup.appendChild(this.hqButton);
+    }
+
+    // Mute button (always show, but grayed out in non-HD mode)
+    const muteBtn = this.createMuteOverlayButton();
+    buttonGroup.appendChild(muteBtn);
+
     // Image button (open in Stash)
     const imageBtn = this.createImageButton();
     buttonGroup.appendChild(imageBtn);
@@ -428,8 +359,7 @@ export class ImagePost extends BasePost {
     info.appendChild(row);
     footer.appendChild(info);
     
-    // Prevent hover events from bubbling to post container to avoid triggering video playback
-    // when hovering over buttons
+    // Prevent hover events from bubbling to post container
     footer.addEventListener('mouseenter', (e) => {
       e.stopPropagation();
       e.stopImmediatePropagation();
@@ -442,44 +372,396 @@ export class ImagePost extends BasePost {
     return footer;
   }
 
+  /**
+   * Create image button to open image in Stash
+   */
+  private createImageButton(): HTMLElement {
+    const imageLink = this.getImageLink();
+    const iconBtn = document.createElement('a');
+    iconBtn.className = 'icon-btn icon-btn--image';
+    iconBtn.href = imageLink;
+    iconBtn.target = '_blank';
+    iconBtn.rel = 'noopener noreferrer';
+    iconBtn.setAttribute('aria-label', 'View full image');
+    iconBtn.title = 'Open image in Stash';
+    this.applyIconButtonStyles(iconBtn);
+    iconBtn.style.color = '#F5C518';
+    iconBtn.style.padding = '0';
+    iconBtn.style.width = '44px';
+    iconBtn.style.height = '44px';
+    iconBtn.style.minWidth = '44px';
+    iconBtn.style.minHeight = '44px';
+    iconBtn.innerHTML = EXTERNAL_LINK_SVG;
+    
+    this.addHoverEffect(iconBtn);
+    return iconBtn;
+  }
 
   /**
-   * Perform favorite toggle action for ImagePost
+   * Get link to image in Stash
+   */
+  private getImageLink(): string {
+    return `${globalThis.location.origin}/images/${this.data.image.id}`;
+  }
+
+  /**
+   * Create HQ button
+   */
+  private createHQButton(): HTMLElement {
+    const hqBtn = document.createElement('button');
+    hqBtn.className = 'icon-btn icon-btn--hq';
+    hqBtn.type = 'button';
+    hqBtn.setAttribute('aria-label', 'Load high-quality video with audio');
+    hqBtn.title = 'Load HD video';
+    this.applyIconButtonStyles(hqBtn);
+    hqBtn.style.padding = '0';
+
+    this.updateHQButton(hqBtn);
+    this.hqButton = hqBtn;
+
+    const clickHandler = async (e: Event) => {
+      e.preventDefault();
+      e.stopPropagation();
+      
+      if (!this.api || this.isHQMode) return;
+
+      hqBtn.disabled = true;
+      hqBtn.style.opacity = '0.5';
+
+      try {
+        await this.upgradeToHDVideo();
+        this.isHQMode = true;
+        this.updateHQButton(hqBtn);
+        this.updateMuteOverlayButton();
+      } catch (error) {
+        console.error('Failed to upgrade to HD video', error);
+        showToast('Failed to load high-quality video. Please try again.');
+      } finally {
+        hqBtn.disabled = false;
+        hqBtn.style.opacity = '1';
+      }
+    };
+
+    hqBtn.addEventListener('click', clickHandler);
+    this.addHoverEffect(hqBtn);
+    return hqBtn;
+  }
+
+  /**
+   * Update HQ button appearance based on mode
+   */
+  private updateHQButton(button: HTMLElement): void {
+    if (this.isHQMode) {
+      button.innerHTML = HQ_SVG_FILLED;
+      button.style.color = '#F5C518';
+      button.title = 'HD video loaded';
+    } else {
+      button.innerHTML = HQ_SVG_OUTLINE;
+      button.style.color = 'rgba(255, 255, 255, 0.7)';
+      button.title = 'Load HD video';
+    }
+  }
+
+  /**
+   * Programmatically set HQ mode (used when feed-level HD is enabled)
+   */
+  public setHQMode(isHQ: boolean): void {
+    this.isHQMode = isHQ;
+    if (this.hqButton) {
+      this.updateHQButton(this.hqButton);
+    }
+    this.updateMuteOverlayButton();
+    // Apply mute state to player if it exists
+    if (this.player && this.getGlobalMuteState) {
+      const shouldBeMuted = this.getGlobalMuteState();
+      this.player.setMuted(shouldBeMuted);
+    }
+  }
+
+  /**
+   * Upgrade from preview video to full HD video with audio
+   */
+  private async upgradeToHDVideo(): Promise<void> {
+    if (!this.api) {
+      throw new Error('API not available');
+    }
+
+    // Get full video URL (paths.image)
+    const imagePath = this.data.image.paths?.image;
+    if (!imagePath) {
+      throw new Error('Image video URL not available');
+    }
+    const hdVideoUrl = imagePath.startsWith('http') 
+      ? imagePath 
+      : toAbsoluteUrl(imagePath);
+    
+    if (!hdVideoUrl || !isValidMediaUrl(hdVideoUrl)) {
+      throw new Error('Image video URL not available');
+    }
+
+    const playerContainer = this.playerContainer || this.container.querySelector('.video-post__player') as HTMLElement;
+    if (!playerContainer) {
+      throw new Error('Player container not found');
+    }
+
+    // Capture current playback state
+    const playerState = this.player?.getState();
+    const wasPlaying = playerState?.isPlaying ?? false;
+
+    // Unload and destroy current player
+    await this.destroyCurrentPlayer();
+
+    // Clean up any leftover player elements
+    this.cleanupPlayerElements(playerContainer);
+
+    // Small delay to ensure DOM is cleared
+    await new Promise(resolve => setTimeout(resolve, 50));
+
+    // Create new player with full HD video
+    await this.createHDVideoPlayer(playerContainer, hdVideoUrl);
+
+    // Register with visibility manager if available
+    await this.registerUpgradedPlayerWithVisibilityManager();
+
+    // If video was playing, resume playback
+    if (wasPlaying) {
+      await this.resumePlaybackAfterUpgrade();
+    }
+  }
+
+  /**
+   * Create HD video player
+   */
+  private async createHDVideoPlayer(playerContainer: HTMLElement, hdVideoUrl: string): Promise<void> {
+    try {
+      // Respect global mute state when creating HD player
+      const shouldBeMuted = this.getGlobalMuteState ? this.getGlobalMuteState() : true;
+      this.player = new NativeVideoPlayer(playerContainer, hdVideoUrl, {
+        muted: shouldBeMuted,
+        autoplay: false,
+        startTime: undefined, // Start from beginning for images
+        endTime: undefined,
+        aggressivePreload: false,
+        isHDMode: true,
+        posterUrl: this.getPosterUrl(),
+      });
+
+      this.isLoaded = true;
+      this.hideMediaWhenReady(this.player, playerContainer);
+    } catch (error) {
+      console.error('ImageVideoPost: Failed to create HD video player', {
+        error,
+        hdVideoUrl,
+        imageId: this.data.image.id,
+      });
+      throw error;
+    }
+  }
+
+  /**
+   * Register player with visibility manager after upgrade
+   */
+  private async registerUpgradedPlayerWithVisibilityManager(): Promise<void> {
+    await new Promise(resolve => setTimeout(resolve, 50));
+    if (this.visibilityManager && this.data.image.id && this.player) {
+      this.visibilityManager.registerPlayer(this.data.image.id, this.player);
+    }
+  }
+
+  /**
+   * Resume playback after upgrade
+   */
+  private async resumePlaybackAfterUpgrade(): Promise<void> {
+    if (!this.player) return;
+    try {
+      await this.player.play();
+    } catch (error) {
+      console.warn('ImageVideoPost: Failed to resume playback after upgrade', error);
+    }
+  }
+
+  /**
+   * Destroy current player
+   */
+  private async destroyCurrentPlayer(): Promise<void> {
+    if (this.player) {
+      this.player.destroy();
+      this.player = undefined;
+    }
+    this.isLoaded = false;
+  }
+
+  /**
+   * Clean up player elements from container
+   */
+  private cleanupPlayerElements(container: HTMLElement): void {
+    const videoElements = container.querySelectorAll('video');
+    for (const video of videoElements) {
+      video.remove();
+    }
+  }
+
+  /**
+   * Get poster URL for the video
+   */
+  private getPosterUrl(): string | undefined {
+    // Use image thumbnail or preview as fallback
+    const thumbnail = this.data.image.paths?.thumbnail;
+    if (thumbnail) {
+      const baseUrl = toAbsoluteUrl(thumbnail);
+      if (baseUrl) {
+        const separator = baseUrl.includes('?') ? '&' : '?';
+        return `${baseUrl}${separator}t=${Date.now()}`;
+      }
+    }
+    // Fallback to preview if thumbnail unavailable
+    const preview = this.data.image.paths?.preview;
+    if (preview) {
+      const baseUrl = toAbsoluteUrl(preview);
+      if (baseUrl) {
+        const separator = baseUrl.includes('?') ? '&' : '?';
+        return `${baseUrl}${separator}t=${Date.now()}`;
+      }
+    }
+    return undefined;
+  }
+
+  /**
+   * Hide media when ready (for autoplay)
+   */
+  private hideMediaWhenReady(player: NativeVideoPlayer, container: HTMLElement): void {
+    const videoElement = player.getVideoElement();
+    if (!videoElement) return;
+
+    const handleCanPlay = () => {
+      if (this.videoLoadingIndicator) {
+        this.videoLoadingIndicator.style.display = 'none';
+      }
+      videoElement.removeEventListener('canplay', handleCanPlay);
+    };
+
+    videoElement.addEventListener('canplay', handleCanPlay, { once: true });
+  }
+
+  /**
+   * Load the video player
+   */
+  loadPlayer(videoUrl: string): NativeVideoPlayer | undefined {
+    if (this.isLoaded) {
+      return this.player;
+    }
+
+    if (!this.playerContainer) {
+      console.error('ImageVideoPost: Player container not found');
+      return undefined;
+    }
+
+    try {
+      // For non-HD videos, don't pass startTime (allows browser to show first frame naturally)
+      const finalStartTime = this.isHQMode ? undefined : undefined;
+      
+      // Respect global mute state when creating player
+      // For non-HD videos, always muted (preview videos don't have audio)
+      // For HD videos, respect global mute state
+      const shouldBeMuted = this.isHQMode && this.getGlobalMuteState 
+        ? this.getGlobalMuteState() 
+        : true;
+      this.player = new NativeVideoPlayer(this.playerContainer, videoUrl, {
+        muted: shouldBeMuted,
+        autoplay: false,
+        startTime: finalStartTime,
+        endTime: undefined,
+        posterUrl: this.getPosterUrl(),
+      });
+
+      this.isLoaded = true;
+      this.hideMediaWhenReady(this.player, this.playerContainer);
+
+      if (this.visibilityManager && this.data.image.id) {
+        this.visibilityManager.registerPlayer(this.data.image.id, this.player);
+      }
+
+      // Set up periodic error checking
+      if (this.loadErrorCheckIntervalId) {
+        clearInterval(this.loadErrorCheckIntervalId);
+      }
+      this.loadErrorCheckIntervalId = setInterval(() => {
+        if (!this.player || this.hasFailedPermanently) {
+          if (this.loadErrorCheckIntervalId) {
+            clearInterval(this.loadErrorCheckIntervalId);
+            this.loadErrorCheckIntervalId = undefined;
+          }
+          return;
+        }
+        this.checkForLoadError();
+      }, 3000);
+    } catch (error) {
+      console.error('ImageVideoPost: Failed to create video player', {
+        error,
+        videoUrl,
+        imageId: this.data.image.id,
+      });
+      return undefined;
+    }
+
+    return this.player;
+  }
+
+  /**
+   * Check for load errors
+   */
+  private checkForLoadError(): void {
+    if (!this.player) return;
+    
+    const videoElement = this.player.getVideoElement();
+    if (!videoElement) return;
+
+    if (videoElement.error) {
+      this.loadErrorCount++;
+      if (this.loadErrorCount >= 3) {
+        this.hasFailedPermanently = true;
+        this.showErrorPlaceholder();
+      }
+    }
+  }
+
+  /**
+   * Show error placeholder
+   */
+  private showErrorPlaceholder(): void {
+    if (this.errorPlaceholder || !this.playerContainer) return;
+
+    const placeholder = document.createElement('div');
+    placeholder.className = 'video-post__error-placeholder';
+    placeholder.style.position = 'absolute';
+    placeholder.style.top = '0';
+    placeholder.style.left = '0';
+    placeholder.style.width = '100%';
+    placeholder.style.height = '100%';
+    placeholder.style.display = 'flex';
+    placeholder.style.alignItems = 'center';
+    placeholder.style.justifyContent = 'center';
+    placeholder.style.backgroundColor = '#1a1a1a';
+    placeholder.style.color = '#FFFFFF';
+    placeholder.textContent = 'Failed to load video';
+    this.playerContainer.appendChild(placeholder);
+    this.errorPlaceholder = placeholder;
+  }
+
+  /**
+   * Perform favorite toggle action for ImageVideoPost
    */
   protected async toggleFavoriteAction(): Promise<boolean> {
     await this.toggleFavorite();
     return this.isFavorite;
   }
 
-
-  /**
-   * Perform O-count increment action for ImagePost
-   */
-  protected async incrementOCountAction(): Promise<void> {
-    if (!this.api) {
-      throw new Error('API not available');
-    }
-    const newOCount = await this.api.incrementImageOCount(this.data.image.id);
-    this.oCount = newOCount;
-    this.data.image.o_counter = newOCount;
-    // ImagePost-specific: adjust padding for 3-digit numbers
-    if (this.oCountButton) {
-      const digitCount = this.oCount > 0 ? this.oCount.toString().length : 0;
-      if (digitCount >= 3) {
-        this.oCountButton.style.paddingRight = `${OCOUNT_THREE_DIGIT_PADDING}px`;
-      } else {
-        this.oCountButton.style.paddingRight = `${OCOUNT_DEFAULT_PADDING}px`;
-      }
-    }
-  }
-
   /**
    * Toggle favorite status
-   * Note: Images use tags for favorites, similar to markers
    */
   private async toggleFavorite(): Promise<void> {
     if (!this.api) {
-      console.error('ImagePost: No API available for toggleFavorite');
+      console.error('ImageVideoPost: No API available for toggleFavorite');
       return;
     }
     
@@ -499,7 +781,7 @@ export class ImagePost extends BasePost {
         new Set(
           currentTags
             .map((tag) => tag.id)
-            .filter(Boolean)
+            .filter((id): id is string => typeof id === 'string' && id.length > 0)
         )
       );
 
@@ -512,7 +794,6 @@ export class ImagePost extends BasePost {
         nextTagIds = existingTagIds.filter((id) => id !== favoriteTagId);
       }
 
-      // Image ID is already a string
       await this.api.updateImageTags(this.data.image.id, nextTagIds);
 
       if (shouldFavorite) {
@@ -529,18 +810,15 @@ export class ImagePost extends BasePost {
       this.isFavorite = shouldFavorite;
       this.updateHeartButton();
     } catch (error) {
-      console.error('ImagePost: Failed to toggle favorite', error);
+      console.error('ImageVideoPost: Failed to toggle favorite', error);
       showToast('Failed to update favorite');
-      // Revert UI state on error
       this.isFavorite = !this.isFavorite;
       this.updateHeartButton();
     }
   }
 
-
-
   /**
-   * Get favorite tag source for ImagePost
+   * Get favorite tag source for ImageVideoPost
    */
   protected getFavoriteTagSource(): Array<{ name: string }> | undefined {
     return this.data.image.tags;
@@ -566,6 +844,18 @@ export class ImagePost extends BasePost {
 
     const newTag = await this.api.createTag(FAVORITE_TAG_NAME);
     return newTag?.id ?? null;
+  }
+
+  /**
+   * Perform O-count increment action for ImageVideoPost
+   */
+  protected async incrementOCountAction(): Promise<void> {
+    if (!this.api) {
+      throw new Error('API not available');
+    }
+    const newOCount = await this.api.incrementImageOCount(this.data.image.id);
+    this.oCount = newOCount;
+    this.data.image.o_counter = newOCount;
   }
 
   /**
@@ -854,10 +1144,6 @@ export class ImagePost extends BasePost {
   private async searchTagsForImage(searchTerm: string): Promise<void> {
     if (!this.api || !this.addTagDialogSuggestions) return;
 
-    if (!this.addTagDialogSuggestions) {
-      this.addTagDialogSuggestions = document.createElement('div');
-    }
-
     try {
       const tags = await this.api.findTagsForSelect(searchTerm, 10);
       this.addTagDialogSuggestions.innerHTML = '';
@@ -889,7 +1175,7 @@ export class ImagePost extends BasePost {
         this.addTagDialogSuggestions.appendChild(item);
       }
     } catch (error) {
-      console.error('ImagePost: Failed to search tags', error);
+      console.error('ImageVideoPost: Failed to search tags', error);
     }
   }
 
@@ -916,7 +1202,9 @@ export class ImagePost extends BasePost {
 
     try {
       // Check if tag is already added
-      const currentTagIds = (this.data.image.tags || []).map(t => t.id).filter(Boolean);
+      const currentTagIds = (this.data.image.tags || [])
+        .map((t: { id?: string }) => t.id)
+        .filter((id): id is string => typeof id === 'string' && id.length > 0);
       if (currentTagIds.includes(this.selectedTagId)) {
         showToast(`Tag "${this.selectedTagName}" is already added to this image.`);
         this.addTagDialogCreateButton.disabled = false;
@@ -926,6 +1214,9 @@ export class ImagePost extends BasePost {
       }
 
       // Add tag to image
+      if (!this.selectedTagId) {
+        throw new Error('Selected tag ID is missing');
+      }
       const nextTagIds = [...currentTagIds, this.selectedTagId];
       await this.api.updateImageTags(this.data.image.id, nextTagIds);
 
@@ -940,7 +1231,7 @@ export class ImagePost extends BasePost {
       
       this.closeAddTagDialog();
     } catch (error) {
-      console.error('ImagePost: Failed to add tag to image', error);
+      console.error('ImageVideoPost: Failed to add tag to image', error);
       showToast('Failed to add tag. Please try again.');
       this.addTagDialogCreateButton.disabled = false;
       this.addTagDialogCreateButton.textContent = 'Add';
@@ -960,9 +1251,127 @@ export class ImagePost extends BasePost {
   }
 
   /**
+   * Adjust dialog position to keep it within card boundaries
+   */
+  private adjustDialogPosition(dialog: HTMLElement): void {
+    if (!dialog || !this.container) return;
+
+    const dialogRect = dialog.getBoundingClientRect();
+    const dialogWidth = dialogRect.width;
+    
+    const cardContainer = this.container.closest('.video-post, .image-post');
+    if (!cardContainer) return;
+    
+    const cardRect = cardContainer.getBoundingClientRect();
+    const buttonGroupRect = this.buttonGroup?.getBoundingClientRect();
+    if (!buttonGroupRect) return;
+    
+    const buttonCenterX = buttonGroupRect.left + buttonGroupRect.width / 2 - cardRect.left;
+    const dialogHalfWidth = dialogWidth / 2;
+    
+    const minLeft = dialogHalfWidth + 16;
+    const maxLeft = cardRect.width - dialogHalfWidth - 16;
+    
+    let desiredLeft = buttonCenterX;
+    let offsetX = 0;
+    if (desiredLeft < minLeft) {
+      offsetX = minLeft - buttonCenterX;
+    } else if (desiredLeft > maxLeft) {
+      offsetX = maxLeft - buttonCenterX;
+    }
+    
+    dialog.style.left = '50%';
+    dialog.style.transform = `translateX(calc(-50% + ${offsetX}px)) translateY(0) scale(1)`;
+  }
+
+  /**
+   * Create mute button for footer
+   */
+  private createMuteOverlayButton(): HTMLElement {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'video-post__mute-overlay';
+    button.setAttribute('aria-label', 'Toggle mute');
+    
+    // Style to match other footer buttons
+    this.applyIconButtonStyles(button);
+    button.style.color = '#FFFFFF';
+    button.style.padding = '0';
+    button.style.width = '44px';
+    button.style.height = '44px';
+    button.style.minWidth = '44px';
+    button.style.minHeight = '44px';
+    // Prevent double-tap zoom on mobile and improve touch responsiveness
+    button.style.touchAction = 'manipulation';
+    
+    // Handle mute toggle
+    const handleMuteToggle = (e: Event) => {
+      e.preventDefault();
+      e.stopPropagation();
+      e.stopImmediatePropagation(); // Prevent any other handlers from running
+      if (this.onMuteToggle && this.getGlobalMuteState) {
+        const currentState = this.getGlobalMuteState();
+        this.onMuteToggle(!currentState);
+      }
+    };
+    
+    // Click handler (desktop)
+    button.addEventListener('click', handleMuteToggle);
+    
+    // Touch handler (mobile) - use unified touch handler utility
+    const isMobile = isMobileDevice();
+    if (isMobile) {
+      setupTouchHandlers(button, {
+        onTap: (e) => {
+          handleMuteToggle(e);
+        },
+        preventDefault: true,
+        stopPropagation: true,
+        stopImmediatePropagation: true,
+      });
+      
+      // Prevent click event from firing after touch to avoid double-firing
+      preventClickAfterTouch(button);
+    }
+    
+    this.muteOverlayButton = button;
+    
+    // Update button appearance based on global mute state
+    this.updateMuteOverlayButton();
+    
+    return button;
+  }
+
+  /**
+   * Update mute overlay button appearance based on global mute state
+   */
+  updateMuteOverlayButton(): void {
+    const btn = this.muteOverlayButton;
+    if (!btn || !this.getGlobalMuteState) return;
+    
+    const isMuted = this.getGlobalMuteState();
+    if (isMuted) {
+      btn.innerHTML = VOLUME_MUTED_SVG.replace('width="24"', 'width="24"').replace('height="24"', 'height="24"');
+      btn.setAttribute('aria-label', 'Unmute');
+    } else {
+      btn.innerHTML = VOLUME_UNMUTED_SVG.replace('width="24"', 'width="24"').replace('height="24"', 'height="24"');
+      btn.setAttribute('aria-label', 'Mute');
+    }
+    
+    // Gray out the button when not in HQ mode
+    if (this.isHQMode) {
+      btn.style.opacity = '1';
+      btn.style.pointerEvents = 'auto';
+    } else {
+      btn.style.opacity = '0.4';
+      btn.style.pointerEvents = 'none';
+    }
+  }
+
+  /**
    * Get the player instance
    */
-  getPlayer(): ImagePlayer | undefined {
+  getPlayer(): NativeVideoPlayer | undefined {
     return this.player;
   }
 
@@ -974,21 +1383,21 @@ export class ImagePost extends BasePost {
   }
 
   /**
-   * Return false (images don't have video source)
+   * Return true if video source is available
    */
   hasVideoSource(): boolean {
-    return false;
+    return !!this.data.videoUrl;
   }
 
   /**
-   * Preload player using image URL
+   * Preload player using video URL
    */
-  preload(): ImagePlayer | undefined {
-    const imageUrl = this.getImageUrl();
-    if (!imageUrl) {
+  preload(): NativeVideoPlayer | undefined {
+    const videoUrl = this.data.videoUrl;
+    if (!videoUrl) {
       return undefined;
     }
-    return this.loadPlayer(imageUrl);
+    return this.loadPlayer(videoUrl);
   }
 
   /**
@@ -996,56 +1405,6 @@ export class ImagePost extends BasePost {
    */
   getPostId(): string {
     return this.data.image.id;
-  }
-
-  /**
-   * Get the container element
-   */
-  getContainer(): HTMLElement {
-    return this.container;
-  }
-
-  /**
-   * Adjust dialog position to keep it within card boundaries
-   */
-  private adjustDialogPosition(dialog: HTMLElement): void {
-    if (!dialog || !this.container) return;
-
-    // Get dialog dimensions
-    const dialogRect = dialog.getBoundingClientRect();
-    const dialogWidth = dialogRect.width;
-    
-    // Find the card container (the post container)
-    const cardContainer = this.container.closest('.video-post, .image-post');
-    if (!cardContainer) return;
-    
-    const cardRect = cardContainer.getBoundingClientRect();
-    const buttonGroupRect = this.buttonGroup?.getBoundingClientRect();
-    if (!buttonGroupRect) return;
-    
-    // Calculate button center position relative to card
-    const buttonCenterX = buttonGroupRect.left + buttonGroupRect.width / 2 - cardRect.left;
-    const dialogHalfWidth = dialogWidth / 2;
-    
-    // Calculate min and max left positions to keep dialog within card
-    const minLeft = dialogHalfWidth + 16; // 16px padding from left edge
-    const maxLeft = cardRect.width - dialogHalfWidth - 16; // 16px padding from right edge
-    
-    // Calculate desired left position (centered on button)
-    let desiredLeft = buttonCenterX;
-    
-    // Calculate offset needed to keep dialog within boundaries
-    // Keep left at 50% and use transform offset instead
-    let offsetX = 0;
-    if (desiredLeft < minLeft) {
-      offsetX = minLeft - buttonCenterX;
-    } else if (desiredLeft > maxLeft) {
-      offsetX = maxLeft - buttonCenterX;
-    }
-    
-    // Update dialog position using transform offset instead of changing left
-    dialog.style.left = '50%';
-    dialog.style.transform = `translateX(calc(-50% + ${offsetX}px)) translateY(0) scale(1)`;
   }
 
   /**
@@ -1847,6 +2206,22 @@ export class ImagePost extends BasePost {
   }
 
   /**
+   * Get the container element
+   */
+  getContainer(): HTMLElement {
+    return this.container;
+  }
+
+  /**
+   * Hide the post (used when player creation fails)
+   */
+  hidePost(): void {
+    if (this.container) {
+      this.container.style.display = 'none';
+    }
+  }
+
+  /**
    * Destroy the post
    */
   destroy(): void {
@@ -1859,6 +2234,14 @@ export class ImagePost extends BasePost {
     }
 
     // Clean up timers
+    if (this.loadErrorCheckIntervalId) {
+      clearInterval(this.loadErrorCheckIntervalId);
+      this.loadErrorCheckIntervalId = undefined;
+    }
+    if (this.retryTimeoutId) {
+      clearTimeout(this.retryTimeoutId);
+      this.retryTimeoutId = undefined;
+    }
     if (this.autocompleteDebounceTimer) {
       clearTimeout(this.autocompleteDebounceTimer);
       this.autocompleteDebounceTimer = undefined;
@@ -1879,8 +2262,8 @@ export class ImagePost extends BasePost {
       this.player = undefined;
     }
     this.isLoaded = false;
-    // Remove the entire container from the DOM so stale cards don't linger
+    
+    // Remove the entire container from the DOM
     this.container?.remove();
   }
 }
-

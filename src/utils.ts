@@ -703,54 +703,66 @@ export function isMp4File(path?: string): boolean {
  * @param treatMp4AsVideo Whether MP4/M4V files should be treated as videos (use paths.image) or images (use paths.preview)
  * @returns The URL to use for display, or undefined if no valid URL found
  */
+/**
+ * Build full URL from path
+ */
+function buildFullUrl(path: string, baseUrl: string): string {
+  return path.startsWith('http') ? path : `${baseUrl}${path}`;
+}
+
+/**
+ * Try to get a valid URL from a path
+ */
+function tryGetUrlFromPath(path: string | undefined | null, baseUrl: string): string | undefined {
+  if (!path) return undefined;
+  const url = buildFullUrl(path, baseUrl);
+  return isValidMediaUrl(url) ? url : undefined;
+}
+
+/**
+ * Get URL for MP4 video files
+ */
+function getMp4VideoUrl(image: Image, videoFile: { path?: string }, baseUrl: string): string | undefined {
+  if (!videoFile.path || !isMp4File(videoFile.path) || !image.paths?.image) return undefined;
+  return tryGetUrlFromPath(image.paths.image, baseUrl);
+}
+
+/**
+ * Get URL for video preview (WebM)
+ */
+function getVideoPreviewUrl(image: Image, baseUrl: string): string | undefined {
+  return tryGetUrlFromPath(image.paths?.preview, baseUrl);
+}
+
+/**
+ * Get URL for regular images (tries image, preview, thumbnail in order)
+ */
+function getImageUrl(image: Image, baseUrl: string): string | undefined {
+  return tryGetUrlFromPath(image.paths?.image, baseUrl) ||
+         tryGetUrlFromPath(image.paths?.preview, baseUrl) ||
+         tryGetUrlFromPath(image.paths?.thumbnail, baseUrl);
+}
+
 export function getImageUrlForDisplay(image: Image, treatMp4AsVideo: boolean): string | undefined {
   const baseUrl = globalThis.location.origin;
   
   // Detect if this is a video from visualFiles
   const { isVideo, videoFile } = detectVideoFromVisualFiles(image.visualFiles);
   
-  // For .m4v and .mp4 files, use the actual video file path (paths.image) if treatMp4AsVideo is enabled
-  // Otherwise, fall through to use preview path (WebM)
+  // For .m4v and .mp4 files, use the actual video file path if treatMp4AsVideo is enabled
   if (isVideo && videoFile?.path && treatMp4AsVideo) {
-    if (isMp4File(videoFile.path)) {
-      // Use paths.image which should point to the actual file
-      if (image.paths?.image) {
-        const url = image.paths.image.startsWith('http') 
-          ? image.paths.image 
-          : `${baseUrl}${image.paths.image}`;
-        return isValidMediaUrl(url) ? url : undefined;
-      }
-    }
+    const mp4Url = getMp4VideoUrl(image, videoFile, baseUrl);
+    if (mp4Url) return mp4Url;
   }
 
   // For other videos, use preview path (WebM)
-  if (isVideo && image.paths?.preview) {
-    const url = image.paths.preview.startsWith('http') 
-      ? image.paths.preview 
-      : `${baseUrl}${image.paths.preview}`;
-    return isValidMediaUrl(url) ? url : undefined;
+  if (isVideo) {
+    const previewUrl = getVideoPreviewUrl(image, baseUrl);
+    if (previewUrl) return previewUrl;
   }
 
   // For regular images, try paths.image first, then paths.preview, then paths.thumbnail
-  if (image.paths?.image) {
-    const url = image.paths.image.startsWith('http') 
-      ? image.paths.image 
-      : `${baseUrl}${image.paths.image}`;
-    return isValidMediaUrl(url) ? url : undefined;
-  }
-  if (image.paths?.preview) {
-    const url = image.paths.preview.startsWith('http') 
-      ? image.paths.preview 
-      : `${baseUrl}${image.paths.preview}`;
-    return isValidMediaUrl(url) ? url : undefined;
-  }
-  if (image.paths?.thumbnail) {
-    const url = image.paths.thumbnail.startsWith('http') 
-      ? image.paths.thumbnail 
-      : `${baseUrl}${image.paths.thumbnail}`;
-    return isValidMediaUrl(url) ? url : undefined;
-  }
-  return undefined;
+  return getImageUrl(image, baseUrl);
 }
 
 /**
