@@ -411,9 +411,7 @@ export class FeedContainer {
    */
   private applyGlobalMuteState(): void {
     for (const post of this.posts.values()) {
-      if (post instanceof VideoPost) {
-        this.applyMuteStateToPost(post);
-      } else if (post instanceof ImageVideoPost) {
+      if (post instanceof VideoPost || post instanceof ImageVideoPost) {
         this.applyMuteStateToPost(post);
       }
       // ImagePost videos are always muted (no audio playback), no need to handle here
@@ -3244,40 +3242,45 @@ export class FeedContainer {
   }
 
   /**
+   * Build URL from path with base URL
+   */
+  private buildUrlFromPath(path: string, baseUrl: string): string {
+    return path.startsWith('http') ? path : `${baseUrl}${path}`;
+  }
+
+  /**
+   * Try to get valid media URL from path
+   */
+  private tryGetValidMediaUrl(path: string | undefined, baseUrl: string): string | undefined {
+    if (!path) return undefined;
+    const url = this.buildUrlFromPath(path, baseUrl);
+    return isValidMediaUrl(url) ? url : undefined;
+  }
+
+  /**
+   * Get MP4 video URL for image post in HD mode
+   */
+  private getMp4VideoUrlForImageHD(image: Image, baseUrl: string): string | undefined {
+    return this.tryGetValidMediaUrl(image.paths?.image, baseUrl);
+  }
+
+  /**
+   * Get MP4 video URL for image post in non-HD mode
+   */
+  private getMp4VideoUrlForImageNonHD(image: Image, baseUrl: string): string | undefined {
+    const previewUrl = this.tryGetValidMediaUrl(image.paths?.preview, baseUrl);
+    if (previewUrl) return previewUrl;
+    // Fallback to full video if preview unavailable
+    return this.tryGetValidMediaUrl(image.paths?.image, baseUrl);
+  }
+
+  /**
    * Get MP4 video URL for image post
    */
   private getMp4VideoUrlForImage(image: Image, baseUrl: string): string | undefined {
-    if (this.useHDMode) {
-      // HD mode: use full video file (paths.image)
-      if (image.paths?.image) {
-        const url = image.paths.image.startsWith('http') 
-          ? image.paths.image 
-          : `${baseUrl}${image.paths.image}`;
-        if (isValidMediaUrl(url)) {
-          return url;
-        }
-      }
-    } else {
-      // Non-HD mode: use preview (WebM preview)
-      if (image.paths?.preview) {
-        const url = image.paths.preview.startsWith('http') 
-          ? image.paths.preview 
-          : `${baseUrl}${image.paths.preview}`;
-        if (isValidMediaUrl(url)) {
-          return url;
-        }
-      }
-      // Fallback to full video if preview unavailable
-      if (image.paths?.image) {
-        const url = image.paths.image.startsWith('http') 
-          ? image.paths.image 
-          : `${baseUrl}${image.paths.image}`;
-        if (isValidMediaUrl(url)) {
-          return url;
-        }
-      }
-    }
-    return undefined;
+    return this.useHDMode
+      ? this.getMp4VideoUrlForImageHD(image, baseUrl)
+      : this.getMp4VideoUrlForImageNonHD(image, baseUrl);
   }
 
   /**
@@ -3669,6 +3672,29 @@ export class FeedContainer {
   }
 
   /**
+   * Calculate pagination parameters for content loading
+   */
+  private calculatePaginationForContent(
+    append: boolean,
+    markerLimit: number,
+    limit: number
+  ): { markerPageSize: number; imagePageSize: number } {
+    // For markers and images: Use consistent page size (track the first limit used)
+    // This prevents wrong page calculations when limit changes between initial and subsequent loads
+    if (!append) {
+      // Store the page sizes used for first load
+      this.markerPageSize = markerLimit;
+      this.imagePageSize = limit;
+    }
+    
+    // Use stored page sizes for consistent pagination, or current limit if not set
+    return {
+      markerPageSize: this.markerPageSize || markerLimit,
+      imagePageSize: this.imagePageSize || limit
+    };
+  }
+
+  /**
    * Fetch all content types in parallel
    */
   private async fetchAllContent(options: {
@@ -3703,20 +3729,8 @@ export class FeedContainer {
       currentFilters.sortSeed = generateRandomSortSeed();
     }
     
-    // Calculate separate offsets for each content type based on their loaded counts
-    // This ensures each type calculates the correct page number for its own pagination
-    
-    // For markers and images: Use consistent page size (track the first limit used)
-    // This prevents wrong page calculations when limit changes between initial and subsequent loads
-    if (!append) {
-      // Store the page sizes used for first load
-      this.markerPageSize = markerLimit;
-      this.imagePageSize = limit;
-    }
-    
-    // Use stored page sizes for consistent pagination, or current limit if not set
-    const markerPageSize = this.markerPageSize || markerLimit;
-    const imagePageSize = this.imagePageSize || limit;
+    // Calculate pagination parameters
+    const { markerPageSize, imagePageSize } = this.calculatePaginationForContent(append, markerLimit, limit);
     
     // Calculate offsets using the consistent page sizes
     const markerOffset = append ? this.markersLoadedCount : 0;
@@ -5521,7 +5535,7 @@ export class FeedContainer {
   /**
    * Destroy a post's video player
    */
-  private destroyPostPlayer(post: VideoPost | ImagePost | ImageVideoPost): void {
+  private destroyPostPlayer(post: PostType): void {
     const player = post.getPlayer();
     if (!player) {
       return;
