@@ -663,28 +663,10 @@ export class VideoPost extends BasePost {
    * Create footer with action buttons
    */
   private createFooter(): HTMLElement {
-    const footer = document.createElement('div');
-    footer.className = 'video-post__footer';
-    footer.style.padding = '2px 16px';
-
-    const info = document.createElement('div');
-    info.className = 'video-post__info';
-    info.style.gap = '0';
-    info.style.display = 'flex';
-    info.style.flexDirection = 'row'; // Change from column to row for right alignment
-    info.style.justifyContent = 'flex-end'; // Right-align the content
-
-    const row = document.createElement('div');
-    row.className = 'video-post__row';
-    row.style.display = 'flex';
-    row.style.alignItems = 'center';
+    const { footer, info, row, buttonGroup } = this.buildFooterContainer();
+    info.style.flexDirection = 'row';
+    info.style.justifyContent = 'flex-end';
     row.style.justifyContent = 'flex-end';
-    row.style.gap = '4px';
-
-    const buttonGroup = document.createElement('div');
-    buttonGroup.style.display = 'flex';
-    buttonGroup.style.alignItems = 'center';
-    buttonGroup.style.gap = '4px';
     buttonGroup.style.flexWrap = 'nowrap';
     buttonGroup.style.flexShrink = '0';
     this.buttonGroup = buttonGroup; // Store reference for button swapping
@@ -711,21 +693,6 @@ export class VideoPost extends BasePost {
     const playBtn = this.createPlayButton();
     buttonGroup.appendChild(playBtn);
 
-    row.appendChild(buttonGroup);
-    info.appendChild(row);
-    footer.appendChild(info);
-    
-    // Prevent hover events from bubbling to post container to avoid triggering video playback
-    // when hovering over buttons
-    footer.addEventListener('mouseenter', (e) => {
-      e.stopPropagation();
-      e.stopImmediatePropagation();
-    });
-    footer.addEventListener('mouseleave', (e) => {
-      e.stopPropagation();
-      e.stopImmediatePropagation();
-    });
-    
     return footer;
   }
 

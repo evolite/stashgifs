@@ -9,7 +9,7 @@ import { FavoritesManager } from './FavoritesManager.js';
 import { StashAPI } from './StashAPI.js';
 import { VisibilityManager } from './VisibilityManager.js';
 import { calculateAspectRatio, getAspectRatioClass, isValidMediaUrl, showToast, toAbsoluteUrl, isMobileDevice, throttle } from './utils.js';
-import { IMAGE_BADGE_SVG, EXTERNAL_LINK_SVG, HQ_SVG_OUTLINE, HQ_SVG_FILLED, VOLUME_MUTED_SVG, VOLUME_UNMUTED_SVG, STAR_SVG, STAR_SVG_OUTLINE } from './icons.js';
+import { HQ_SVG_OUTLINE, HQ_SVG_FILLED, VOLUME_MUTED_SVG, VOLUME_UNMUTED_SVG, STAR_SVG, STAR_SVG_OUTLINE } from './icons.js';
 import { BasePost } from './BasePost.js';
 import { setupTouchHandlers, preventClickAfterTouch } from './utils/touchHandlers.js';
 
@@ -151,83 +151,11 @@ export class ImageVideoPost extends BasePost {
    * Create header with performer and tag chips
    */
   private createHeader(): HTMLElement {
-    const header = document.createElement('div');
-    header.className = 'video-post__header';
-    header.style.padding = '2px 16px';
-    header.style.marginBottom = '0';
-    header.style.borderBottom = 'none';
-
-    const chips = document.createElement('div');
-    chips.className = 'chips';
-    chips.style.display = 'flex';
-    chips.style.flexWrap = 'wrap';
-    chips.style.alignItems = 'center';
-    chips.style.gap = '4px';
-    chips.style.margin = '0';
-    chips.style.padding = '0';
-
-    const badge = this.createImageBadgeIcon();
-    chips.appendChild(badge);
-    
-    // Add performer chips
-    if (this.data.image.performers && this.data.image.performers.length > 0) {
-      for (const performer of this.data.image.performers) {
-        const chip = this.createPerformerChip(performer);
-        chips.appendChild(chip);
-      }
-    }
-
-    // Add tag chips
-    this.addTagChips(chips);
-
-    header.appendChild(chips);
-    return header;
-  }
-
-  /**
-   * Create an image badge to show content type
-   */
-  private createImageBadgeIcon(): HTMLElement {
-    const badge = document.createElement('span');
-    badge.className = 'content-badge';
-    badge.style.display = 'inline-flex';
-    badge.style.alignItems = 'center';
-    badge.style.justifyContent = 'center';
-    badge.style.width = '30px';
-    badge.style.height = '30px';
-    badge.style.flexShrink = '0';
-    badge.style.color = 'rgba(255, 255, 255, 0.85)';
-    badge.style.pointerEvents = 'none';
-    badge.innerHTML = IMAGE_BADGE_SVG;
-    badge.title = 'Image';
-    badge.setAttribute('role', 'img');
-    badge.setAttribute('aria-label', 'Image');
-    return badge;
-  }
-
-  /**
-   * Add tag chips to the chips container
-   */
-  private addTagChips(chips: HTMLElement): void {
-    if (!this.data.image.tags?.length) {
-      return;
-    }
-    
-    const hasPerformers = this.data.image.performers && this.data.image.performers.length > 0;
-    let isFirstTag = true;
-    
-    for (const tag of this.data.image.tags) {
-      if (!tag?.id || !tag?.name || tag.name === FAVORITE_TAG_NAME) {
-        continue;
-      }
-      
-      const chip = this.createTagChip(tag);
-      if (hasPerformers && isFirstTag) {
-        chip.style.marginLeft = '8px';
-        isFirstTag = false;
-      }
-      chips.appendChild(chip);
-    }
+    return this.buildImageHeader({
+      performers: this.data.image.performers,
+      tags: this.data.image.tags,
+      favoriteTagName: FAVORITE_TAG_NAME
+    });
   }
 
   /**
@@ -276,36 +204,7 @@ export class ImageVideoPost extends BasePost {
    * Create footer with action buttons
    */
   private createFooter(): HTMLElement {
-    const footer = document.createElement('div');
-    footer.className = 'video-post__footer';
-    footer.style.padding = '2px 16px';
-    footer.style.position = 'relative';
-    footer.style.zIndex = '10';
-
-    const info = document.createElement('div');
-    info.className = 'video-post__info';
-    info.style.gap = '0';
-    info.style.display = 'flex';
-    info.style.flexDirection = 'row';
-    info.style.justifyContent = 'flex-end';
-    info.style.position = 'relative';
-    info.style.zIndex = '10';
-
-    const row = document.createElement('div');
-    row.className = 'video-post__row';
-    row.style.display = 'flex';
-    row.style.alignItems = 'center';
-    row.style.justifyContent = 'flex-end';
-    row.style.gap = '4px';
-    row.style.position = 'relative';
-    row.style.zIndex = '10';
-
-    const buttonGroup = document.createElement('div');
-    buttonGroup.style.display = 'flex';
-    buttonGroup.style.alignItems = 'center';
-    buttonGroup.style.gap = '4px';
-    buttonGroup.style.position = 'relative';
-    buttonGroup.style.zIndex = '10';
+    const { footer, buttonGroup } = this.buildFooterContainer();
     this.buttonGroup = buttonGroup;
 
     // Heart button (favorite)
@@ -341,56 +240,10 @@ export class ImageVideoPost extends BasePost {
     buttonGroup.appendChild(muteBtn);
 
     // Image button (open in Stash)
-    const imageBtn = this.createImageButton();
+    const imageBtn = this.createImageButton(this.data.image.id);
     buttonGroup.appendChild(imageBtn);
 
-    row.appendChild(buttonGroup);
-    info.appendChild(row);
-    footer.appendChild(info);
-    
-    // Prevent hover events from bubbling to post container
-    footer.addEventListener('mouseenter', (e) => {
-      e.stopPropagation();
-      e.stopImmediatePropagation();
-    });
-    footer.addEventListener('mouseleave', (e) => {
-      e.stopPropagation();
-      e.stopImmediatePropagation();
-    });
-    
     return footer;
-  }
-
-  /**
-   * Create image button to open image in Stash
-   */
-  private createImageButton(): HTMLElement {
-    const imageLink = this.getImageLink();
-    const iconBtn = document.createElement('a');
-    iconBtn.className = 'icon-btn icon-btn--image';
-    iconBtn.href = imageLink;
-    iconBtn.target = '_blank';
-    iconBtn.rel = 'noopener noreferrer';
-    iconBtn.setAttribute('aria-label', 'View full image');
-    iconBtn.title = 'Open image in Stash';
-    this.applyIconButtonStyles(iconBtn);
-    iconBtn.style.color = '#F5C518';
-    iconBtn.style.padding = '0';
-    iconBtn.style.width = '44px';
-    iconBtn.style.height = '44px';
-    iconBtn.style.minWidth = '44px';
-    iconBtn.style.minHeight = '44px';
-    iconBtn.innerHTML = EXTERNAL_LINK_SVG;
-    
-    this.addHoverEffect(iconBtn);
-    return iconBtn;
-  }
-
-  /**
-   * Get link to image in Stash
-   */
-  private getImageLink(): string {
-    return `${globalThis.location.origin}/images/${this.data.image.id}`;
   }
 
   /**

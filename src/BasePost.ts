@@ -7,9 +7,10 @@ import { FavoritesManager } from './FavoritesManager.js';
 import { StashAPI } from './StashAPI.js';
 import { VisibilityManager } from './VisibilityManager.js';
 import { toAbsoluteUrl, showToast, isMobileDevice } from './utils.js';
-import { VERIFIED_CHECKMARK_SVG, ADD_TAG_SVG, HEART_SVG_OUTLINE, HEART_SVG_FILLED, OCOUNT_SVG } from './icons.js';
+import { VERIFIED_CHECKMARK_SVG, ADD_TAG_SVG, HEART_SVG_OUTLINE, HEART_SVG_FILLED, OCOUNT_SVG, IMAGE_BADGE_SVG, EXTERNAL_LINK_SVG } from './icons.js';
 import { setupTouchHandlers, preventClickAfterTouch } from './utils/touchHandlers.js';
 import { PerformerExtended } from './graphql/types.js';
+import { Performer, Tag } from './types.js';
 
 interface HoverHandlers {
   mouseenter: () => void;
@@ -97,6 +98,59 @@ export abstract class BasePost {
     this.container.appendChild(footer);
 
     return { header, playerContainer, footer };
+  }
+
+  protected buildFooterContainer(): {
+    footer: HTMLElement;
+    info: HTMLElement;
+    row: HTMLElement;
+    buttonGroup: HTMLElement;
+  } {
+    const footer = document.createElement('div');
+    footer.className = 'video-post__footer';
+    footer.style.padding = '2px 16px';
+    footer.style.position = 'relative';
+    footer.style.zIndex = '10';
+
+    const info = document.createElement('div');
+    info.className = 'video-post__info';
+    info.style.gap = '0';
+    info.style.display = 'flex';
+    info.style.flexDirection = 'row';
+    info.style.justifyContent = 'flex-end';
+    info.style.position = 'relative';
+    info.style.zIndex = '10';
+
+    const row = document.createElement('div');
+    row.className = 'video-post__row';
+    row.style.display = 'flex';
+    row.style.alignItems = 'center';
+    row.style.justifyContent = 'flex-end';
+    row.style.gap = '4px';
+    row.style.position = 'relative';
+    row.style.zIndex = '10';
+
+    const buttonGroup = document.createElement('div');
+    buttonGroup.style.display = 'flex';
+    buttonGroup.style.alignItems = 'center';
+    buttonGroup.style.gap = '4px';
+    buttonGroup.style.position = 'relative';
+    buttonGroup.style.zIndex = '10';
+
+    row.appendChild(buttonGroup);
+    info.appendChild(row);
+    footer.appendChild(info);
+
+    footer.addEventListener('mouseenter', (e) => {
+      e.stopPropagation();
+      e.stopImmediatePropagation();
+    });
+    footer.addEventListener('mouseleave', (e) => {
+      e.stopPropagation();
+      e.stopImmediatePropagation();
+    });
+
+    return { footer, info, row, buttonGroup };
   }
 
   /**
@@ -1382,6 +1436,99 @@ export abstract class BasePost {
     
     hashtag.appendChild(document.createTextNode(`#${tag.name}`));
     return hashtag;
+  }
+
+  protected createImageBadgeIcon(): HTMLElement {
+    const badge = document.createElement('span');
+    badge.className = 'content-badge';
+    badge.style.display = 'inline-flex';
+    badge.style.alignItems = 'center';
+    badge.style.justifyContent = 'center';
+    badge.style.width = '30px';
+    badge.style.height = '30px';
+    badge.style.flexShrink = '0';
+    badge.style.color = 'rgba(255, 255, 255, 0.85)';
+    badge.style.pointerEvents = 'none';
+    badge.innerHTML = IMAGE_BADGE_SVG;
+    badge.title = 'Image';
+    badge.setAttribute('role', 'img');
+    badge.setAttribute('aria-label', 'Image');
+    return badge;
+  }
+
+  protected buildImageHeader(options: {
+    performers?: Performer[];
+    tags?: Tag[];
+    favoriteTagName?: string;
+  }): HTMLElement {
+    const header = document.createElement('div');
+    header.className = 'video-post__header';
+    header.style.padding = '2px 16px';
+    header.style.marginBottom = '0';
+    header.style.borderBottom = 'none';
+
+    const chips = document.createElement('div');
+    chips.className = 'chips';
+    chips.style.display = 'flex';
+    chips.style.flexWrap = 'wrap';
+    chips.style.alignItems = 'center';
+    chips.style.gap = '4px';
+    chips.style.margin = '0';
+    chips.style.padding = '0';
+
+    chips.appendChild(this.createImageBadgeIcon());
+
+    if (options.performers && options.performers.length > 0) {
+      for (const performer of options.performers) {
+        const chip = this.createPerformerChip(performer);
+        chips.appendChild(chip);
+      }
+    }
+
+    if (options.tags && options.tags.length > 0) {
+      const hasPerformers = !!options.performers && options.performers.length > 0;
+      let isFirstTag = true;
+      for (const tag of options.tags) {
+        if (!tag?.id || !tag?.name || tag.name === options.favoriteTagName) {
+          continue;
+        }
+        const chip = this.createTagChip(tag);
+        if (hasPerformers && isFirstTag) {
+          chip.style.marginLeft = '8px';
+          isFirstTag = false;
+        }
+        chips.appendChild(chip);
+      }
+    }
+
+    header.appendChild(chips);
+    return header;
+  }
+
+  protected getImageLink(imageId: string): string {
+    return `${globalThis.location.origin}/images/${imageId}`;
+  }
+
+  protected createImageButton(imageId: string): HTMLElement {
+    const imageLink = this.getImageLink(imageId);
+    const iconBtn = document.createElement('a');
+    iconBtn.className = 'icon-btn icon-btn--image';
+    iconBtn.href = imageLink;
+    iconBtn.target = '_blank';
+    iconBtn.rel = 'noopener noreferrer';
+    iconBtn.setAttribute('aria-label', 'View full image');
+    iconBtn.title = 'Open image in Stash';
+    this.applyIconButtonStyles(iconBtn);
+    iconBtn.style.color = '#F5C518';
+    iconBtn.style.padding = '0';
+    iconBtn.style.width = '44px';
+    iconBtn.style.height = '44px';
+    iconBtn.style.minWidth = '44px';
+    iconBtn.style.minHeight = '44px';
+    iconBtn.innerHTML = EXTERNAL_LINK_SVG;
+
+    this.addHoverEffect(iconBtn);
+    return iconBtn;
   }
 
   /**
