@@ -76,6 +76,7 @@ export class NativeVideoPlayer {
   private scrollTimeoutId?: ReturnType<typeof setTimeout>;
   private scrollHandler?: () => void;
   private playerWrapper?: HTMLElement; // Store reference to player wrapper for hover handlers
+  private readonly shouldShowLoadingIndicator: boolean;
 
   constructor(container: HTMLElement, videoUrl: string, options?: {
     autoplay?: boolean;
@@ -86,6 +87,7 @@ export class NativeVideoPlayer {
     aggressivePreload?: boolean; // Use 'auto' preload for non-HD videos
     isHDMode?: boolean; // Whether this is HD mode (affects mute button visibility)
     posterUrl?: string; // Poster image URL to display before video loads
+    showLoadingIndicator?: boolean; // Toggle internal loading spinner
     // onMuteToggle removed - mute is now controlled by overlay button in VideoPost
   }) {
     // Validate video URL before proceeding
@@ -103,6 +105,7 @@ export class NativeVideoPlayer {
     this.onStateChange = options?.onStateChange;
     // onMuteToggle removed - mute is now controlled by overlay button in VideoPost
     this.isHDMode = options?.isHDMode ?? false;
+    this.shouldShowLoadingIndicator = options?.showLoadingIndicator ?? true;
 
     this.state = {
       isPlaying: false,
@@ -1028,15 +1031,16 @@ export class NativeVideoPlayer {
       playerWrapper.appendChild(this.overlay);
     }
     
-    // Create loading indicator
-    this.loadingIndicator = document.createElement('div');
-    this.loadingIndicator.className = 'video-player__loading';
-    this.loadingIndicator.style.display = 'none'; // Start hidden, will show when loading starts
-    const spinner = document.createElement('div');
-    spinner.className = 'spinner';
-    this.loadingIndicator.appendChild(spinner);
-    playerWrapper.appendChild(this.loadingIndicator);
-    
+    if (this.shouldShowLoadingIndicator) {
+      // Create loading indicator
+      this.loadingIndicator = document.createElement('div');
+      this.loadingIndicator.className = 'video-player__loading';
+      this.loadingIndicator.style.display = 'none'; // Start hidden, will show when loading starts
+      const spinner = document.createElement('div');
+      spinner.className = 'spinner';
+      this.loadingIndicator.appendChild(spinner);
+      playerWrapper.appendChild(this.loadingIndicator);
+    }    
     this.container.appendChild(playerWrapper);
   }
 

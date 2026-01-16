@@ -1979,6 +1979,7 @@ export class VideoPost extends BasePost {
         aggressivePreload: false, // HD videos use metadata preload
         isHDMode: true, // HD mode
         posterUrl: this.getPosterUrl(),
+        showLoadingIndicator: false,
         // onMuteToggle removed - using overlay button instead
       });
 
@@ -2155,6 +2156,7 @@ export class VideoPost extends BasePost {
         startTime: finalStartTime,
         endTime: endTime ?? this.data.endTime ?? this.data.marker.end_seconds,
         posterUrl: this.getPosterUrl(),
+        showLoadingIndicator: false,
       });
 
       this.isLoaded = true;
@@ -2377,6 +2379,14 @@ export class VideoPost extends BasePost {
     const placeholder = document.createElement('div');
     placeholder.className = 'video-post__error-placeholder';
     placeholder.style.backgroundColor = THEME.colors.backgroundSecondary;
+
+    const posterUrl = this.getPosterUrl();
+    if (posterUrl) {
+      placeholder.style.backgroundImage = `url("${posterUrl}")`;
+      placeholder.style.backgroundSize = 'cover';
+      placeholder.style.backgroundPosition = 'center';
+      placeholder.style.backgroundRepeat = 'no-repeat';
+    }
 
     // Create error text overlay
     const errorText = document.createElement('div');

@@ -379,6 +379,7 @@ export class ImageVideoPost extends BasePost {
         aggressivePreload: false,
         isHDMode: true,
         posterUrl: this.getPosterUrl(),
+        showLoadingIndicator: false,
       });
 
       this.isLoaded = true;
@@ -507,6 +508,7 @@ export class ImageVideoPost extends BasePost {
         startTime: finalStartTime,
         endTime: undefined,
         posterUrl: this.getPosterUrl(),
+        showLoadingIndicator: false,
       });
 
       this.isLoaded = true;
