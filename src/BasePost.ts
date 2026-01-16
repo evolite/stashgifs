@@ -17,6 +17,19 @@ interface HoverHandlers {
   mouseleave: () => void;
 }
 
+export interface AddTagDialogState {
+  dialog?: HTMLElement;
+  input?: HTMLInputElement;
+  suggestions?: HTMLElement;
+  createButton?: HTMLButtonElement;
+  isOpen: boolean;
+  selectedTagId?: string;
+  selectedTagName?: string;
+  autocompleteDebounceTimer?: ReturnType<typeof setTimeout>;
+  tagSearchLoadingTimer?: ReturnType<typeof setTimeout>;
+  outsideClickHandler?: (event: Event) => void;
+  keydownHandler?: (event: KeyboardEvent) => void;
+}
 
 /**
  * Base class for post components (VideoPost and ImagePost)
@@ -1529,6 +1542,339 @@ export abstract class BasePost {
 
     this.addHoverEffect(iconBtn);
     return iconBtn;
+  }
+
+  protected openAddTagDialogBase(options: {
+    state: AddTagDialogState;
+    buttonGroup?: HTMLElement;
+    onSearch: (searchTerm: string) => void;
+    onSubmit: () => void;
+    onAdjustPosition?: (dialog: HTMLElement) => void;
+    focusAfterClose?: HTMLElement | null;
+  }): void {
+    const { state } = options;
+    if (state.isOpen) return;
+
+    if (!state.dialog) {
+      this.createAddTagDialogBase(options);
+    }
+
+    if (!state.dialog || !options.buttonGroup) return;
+
+    state.isOpen = true;
+    state.selectedTagId = undefined;
+    state.selectedTagName = undefined;
+    if (state.input) {
+      state.input.value = '';
+    }
+
+    this.updateAddTagDialogState(state);
+
+    options.buttonGroup.style.position = 'relative';
+    if (!state.dialog.parentElement) {
+      options.buttonGroup.appendChild(state.dialog);
+    }
+
+    state.dialog.hidden = false;
+    state.dialog.setAttribute('aria-hidden', 'false');
+    state.dialog.style.opacity = '1';
+    state.dialog.style.transform = 'translateX(-50%) translateY(0) scale(1)';
+    state.dialog.style.pointerEvents = 'auto';
+
+    const adjustPosition = options.onAdjustPosition;
+    if (adjustPosition) {
+      requestAnimationFrame(() => {
+        if (state.dialog) {
+          adjustPosition(state.dialog);
+        }
+      });
+    }
+
+    if (!state.outsideClickHandler) {
+      state.outsideClickHandler = (event: Event) => {
+        if (!state.isOpen || !state.dialog) return;
+        const target = event.target as Node | null;
+        if (target && state.dialog.contains(target)) {
+          return;
+        }
+        this.closeAddTagDialogBase({
+          state,
+          focusAfterClose: options.focusAfterClose
+        });
+      };
+    }
+
+    if (!state.keydownHandler) {
+      state.keydownHandler = (event: KeyboardEvent) => {
+        if (!state.isOpen) return;
+        if (event.key === 'Escape') {
+          event.preventDefault();
+          this.closeAddTagDialogBase({
+            state,
+            focusAfterClose: options.focusAfterClose
+          });
+        }
+      };
+    }
+
+    document.addEventListener('mousedown', state.outsideClickHandler);
+    document.addEventListener('touchstart', state.outsideClickHandler);
+    document.addEventListener('keydown', state.keydownHandler);
+
+    requestAnimationFrame(() => {
+      state.input?.focus();
+    });
+  }
+
+  protected closeAddTagDialogBase(options: { state: AddTagDialogState; focusAfterClose?: HTMLElement | null }): void {
+    const { state, focusAfterClose } = options;
+    if (!state.isOpen) return;
+    state.isOpen = false;
+
+    if (state.autocompleteDebounceTimer) {
+      clearTimeout(state.autocompleteDebounceTimer);
+      state.autocompleteDebounceTimer = undefined;
+    }
+    if (state.tagSearchLoadingTimer) {
+      clearTimeout(state.tagSearchLoadingTimer);
+      state.tagSearchLoadingTimer = undefined;
+    }
+
+    if (state.dialog) {
+      state.dialog.style.opacity = '0';
+      state.dialog.style.transform = 'translateX(-50%) translateY(4px) scale(0.96)';
+      state.dialog.style.pointerEvents = 'none';
+      setTimeout(() => {
+        if (state.dialog && !state.isOpen) {
+          state.dialog.hidden = true;
+          state.dialog.setAttribute('aria-hidden', 'true');
+        }
+      }, 200);
+    }
+
+    if (state.suggestions) {
+      state.suggestions.style.display = 'none';
+    }
+
+    if (state.outsideClickHandler) {
+      document.removeEventListener('mousedown', state.outsideClickHandler);
+      document.removeEventListener('touchstart', state.outsideClickHandler);
+    }
+    if (state.keydownHandler) {
+      document.removeEventListener('keydown', state.keydownHandler);
+    }
+
+    focusAfterClose?.focus();
+  }
+
+  protected handleAddTagInputBase(options: { state: AddTagDialogState; onSearch: (searchTerm: string) => void }): void {
+    const { state, onSearch } = options;
+    if (!state.input) return;
+
+    const searchTerm = state.input.value.trim();
+    state.selectedTagId = undefined;
+    state.selectedTagName = undefined;
+    this.updateAddTagDialogState(state);
+
+    if (state.autocompleteDebounceTimer) {
+      clearTimeout(state.autocompleteDebounceTimer);
+    }
+    if (state.tagSearchLoadingTimer) {
+      clearTimeout(state.tagSearchLoadingTimer);
+      state.tagSearchLoadingTimer = undefined;
+    }
+
+    if (searchTerm.length === 0) {
+      if (state.suggestions) {
+        state.suggestions.style.display = 'none';
+      }
+      return;
+    }
+
+    state.autocompleteDebounceTimer = setTimeout(() => {
+      onSearch(searchTerm);
+    }, 250);
+  }
+
+  protected updateAddTagDialogState(state: AddTagDialogState): void {
+    if (!state.createButton) return;
+    const hasSelection = !!state.selectedTagId && !!state.selectedTagName;
+    state.createButton.disabled = !hasSelection;
+    state.createButton.style.opacity = hasSelection ? '1' : '0.5';
+  }
+
+  protected async searchTagsForSelect(state: AddTagDialogState, searchTerm: string): Promise<void> {
+    if (!this.api || !state.suggestions) return;
+
+    try {
+      const tags = await this.api.findTagsForSelect(searchTerm, 10);
+      state.suggestions.innerHTML = '';
+      state.suggestions.style.display = tags.length > 0 ? 'block' : 'none';
+
+      for (const tag of tags) {
+        const item = document.createElement('div');
+        item.style.padding = '10px 12px';
+        item.style.cursor = 'pointer';
+        item.style.color = 'rgba(255, 255, 255, 0.9)';
+        item.style.fontSize = '14px';
+        item.style.borderBottom = '1px solid rgba(255, 255, 255, 0.1)';
+        item.textContent = tag.name;
+        item.addEventListener('mouseenter', () => {
+          item.style.background = 'rgba(255, 255, 255, 0.1)';
+        });
+        item.addEventListener('mouseleave', () => {
+          item.style.background = 'transparent';
+        });
+        item.addEventListener('click', () => {
+          state.selectedTagId = tag.id;
+          state.selectedTagName = tag.name;
+          if (state.input) {
+            state.input.value = tag.name;
+          }
+          this.updateAddTagDialogState(state);
+          if (state.suggestions) {
+            state.suggestions.style.display = 'none';
+          }
+        });
+        state.suggestions.appendChild(item);
+      }
+    } catch (error) {
+      console.error('Failed to search tags', error);
+    }
+  }
+
+  private createAddTagDialogBase(options: {
+    state: AddTagDialogState;
+    onSearch: (searchTerm: string) => void;
+    onSubmit: () => void;
+    focusAfterClose?: HTMLElement | null;
+  }): void {
+    const { state, onSearch, onSubmit } = options;
+    const dialog = document.createElement('div');
+    dialog.className = 'add-tag-dialog';
+    dialog.setAttribute('role', 'dialog');
+    dialog.setAttribute('aria-modal', 'true');
+    dialog.setAttribute('aria-hidden', 'true');
+    dialog.hidden = true;
+    dialog.style.position = 'absolute';
+    dialog.style.bottom = 'calc(100% + 6px)';
+    dialog.style.left = '50%';
+    dialog.style.transform = 'translateX(-50%)';
+    dialog.style.width = '320px';
+    dialog.style.maxWidth = 'calc(100vw - 32px)';
+    dialog.style.background = 'rgba(28, 28, 30, 0.98)';
+    dialog.style.backdropFilter = 'blur(20px) saturate(180%)';
+    dialog.style.border = '1px solid rgba(255, 255, 255, 0.12)';
+    dialog.style.borderRadius = '12px';
+    dialog.style.padding = '16px';
+    dialog.style.boxShadow = '0 8px 32px rgba(0, 0, 0, 0.4)';
+    dialog.style.zIndex = '200';
+    dialog.style.opacity = '0';
+    dialog.style.transform = 'translateX(-50%) translateY(4px) scale(0.96)';
+    dialog.style.pointerEvents = 'none';
+    dialog.style.transition = 'opacity 0.2s cubic-bezier(0.2, 0, 0, 1), transform 0.2s cubic-bezier(0.2, 0, 0, 1)';
+    dialog.style.boxSizing = 'border-box';
+    state.dialog = dialog;
+
+    const title = document.createElement('div');
+    title.textContent = 'Add Tag';
+    title.style.fontSize = '16px';
+    title.style.fontWeight = '600';
+    title.style.color = 'rgba(255, 255, 255, 0.9)';
+    title.style.marginBottom = '12px';
+    dialog.appendChild(title);
+
+    const inputWrapper = document.createElement('div');
+    inputWrapper.style.position = 'relative';
+    inputWrapper.style.marginBottom = '12px';
+
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.placeholder = 'Search for tag...';
+    input.style.width = '100%';
+    input.style.padding = '10px 12px';
+    input.style.background = 'rgba(255, 255, 255, 0.08)';
+    input.style.border = '1px solid rgba(255, 255, 255, 0.12)';
+    input.style.borderRadius = '8px';
+    input.style.color = 'rgba(255, 255, 255, 0.9)';
+    input.style.fontSize = '14px';
+    input.style.boxSizing = 'border-box';
+    input.setAttribute('aria-label', 'Tag name');
+    state.input = input;
+
+    input.addEventListener('input', () => {
+      this.handleAddTagInputBase({ state, onSearch });
+    });
+
+    input.addEventListener('keydown', (event) => {
+      if (event.key === 'Enter' && state.selectedTagId && state.createButton && !state.createButton.disabled) {
+        event.preventDefault();
+        onSubmit();
+      } else if (event.key === 'Escape') {
+        event.preventDefault();
+        this.closeAddTagDialogBase({ state, focusAfterClose: options.focusAfterClose });
+      }
+    });
+
+    inputWrapper.appendChild(input);
+
+    const suggestions = document.createElement('div');
+    suggestions.className = 'add-tag-dialog__suggestions';
+    suggestions.style.display = 'none';
+    suggestions.style.position = 'absolute';
+    suggestions.style.top = '100%';
+    suggestions.style.left = '0';
+    suggestions.style.right = '0';
+    suggestions.style.background = 'rgba(28, 28, 30, 0.98)';
+    suggestions.style.border = '1px solid rgba(255, 255, 255, 0.12)';
+    suggestions.style.borderTop = 'none';
+    suggestions.style.borderRadius = '0 0 8px 8px';
+    suggestions.style.maxHeight = '200px';
+    suggestions.style.overflowY = 'auto';
+    suggestions.style.zIndex = '201';
+    suggestions.style.marginTop = '4px';
+    state.suggestions = suggestions;
+    inputWrapper.appendChild(suggestions);
+
+    dialog.appendChild(inputWrapper);
+
+    const buttonContainer = document.createElement('div');
+    buttonContainer.style.display = 'flex';
+    buttonContainer.style.gap = '8px';
+    buttonContainer.style.justifyContent = 'flex-end';
+
+    const cancelButton = document.createElement('button');
+    cancelButton.textContent = 'Cancel';
+    cancelButton.style.padding = '8px 16px';
+    cancelButton.style.borderRadius = '8px';
+    cancelButton.style.border = '1px solid rgba(255, 255, 255, 0.2)';
+    cancelButton.style.background = 'transparent';
+    cancelButton.style.color = 'rgba(255, 255, 255, 0.9)';
+    cancelButton.style.cursor = 'pointer';
+    cancelButton.style.fontSize = '14px';
+    cancelButton.addEventListener('click', () => this.closeAddTagDialogBase({ state, focusAfterClose: options.focusAfterClose }));
+    buttonContainer.appendChild(cancelButton);
+
+    const addButton = document.createElement('button');
+    addButton.id = 'add-tag-dialog-action-button';
+    addButton.textContent = 'Add';
+    addButton.style.padding = '8px 16px';
+    addButton.style.borderRadius = '8px';
+    addButton.style.border = 'none';
+    addButton.style.background = '#F5C518';
+    addButton.style.color = '#000000';
+    addButton.style.cursor = 'pointer';
+    addButton.style.fontSize = '14px';
+    addButton.style.fontWeight = '600';
+    addButton.disabled = true;
+    addButton.style.opacity = '0.5';
+    state.createButton = addButton;
+    addButton.addEventListener('click', () => {
+      onSubmit();
+    });
+    buttonContainer.appendChild(addButton);
+
+    dialog.appendChild(buttonContainer);
   }
 
   /**

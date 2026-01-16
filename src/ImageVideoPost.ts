@@ -11,6 +11,7 @@ import { VisibilityManager } from './VisibilityManager.js';
 import { calculateAspectRatio, getAspectRatioClass, isValidMediaUrl, showToast, toAbsoluteUrl, isMobileDevice, throttle } from './utils.js';
 import { HQ_SVG_OUTLINE, HQ_SVG_FILLED, VOLUME_MUTED_SVG, VOLUME_UNMUTED_SVG, STAR_SVG, STAR_SVG_OUTLINE } from './icons.js';
 import { BasePost } from './BasePost.js';
+import type { AddTagDialogState } from './BasePost.js';
 import { setupTouchHandlers, preventClickAfterTouch } from './utils/touchHandlers.js';
 
 // Constants
@@ -56,15 +57,7 @@ export class ImageVideoPost extends BasePost {
   private muteOverlayButton?: HTMLElement;
   
   // Add tag dialog state
-  private addTagDialog?: HTMLElement;
-  private addTagDialogInput?: HTMLInputElement;
-  private addTagDialogSuggestions?: HTMLElement;
-  private addTagDialogCreateButton?: HTMLButtonElement;
-  private isAddTagDialogOpen: boolean = false;
-  private selectedTagId?: string;
-  private selectedTagName?: string;
-  private autocompleteDebounceTimer?: ReturnType<typeof setTimeout>;
-  private tagSearchLoadingTimer?: ReturnType<typeof setTimeout>;
+  private addTagDialogState: AddTagDialogState = { isOpen: false };
   
   // Rating state
   private ratingValue: number = 0;
@@ -704,380 +697,60 @@ export class ImageVideoPost extends BasePost {
    * Open add tag dialog
    */
   protected openAddTagDialog(): void {
-    if (this.isAddTagDialogOpen) return;
-
-    if (!this.addTagDialog) {
-      this.createAddTagDialog();
-    }
-
-    if (!this.addTagDialog || !this.buttonGroup) return;
-
-    this.isAddTagDialogOpen = true;
-    this.selectedTagId = undefined;
-    this.selectedTagName = undefined;
-    if (this.addTagDialogInput) {
-      this.addTagDialogInput.value = '';
-    }
-
-    this.updateAddTagDialogState();
-
-    // Position dialog relative to button group
-    this.buttonGroup.style.position = 'relative';
-    if (!this.addTagDialog.parentElement) {
-      this.buttonGroup.appendChild(this.addTagDialog);
-    }
-
-    if (this.addTagDialog) {
-      this.addTagDialog.hidden = false;
-      this.addTagDialog.setAttribute('aria-hidden', 'false');
-      this.addTagDialog.style.opacity = '1';
-      this.addTagDialog.style.transform = 'translateX(-50%) translateY(0) scale(1)';
-      this.addTagDialog.style.pointerEvents = 'auto';
-      
-      // Adjust position to keep dialog within card boundaries
-      requestAnimationFrame(() => {
-        this.adjustDialogPosition(this.addTagDialog!);
-      });
-    }
-
-    document.addEventListener('mousedown', this.onAddTagDialogOutsideClick);
-    document.addEventListener('touchstart', this.onAddTagDialogOutsideClick);
-    document.addEventListener('keydown', this.onAddTagDialogKeydown);
-
-    // Focus input
-    requestAnimationFrame(() => {
-      this.addTagDialogInput?.focus();
-    });
-  }
-
-  /**
-   * Create add tag dialog
-   */
-  private createAddTagDialog(): void {
-    const dialog = document.createElement('div');
-    dialog.className = 'add-tag-dialog';
-    dialog.setAttribute('role', 'dialog');
-    dialog.setAttribute('aria-modal', 'true');
-    dialog.setAttribute('aria-hidden', 'true');
-    dialog.hidden = true;
-    dialog.style.position = 'absolute';
-    dialog.style.bottom = 'calc(100% + 6px)';
-    dialog.style.left = '50%';
-    dialog.style.transform = 'translateX(-50%)';
-    dialog.style.width = '320px';
-    dialog.style.maxWidth = 'calc(100vw - 32px)';
-    dialog.style.background = 'rgba(28, 28, 30, 0.98)';
-    dialog.style.backdropFilter = 'blur(20px) saturate(180%)';
-    dialog.style.border = '1px solid rgba(255, 255, 255, 0.12)';
-    dialog.style.borderRadius = '12px';
-    dialog.style.padding = '16px';
-    dialog.style.boxShadow = '0 8px 32px rgba(0, 0, 0, 0.4)';
-    dialog.style.zIndex = '200';
-    dialog.style.opacity = '0';
-    dialog.style.transform = 'translateX(-50%) translateY(4px) scale(0.96)';
-    dialog.style.pointerEvents = 'none';
-    dialog.style.transition = 'opacity 0.2s cubic-bezier(0.2, 0, 0, 1), transform 0.2s cubic-bezier(0.2, 0, 0, 1)';
-    dialog.style.boxSizing = 'border-box';
-    this.addTagDialog = dialog;
-
-    // Title
-    const title = document.createElement('div');
-    title.textContent = 'Add Tag';
-    title.style.fontSize = '16px';
-    title.style.fontWeight = '600';
-    title.style.color = 'rgba(255, 255, 255, 0.9)';
-    title.style.marginBottom = '12px';
-    dialog.appendChild(title);
-
-    // Input wrapper
-    const inputWrapper = document.createElement('div');
-    inputWrapper.style.position = 'relative';
-    inputWrapper.style.marginBottom = '12px';
-
-    // Tag input
-    const input = document.createElement('input');
-    input.type = 'text';
-    input.placeholder = 'Search for tag...';
-    input.style.width = '100%';
-    input.style.padding = '10px 12px';
-    input.style.background = 'rgba(255, 255, 255, 0.08)';
-    input.style.border = '1px solid rgba(255, 255, 255, 0.12)';
-    input.style.borderRadius = '8px';
-    input.style.color = 'rgba(255, 255, 255, 0.9)';
-    input.style.fontSize = '14px';
-    input.style.boxSizing = 'border-box';
-    input.setAttribute('aria-label', 'Tag name');
-    this.addTagDialogInput = input;
-
-    input.addEventListener('input', () => {
-      this.handleAddTagInput();
-    });
-
-    input.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter' && this.selectedTagId && this.addTagDialogCreateButton && !this.addTagDialogCreateButton.disabled) {
-        e.preventDefault();
+    this.openAddTagDialogBase({
+      state: this.addTagDialogState,
+      buttonGroup: this.buttonGroup,
+      onSearch: (searchTerm) => {
+        void this.searchTagsForSelect(this.addTagDialogState, searchTerm);
+      },
+      onSubmit: () => {
         void this.addTagToImage();
-      } else if (e.key === 'Escape') {
-        e.preventDefault();
-        this.closeAddTagDialog();
-      }
+      },
+      onAdjustPosition: (dialog) => this.adjustDialogPosition(dialog),
+      focusAfterClose: this.addTagButton
     });
-
-    inputWrapper.appendChild(input);
-
-    // Suggestions dropdown
-    const suggestions = document.createElement('div');
-    suggestions.className = 'add-tag-dialog__suggestions';
-    suggestions.style.display = 'none';
-    suggestions.style.position = 'absolute';
-    suggestions.style.top = '100%';
-    suggestions.style.left = '0';
-    suggestions.style.right = '0';
-    suggestions.style.background = 'rgba(28, 28, 30, 0.98)';
-    suggestions.style.border = '1px solid rgba(255, 255, 255, 0.12)';
-    suggestions.style.borderTop = 'none';
-    suggestions.style.borderRadius = '0 0 8px 8px';
-    suggestions.style.maxHeight = '200px';
-    suggestions.style.overflowY = 'auto';
-    suggestions.style.zIndex = '201';
-    suggestions.style.marginTop = '4px';
-    this.addTagDialogSuggestions = suggestions;
-    inputWrapper.appendChild(suggestions);
-
-    dialog.appendChild(inputWrapper);
-
-    // Button container
-    const buttonContainer = document.createElement('div');
-    buttonContainer.style.display = 'flex';
-    buttonContainer.style.gap = '8px';
-    buttonContainer.style.justifyContent = 'flex-end';
-
-    // Cancel button
-    const cancelButton = document.createElement('button');
-    cancelButton.textContent = 'Cancel';
-    cancelButton.style.padding = '8px 16px';
-    cancelButton.style.borderRadius = '8px';
-    cancelButton.style.border = '1px solid rgba(255, 255, 255, 0.2)';
-    cancelButton.style.background = 'transparent';
-    cancelButton.style.color = 'rgba(255, 255, 255, 0.9)';
-    cancelButton.style.cursor = 'pointer';
-    cancelButton.style.fontSize = '14px';
-    cancelButton.addEventListener('click', () => this.closeAddTagDialog());
-    buttonContainer.appendChild(cancelButton);
-
-    // Add button
-    const addButton = document.createElement('button');
-    addButton.id = 'add-tag-dialog-action-button';
-    addButton.textContent = 'Add';
-    addButton.style.padding = '8px 16px';
-    addButton.style.borderRadius = '8px';
-    addButton.style.border = 'none';
-    addButton.style.background = '#F5C518';
-    addButton.style.color = '#000000';
-    addButton.style.cursor = 'pointer';
-    addButton.style.fontSize = '14px';
-    addButton.style.fontWeight = '600';
-    addButton.disabled = true;
-    addButton.style.opacity = '0.5';
-    this.addTagDialogCreateButton = addButton;
-    addButton.addEventListener('click', () => {
-      void this.addTagToImage();
-    });
-    buttonContainer.appendChild(addButton);
-
-    dialog.appendChild(buttonContainer);
-  }
-
-  /**
-   * Close add tag dialog
-   */
-  private closeAddTagDialog(): void {
-    if (!this.isAddTagDialogOpen) return;
-    this.isAddTagDialogOpen = false;
-
-    if (this.autocompleteDebounceTimer) {
-      clearTimeout(this.autocompleteDebounceTimer);
-      this.autocompleteDebounceTimer = undefined;
-    }
-    if (this.tagSearchLoadingTimer) {
-      clearTimeout(this.tagSearchLoadingTimer);
-      this.tagSearchLoadingTimer = undefined;
-    }
-
-    if (this.addTagDialog) {
-      this.addTagDialog.style.opacity = '0';
-      this.addTagDialog.style.transform = 'translateX(-50%) translateY(4px) scale(0.96)';
-      this.addTagDialog.style.pointerEvents = 'none';
-      setTimeout(() => {
-        if (this.addTagDialog && !this.isAddTagDialogOpen) {
-          this.addTagDialog.hidden = true;
-          this.addTagDialog.setAttribute('aria-hidden', 'true');
-        }
-      }, 200);
-    }
-
-    if (this.addTagDialogSuggestions) {
-      this.addTagDialogSuggestions.style.display = 'none';
-    }
-
-    document.removeEventListener('mousedown', this.onAddTagDialogOutsideClick);
-    document.removeEventListener('touchstart', this.onAddTagDialogOutsideClick);
-    document.removeEventListener('keydown', this.onAddTagDialogKeydown);
-  }
-
-  /**
-   * Handle clicks outside add tag dialog
-   */
-  private readonly onAddTagDialogOutsideClick = (event: Event): void => {
-    if (!this.isAddTagDialogOpen || !this.addTagDialog) return;
-    const target = event.target as Node | null;
-    if (target && this.addTagDialog.contains(target)) {
-      return;
-    }
-    this.closeAddTagDialog();
-  };
-
-  /**
-   * Handle keyboard events for add tag dialog
-   */
-  private readonly onAddTagDialogKeydown = (event: KeyboardEvent): void => {
-    if (!this.isAddTagDialogOpen) return;
-    if (event.key === 'Escape') {
-      event.preventDefault();
-      this.closeAddTagDialog();
-      this.addTagButton?.focus();
-    }
-  };
-
-  /**
-   * Handle tag input for autocomplete
-   */
-  private handleAddTagInput(): void {
-    if (!this.addTagDialogInput) return;
-
-    const searchTerm = this.addTagDialogInput.value.trim();
-    this.selectedTagId = undefined;
-    this.selectedTagName = undefined;
-    this.updateAddTagDialogState();
-
-    if (this.autocompleteDebounceTimer) {
-      clearTimeout(this.autocompleteDebounceTimer);
-    }
-    if (this.tagSearchLoadingTimer) {
-      clearTimeout(this.tagSearchLoadingTimer);
-      this.tagSearchLoadingTimer = undefined;
-    }
-
-    if (searchTerm.length === 0) {
-      if (this.addTagDialogSuggestions) {
-        this.addTagDialogSuggestions.style.display = 'none';
-      }
-      return;
-    }
-
-    this.autocompleteDebounceTimer = setTimeout(() => {
-      void this.searchTagsForImage(searchTerm);
-    }, 250);
-  }
-
-  /**
-   * Search tags for image
-   */
-  private async searchTagsForImage(searchTerm: string): Promise<void> {
-    if (!this.api || !this.addTagDialogSuggestions) return;
-
-    try {
-      const tags = await this.api.findTagsForSelect(searchTerm, 10);
-      this.addTagDialogSuggestions.innerHTML = '';
-      this.addTagDialogSuggestions.style.display = tags.length > 0 ? 'block' : 'none';
-
-      for (const tag of tags) {
-        const item = document.createElement('div');
-        item.style.padding = '10px 12px';
-        item.style.cursor = 'pointer';
-        item.style.color = 'rgba(255, 255, 255, 0.9)';
-        item.style.fontSize = '14px';
-        item.style.borderBottom = '1px solid rgba(255, 255, 255, 0.1)';
-        item.textContent = tag.name;
-        item.addEventListener('mouseenter', () => {
-          item.style.background = 'rgba(255, 255, 255, 0.1)';
-        });
-        item.addEventListener('mouseleave', () => {
-          item.style.background = 'transparent';
-        });
-        item.addEventListener('click', () => {
-          this.selectedTagId = tag.id;
-          this.selectedTagName = tag.name;
-          if (this.addTagDialogInput) {
-            this.addTagDialogInput.value = tag.name;
-          }
-          this.updateAddTagDialogState();
-          this.addTagDialogSuggestions!.style.display = 'none';
-        });
-        this.addTagDialogSuggestions.appendChild(item);
-      }
-    } catch (error) {
-      console.error('ImageVideoPost: Failed to search tags', error);
-    }
-  }
-
-  /**
-   * Update add tag dialog state
-   */
-  private updateAddTagDialogState(): void {
-    if (!this.addTagDialogCreateButton) return;
-    const hasSelection = !!this.selectedTagId && !!this.selectedTagName;
-    this.addTagDialogCreateButton.disabled = !hasSelection;
-    this.addTagDialogCreateButton.style.opacity = hasSelection ? '1' : '0.5';
   }
 
   /**
    * Add tag to image
    */
   private async addTagToImage(): Promise<void> {
-    if (!this.api || !this.selectedTagId || !this.selectedTagName) return;
-    if (!this.addTagDialogCreateButton) return;
+    const state = this.addTagDialogState;
+    if (!this.api || !state.selectedTagId || !state.selectedTagName || !state.createButton) return;
 
-    this.addTagDialogCreateButton.disabled = true;
-    this.addTagDialogCreateButton.textContent = 'Adding...';
-    this.addTagDialogCreateButton.style.opacity = '0.6';
+    state.createButton.disabled = true;
+    state.createButton.textContent = 'Adding...';
+    state.createButton.style.opacity = '0.6';
 
     try {
-      // Check if tag is already added
       const currentTagIds = (this.data.image.tags || [])
-        .map((t: { id?: string }) => t.id)
+        .map((tag) => tag.id)
         .filter((id): id is string => typeof id === 'string' && id.length > 0);
-      if (currentTagIds.includes(this.selectedTagId)) {
-        showToast(`Tag "${this.selectedTagName}" is already added to this image.`);
-        this.addTagDialogCreateButton.disabled = false;
-        this.addTagDialogCreateButton.textContent = 'Add';
-        this.addTagDialogCreateButton.style.opacity = '1';
+      if (currentTagIds.includes(state.selectedTagId)) {
+        showToast(`Tag "${state.selectedTagName}" is already added to this image.`);
+        state.createButton.disabled = false;
+        state.createButton.textContent = 'Add';
+        state.createButton.style.opacity = '1';
         return;
       }
 
-      // Add tag to image
-      if (!this.selectedTagId) {
-        throw new Error('Selected tag ID is missing');
-      }
-      const nextTagIds = [...currentTagIds, this.selectedTagId];
+      const nextTagIds = [...currentTagIds, state.selectedTagId];
       await this.api.updateImageTags(this.data.image.id, nextTagIds);
 
-      // Update local image tags
       this.data.image.tags ??= [];
-      this.data.image.tags.push({ id: this.selectedTagId, name: this.selectedTagName });
+      this.data.image.tags.push({ id: state.selectedTagId, name: state.selectedTagName });
 
-      showToast(`Tag "${this.selectedTagName}" added to image`);
+      showToast(`Tag "${state.selectedTagName}" added to image`);
       
-      // Refresh header to show new tag chip
       this.refreshHeader();
       
-      this.closeAddTagDialog();
+      this.closeAddTagDialogBase({ state, focusAfterClose: this.addTagButton });
     } catch (error) {
       console.error('ImageVideoPost: Failed to add tag to image', error);
       showToast('Failed to add tag. Please try again.');
-      this.addTagDialogCreateButton.disabled = false;
-      this.addTagDialogCreateButton.textContent = 'Add';
-      this.addTagDialogCreateButton.style.opacity = '1';
+      state.createButton.disabled = false;
+      state.createButton.textContent = 'Add';
+      state.createButton.style.opacity = '1';
     }
   }
 
@@ -2110,8 +1783,8 @@ export class ImageVideoPost extends BasePost {
    */
   destroy(): void {
     // Close dialogs if open
-    if (this.isAddTagDialogOpen) {
-      this.closeAddTagDialog();
+    if (this.addTagDialogState.isOpen) {
+      this.closeAddTagDialogBase({ state: this.addTagDialogState });
     }
     if (this.isRatingDialogOpen) {
       this.closeRatingDialog();
@@ -2126,13 +1799,13 @@ export class ImageVideoPost extends BasePost {
       clearTimeout(this.retryTimeoutId);
       this.retryTimeoutId = undefined;
     }
-    if (this.autocompleteDebounceTimer) {
-      clearTimeout(this.autocompleteDebounceTimer);
-      this.autocompleteDebounceTimer = undefined;
+    if (this.addTagDialogState.autocompleteDebounceTimer) {
+      clearTimeout(this.addTagDialogState.autocompleteDebounceTimer);
+      this.addTagDialogState.autocompleteDebounceTimer = undefined;
     }
-    if (this.tagSearchLoadingTimer) {
-      clearTimeout(this.tagSearchLoadingTimer);
-      this.tagSearchLoadingTimer = undefined;
+    if (this.addTagDialogState.tagSearchLoadingTimer) {
+      clearTimeout(this.addTagDialogState.tagSearchLoadingTimer);
+      this.addTagDialogState.tagSearchLoadingTimer = undefined;
     }
 
     // Clean up hover handlers
