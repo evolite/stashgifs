@@ -4,6 +4,61 @@
 
 import { Image } from './types.js';
 
+export const THEME_DEFAULTS = {
+  backgroundPrimary: '#1F2A33',
+  backgroundSecondary: '#24323C',
+  surface: '#2C3B46',
+  accentPrimary: '#4FA3D1',
+};
+
+export const THEME = {
+  colors: {
+    backgroundPrimary: THEME_DEFAULTS.backgroundPrimary,
+    backgroundSecondary: THEME_DEFAULTS.backgroundSecondary,
+    surface: THEME_DEFAULTS.surface,
+    border: '#3A4A55',
+    textPrimary: '#E6EEF4',
+    textSecondary: '#B4C0C9',
+    textMuted: '#8A99A6',
+    accentPrimary: THEME_DEFAULTS.accentPrimary,
+    ratingHigh: '#E53935',
+    ratingMedium: '#F39C12',
+    ratingLow: '#F1C40F',
+    success: '#2ECC71',
+    iconInactive: '#9FB0BC',
+    iconActive: '#E6EEF4',
+    overlay: 'rgba(31, 42, 51, 0.96)',
+    overlayMuted: 'rgba(36, 50, 60, 0.96)',
+    surfaceHover: '#324351',
+  },
+  typography: {
+    fontFamily: 'Inter, Roboto, "Source Sans 3", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
+    lineHeight: '1.5',
+    lineHeightTight: '1.4',
+    sizeTitle: '16px',
+    sizeBody: '14px',
+    sizeMeta: '12px',
+    sizeControl: '13px',
+    weightTitle: '600',
+    weightBody: '400',
+    weightBodyStrong: '500',
+    weightMeta: '400',
+  },
+  spacing: {
+    cardPadding: '14px',
+    cardGap: '16px',
+  },
+  radius: {
+    card: '8px',
+    button: '6px',
+    tag: '4px',
+  },
+  icon: {
+    size: '16px',
+    sizeLarge: '18px',
+  },
+};
+
 /**
  * Throttle function calls
  */
@@ -169,11 +224,11 @@ export function showToast(message: string, duration: number = 2000): void {
   toast.style.bottom = '20px';
   toast.style.left = '50%';
   toast.style.transform = 'translateX(-50%)';
-  toast.style.background = 'rgba(0, 0, 0, 0.9)';
-  toast.style.color = '#fff';
+  toast.style.background = THEME.colors.overlay;
+  toast.style.color = THEME.colors.textPrimary;
   toast.style.padding = '12px 24px';
-  toast.style.borderRadius = '8px';
-  toast.style.fontSize = '14px';
+  toast.style.borderRadius = THEME.radius.button;
+  toast.style.fontSize = THEME.typography.sizeBody;
   toast.style.zIndex = '10000';
   toast.style.opacity = '0';
   toast.style.transition = 'opacity 0.3s ease, transform 0.3s ease';

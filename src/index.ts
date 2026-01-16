@@ -5,6 +5,7 @@
 import { FeedContainer } from './FeedContainer.js';
 import { StashAPI } from './StashAPI.js';
 import { FeedSettings } from './types.js';
+import { THEME } from './utils.js';
 
 // Initialize when DOM is ready
 function init(): void {
@@ -58,10 +59,10 @@ function init(): void {
       console.error('Failed to initialize feed:', error);
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
       appContainer.innerHTML = `
-        <div style="padding: 2rem; text-align: center; color: #fff;">
+        <div style="padding: 2rem; text-align: center; color: ${THEME.colors.textPrimary};">
           <h2>Error Loading Feed</h2>
           <p>${errorMessage}</p>
-          <p style="font-size: 0.875rem; color: #999;">Check browser console for details</p>
+          <p style="font-size: 0.875rem; color: ${THEME.colors.textMuted};">Check browser console for details</p>
         </div>
       `;
     });
@@ -75,10 +76,10 @@ function init(): void {
     console.error('Stashgifs Feed UI: Fatal error during initialization:', error);
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
     appContainer.innerHTML = `
-      <div style="padding: 2rem; text-align: center; color: #fff;">
+      <div style="padding: 2rem; text-align: center; color: ${THEME.colors.textPrimary};">
         <h2>Fatal Error</h2>
         <p>${errorMessage}</p>
-        <p style="font-size: 0.875rem; color: #999;">Check browser console for details</p>
+        <p style="font-size: 0.875rem; color: ${THEME.colors.textMuted};">Check browser console for details</p>
       </div>
     `;
   }

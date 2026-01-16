@@ -8,7 +8,7 @@ import { ImagePlayer } from './ImagePlayer.js';
 import { FavoritesManager } from './FavoritesManager.js';
 import { StashAPI } from './StashAPI.js';
 import { VisibilityManager } from './VisibilityManager.js';
-import { getAspectRatioClass, showToast, detectVideoFromVisualFiles, getImageUrlForDisplay, throttle } from './utils.js';
+import { getAspectRatioClass, showToast, detectVideoFromVisualFiles, getImageUrlForDisplay, throttle, THEME } from './utils.js';
 import { STAR_SVG, STAR_SVG_OUTLINE } from './icons.js';
 import { BasePost } from './BasePost.js';
 import type { AddTagDialogState } from './BasePost.js';
@@ -560,8 +560,17 @@ export class ImagePost extends BasePost {
     wrapper.dataset.role = 'rating';
     this.ratingWrapper = wrapper;
 
-    const displayButton = this.createRatingDisplayButton();
-    wrapper.appendChild(displayButton);
+    const { button, iconSpan, valueSpan } = this.buildRatingDisplayButton({
+      title: 'Set rating on image',
+      onClick: () => {
+        if (this.isSavingRating) return;
+        this.toggleRatingDialog();
+      }
+    });
+    this.ratingDisplayButton = button;
+    this.ratingDisplayIcon = iconSpan;
+    this.ratingDisplayValue = valueSpan;
+    wrapper.appendChild(button);
 
     const dialog = this.createRatingDialog();
     wrapper.appendChild(dialog);
@@ -570,55 +579,6 @@ export class ImagePost extends BasePost {
     this.updateRatingStarButtons();
 
     return wrapper;
-  }
-
-  /**
-   * Create rating display button
-   */
-  private createRatingDisplayButton(): HTMLElement {
-    const displayButton = document.createElement('button');
-    displayButton.type = 'button';
-    displayButton.className = 'icon-btn icon-btn--rating';
-    displayButton.setAttribute('aria-haspopup', 'dialog');
-    displayButton.setAttribute('aria-expanded', 'false');
-    displayButton.title = 'Set rating on image';
-    this.applyIconButtonStyles(displayButton);
-    displayButton.style.padding = '8px 12px';
-    displayButton.style.gap = '3px';
-    displayButton.style.width = 'auto';
-    displayButton.style.minWidth = '44px';
-    displayButton.style.height = 'auto';
-    displayButton.style.minHeight = '44px';
-    
-    displayButton.addEventListener('click', (event) => {
-      event.preventDefault();
-      event.stopPropagation();
-      if (this.isSavingRating) return;
-      this.toggleRatingDialog();
-    });
-    
-    this.addHoverEffect(displayButton);
-    this.ratingDisplayButton = displayButton;
-
-    const iconSpan = document.createElement('span');
-    iconSpan.className = 'rating-display__icon';
-    iconSpan.innerHTML = STAR_SVG;
-    iconSpan.style.display = 'flex';
-    iconSpan.style.alignItems = 'center';
-    iconSpan.style.justifyContent = 'center';
-    this.ratingDisplayIcon = iconSpan;
-
-    const valueSpan = document.createElement('span');
-    valueSpan.className = 'rating-display__value';
-    valueSpan.style.fontSize = '14px';
-    valueSpan.style.fontWeight = '500';
-    valueSpan.style.minWidth = '14px';
-    valueSpan.style.textAlign = 'left';
-    this.ratingDisplayValue = valueSpan;
-
-    displayButton.appendChild(iconSpan);
-    displayButton.appendChild(valueSpan);
-    return displayButton;
   }
 
   /**
@@ -709,7 +669,7 @@ export class ImagePost extends BasePost {
       starBtn.style.borderRadius = '6px';
       starBtn.style.flexShrink = '0';
 
-      const iconWrapper = this.createStarIconElement();
+      const iconWrapper = this.createRatingStarIcon();
       starBtn.appendChild(iconWrapper);
       
       if (!isHalfPrecision) {
@@ -767,55 +727,6 @@ export class ImagePost extends BasePost {
     return dialog;
   }
 
-  /**
-   * Create star icon element with separate fill/outline spans
-   */
-  private createStarIconElement(): HTMLElement {
-    const wrapper = document.createElement('span');
-    wrapper.className = 'rating-dialog__star-icon';
-    wrapper.style.position = 'relative';
-    wrapper.style.display = 'inline-block';
-    wrapper.style.width = '28px';
-    wrapper.style.height = '28px';
-    wrapper.style.lineHeight = '1';
-    wrapper.style.fontSize = '24px';
-    wrapper.style.pointerEvents = 'none';
-    wrapper.style.userSelect = 'none';
-    wrapper.style.overflow = 'hidden';
-    wrapper.setAttribute('aria-hidden', 'true');
-
-    const outlineSpan = document.createElement('span');
-    outlineSpan.className = 'rating-dialog__star-outline';
-    outlineSpan.textContent = '☆';
-    outlineSpan.style.position = 'absolute';
-    outlineSpan.style.left = '0';
-    outlineSpan.style.top = '0';
-    outlineSpan.style.width = '100%';
-    outlineSpan.style.height = '100%';
-    outlineSpan.style.display = 'block';
-    outlineSpan.style.color = 'var(--rating-star-outline, #ffffff)';
-    outlineSpan.style.transition = 'opacity 120ms ease-in-out';
-    outlineSpan.style.textShadow = '0 0 4px rgba(0,0,0,0.8), 0 0 2px rgba(0,0,0,0.6)';
-
-    const fillSpan = document.createElement('span');
-    fillSpan.className = 'rating-dialog__star-fill';
-    fillSpan.textContent = '★';
-    fillSpan.style.position = 'absolute';
-    fillSpan.style.left = '0';
-    fillSpan.style.top = '0';
-    fillSpan.style.height = '100%';
-    fillSpan.style.display = 'block';
-    fillSpan.style.width = '100%';
-    fillSpan.style.overflow = 'hidden';
-    fillSpan.style.whiteSpace = 'nowrap';
-    fillSpan.style.color = 'var(--rating-star-fill, #ffda6a)';
-    fillSpan.style.textShadow = '0 0 8px rgba(0,0,0,0.8), 0 0 4px rgba(0,0,0,0.6)';
-    fillSpan.style.zIndex = '1';
-    fillSpan.style.transition = 'width 120ms ease-in-out, opacity 120ms ease-in-out';
-
-    wrapper.append(outlineSpan, fillSpan);
-    return wrapper;
-  }
 
   /**
    * Calculate preview value from pointer X position
@@ -1031,10 +942,10 @@ export class ImagePost extends BasePost {
     if (this.ratingDisplayIcon) {
       if (this.hasRating) {
         this.ratingDisplayIcon.innerHTML = STAR_SVG;
-        this.ratingDisplayIcon.style.color = '';
+        this.ratingDisplayIcon.style.color = THEME.colors.ratingLow;
       } else {
         this.ratingDisplayIcon.innerHTML = STAR_SVG_OUTLINE;
-        this.ratingDisplayIcon.style.color = 'rgba(255, 255, 255, 0.7)';
+        this.ratingDisplayIcon.style.color = THEME.colors.iconInactive;
       }
     }
   }

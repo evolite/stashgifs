@@ -29,20 +29,21 @@
   --line-height-normal: 1.4;
   --line-height-relaxed: 1.5;
 
-  /* Color System - iOS Dark Mode */
-  --color-bg: #000000;
-  --color-surface: #1C1C1E;
-  --color-surface-secondary: #2C2C2E;
-  --color-text-primary: #FFFFFF;
-  --color-text-secondary: rgba(255, 255, 255, 0.6);
-  --color-text-tertiary: rgba(255, 255, 255, 0.4);
-  --color-separator: rgba(255, 255, 255, 0.12);
+  /* Color System - StashGifs Dark */
+  --color-bg: #1F2A33;
+  --color-surface: #2C3B46;
+  --color-surface-secondary: #24323C;
+  --color-text-primary: #E6EEF4;
+  --color-text-secondary: #B4C0C9;
+  --color-text-tertiary: #8A99A6;
+  --color-separator: #3A4A55;
+  --color-bg-overlay: rgba(31, 42, 51, 0.96);
   
   /* Accent Colors */
-  --color-accent: #F5C518;
-  --color-accent-strong: #FFD64D;
-  --color-accent-weak: rgba(245, 197, 24, 0.18);
-  --color-accent-weaker: rgba(245, 197, 24, 0.10);
+  --color-accent: #4FA3D1;
+  --color-accent-strong: #4FA3D1;
+  --color-accent-weak: rgba(79, 163, 209, 0.18);
+  --color-accent-weaker: rgba(79, 163, 209, 0.10);
   
   /* Opacity Variants for Subtle Backgrounds */
   --opacity-04: rgba(255, 255, 255, 0.04);
@@ -124,17 +125,17 @@
 .feed-filters__input {
   height: 44px;
   padding: 0 14px;
-  background: rgba(28, 28, 30, 0.9);
-  color: rgba(255, 255, 255, 0.9);
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  border-radius: 10px;
+  background: var(--color-surface-secondary);
+  color: var(--color-text-primary);
+  border: 1px solid var(--color-separator);
+  border-radius: 6px;
   box-shadow: inset 0 0 0 1px rgba(0,0,0,0.3);
   width: 100%;
   min-width: 0;
   font-size: 15px;
   line-height: 1.4;
   box-sizing: border-box;
-  caret-color: #FFFFFF;
+  caret-color: var(--color-text-primary);
   transition: background 0.2s ease, border-color 0.2s ease;
 }
 
@@ -519,7 +520,7 @@
 .video-player__progress {
   flex: 1;
   height: 4px;
-  background: rgba(255, 255, 255, 0.22);
+  background: var(--color-separator);
   border-radius: 2px;
   outline: none;
   cursor: pointer;
@@ -1132,9 +1133,9 @@
   right: 0 !important;
   bottom: 0 !important;
   z-index: 1000 !important;
-  background: rgba(0, 0, 0, 0.85) !important;
-  backdrop-filter: blur(20px) saturate(180%) !important;
-  -webkit-backdrop-filter: blur(20px) saturate(180%) !important;
+  background: var(--color-bg-overlay) !important;
+  backdrop-filter: blur(18px) saturate(160%) !important;
+  -webkit-backdrop-filter: blur(18px) saturate(160%) !important;
   overflow-y: auto !important;
   padding-top: 80px !important; /* Account for header bar */
   padding-bottom: 20px !important;
@@ -1311,13 +1312,13 @@
   padding: 0 14px;
   border-radius: 10px;
   border: 1px solid var(--color-separator);
-  background: rgba(28, 28, 30, 0.9);
+  background: var(--color-surface-secondary);
   cursor: pointer;
   transition: background 0.2s ease, border-color 0.2s ease, opacity 0.2s ease;
 }
 
 .feed-brand-container:hover {
-  background: rgba(28, 28, 30, 0.95);
+  background: var(--color-surface);
   border-color: var(--opacity-16);
 }
 

@@ -8,15 +8,22 @@
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-title" content="StashGifs">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-    <link rel="shortcut icon" href="favicon.ico" />
-    <link rel="apple-touch-icon" href="apple-touch-icon.png" />
-    <meta name="theme-color" content="#202b33" />
+    <link rel="shortcut icon" href="favicon.svg" />
+    <link rel="apple-touch-icon" href="apple-touch-icon.svg" />
+    <meta name="theme-color" content="#1F2A33" />
     <link rel="manifest" crossorigin="use-credentials" href="manifest.json" />
     <title>StashGifs | Stash</title>
     <!-- Seems to be required to make the Dark Reader extension detect the site as having a dark mode -->
     <meta name="color-scheme" content="light dark" />
     <style>
-      html, body { background-color: #000000; margin: 0; padding: 0; }
+      :root {
+        --color-bg: #1F2A33;
+        --color-surface: #2C3B46;
+        --color-surface-secondary: #24323C;
+        --color-separator: #3A4A55;
+        --color-accent: #4FA3D1;
+      }
+      html, body { background-color: var(--color-bg); margin: 0; padding: 0; }
       /* Enhanced skeleton visibility for header */
       .header-skeleton-shimmer {
         background: linear-gradient(
@@ -45,12 +52,12 @@
         <div class="feed-header-bar" style="position: sticky; top: 0; width: 100%; max-width: 824px; margin-left: auto; margin-right: auto; height: 56px; z-index: 1001; display: flex; align-items: center; justify-content: flex-start; padding: 8px 12px; box-sizing: border-box; transition: transform 0.24s var(--ease-spring, ease), opacity 0.24s var(--ease-spring, ease); transform: translateY(0);">
           <div style="display: grid; grid-template-columns: auto 1fr; align-items: center; gap: 12px; width: 100%; height: 100%; max-width: 800px; margin-left: 0; margin-right: 0; box-sizing: border-box; flex: 1 1 auto;">
             <!-- Logo skeleton -->
-            <div style="display: inline-flex; align-items: center; height: 36px; padding: 0 14px; border-radius: 10px; border: 1px solid rgba(255,255,255,0.12); background: rgba(28, 28, 30, 0.6); cursor: pointer; transition: background 0.2s ease, border-color 0.2s ease, opacity 0.2s ease;">
-              <div style="font-weight: 700; letter-spacing: 0.5px; color: #F5C518; font-size: 17px; line-height: 1.2; user-select: none; transition: opacity 0.2s ease;">stashgifs</div>
+            <div style="display: inline-flex; align-items: center; height: 36px; padding: 0 12px; border-radius: 6px; border: 1px solid var(--color-separator); background: var(--color-surface-secondary); cursor: pointer; transition: background 0.2s ease, border-color 0.2s ease, opacity 0.2s ease;">
+              <div style="font-weight: 700; letter-spacing: 0.6px; color: var(--color-accent); font-size: 14px; line-height: 1.2; text-transform: uppercase; user-select: none; transition: opacity 0.2s ease;">stashgifs</div>
             </div>
             <!-- Search bar skeleton -->
             <div style="position: relative; width: 100%; min-width: 0; max-width: 100%; overflow: hidden; box-sizing: border-box; margin-right: 0;">
-              <div style="width: 100%; height: 36px; border-radius: 10px; border: 1px solid rgba(255,255,255,0.12); background: rgba(28, 28, 30, 0.6); position: relative; overflow: hidden;">
+              <div style="width: 100%; height: 36px; border-radius: 6px; border: 1px solid var(--color-separator); background: var(--color-surface-secondary); position: relative; overflow: hidden;">
                 <div class="header-skeleton-shimmer" style="position: absolute; inset: 0; border-radius: 10px;"></div>
               </div>
             </div>
@@ -67,7 +74,7 @@
                   <div class="chip-skeleton" style="width: 65px; height: 24px; border-radius: 12px;"></div>
                 </div>
               </div>
-              <div class="video-post__player aspect-16-9" style="position: relative; background-color: #1C1C1E; overflow: hidden;"></div>
+              <div class="video-post__player aspect-16-9" style="position: relative; background-color: var(--color-surface-secondary); overflow: hidden;"></div>
               <div class="video-post__footer" style="padding: 8px 16px; display: flex; justify-content: flex-end; gap: 4px;">
                 <div class="button-skeleton" style="width: 44px; height: 44px; border-radius: 8px;"></div>
                 <div class="button-skeleton" style="width: 44px; height: 44px; border-radius: 8px;"></div>
@@ -85,7 +92,7 @@
                   <div class="chip-skeleton" style="width: 80px; height: 24px; border-radius: 12px;"></div>
                 </div>
               </div>
-              <div class="video-post__player aspect-16-9" style="position: relative; background-color: #1C1C1E; overflow: hidden;"></div>
+              <div class="video-post__player aspect-16-9" style="position: relative; background-color: var(--color-surface-secondary); overflow: hidden;"></div>
               <div class="video-post__footer" style="padding: 8px 16px; display: flex; justify-content: flex-end; gap: 4px;">
                 <div class="button-skeleton" style="width: 44px; height: 44px; border-radius: 8px;"></div>
                 <div class="button-skeleton" style="width: 44px; height: 44px; border-radius: 8px;"></div>
@@ -103,7 +110,7 @@
                   <div class="chip-skeleton" style="width: 72px; height: 24px; border-radius: 12px;"></div>
                 </div>
               </div>
-              <div class="video-post__player aspect-16-9" style="position: relative; background-color: #1C1C1E; overflow: hidden;"></div>
+              <div class="video-post__player aspect-16-9" style="position: relative; background-color: var(--color-surface-secondary); overflow: hidden;"></div>
               <div class="video-post__footer" style="padding: 8px 16px; display: flex; justify-content: flex-end; gap: 4px;">
                 <div class="button-skeleton" style="width: 44px; height: 44px; border-radius: 8px;"></div>
                 <div class="button-skeleton" style="width: 44px; height: 44px; border-radius: 8px;"></div>
@@ -121,7 +128,7 @@
                   <div class="chip-skeleton" style="width: 78px; height: 24px; border-radius: 12px;"></div>
                 </div>
               </div>
-              <div class="video-post__player aspect-16-9" style="position: relative; background-color: #1C1C1E; overflow: hidden;"></div>
+              <div class="video-post__player aspect-16-9" style="position: relative; background-color: var(--color-surface-secondary); overflow: hidden;"></div>
               <div class="video-post__footer" style="padding: 8px 16px; display: flex; justify-content: flex-end; gap: 4px;">
                 <div class="button-skeleton" style="width: 44px; height: 44px; border-radius: 8px;"></div>
                 <div class="button-skeleton" style="width: 44px; height: 44px; border-radius: 8px;"></div>
@@ -139,7 +146,7 @@
                   <div class="chip-skeleton" style="width: 76px; height: 24px; border-radius: 12px;"></div>
                 </div>
               </div>
-              <div class="video-post__player aspect-16-9" style="position: relative; background-color: #1C1C1E; overflow: hidden;"></div>
+              <div class="video-post__player aspect-16-9" style="position: relative; background-color: var(--color-surface-secondary); overflow: hidden;"></div>
               <div class="video-post__footer" style="padding: 8px 16px; display: flex; justify-content: flex-end; gap: 4px;">
                 <div class="button-skeleton" style="width: 44px; height: 44px; border-radius: 8px;"></div>
                 <div class="button-skeleton" style="width: 44px; height: 44px; border-radius: 8px;"></div>
@@ -157,7 +164,7 @@
                   <div class="chip-skeleton" style="width: 74px; height: 24px; border-radius: 12px;"></div>
                 </div>
               </div>
-              <div class="video-post__player aspect-16-9" style="position: relative; background-color: #1C1C1E; overflow: hidden;"></div>
+              <div class="video-post__player aspect-16-9" style="position: relative; background-color: var(--color-surface-secondary); overflow: hidden;"></div>
               <div class="video-post__footer" style="padding: 8px 16px; display: flex; justify-content: flex-end; gap: 4px;">
                 <div class="button-skeleton" style="width: 44px; height: 44px; border-radius: 8px;"></div>
                 <div class="button-skeleton" style="width: 44px; height: 44px; border-radius: 8px;"></div>
@@ -175,7 +182,7 @@
                   <div class="chip-skeleton" style="width: 77px; height: 24px; border-radius: 12px;"></div>
                 </div>
               </div>
-              <div class="video-post__player aspect-16-9" style="position: relative; background-color: #1C1C1E; overflow: hidden;"></div>
+              <div class="video-post__player aspect-16-9" style="position: relative; background-color: var(--color-surface-secondary); overflow: hidden;"></div>
               <div class="video-post__footer" style="padding: 8px 16px; display: flex; justify-content: flex-end; gap: 4px;">
                 <div class="button-skeleton" style="width: 44px; height: 44px; border-radius: 8px;"></div>
                 <div class="button-skeleton" style="width: 44px; height: 44px; border-radius: 8px;"></div>
@@ -193,7 +200,7 @@
                   <div class="chip-skeleton" style="width: 75px; height: 24px; border-radius: 12px;"></div>
                 </div>
               </div>
-              <div class="video-post__player aspect-16-9" style="position: relative; background-color: #1C1C1E; overflow: hidden;"></div>
+              <div class="video-post__player aspect-16-9" style="position: relative; background-color: var(--color-surface-secondary); overflow: hidden;"></div>
               <div class="video-post__footer" style="padding: 8px 16px; display: flex; justify-content: flex-end; gap: 4px;">
                 <div class="button-skeleton" style="width: 44px; height: 44px; border-radius: 8px;"></div>
                 <div class="button-skeleton" style="width: 44px; height: 44px; border-radius: 8px;"></div>
@@ -211,7 +218,7 @@
                   <div class="chip-skeleton" style="width: 79px; height: 24px; border-radius: 12px;"></div>
                 </div>
               </div>
-              <div class="video-post__player aspect-16-9" style="position: relative; background-color: #1C1C1E; overflow: hidden;"></div>
+              <div class="video-post__player aspect-16-9" style="position: relative; background-color: var(--color-surface-secondary); overflow: hidden;"></div>
               <div class="video-post__footer" style="padding: 8px 16px; display: flex; justify-content: flex-end; gap: 4px;">
                 <div class="button-skeleton" style="width: 44px; height: 44px; border-radius: 8px;"></div>
                 <div class="button-skeleton" style="width: 44px; height: 44px; border-radius: 8px;"></div>
@@ -229,7 +236,7 @@
                   <div class="chip-skeleton" style="width: 73px; height: 24px; border-radius: 12px;"></div>
                 </div>
               </div>
-              <div class="video-post__player aspect-16-9" style="position: relative; background-color: #1C1C1E; overflow: hidden;"></div>
+              <div class="video-post__player aspect-16-9" style="position: relative; background-color: var(--color-surface-secondary); overflow: hidden;"></div>
               <div class="video-post__footer" style="padding: 8px 16px; display: flex; justify-content: flex-end; gap: 4px;">
                 <div class="button-skeleton" style="width: 44px; height: 44px; border-radius: 8px;"></div>
                 <div class="button-skeleton" style="width: 44px; height: 44px; border-radius: 8px;"></div>
@@ -247,7 +254,7 @@
                   <div class="chip-skeleton" style="width: 81px; height: 24px; border-radius: 12px;"></div>
                 </div>
               </div>
-              <div class="video-post__player aspect-16-9" style="position: relative; background-color: #1C1C1E; overflow: hidden;"></div>
+              <div class="video-post__player aspect-16-9" style="position: relative; background-color: var(--color-surface-secondary); overflow: hidden;"></div>
               <div class="video-post__footer" style="padding: 8px 16px; display: flex; justify-content: flex-end; gap: 4px;">
                 <div class="button-skeleton" style="width: 44px; height: 44px; border-radius: 8px;"></div>
                 <div class="button-skeleton" style="width: 44px; height: 44px; border-radius: 8px;"></div>

@@ -8,7 +8,7 @@ import { NativeVideoPlayer } from './NativeVideoPlayer.js';
 import { FavoritesManager } from './FavoritesManager.js';
 import { StashAPI } from './StashAPI.js';
 import { VisibilityManager } from './VisibilityManager.js';
-import { calculateAspectRatio, getAspectRatioClass, isValidMediaUrl, showToast, throttle, toAbsoluteUrl, isMobileDevice } from './utils.js';
+import { calculateAspectRatio, getAspectRatioClass, isValidMediaUrl, showToast, throttle, toAbsoluteUrl, isMobileDevice, THEME } from './utils.js';
 import { posterPreloader } from './PosterPreloader.js';
 import { HQ_SVG_OUTLINE, HQ_SVG_FILLED, EXTERNAL_LINK_SVG, MARKER_SVG, STAR_SVG, STAR_SVG_OUTLINE, MARKER_BADGE_SVG, SCENE_BADGE_SVG, IMAGE_BADGE_SVG, VOLUME_MUTED_SVG, VOLUME_UNMUTED_SVG } from './icons.js';
 import { BasePost } from './BasePost.js';
@@ -267,7 +267,7 @@ export class VideoPost extends BasePost {
     
     // Style to match other footer buttons
     this.applyIconButtonStyles(button);
-    button.style.color = '#FFFFFF';
+    button.style.color = THEME.colors.textPrimary;
     button.style.padding = '0';
     button.style.width = '44px';
     button.style.height = '44px';
@@ -615,7 +615,7 @@ export class VideoPost extends BasePost {
     badge.style.width = '30px';
     badge.style.height = '30px';
     badge.style.flexShrink = '0';
-    badge.style.color = 'rgba(255, 255, 255, 0.85)';
+    badge.style.color = THEME.colors.textSecondary;
     badge.style.pointerEvents = 'none';
     badge.innerHTML = svg;
     badge.title = label;
@@ -709,7 +709,7 @@ export class VideoPost extends BasePost {
     iconBtn.setAttribute('aria-label', 'View full scene');
     iconBtn.title = 'Open scene in Stash';
     this.applyIconButtonStyles(iconBtn);
-    iconBtn.style.color = '#F5C518';
+    iconBtn.style.color = THEME.colors.accentPrimary;
     iconBtn.style.padding = '0';
     // Keep 44x44px for touch target
     iconBtn.style.width = '44px';
@@ -967,11 +967,11 @@ export class VideoPost extends BasePost {
   private updateHQButton(button: HTMLElement): void {
     if (this.isHQMode) {
       button.innerHTML = HQ_SVG_FILLED;
-      button.style.color = '#F5C518';
+      button.style.color = THEME.colors.accentPrimary;
       button.title = 'HD video loaded';
     } else {
       button.innerHTML = HQ_SVG_OUTLINE;
-      button.style.color = 'rgba(255, 255, 255, 0.7)';
+      button.style.color = THEME.colors.textSecondary;
       button.title = 'Load HD video with audio';
     }
   }
@@ -985,8 +985,17 @@ export class VideoPost extends BasePost {
     wrapper.dataset.role = 'rating';
     this.ratingWrapper = wrapper;
 
-    const displayButton = this.createRatingDisplayButton();
-    wrapper.appendChild(displayButton);
+    const { button, iconSpan, valueSpan } = this.buildRatingDisplayButton({
+      title: 'Set rating on marker',
+      onClick: () => {
+        if (this.isSavingRating) return;
+        this.toggleRatingDialog();
+      }
+    });
+    this.ratingDisplayButton = button;
+    this.ratingDisplayIcon = iconSpan;
+    this.ratingDisplayValue = valueSpan;
+    wrapper.appendChild(button);
 
     const dialog = this.createRatingDialog();
     this.container.appendChild(dialog);
@@ -995,56 +1004,6 @@ export class VideoPost extends BasePost {
     this.updateRatingStarButtons();
 
     return wrapper;
-  }
-
-  /**
-   * Create rating display button
-   */
-  private createRatingDisplayButton(): HTMLElement {
-    const displayButton = document.createElement('button');
-    displayButton.type = 'button';
-    displayButton.className = 'icon-btn icon-btn--rating';
-    displayButton.setAttribute('aria-haspopup', 'dialog');
-    displayButton.setAttribute('aria-expanded', 'false');
-    displayButton.title = 'Set rating on scene';
-    this.applyIconButtonStyles(displayButton);
-    displayButton.style.padding = '8px 12px';
-    displayButton.style.gap = '3px';
-    // Keep 44px height but allow width to be auto for text content
-    displayButton.style.width = 'auto';
-    displayButton.style.minWidth = '44px';
-    displayButton.style.height = 'auto';
-    displayButton.style.minHeight = '44px';
-    
-    displayButton.addEventListener('click', (event) => {
-      event.preventDefault();
-      event.stopPropagation();
-      if (this.isSavingRating) return;
-      this.toggleRatingDialog();
-    });
-    
-    this.addHoverEffect(displayButton);
-    this.ratingDisplayButton = displayButton;
-
-    const iconSpan = document.createElement('span');
-    iconSpan.className = 'rating-display__icon';
-    iconSpan.innerHTML = STAR_SVG;
-    iconSpan.style.display = 'flex';
-    iconSpan.style.alignItems = 'center';
-    iconSpan.style.justifyContent = 'center';
-    this.ratingDisplayIcon = iconSpan;
-
-    const valueSpan = document.createElement('span');
-    valueSpan.className = 'rating-display__value';
-    valueSpan.style.fontSize = '14px';
-    valueSpan.style.fontWeight = '500';
-    valueSpan.style.minWidth = '14px';
-    valueSpan.style.textAlign = 'left';
-    this.ratingDisplayValue = valueSpan;
-
-    displayButton.appendChild(iconSpan);
-    displayButton.appendChild(valueSpan);
-    return displayButton;
   }
 
   /**
@@ -1138,7 +1097,7 @@ export class VideoPost extends BasePost {
       starBtn.style.borderRadius = '6px';
       starBtn.style.flexShrink = '0';
 
-      const iconWrapper = this.createStarIconElement();
+      const iconWrapper = this.createRatingStarIcon();
       starBtn.appendChild(iconWrapper);
       
       // Add hover handlers for preview
@@ -1229,22 +1188,17 @@ export class VideoPost extends BasePost {
     outlineSpan.style.width = '100%';
     outlineSpan.style.height = '100%';
     outlineSpan.style.display = 'block';
-    outlineSpan.style.color = 'var(--rating-star-outline, #ffffff)';
-    outlineSpan.style.transition = 'opacity 120ms ease-in-out';
+    outlineSpan.style.color = `var(--rating-star-outline, ${THEME.colors.textPrimary})`;
     outlineSpan.style.textShadow = '0 0 4px rgba(0,0,0,0.8), 0 0 2px rgba(0,0,0,0.6)';
 
     const fillSpan = document.createElement('span');
     fillSpan.className = 'rating-dialog__star-fill';
-    fillSpan.textContent = '★';
+    fillSpan.innerHTML = STAR_SVG;
     fillSpan.style.position = 'absolute';
-    fillSpan.style.left = '0';
-    fillSpan.style.top = '0';
-    fillSpan.style.height = '100%';
-    fillSpan.style.display = 'block';
-    fillSpan.style.width = '100%';
-    fillSpan.style.overflow = 'hidden';
-    fillSpan.style.whiteSpace = 'nowrap';
-    fillSpan.style.color = 'var(--rating-star-fill, #ffda6a)';
+    fillSpan.style.display = 'flex';
+    fillSpan.style.alignItems = 'center';
+    fillSpan.style.justifyContent = 'center';
+    fillSpan.style.color = `var(--rating-star-fill, ${THEME.colors.ratingLow})`;
     fillSpan.style.textShadow = '0 0 8px rgba(0,0,0,0.8), 0 0 4px rgba(0,0,0,0.6)';
     fillSpan.style.zIndex = '1';
     fillSpan.style.transition = 'width 120ms ease-in-out, opacity 120ms ease-in-out';
@@ -1471,10 +1425,10 @@ export class VideoPost extends BasePost {
     if (this.ratingDisplayIcon) {
       if (this.hasRating) {
         this.ratingDisplayIcon.innerHTML = STAR_SVG;
-        this.ratingDisplayIcon.style.color = '';
+        this.ratingDisplayIcon.style.color = THEME.colors.ratingLow;
       } else {
         this.ratingDisplayIcon.innerHTML = STAR_SVG_OUTLINE;
-        this.ratingDisplayIcon.style.color = 'rgba(255, 255, 255, 0.7)';
+        this.ratingDisplayIcon.style.color = THEME.colors.iconInactive;
       }
     }
   }
@@ -2422,7 +2376,7 @@ export class VideoPost extends BasePost {
     // Create placeholder element
     const placeholder = document.createElement('div');
     placeholder.className = 'video-post__error-placeholder';
-    placeholder.style.backgroundColor = '#1a1a1a';
+    placeholder.style.backgroundColor = THEME.colors.backgroundSecondary;
 
     // Create error text overlay
     const errorText = document.createElement('div');
@@ -2609,16 +2563,11 @@ export class VideoPost extends BasePost {
     dialog.style.transform = 'translateX(-50%)';
     dialog.style.width = '320px';
     dialog.style.maxWidth = 'calc(100vw - 32px)';
-    dialog.style.background = 'rgba(28, 28, 30, 0.98)';
-    dialog.style.backdropFilter = 'blur(20px) saturate(180%)';
-    // WebKit-specific backdrop filter for Safari compatibility
-    const webkitStyle = dialog.style as CSSStyleDeclaration & { webkitBackdropFilter?: string };
-    if ('webkitBackdropFilter' in dialog.style) {
-      webkitStyle.webkitBackdropFilter = 'blur(20px) saturate(180%)';
-    }
-    dialog.style.border = '1px solid rgba(255, 255, 255, 0.12)';
-    dialog.style.borderRadius = '12px';
-    dialog.style.padding = '16px';
+    dialog.style.background = THEME.colors.backgroundSecondary;
+    dialog.style.backdropFilter = 'blur(18px) saturate(160%)';
+    dialog.style.border = `1px solid ${THEME.colors.border}`;
+    dialog.style.borderRadius = THEME.radius.card;
+    dialog.style.padding = THEME.spacing.cardPadding;
     dialog.style.boxShadow = '0 8px 32px rgba(0, 0, 0, 0.4)';
     dialog.style.zIndex = '200';
     dialog.style.opacity = '0';
@@ -2634,7 +2583,7 @@ export class VideoPost extends BasePost {
     title.textContent = 'Create Marker';
     title.style.fontSize = '16px';
     title.style.fontWeight = '600';
-    title.style.color = 'rgba(255, 255, 255, 0.9)';
+    title.style.color = THEME.colors.textPrimary;
     title.style.marginBottom = '12px';
     dialog.appendChild(title);
 
@@ -2649,10 +2598,10 @@ export class VideoPost extends BasePost {
     input.placeholder = 'Search for tag...';
     input.style.width = '100%';
     input.style.padding = '10px 12px';
-    input.style.background = 'rgba(255, 255, 255, 0.08)';
-    input.style.border = '1px solid rgba(255, 255, 255, 0.12)';
+    input.style.background = THEME.colors.surface;
+    input.style.border = `1px solid ${THEME.colors.border}`;
     input.style.borderRadius = '8px';
-    input.style.color = 'rgba(255, 255, 255, 0.9)';
+    input.style.color = THEME.colors.textPrimary;
     input.style.fontSize = '14px';
     input.style.boxSizing = 'border-box';
     input.setAttribute('aria-label', 'Tag name');
@@ -2686,8 +2635,8 @@ export class VideoPost extends BasePost {
     suggestions.style.top = '100%';
     suggestions.style.left = '0';
     suggestions.style.right = '0';
-    suggestions.style.background = 'rgba(28, 28, 30, 0.98)';
-    suggestions.style.border = '1px solid rgba(255, 255, 255, 0.12)';
+    suggestions.style.background = THEME.colors.backgroundSecondary;
+    suggestions.style.border = `1px solid ${THEME.colors.border}`;
     suggestions.style.borderTop = 'none';
     suggestions.style.borderRadius = '0 0 8px 8px';
     suggestions.style.maxHeight = '200px';
@@ -2707,7 +2656,7 @@ export class VideoPost extends BasePost {
     recentTitle.textContent = 'Recent tags';
     recentTitle.style.fontSize = '12px';
     recentTitle.style.fontWeight = '500';
-    recentTitle.style.color = 'rgba(255, 255, 255, 0.6)';
+    recentTitle.style.color = THEME.colors.textMuted;
     recentTitle.style.marginBottom = '8px';
     recentSection.appendChild(recentTitle);
     const recentTags = document.createElement('div');
@@ -2728,10 +2677,9 @@ export class VideoPost extends BasePost {
     cancelBtn.type = 'button';
     cancelBtn.textContent = 'Cancel';
     cancelBtn.style.padding = '8px 16px';
-    cancelBtn.style.background = 'rgba(255, 255, 255, 0.08)';
-    cancelBtn.style.border = '1px solid rgba(255, 255, 255, 0.12)';
-    cancelBtn.style.borderRadius = '8px';
-    cancelBtn.style.color = 'rgba(255, 255, 255, 0.9)';
+    cancelBtn.style.background = THEME.colors.backgroundSecondary;
+    cancelBtn.style.border = `1px solid ${THEME.colors.border}`;
+    cancelBtn.style.color = THEME.colors.textSecondary;
     cancelBtn.style.fontSize = '14px';
     cancelBtn.style.cursor = 'pointer';
     cancelBtn.addEventListener('click', () => this.closeMarkerDialog());
@@ -2743,10 +2691,9 @@ export class VideoPost extends BasePost {
     createBtn.textContent = 'Create';
     createBtn.disabled = true;
     createBtn.style.padding = '8px 16px';
-    createBtn.style.background = 'rgba(99, 102, 241, 0.3)';
-    createBtn.style.border = '1px solid rgba(99, 102, 241, 0.5)';
-    createBtn.style.borderRadius = '8px';
-    createBtn.style.color = 'rgba(255, 255, 255, 0.5)';
+    createBtn.style.background = THEME.colors.accentPrimary;
+    createBtn.style.border = `1px solid ${THEME.colors.accentPrimary}`;
+    createBtn.style.color = THEME.colors.textPrimary;
     createBtn.style.fontSize = '14px';
     createBtn.style.cursor = 'not-allowed';
     createBtn.style.transition = 'all 0.2s ease';
@@ -3027,7 +2974,7 @@ export class VideoPost extends BasePost {
       const noResults = document.createElement('div');
       noResults.textContent = 'No tags found';
       noResults.style.padding = '12px';
-      noResults.style.color = 'rgba(255, 255, 255, 0.5)';
+      noResults.style.color = THEME.colors.textMuted;
       noResults.style.fontSize = '14px';
       this.markerDialogSuggestions.appendChild(noResults);
       return;
@@ -3042,13 +2989,13 @@ export class VideoPost extends BasePost {
       item.style.textAlign = 'left';
       item.style.background = 'transparent';
       item.style.border = 'none';
-      item.style.color = 'rgba(255, 255, 255, 0.9)';
+      item.style.color = THEME.colors.textPrimary;
       item.style.fontSize = '14px';
       item.style.cursor = 'pointer';
       item.style.transition = 'background 0.15s ease';
 
       item.addEventListener('mouseenter', () => {
-        item.style.background = 'rgba(255, 255, 255, 0.08)';
+        item.style.background = THEME.colors.backgroundSecondary;
       });
       item.addEventListener('mouseleave', () => {
         item.style.background = 'transparent';
@@ -3090,14 +3037,14 @@ export class VideoPost extends BasePost {
     this.markerDialogCreateButton.disabled = !hasTag;
 
     if (hasTag) {
-      this.markerDialogCreateButton.style.background = 'rgba(99, 102, 241, 0.6)';
-      this.markerDialogCreateButton.style.borderColor = 'rgba(99, 102, 241, 0.8)';
-      this.markerDialogCreateButton.style.color = 'rgba(255, 255, 255, 0.9)';
+      this.markerDialogCreateButton.style.background = THEME.colors.accentPrimary;
+      this.markerDialogCreateButton.style.borderColor = THEME.colors.accentPrimary;
+      this.markerDialogCreateButton.style.color = THEME.colors.textPrimary;
       this.markerDialogCreateButton.style.cursor = 'pointer';
     } else {
-      this.markerDialogCreateButton.style.background = 'rgba(99, 102, 241, 0.3)';
-      this.markerDialogCreateButton.style.borderColor = 'rgba(99, 102, 241, 0.5)';
-      this.markerDialogCreateButton.style.color = 'rgba(255, 255, 255, 0.5)';
+      this.markerDialogCreateButton.style.background = THEME.colors.accentPrimary;
+      this.markerDialogCreateButton.style.borderColor = THEME.colors.accentPrimary;
+      this.markerDialogCreateButton.style.color = THEME.colors.textMuted;
       this.markerDialogCreateButton.style.cursor = 'not-allowed';
     }
   }
@@ -3144,21 +3091,25 @@ export class VideoPost extends BasePost {
         chip.type = 'button';
         chip.textContent = tag.name;
         chip.style.padding = '6px 12px';
-        chip.style.background = 'rgba(255, 255, 255, 0.08)';
-        chip.style.border = '1px solid rgba(255, 255, 255, 0.12)';
-        chip.style.borderRadius = '16px';
-        chip.style.color = 'rgba(255, 255, 255, 0.9)';
-        chip.style.fontSize = '12px';
+        chip.style.background = THEME.colors.backgroundSecondary;
+        chip.style.border = `1px solid ${THEME.colors.border}`;
+        chip.style.borderRadius = THEME.radius.tag;
+        chip.style.color = THEME.colors.textPrimary;
+        chip.style.fontSize = THEME.typography.sizeMeta;
         chip.style.cursor = 'pointer';
         chip.style.transition = 'all 0.15s ease';
 
         chip.addEventListener('mouseenter', () => {
-          chip.style.background = 'rgba(255, 255, 255, 0.12)';
-          chip.style.borderColor = 'rgba(255, 255, 255, 0.18)';
+          chip.style.background = THEME.colors.surfaceHover;
+          chip.style.borderColor = THEME.colors.border;
         });
         chip.addEventListener('mouseleave', () => {
-          chip.style.background = 'rgba(255, 255, 255, 0.08)';
-          chip.style.borderColor = 'rgba(255, 255, 255, 0.12)';
+          chip.style.background = THEME.colors.backgroundSecondary;
+          chip.style.borderColor = THEME.colors.border;
+        });
+        chip.addEventListener('mouseleave', () => {
+          chip.style.background = THEME.colors.backgroundSecondary;
+          chip.style.borderColor = THEME.colors.border;
         });
 
         chip.addEventListener('click', () => {

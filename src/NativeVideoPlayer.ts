@@ -4,7 +4,7 @@
  */
 
 import { VideoPlayerState } from './types.js';
-import { formatDuration, isValidMediaUrl, hasWebkitFullscreen, hasMozFullscreen, hasMsFullscreen, hasWebkitFullscreenHTMLElement, hasMozFullscreenHTMLElement, hasMsFullscreenHTMLElement, hasWebkitFullscreenDocument, hasMozFullscreenDocument, hasMsFullscreenDocument, type ElementWebkitFullscreen, type ElementMozFullscreen, type ElementMsFullscreen, isMobileDevice, getNetworkInfo, isSlowNetwork, isCellularConnection } from './utils.js';
+import { formatDuration, isValidMediaUrl, hasWebkitFullscreen, hasMozFullscreen, hasMsFullscreen, hasWebkitFullscreenHTMLElement, hasMozFullscreenHTMLElement, hasMsFullscreenHTMLElement, hasWebkitFullscreenDocument, hasMozFullscreenDocument, hasMsFullscreenDocument, type ElementWebkitFullscreen, type ElementMozFullscreen, type ElementMsFullscreen, isMobileDevice, getNetworkInfo, isSlowNetwork, isCellularConnection, THEME } from './utils.js';
 import { VOLUME_MUTED_SVG, VOLUME_UNMUTED_SVG } from './icons.js';
 import { setupTouchHandlers, createTouchState, type TouchState } from './utils/touchHandlers.js';
 
@@ -1045,6 +1045,7 @@ export class NativeVideoPlayer {
     this.controlsContainer.className = 'video-player__controls';
     // Ensure controls are always on top
     this.controlsContainer.style.zIndex = '10';
+    this.controlsContainer.style.color = THEME.colors.textSecondary;
 
     // Play/Pause button (hidden - using click on video instead)
     this.playButton = document.createElement('button');
@@ -1064,6 +1065,10 @@ export class NativeVideoPlayer {
     this.progressBar.value = '0';
     this.progressBar.className = 'video-player__progress';
     this.progressBar.setAttribute('aria-label', 'Video progress');
+    this.progressBar.style.accentColor = THEME.colors.accentPrimary;
+    this.progressBar.style.height = '4px';
+    this.progressBar.style.borderRadius = THEME.radius.button;
+    this.progressBar.style.background = THEME.colors.border;
     progressContainer.appendChild(this.progressBar);
 
     // Time display (hidden - cleaner UI)

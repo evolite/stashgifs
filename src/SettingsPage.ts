@@ -5,6 +5,7 @@
 
 import { FeedSettings } from './types.js';
 import { VERSION, BUILD_HASH } from './version.js';
+import { THEME, THEME_DEFAULTS } from './utils.js';
 
 export class SettingsPage {
   private readonly container: HTMLElement;
@@ -35,8 +36,8 @@ export class SettingsPage {
     infoButton.innerHTML = 'ℹ️';
     infoButton.style.background = 'transparent';
     infoButton.style.border = 'none';
-    infoButton.style.color = 'rgba(255, 255, 255, 0.6)';
-    infoButton.style.fontSize = '16px';
+    infoButton.style.color = THEME.colors.textMuted;
+    infoButton.style.fontSize = THEME.typography.sizeBody;
     infoButton.style.cursor = 'help';
     infoButton.style.padding = '0';
     infoButton.style.width = '20px';
@@ -50,10 +51,10 @@ export class SettingsPage {
 
     // Hover effect
     infoButton.addEventListener('mouseenter', () => {
-      infoButton.style.color = 'rgba(255, 255, 255, 0.9)';
+      infoButton.style.color = THEME.colors.textPrimary;
     });
     infoButton.addEventListener('mouseleave', () => {
-      infoButton.style.color = 'rgba(255, 255, 255, 0.6)';
+      infoButton.style.color = THEME.colors.textMuted;
     });
 
     // Create tooltip - append to container to avoid overflow clipping
@@ -61,10 +62,10 @@ export class SettingsPage {
     tooltip.textContent = tooltipText;
     tooltip.style.position = 'fixed';
     tooltip.style.padding = '8px 12px';
-    tooltip.style.backgroundColor = 'rgba(0, 0, 0, 0.95)';
-    tooltip.style.color = '#FFFFFF';
-    tooltip.style.fontSize = '12px';
-    tooltip.style.borderRadius = '6px';
+    tooltip.style.backgroundColor = THEME.colors.overlay;
+    tooltip.style.color = THEME.colors.textPrimary;
+    tooltip.style.fontSize = THEME.typography.sizeMeta;
+    tooltip.style.borderRadius = THEME.radius.button;
     tooltip.style.whiteSpace = 'pre-wrap';
     tooltip.style.maxWidth = '300px';
     tooltip.style.width = 'max-content';
@@ -142,7 +143,7 @@ export class SettingsPage {
     slider.style.left = '0';
     slider.style.right = '0';
     slider.style.bottom = '0';
-    slider.style.backgroundColor = checked ? '#4CAF50' : 'rgba(255, 255, 255, 0.3)';
+    slider.style.backgroundColor = checked ? THEME.colors.success : THEME.colors.backgroundSecondary;
     slider.style.transition = 'background-color 0.3s ease';
     slider.style.borderRadius = '28px';
     slider.style.cursor = 'pointer';
@@ -153,7 +154,7 @@ export class SettingsPage {
     thumb.style.width = '22px';
     thumb.style.left = checked ? '26px' : '3px';
     thumb.style.top = '3px';
-    thumb.style.backgroundColor = '#FFFFFF';
+    thumb.style.backgroundColor = THEME.colors.textPrimary;
     thumb.style.borderRadius = '50%';
     thumb.style.transition = 'left 0.3s ease, box-shadow 0.3s ease';
     thumb.style.boxShadow = '0 2px 4px rgba(0, 0, 0, 0.2)';
@@ -161,14 +162,14 @@ export class SettingsPage {
 
     const updateVisualState = () => {
       const isChecked = input.checked;
-      slider.style.backgroundColor = isChecked ? '#4CAF50' : 'rgba(255, 255, 255, 0.3)';
+      slider.style.backgroundColor = isChecked ? THEME.colors.success : THEME.colors.backgroundSecondary;
       thumb.style.left = isChecked ? '26px' : '3px';
     };
 
     // Add hover effect
     container.addEventListener('mouseenter', () => {
       if (!input.checked) {
-        slider.style.backgroundColor = 'rgba(255, 255, 255, 0.4)';
+        slider.style.backgroundColor = THEME.colors.surfaceHover;
       }
     });
     container.addEventListener('mouseleave', () => {
@@ -202,23 +203,26 @@ export class SettingsPage {
     this.container.style.left = '0';
     this.container.style.width = '100%';
     this.container.style.height = '100%';
-    this.container.style.backgroundColor = 'rgba(0, 0, 0, 0.8)';
+    this.container.style.backgroundColor = THEME.colors.overlay;
     this.container.style.zIndex = '10000';
     this.container.style.display = 'flex';
     this.container.style.alignItems = 'center';
     this.container.style.justifyContent = 'center';
     this.container.style.padding = '20px';
     this.container.style.boxSizing = 'border-box';
-    this.container.style.fontFamily = 'system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif';
+    this.container.style.fontFamily = THEME.typography.fontFamily;
 
     const modal = document.createElement('div');
-    modal.style.backgroundColor = '#1C1C1E';
-    modal.style.borderRadius = '16px';
-    modal.style.padding = '24px';
+    modal.style.backgroundColor = THEME.colors.backgroundSecondary;
+    modal.style.borderRadius = THEME.radius.card;
+    modal.style.padding = THEME.spacing.cardPadding;
     modal.style.maxWidth = '600px';
     modal.style.width = '100%';
+    modal.style.height = '90vh';
     modal.style.maxHeight = '90vh';
-    modal.style.overflowY = 'auto';
+    modal.style.display = 'flex';
+    modal.style.flexDirection = 'column';
+    modal.style.overflow = 'hidden';
     modal.style.boxShadow = '0 8px 32px rgba(0, 0, 0, 0.4)';
 
     // Header
@@ -231,17 +235,17 @@ export class SettingsPage {
     const title = document.createElement('h2');
     title.textContent = 'Settings';
     title.style.margin = '0';
-    title.style.color = '#FFFFFF';
-    title.style.fontSize = '24px';
-    title.style.fontWeight = '600';
+    title.style.color = THEME.colors.textPrimary;
+    title.style.fontSize = THEME.typography.sizeTitle;
+    title.style.fontWeight = THEME.typography.weightTitle;
     header.appendChild(title);
 
     const closeButton = document.createElement('button');
     closeButton.innerHTML = '✕';
     closeButton.style.background = 'transparent';
     closeButton.style.border = 'none';
-    closeButton.style.color = '#FFFFFF';
-    closeButton.style.fontSize = '24px';
+    closeButton.style.color = THEME.colors.textSecondary;
+    closeButton.style.fontSize = THEME.icon.sizeLarge;
     closeButton.style.cursor = 'pointer';
     closeButton.style.padding = '0';
     closeButton.style.width = '32px';
@@ -253,6 +257,215 @@ export class SettingsPage {
     header.appendChild(closeButton);
 
     modal.appendChild(header);
+
+    const tabBar = document.createElement('div');
+    tabBar.style.display = 'flex';
+    tabBar.style.gap = '8px';
+    tabBar.style.marginBottom = '16px';
+    tabBar.style.alignItems = 'center';
+
+    const createTabButton = (label: string): HTMLButtonElement => {
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.textContent = label;
+      button.style.padding = '0 14px';
+      button.style.height = '34px';
+      button.style.borderRadius = THEME.radius.button;
+      button.style.border = `1px solid ${THEME.colors.border}`;
+      button.style.background = THEME.colors.backgroundSecondary;
+      button.style.color = THEME.colors.textSecondary;
+      button.style.cursor = 'pointer';
+      button.style.fontSize = THEME.typography.sizeBody;
+      button.style.fontWeight = THEME.typography.weightBodyStrong;
+      button.style.display = 'inline-flex';
+      button.style.alignItems = 'center';
+      button.style.justifyContent = 'center';
+      button.style.lineHeight = '1';
+      button.style.transition = 'background 0.2s ease, color 0.2s ease, border-color 0.2s ease';
+      return button;
+    };
+
+    const generalTabButton = createTabButton('General');
+    const themeTabButton = createTabButton('Theme');
+    tabBar.appendChild(generalTabButton);
+    tabBar.appendChild(themeTabButton);
+    modal.appendChild(tabBar);
+
+    const contentWrapper = document.createElement('div');
+    contentWrapper.style.flex = '1 1 auto';
+    contentWrapper.style.overflowY = 'auto';
+    contentWrapper.style.paddingRight = '4px';
+    contentWrapper.style.marginRight = '-4px';
+
+    const generalContent = document.createElement('div');
+    const themeContent = document.createElement('div');
+    themeContent.style.display = 'none';
+
+    const setActiveTab = (active: 'general' | 'theme') => {
+      const isGeneral = active === 'general';
+      generalContent.style.display = isGeneral ? 'block' : 'none';
+      themeContent.style.display = isGeneral ? 'none' : 'block';
+
+      generalTabButton.style.background = isGeneral ? THEME.colors.surfaceHover : THEME.colors.backgroundSecondary;
+      generalTabButton.style.color = isGeneral ? THEME.colors.textPrimary : THEME.colors.textSecondary;
+      generalTabButton.style.borderColor = isGeneral ? THEME.colors.accentPrimary : THEME.colors.border;
+
+      themeTabButton.style.background = isGeneral ? THEME.colors.backgroundSecondary : THEME.colors.surfaceHover;
+      themeTabButton.style.color = isGeneral ? THEME.colors.textSecondary : THEME.colors.textPrimary;
+      themeTabButton.style.borderColor = isGeneral ? THEME.colors.border : THEME.colors.accentPrimary;
+    };
+
+    generalTabButton.addEventListener('click', () => setActiveTab('general'));
+    themeTabButton.addEventListener('click', () => setActiveTab('theme'));
+    setActiveTab('general');
+
+    contentWrapper.appendChild(generalContent);
+    contentWrapper.appendChild(themeContent);
+    modal.appendChild(contentWrapper);
+
+    const normalizeHexColor = (value: string | undefined, fallback: string): string => {
+      if (!value) return fallback;
+      const trimmed = value.trim();
+      const normalized = trimmed.startsWith('#') ? trimmed : `#${trimmed}`;
+      return /^#[0-9a-fA-F]{6}$/.test(normalized) ? normalized.toUpperCase() : fallback;
+    };
+
+    // Theme Section
+    const themeSection = document.createElement('div');
+    themeSection.style.marginBottom = '32px';
+
+    const themeSectionTitle = document.createElement('h3');
+    themeSectionTitle.textContent = 'Theme';
+    themeSectionTitle.style.margin = '0 0 16px 0';
+    themeSectionTitle.style.color = THEME.colors.textPrimary;
+    themeSectionTitle.style.fontSize = THEME.typography.sizeTitle;
+    themeSectionTitle.style.fontWeight = THEME.typography.weightTitle;
+    themeSection.appendChild(themeSectionTitle);
+
+    const buildThemeRow = (labelText: string, value: string): { row: HTMLElement; input: HTMLInputElement; valueLabel: HTMLElement } => {
+      const row = document.createElement('div');
+      row.style.display = 'flex';
+      row.style.justifyContent = 'space-between';
+      row.style.alignItems = 'center';
+      row.style.marginBottom = '16px';
+
+      const label = document.createElement('span');
+      label.textContent = labelText;
+      label.style.color = THEME.colors.textSecondary;
+      label.style.fontSize = THEME.typography.sizeBody;
+      row.appendChild(label);
+
+      const control = document.createElement('div');
+      control.style.display = 'flex';
+      control.style.alignItems = 'center';
+      control.style.gap = '10px';
+
+      const valueLabel = document.createElement('span');
+      valueLabel.style.color = THEME.colors.textMuted;
+      valueLabel.style.fontSize = THEME.typography.sizeMeta;
+      valueLabel.textContent = value.toUpperCase();
+
+      const input = document.createElement('input');
+      input.type = 'color';
+      input.value = value;
+      input.style.width = '44px';
+      input.style.height = '32px';
+      input.style.padding = '0';
+      input.style.borderRadius = THEME.radius.button;
+      input.style.border = `1px solid ${THEME.colors.border}`;
+      input.style.background = THEME.colors.surface;
+      input.style.cursor = 'pointer';
+
+      control.appendChild(valueLabel);
+      control.appendChild(input);
+      row.appendChild(control);
+
+      return { row, input, valueLabel };
+    };
+
+    const backgroundValue = normalizeHexColor(this.settings.themeBackground, THEME_DEFAULTS.backgroundPrimary);
+    const primaryValue = normalizeHexColor(this.settings.themePrimary, THEME_DEFAULTS.surface);
+    const secondaryValue = normalizeHexColor(this.settings.themeSecondary, THEME_DEFAULTS.backgroundSecondary);
+    const accentValue = normalizeHexColor(this.settings.themeAccent, THEME_DEFAULTS.accentPrimary);
+
+    const backgroundRow = buildThemeRow('Background (app + search)', backgroundValue);
+    const primaryRow = buildThemeRow('Primary surface (cards)', primaryValue);
+    const secondaryRow = buildThemeRow('Secondary surface (inputs)', secondaryValue);
+    const accentRow = buildThemeRow('Accent (highlights)', accentValue);
+
+    themeSection.appendChild(backgroundRow.row);
+    themeSection.appendChild(primaryRow.row);
+    themeSection.appendChild(secondaryRow.row);
+    themeSection.appendChild(accentRow.row);
+
+    const resetButton = document.createElement('button');
+    resetButton.type = 'button';
+    resetButton.textContent = 'Reset to default';
+    resetButton.style.marginTop = '8px';
+    resetButton.style.padding = '8px 14px';
+    resetButton.style.borderRadius = THEME.radius.button;
+    resetButton.style.border = `1px solid ${THEME.colors.border}`;
+    resetButton.style.background = THEME.colors.backgroundSecondary;
+    resetButton.style.color = THEME.colors.textSecondary;
+    resetButton.style.cursor = 'pointer';
+    resetButton.style.fontSize = THEME.typography.sizeBody;
+    resetButton.style.fontWeight = THEME.typography.weightBodyStrong;
+    resetButton.style.alignSelf = 'flex-start';
+    resetButton.style.transition = 'background 0.2s ease, color 0.2s ease, border-color 0.2s ease';
+
+    resetButton.addEventListener('mouseenter', () => {
+      resetButton.style.background = THEME.colors.surfaceHover;
+      resetButton.style.color = THEME.colors.textPrimary;
+      resetButton.style.borderColor = THEME.colors.accentPrimary;
+    });
+
+    resetButton.addEventListener('mouseleave', () => {
+      resetButton.style.background = THEME.colors.backgroundSecondary;
+      resetButton.style.color = THEME.colors.textSecondary;
+      resetButton.style.borderColor = THEME.colors.border;
+    });
+
+    resetButton.addEventListener('click', () => {
+      backgroundRow.input.value = THEME_DEFAULTS.backgroundPrimary;
+      primaryRow.input.value = THEME_DEFAULTS.surface;
+      secondaryRow.input.value = THEME_DEFAULTS.backgroundSecondary;
+      accentRow.input.value = THEME_DEFAULTS.accentPrimary;
+      updateThemeLabel(backgroundRow.input, backgroundRow.valueLabel);
+      updateThemeLabel(primaryRow.input, primaryRow.valueLabel);
+      updateThemeLabel(secondaryRow.input, secondaryRow.valueLabel);
+      updateThemeLabel(accentRow.input, accentRow.valueLabel);
+      this.saveSettings();
+    });
+
+    themeSection.appendChild(resetButton);
+
+    const updateThemeLabel = (input: HTMLInputElement, label: HTMLElement) => {
+      label.textContent = input.value.toUpperCase();
+    };
+
+    backgroundRow.input.addEventListener('input', () => {
+      updateThemeLabel(backgroundRow.input, backgroundRow.valueLabel);
+      this.saveSettings();
+    });
+    primaryRow.input.addEventListener('input', () => {
+      updateThemeLabel(primaryRow.input, primaryRow.valueLabel);
+      this.saveSettings();
+    });
+    secondaryRow.input.addEventListener('input', () => {
+      updateThemeLabel(secondaryRow.input, secondaryRow.valueLabel);
+      this.saveSettings();
+    });
+    accentRow.input.addEventListener('input', () => {
+      updateThemeLabel(accentRow.input, accentRow.valueLabel);
+      this.saveSettings();
+    });
+
+    (this as any).themeBackgroundInput = backgroundRow.input;
+    (this as any).themePrimaryInput = primaryRow.input;
+    (this as any).themeSecondaryInput = secondaryRow.input;
+    (this as any).themeAccentInput = accentRow.input;
+
+    themeContent.appendChild(themeSection);
 
     // Image Feed Settings Section
     const imageSection = document.createElement('div');
@@ -266,9 +479,9 @@ export class SettingsPage {
     const imageSectionTitle = document.createElement('h3');
     imageSectionTitle.textContent = 'Image feed';
     imageSectionTitle.style.margin = '0';
-    imageSectionTitle.style.color = '#FFFFFF';
-    imageSectionTitle.style.fontSize = '18px';
-    imageSectionTitle.style.fontWeight = '600';
+    imageSectionTitle.style.color = THEME.colors.textPrimary;
+    imageSectionTitle.style.fontSize = THEME.typography.sizeTitle;
+    imageSectionTitle.style.fontWeight = THEME.typography.weightTitle;
     imageSectionTitleContainer.appendChild(imageSectionTitle);
 
     const imageFeedInfo = this.createInfoButton(
@@ -289,8 +502,8 @@ export class SettingsPage {
 
     const includeImagesLabel = document.createElement('span');
     includeImagesLabel.textContent = 'Include images in feed';
-    includeImagesLabel.style.color = '#FFFFFF';
-    includeImagesLabel.style.fontSize = '14px';
+    includeImagesLabel.style.color = THEME.colors.textSecondary;
+    includeImagesLabel.style.fontSize = THEME.typography.sizeBody;
     includeImagesContainer.appendChild(includeImagesLabel);
 
     const { container: includeImagesToggleContainer, input: includeImagesToggle } = this.createToggleSwitch(
@@ -308,10 +521,10 @@ export class SettingsPage {
     const fileTypesLabel = document.createElement('label');
     fileTypesLabel.textContent = 'File extensions (comma-separated)';
     fileTypesLabel.style.display = 'block';
-    fileTypesLabel.style.color = '#FFFFFF';
-    fileTypesLabel.style.fontSize = '14px';
+    fileTypesLabel.style.color = THEME.colors.textSecondary;
+    fileTypesLabel.style.fontSize = THEME.typography.sizeBody;
     fileTypesLabel.style.marginBottom = '8px';
-    fileTypesLabel.style.fontWeight = '500';
+    fileTypesLabel.style.fontWeight = THEME.typography.weightBodyStrong;
     fileTypesContainer.appendChild(fileTypesLabel);
 
     const fileTypesInput = document.createElement('input');
@@ -319,11 +532,11 @@ export class SettingsPage {
     fileTypesInput.value = (this.settings.enabledFileTypes || ['.jpg', '.png', '.gif', '.mp4', '.m4v', '.webm']).join(', ');
     fileTypesInput.style.width = '100%';
     fileTypesInput.style.padding = '12px';
-    fileTypesInput.style.borderRadius = '8px';
-    fileTypesInput.style.border = '1px solid rgba(255, 255, 255, 0.2)';
-    fileTypesInput.style.backgroundColor = 'rgba(255, 255, 255, 0.1)';
-    fileTypesInput.style.color = '#FFFFFF';
-    fileTypesInput.style.fontSize = '14px';
+    fileTypesInput.style.borderRadius = THEME.radius.button;
+    fileTypesInput.style.border = `1px solid ${THEME.colors.border}`;
+    fileTypesInput.style.backgroundColor = THEME.colors.surface;
+    fileTypesInput.style.color = THEME.colors.textPrimary;
+    fileTypesInput.style.fontSize = THEME.typography.sizeBody;
     fileTypesInput.style.boxSizing = 'border-box';
     fileTypesInput.placeholder = '.gif, .webm, .mp4';
     fileTypesContainer.appendChild(fileTypesInput);
@@ -332,10 +545,10 @@ export class SettingsPage {
     const regexPreview = document.createElement('div');
     regexPreview.style.marginTop = '8px';
     regexPreview.style.padding = '8px';
-    regexPreview.style.backgroundColor = 'rgba(255, 255, 255, 0.05)';
-    regexPreview.style.borderRadius = '6px';
-    regexPreview.style.fontSize = '12px';
-    regexPreview.style.color = 'rgba(255, 255, 255, 0.7)';
+    regexPreview.style.backgroundColor = THEME.colors.backgroundSecondary;
+    regexPreview.style.borderRadius = THEME.radius.button;
+    regexPreview.style.fontSize = THEME.typography.sizeMeta;
+    regexPreview.style.color = THEME.colors.textMuted;
     regexPreview.style.fontFamily = 'monospace';
     fileTypesContainer.appendChild(regexPreview);
 
@@ -384,8 +597,8 @@ export class SettingsPage {
 
     const imagesOnlyLabel = document.createElement('span');
     imagesOnlyLabel.textContent = 'Only load images (skip videos)';
-    imagesOnlyLabel.style.color = '#FFFFFF';
-    imagesOnlyLabel.style.fontSize = '14px';
+    imagesOnlyLabel.style.color = THEME.colors.textSecondary;
+    imagesOnlyLabel.style.fontSize = THEME.typography.sizeBody;
     imagesOnlyContainer.appendChild(imagesOnlyLabel);
 
     const { container: imagesOnlyToggleContainer, input: imagesOnlyToggle } = this.createToggleSwitch(
@@ -402,7 +615,7 @@ export class SettingsPage {
 
     imageSection.appendChild(imagesOnlyContainer);
 
-    modal.appendChild(imageSection);
+    generalContent.appendChild(imageSection);
 
     // Short Form Content Settings Section
     const shortFormSection = document.createElement('div');
@@ -416,9 +629,9 @@ export class SettingsPage {
     const shortFormSectionTitle = document.createElement('h3');
     shortFormSectionTitle.textContent = 'Short form Video Content';
     shortFormSectionTitle.style.margin = '0';
-    shortFormSectionTitle.style.color = '#FFFFFF';
-    shortFormSectionTitle.style.fontSize = '18px';
-    shortFormSectionTitle.style.fontWeight = '600';
+    shortFormSectionTitle.style.color = THEME.colors.textPrimary;
+    shortFormSectionTitle.style.fontSize = THEME.typography.sizeTitle;
+    shortFormSectionTitle.style.fontWeight = THEME.typography.weightTitle;
     shortFormSectionTitleContainer.appendChild(shortFormSectionTitle);
 
     const shortFormInfo = this.createInfoButton(
@@ -439,8 +652,8 @@ export class SettingsPage {
 
     const shortFormHDLabel = document.createElement('span');
     shortFormHDLabel.textContent = 'Include in HD mode';
-    shortFormHDLabel.style.color = '#FFFFFF';
-    shortFormHDLabel.style.fontSize = '14px';
+    shortFormHDLabel.style.color = THEME.colors.textSecondary;
+    shortFormHDLabel.style.fontSize = THEME.typography.sizeBody;
     shortFormHDContainer.appendChild(shortFormHDLabel);
 
     const { container: shortFormHDToggleContainer, input: shortFormHDToggle } = this.createToggleSwitch(
@@ -460,8 +673,8 @@ export class SettingsPage {
 
     const shortFormNonHDLabel = document.createElement('span');
     shortFormNonHDLabel.textContent = 'Include in non-HD mode';
-    shortFormNonHDLabel.style.color = '#FFFFFF';
-    shortFormNonHDLabel.style.fontSize = '14px';
+    shortFormNonHDLabel.style.color = THEME.colors.textSecondary;
+    shortFormNonHDLabel.style.fontSize = THEME.typography.sizeBody;
     shortFormNonHDContainer.appendChild(shortFormNonHDLabel);
 
     const { container: shortFormNonHDToggleContainer, input: shortFormNonHDToggle } = this.createToggleSwitch(
@@ -479,10 +692,10 @@ export class SettingsPage {
     const maxDurationLabel = document.createElement('label');
     maxDurationLabel.textContent = 'Maximum duration (seconds)';
     maxDurationLabel.style.display = 'block';
-    maxDurationLabel.style.color = '#FFFFFF';
-    maxDurationLabel.style.fontSize = '14px';
+    maxDurationLabel.style.color = THEME.colors.textSecondary;
+    maxDurationLabel.style.fontSize = THEME.typography.sizeBody;
     maxDurationLabel.style.marginBottom = '8px';
-    maxDurationLabel.style.fontWeight = '500';
+    maxDurationLabel.style.fontWeight = THEME.typography.weightBodyStrong;
     maxDurationContainer.appendChild(maxDurationLabel);
 
     const maxDurationInput = document.createElement('input');
@@ -492,11 +705,11 @@ export class SettingsPage {
     maxDurationInput.max = '600';
     maxDurationInput.style.width = '100%';
     maxDurationInput.style.padding = '12px';
-    maxDurationInput.style.borderRadius = '8px';
-    maxDurationInput.style.border = '1px solid rgba(255, 255, 255, 0.2)';
-    maxDurationInput.style.backgroundColor = 'rgba(255, 255, 255, 0.1)';
-    maxDurationInput.style.color = '#FFFFFF';
-    maxDurationInput.style.fontSize = '14px';
+    maxDurationInput.style.borderRadius = THEME.radius.button;
+    maxDurationInput.style.border = `1px solid ${THEME.colors.border}`;
+    maxDurationInput.style.backgroundColor = THEME.colors.surface;
+    maxDurationInput.style.color = THEME.colors.textPrimary;
+    maxDurationInput.style.fontSize = THEME.typography.sizeBody;
     maxDurationInput.style.boxSizing = 'border-box';
     maxDurationInput.addEventListener('input', () => {
       // Debounce the save to avoid too many saves while typing
@@ -518,8 +731,8 @@ export class SettingsPage {
 
     const shortFormOnlyLabel = document.createElement('span');
     shortFormOnlyLabel.textContent = 'Only load short form content (skip regular videos)';
-    shortFormOnlyLabel.style.color = '#FFFFFF';
-    shortFormOnlyLabel.style.fontSize = '14px';
+    shortFormOnlyLabel.style.color = THEME.colors.textSecondary;
+    shortFormOnlyLabel.style.fontSize = THEME.typography.sizeBody;
     shortFormOnlyContainer.appendChild(shortFormOnlyLabel);
 
     const { container: shortFormOnlyToggleContainer, input: shortFormOnlyToggle } = this.createToggleSwitch(
@@ -539,7 +752,7 @@ export class SettingsPage {
 
     shortFormSection.appendChild(shortFormOnlyContainer);
 
-    modal.appendChild(shortFormSection);
+    generalContent.appendChild(shortFormSection);
 
     // Scrolling Settings Section
     const scrollingSection = document.createElement('div');
@@ -548,9 +761,9 @@ export class SettingsPage {
     const scrollingSectionTitle = document.createElement('h3');
     scrollingSectionTitle.textContent = 'Scrolling';
     scrollingSectionTitle.style.margin = '0 0 16px 0';
-    scrollingSectionTitle.style.color = '#FFFFFF';
-    scrollingSectionTitle.style.fontSize = '18px';
-    scrollingSectionTitle.style.fontWeight = '600';
+    scrollingSectionTitle.style.color = THEME.colors.textPrimary;
+    scrollingSectionTitle.style.fontSize = THEME.typography.sizeTitle;
+    scrollingSectionTitle.style.fontWeight = THEME.typography.weightTitle;
     scrollingSection.appendChild(scrollingSectionTitle);
 
     // Snap to cards toggle
@@ -562,8 +775,8 @@ export class SettingsPage {
 
     const snapToCardsLabel = document.createElement('span');
     snapToCardsLabel.textContent = 'Snap to cards';
-    snapToCardsLabel.style.color = '#FFFFFF';
-    snapToCardsLabel.style.fontSize = '14px';
+    snapToCardsLabel.style.color = THEME.colors.textSecondary;
+    snapToCardsLabel.style.fontSize = THEME.typography.sizeBody;
     snapToCardsContainer.appendChild(snapToCardsLabel);
 
     const { container: snapToCardsToggleContainer, input: snapToCardsToggle } = this.createToggleSwitch(
@@ -574,22 +787,22 @@ export class SettingsPage {
 
     scrollingSection.appendChild(snapToCardsContainer);
 
-    modal.appendChild(scrollingSection);
+    generalContent.appendChild(scrollingSection);
 
     // Version footer
     const versionFooter = document.createElement('div');
     versionFooter.style.marginTop = '32px';
     versionFooter.style.paddingTop = '24px';
-    versionFooter.style.borderTop = '1px solid rgba(255, 255, 255, 0.1)';
+    versionFooter.style.borderTop = `1px solid ${THEME.colors.border}`;
     versionFooter.style.textAlign = 'center';
 
     const versionText = document.createElement('div');
     versionText.textContent = `Version ${VERSION} (${BUILD_HASH})`;
-    versionText.style.color = 'rgba(255, 255, 255, 0.5)';
-    versionText.style.fontSize = '12px';
+    versionText.style.color = THEME.colors.textMuted;
+    versionText.style.fontSize = THEME.typography.sizeMeta;
     versionFooter.appendChild(versionText);
 
-    modal.appendChild(versionFooter);
+    generalContent.appendChild(versionFooter);
 
     // Store references to inputs for saveSettings method
     (this as any).fileTypesInput = fileTypesInput;
@@ -637,9 +850,14 @@ export class SettingsPage {
     const shortFormNonHDToggle = (this as any).shortFormNonHDToggle as HTMLInputElement | undefined;
     const shortFormOnlyToggle = (this as any).shortFormOnlyToggle as HTMLInputElement | undefined;
     const snapToCardsToggle = (this as any).snapToCardsToggle as HTMLInputElement | undefined;
+    const themeBackgroundInput = (this as any).themeBackgroundInput as HTMLInputElement | undefined;
+    const themePrimaryInput = (this as any).themePrimaryInput as HTMLInputElement | undefined;
+    const themeSecondaryInput = (this as any).themeSecondaryInput as HTMLInputElement | undefined;
+    const themeAccentInput = (this as any).themeAccentInput as HTMLInputElement | undefined;
 
     if (!fileTypesInput || !maxDurationInput || !includeImagesToggle || !imagesOnlyToggle || 
-        !shortFormHDToggle || !shortFormNonHDToggle || !shortFormOnlyToggle || !snapToCardsToggle) {
+        !shortFormHDToggle || !shortFormNonHDToggle || !shortFormOnlyToggle || !snapToCardsToggle ||
+        !themeBackgroundInput || !themePrimaryInput || !themeSecondaryInput || !themeAccentInput) {
       return; // Settings not fully initialized yet
     }
 
@@ -661,6 +879,10 @@ export class SettingsPage {
       shortFormMaxDuration: validMaxDuration,
       shortFormOnly: shortFormOnlyToggle.checked,
       snapToCards: snapToCardsToggle.checked,
+      themeBackground: themeBackgroundInput.value,
+      themePrimary: themePrimaryInput.value,
+      themeSecondary: themeSecondaryInput.value,
+      themeAccent: themeAccentInput.value,
     };
 
     // Notify parent to update settings and reload feed if needed

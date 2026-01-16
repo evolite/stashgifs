@@ -3,7 +3,7 @@
  * Displays GIFs, static images, and looping videos with support for looping and fullscreen
  */
 
-import { setupLoopingVideoElement } from './utils.js';
+import { setupLoopingVideoElement, THEME } from './utils.js';
 
 export class ImagePlayer {
   private readonly container: HTMLElement;
@@ -259,8 +259,8 @@ export class ImagePlayer {
     this.errorMessage.style.flexDirection = 'column';
     this.errorMessage.style.alignItems = 'center';
     this.errorMessage.style.justifyContent = 'center';
-    this.errorMessage.style.backgroundColor = 'rgba(0, 0, 0, 0.8)';
-    this.errorMessage.style.color = 'rgba(255, 255, 255, 0.9)';
+    this.errorMessage.style.backgroundColor = THEME.colors.overlay;
+    this.errorMessage.style.color = THEME.colors.textPrimary;
     this.errorMessage.style.padding = '20px';
     this.errorMessage.style.boxSizing = 'border-box';
     this.errorMessage.style.textAlign = 'center';
@@ -285,7 +285,7 @@ export class ImagePlayer {
     const errorDetails = document.createElement('div');
     errorDetails.textContent = details;
     errorDetails.style.fontSize = '14px';
-    errorDetails.style.color = 'rgba(255, 255, 255, 0.7)';
+    errorDetails.style.color = THEME.colors.textSecondary;
     errorDetails.style.lineHeight = '1.5';
     errorDetails.style.maxWidth = '400px';
     this.errorMessage.appendChild(errorDetails);

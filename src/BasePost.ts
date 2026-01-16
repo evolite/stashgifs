@@ -6,8 +6,8 @@
 import { FavoritesManager } from './FavoritesManager.js';
 import { StashAPI } from './StashAPI.js';
 import { VisibilityManager } from './VisibilityManager.js';
-import { toAbsoluteUrl, showToast, isMobileDevice } from './utils.js';
-import { VERIFIED_CHECKMARK_SVG, ADD_TAG_SVG, HEART_SVG_OUTLINE, HEART_SVG_FILLED, OCOUNT_SVG, IMAGE_BADGE_SVG, EXTERNAL_LINK_SVG } from './icons.js';
+import { toAbsoluteUrl, showToast, isMobileDevice, THEME } from './utils.js';
+import { VERIFIED_CHECKMARK_SVG, ADD_TAG_SVG, HEART_SVG_OUTLINE, HEART_SVG_FILLED, OCOUNT_SVG, IMAGE_BADGE_SVG, EXTERNAL_LINK_SVG, STAR_SVG, STAR_SVG_OUTLINE } from './icons.js';
 import { setupTouchHandlers, preventClickAfterTouch } from './utils/touchHandlers.js';
 import { PerformerExtended } from './graphql/types.js';
 import { Performer, Tag } from './types.js';
@@ -97,6 +97,12 @@ export abstract class BasePost {
     this.container.className = config.className;
     this.container.dataset.postId = config.postId;
     this.container.style.position = 'relative';
+    this.container.style.backgroundColor = THEME.colors.surface;
+    this.container.style.border = `1px solid ${THEME.colors.border}`;
+    this.container.style.borderRadius = THEME.radius.card;
+    this.container.style.color = THEME.colors.textPrimary;
+    this.container.style.fontFamily = THEME.typography.fontFamily;
+    this.container.style.lineHeight = THEME.typography.lineHeight;
     while (this.container.firstChild) {
       this.container.firstChild.remove();
     }
@@ -206,7 +212,7 @@ export abstract class BasePost {
     button.style.display = 'flex';
     button.style.alignItems = 'center';
     button.style.justifyContent = 'center';
-    button.style.color = 'rgba(255, 255, 255, 0.7)';
+    button.style.color = THEME.colors.iconInactive;
     button.style.transition = 'none';
     button.style.width = '44px';
     button.style.height = '44px';
@@ -272,9 +278,9 @@ export abstract class BasePost {
     chip.style.display = 'inline-flex';
     chip.style.alignItems = 'center';
     chip.style.gap = '4px';
-    chip.style.fontSize = '14px';
-    chip.style.lineHeight = '1.4';
-    chip.style.color = 'rgba(255, 255, 255, 0.85)';
+    chip.style.fontSize = THEME.typography.sizeBody;
+    chip.style.lineHeight = THEME.typography.lineHeightTight;
+    chip.style.color = THEME.colors.textSecondary;
     chip.style.textDecoration = 'none';
     chip.style.transition = 'color 0.2s ease, opacity 0.2s ease';
     chip.style.cursor = 'pointer';
@@ -325,13 +331,13 @@ export abstract class BasePost {
     imageContainer.style.width = '20px';
     imageContainer.style.height = '20px';
     imageContainer.style.borderRadius = '50%';
-    imageContainer.style.background = 'rgba(255,255,255,0.1)';
+    imageContainer.style.background = THEME.colors.backgroundSecondary;
     imageContainer.style.display = 'flex';
     imageContainer.style.alignItems = 'center';
     imageContainer.style.justifyContent = 'center';
-    imageContainer.style.fontSize = '12px';
-    imageContainer.style.fontWeight = '600';
-    imageContainer.style.color = 'rgba(255,255,255,0.85)';
+    imageContainer.style.fontSize = THEME.typography.sizeMeta;
+    imageContainer.style.fontWeight = THEME.typography.weightTitle;
+    imageContainer.style.color = THEME.colors.textSecondary;
     imageContainer.style.flexShrink = '0';
     imageContainer.style.overflow = 'hidden';
     
@@ -368,6 +374,8 @@ export abstract class BasePost {
     checkmarkIcon.style.width = '14px';
     checkmarkIcon.style.height = '14px';
     checkmarkIcon.style.flexShrink = '0';
+    checkmarkIcon.style.marginLeft = '-4px';
+    checkmarkIcon.style.color = THEME.colors.accentPrimary;
     const svg = checkmarkIcon.querySelector('svg');
     if (svg) {
       svg.setAttribute('width', '14');
@@ -377,10 +385,10 @@ export abstract class BasePost {
     
     // Hover effect
     chip.addEventListener('mouseenter', () => {
-      chip.style.color = 'rgba(255, 255, 255, 1)';
+      chip.style.color = THEME.colors.textPrimary;
     });
     chip.addEventListener('mouseleave', () => {
-      chip.style.color = 'rgba(255, 255, 255, 0.85)';
+      chip.style.color = THEME.colors.textSecondary;
     });
 
     // Add hover overlay handlers
@@ -422,7 +430,7 @@ export abstract class BasePost {
     imageSection.style.height = '240px';
     imageSection.style.minWidth = '160px';
     imageSection.style.minHeight = '240px';
-    imageSection.style.backgroundColor = 'rgba(255, 255, 255, 0.05)';
+    imageSection.style.backgroundColor = THEME.colors.backgroundSecondary;
     imageSection.style.display = 'flex';
     imageSection.style.alignItems = 'center';
     imageSection.style.justifyContent = 'center';
@@ -447,12 +455,12 @@ export abstract class BasePost {
       } else {
         imageSection.textContent = performerData.name.charAt(0).toUpperCase();
         imageSection.style.fontSize = '64px';
-        imageSection.style.color = 'rgba(255, 255, 255, 0.5)';
+        imageSection.style.color = THEME.colors.textMuted;
       }
     } else {
       imageSection.textContent = performerData.name.charAt(0).toUpperCase();
       imageSection.style.fontSize = '64px';
-      imageSection.style.color = 'rgba(255, 255, 255, 0.5)';
+      imageSection.style.color = THEME.colors.textMuted;
     }
 
     // Add country flag overlay in bottom right corner
@@ -471,7 +479,7 @@ export abstract class BasePost {
         flagElement.style.display = 'flex';
         flagElement.style.alignItems = 'center';
         flagElement.style.justifyContent = 'center';
-        flagElement.style.backgroundColor = 'rgba(0, 0, 0, 0.4)';
+        flagElement.style.backgroundColor = THEME.colors.overlayMuted;
         flagElement.style.borderRadius = '4px';
         flagElement.style.backdropFilter = 'blur(4px)';
         flagElement.style.boxShadow = '0 2px 8px rgba(0, 0, 0, 0.3)';
@@ -500,21 +508,21 @@ export abstract class BasePost {
     nameLink.style.alignItems = 'center';
     nameLink.style.gap = '4px';
     nameLink.style.textDecoration = 'none';
-    nameLink.style.color = '#FFFFFF';
+    nameLink.style.color = THEME.colors.textPrimary;
     nameLink.style.cursor = 'pointer';
     nameLink.addEventListener('mouseenter', () => {
-      nameLink.style.color = '#4A9EFF';
+      nameLink.style.color = THEME.colors.accentPrimary;
     });
     nameLink.addEventListener('mouseleave', () => {
-      nameLink.style.color = '#FFFFFF';
+      nameLink.style.color = THEME.colors.textPrimary;
     });
 
     const name = document.createElement('h3');
     name.textContent = performerData.name;
     name.style.margin = '0';
-    name.style.fontSize = '18px';
-    name.style.fontWeight = '600';
-    name.style.lineHeight = '1.2';
+    name.style.fontSize = THEME.typography.sizeTitle;
+    name.style.fontWeight = THEME.typography.weightTitle;
+    name.style.lineHeight = THEME.typography.lineHeightTight;
     nameLink.appendChild(name);
 
     const externalIcon = document.createElement('span');
@@ -534,7 +542,7 @@ export abstract class BasePost {
       favoriteIcon.style.alignItems = 'center';
       favoriteIcon.style.width = '18px';
       favoriteIcon.style.height = '18px';
-      favoriteIcon.style.color = '#FF6B6B';
+      favoriteIcon.style.color = THEME.colors.ratingHigh;
       const svg = favoriteIcon.querySelector('svg');
       if (svg) {
         svg.setAttribute('width', '18');
@@ -688,7 +696,7 @@ export abstract class BasePost {
 
         const label = document.createElement('span');
         label.textContent = item.label + ':';
-        label.style.color = 'rgba(255, 255, 255, 0.6)';
+        label.style.color = THEME.colors.textMuted;
         row.appendChild(label);
 
         const value = document.createElement('span');
@@ -699,7 +707,7 @@ export abstract class BasePost {
         } else {
           value.textContent = item.value;
         }
-        value.style.color = '#FFFFFF';
+        value.style.color = THEME.colors.textPrimary;
         value.style.fontWeight = '500';
         row.appendChild(value);
 
@@ -720,11 +728,11 @@ export abstract class BasePost {
 
     const tagsSection = document.createElement('div');
     tagsSection.style.marginBottom = '8px';
-    tagsSection.style.fontSize = '13px';
+    tagsSection.style.fontSize = THEME.typography.sizeControl;
 
     const tagsLabel = document.createElement('div');
     tagsLabel.textContent = 'Tags:';
-    tagsLabel.style.color = 'rgba(255, 255, 255, 0.6)';
+    tagsLabel.style.color = THEME.colors.textMuted;
     tagsLabel.style.marginBottom = '4px';
     tagsSection.appendChild(tagsLabel);
 
@@ -736,18 +744,18 @@ export abstract class BasePost {
     for (const tag of performerData.tags.slice(0, 10)) {
       const tagChip = document.createElement('span');
       tagChip.textContent = tag.name;
-      tagChip.style.backgroundColor = 'rgba(255, 255, 255, 0.1)';
+      tagChip.style.backgroundColor = THEME.colors.backgroundSecondary;
       tagChip.style.padding = '2px 8px';
-      tagChip.style.borderRadius = '4px';
-      tagChip.style.fontSize = '12px';
-      tagChip.style.color = '#FFFFFF';
+      tagChip.style.borderRadius = THEME.radius.tag;
+      tagChip.style.fontSize = THEME.typography.sizeMeta;
+      tagChip.style.color = THEME.colors.textPrimary;
       tagsList.appendChild(tagChip);
     }
 
     if (performerData.tags.length > 10) {
       const moreChip = document.createElement('span');
       moreChip.textContent = `+${performerData.tags.length - 10} more`;
-      moreChip.style.color = 'rgba(255, 255, 255, 0.6)';
+      moreChip.style.color = THEME.colors.textMuted;
       moreChip.style.fontSize = '12px';
       tagsList.appendChild(moreChip);
     }
@@ -766,11 +774,11 @@ export abstract class BasePost {
 
     const detailsSection = document.createElement('div');
     detailsSection.style.fontSize = '14px';
-    detailsSection.style.color = 'rgba(255, 255, 255, 0.8)';
+    detailsSection.style.color = THEME.colors.textSecondary;
     detailsSection.style.lineHeight = '1.5';
     detailsSection.style.marginTop = '12px';
     detailsSection.style.paddingTop = '12px';
-    detailsSection.style.borderTop = '1px solid rgba(255, 255, 255, 0.1)';
+    detailsSection.style.borderTop = `1px solid ${THEME.colors.border}`;
     detailsSection.textContent = performerData.details;
     return detailsSection;
   }
@@ -783,14 +791,14 @@ export abstract class BasePost {
     overlay.className = 'performer-overlay';
     overlay.style.position = 'fixed';
     overlay.style.zIndex = '10000';
-    overlay.style.backgroundColor = 'rgba(20, 20, 20, 0.98)';
-    overlay.style.border = '1px solid rgba(255, 255, 255, 0.1)';
-    overlay.style.borderRadius = '8px';
+    overlay.style.backgroundColor = THEME.colors.overlay;
+    overlay.style.border = `1px solid ${THEME.colors.border}`;
+    overlay.style.borderRadius = THEME.radius.card;
     overlay.style.boxShadow = '0 8px 32px rgba(0, 0, 0, 0.5)';
     overlay.style.display = 'flex';
     overlay.style.flexDirection = 'row';
     overlay.style.gap = '12px';
-    overlay.style.padding = '12px';
+    overlay.style.padding = THEME.spacing.cardPadding;
     overlay.style.width = 'auto';
     overlay.style.maxWidth = '480px';
     overlay.style.maxHeight = '80vh';
@@ -1044,7 +1052,7 @@ export abstract class BasePost {
     imageSection.style.height = '64px';
     imageSection.style.minWidth = '64px';
     imageSection.style.minHeight = '64px';
-    imageSection.style.backgroundColor = 'rgba(255, 255, 255, 0.05)';
+    imageSection.style.backgroundColor = THEME.colors.backgroundSecondary;
     imageSection.style.display = 'flex';
     imageSection.style.alignItems = 'center';
     imageSection.style.justifyContent = 'center';
@@ -1070,7 +1078,7 @@ export abstract class BasePost {
     }
     imageSection.textContent = tagData.name.charAt(0).toUpperCase();
     imageSection.style.fontSize = '32px';
-    imageSection.style.color = 'rgba(255, 255, 255, 0.5)';
+    imageSection.style.color = THEME.colors.textMuted;
     return imageSection;
   }
 
@@ -1092,13 +1100,13 @@ export abstract class BasePost {
     nameLink.style.alignItems = 'center';
     nameLink.style.gap = '4px';
     nameLink.style.textDecoration = 'none';
-    nameLink.style.color = '#FFFFFF';
+    nameLink.style.color = THEME.colors.textPrimary;
     nameLink.style.cursor = 'pointer';
     nameLink.addEventListener('mouseenter', () => {
-      nameLink.style.color = '#4A9EFF';
+      nameLink.style.color = THEME.colors.accentPrimary;
     });
     nameLink.addEventListener('mouseleave', () => {
-      nameLink.style.color = '#FFFFFF';
+      nameLink.style.color = THEME.colors.textPrimary;
     });
 
     const name = document.createElement('h3');
@@ -1131,7 +1139,7 @@ export abstract class BasePost {
 
     const descriptionSection = document.createElement('div');
     descriptionSection.style.fontSize = '12px';
-    descriptionSection.style.color = 'rgba(255, 255, 255, 0.7)';
+    descriptionSection.style.color = THEME.colors.textSecondary;
     descriptionSection.style.lineHeight = '1.4';
     descriptionSection.style.marginTop = '4px';
     descriptionSection.textContent = tagData.description;
@@ -1146,14 +1154,14 @@ export abstract class BasePost {
     overlay.className = 'tag-overlay';
     overlay.style.position = 'fixed';
     overlay.style.zIndex = '10000';
-    overlay.style.backgroundColor = 'rgba(20, 20, 20, 0.98)';
-    overlay.style.border = '1px solid rgba(255, 255, 255, 0.1)';
-    overlay.style.borderRadius = '8px';
+    overlay.style.backgroundColor = THEME.colors.overlay;
+    overlay.style.border = `1px solid ${THEME.colors.border}`;
+    overlay.style.borderRadius = THEME.radius.card;
     overlay.style.boxShadow = '0 8px 32px rgba(0, 0, 0, 0.5)';
     overlay.style.display = 'flex';
     overlay.style.flexDirection = 'row';
     overlay.style.gap = '12px';
-    overlay.style.padding = '12px';
+    overlay.style.padding = THEME.spacing.cardPadding;
     overlay.style.width = 'auto';
     overlay.style.maxWidth = '280px';
     overlay.style.opacity = '0';
@@ -1367,7 +1375,7 @@ export abstract class BasePost {
     hashtag.style.margin = '0';
     hashtag.style.fontSize = '14px';
     hashtag.style.lineHeight = '1.4';
-    hashtag.style.color = 'rgba(255, 255, 255, 0.75)';
+    hashtag.style.color = THEME.colors.textSecondary;
     hashtag.style.textDecoration = 'none';
     hashtag.style.transition = 'color 0.2s ease';
     hashtag.style.cursor = 'pointer';
@@ -1389,10 +1397,10 @@ export abstract class BasePost {
     };
     
     hashtag.addEventListener('mouseenter', () => {
-      hashtag.style.color = 'rgba(255, 255, 255, 0.95)';
+      hashtag.style.color = THEME.colors.textPrimary;
     });
     hashtag.addEventListener('mouseleave', () => {
-      hashtag.style.color = 'rgba(255, 255, 255, 0.75)';
+      hashtag.style.color = THEME.colors.textSecondary;
     });
     
     const isMobile = isMobileDevice();
@@ -1460,7 +1468,7 @@ export abstract class BasePost {
     badge.style.width = '30px';
     badge.style.height = '30px';
     badge.style.flexShrink = '0';
-    badge.style.color = 'rgba(255, 255, 255, 0.85)';
+    badge.style.color = THEME.colors.textSecondary;
     badge.style.pointerEvents = 'none';
     badge.innerHTML = IMAGE_BADGE_SVG;
     badge.title = 'Image';
@@ -1532,7 +1540,7 @@ export abstract class BasePost {
     iconBtn.setAttribute('aria-label', 'View full image');
     iconBtn.title = 'Open image in Stash';
     this.applyIconButtonStyles(iconBtn);
-    iconBtn.style.color = '#F5C518';
+    iconBtn.style.color = THEME.colors.accentPrimary;
     iconBtn.style.padding = '0';
     iconBtn.style.width = '44px';
     iconBtn.style.height = '44px';
@@ -1542,6 +1550,87 @@ export abstract class BasePost {
 
     this.addHoverEffect(iconBtn);
     return iconBtn;
+  }
+
+  protected buildRatingDisplayButton(options: {
+    title: string;
+    onClick: (event: MouseEvent) => void;
+  }): { button: HTMLButtonElement; iconSpan: HTMLSpanElement; valueSpan: HTMLSpanElement } {
+    const displayButton = document.createElement('button');
+    displayButton.type = 'button';
+    displayButton.className = 'icon-btn icon-btn--rating';
+    displayButton.setAttribute('aria-haspopup', 'dialog');
+    displayButton.setAttribute('aria-expanded', 'false');
+    displayButton.title = options.title;
+    this.applyIconButtonStyles(displayButton);
+    displayButton.style.padding = '8px 12px';
+    displayButton.style.gap = '3px';
+    displayButton.style.width = 'auto';
+    displayButton.style.minWidth = '44px';
+    displayButton.style.height = 'auto';
+    displayButton.style.minHeight = '44px';
+
+    displayButton.addEventListener('click', (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      options.onClick(event);
+    });
+
+    this.addHoverEffect(displayButton);
+
+    const iconSpan = document.createElement('span');
+    iconSpan.className = 'rating-display__icon';
+    iconSpan.innerHTML = STAR_SVG;
+    iconSpan.style.display = 'flex';
+    iconSpan.style.alignItems = 'center';
+    iconSpan.style.justifyContent = 'center';
+    iconSpan.style.color = THEME.colors.iconInactive;
+
+    const valueSpan = document.createElement('span');
+    valueSpan.className = 'rating-display__value';
+    valueSpan.style.fontSize = THEME.typography.sizeBody;
+    valueSpan.style.fontWeight = THEME.typography.weightBodyStrong;
+    valueSpan.style.minWidth = '14px';
+    valueSpan.style.textAlign = 'left';
+
+    displayButton.appendChild(iconSpan);
+    displayButton.appendChild(valueSpan);
+
+    return { button: displayButton, iconSpan, valueSpan };
+  }
+
+  protected createRatingStarIcon(): HTMLElement {
+    const wrapper = document.createElement('div');
+    wrapper.className = 'rating-dialog__star-icon';
+    wrapper.style.position = 'relative';
+    wrapper.style.width = '24px';
+    wrapper.style.height = '24px';
+    wrapper.style.display = 'flex';
+    wrapper.style.alignItems = 'center';
+    wrapper.style.justifyContent = 'center';
+
+    const outlineSpan = document.createElement('span');
+    outlineSpan.className = 'rating-dialog__star-outline';
+    outlineSpan.innerHTML = STAR_SVG_OUTLINE;
+    outlineSpan.style.position = 'absolute';
+    outlineSpan.style.display = 'flex';
+    outlineSpan.style.alignItems = 'center';
+    outlineSpan.style.justifyContent = 'center';
+    outlineSpan.style.color = `var(--rating-star-outline, ${THEME.colors.textPrimary})`;
+
+    const fillSpan = document.createElement('span');
+    fillSpan.className = 'rating-dialog__star-fill';
+    fillSpan.innerHTML = STAR_SVG;
+    fillSpan.style.position = 'absolute';
+    fillSpan.style.display = 'flex';
+    fillSpan.style.alignItems = 'center';
+    fillSpan.style.justifyContent = 'center';
+    fillSpan.style.color = `var(--rating-star-fill, ${THEME.colors.ratingLow})`;
+    fillSpan.style.clipPath = 'inset(0 100% 0 0)';
+
+    wrapper.appendChild(outlineSpan);
+    wrapper.appendChild(fillSpan);
+    return wrapper;
   }
 
   protected openAddTagDialogBase(options: {
@@ -1715,12 +1804,12 @@ export abstract class BasePost {
         const item = document.createElement('div');
         item.style.padding = '10px 12px';
         item.style.cursor = 'pointer';
-        item.style.color = 'rgba(255, 255, 255, 0.9)';
-        item.style.fontSize = '14px';
-        item.style.borderBottom = '1px solid rgba(255, 255, 255, 0.1)';
+        item.style.color = THEME.colors.textPrimary;
+        item.style.fontSize = THEME.typography.sizeBody;
+        item.style.borderBottom = `1px solid ${THEME.colors.border}`;
         item.textContent = tag.name;
         item.addEventListener('mouseenter', () => {
-          item.style.background = 'rgba(255, 255, 255, 0.1)';
+          item.style.background = THEME.colors.backgroundSecondary;
         });
         item.addEventListener('mouseleave', () => {
           item.style.background = 'transparent';
@@ -1762,11 +1851,11 @@ export abstract class BasePost {
     dialog.style.transform = 'translateX(-50%)';
     dialog.style.width = '320px';
     dialog.style.maxWidth = 'calc(100vw - 32px)';
-    dialog.style.background = 'rgba(28, 28, 30, 0.98)';
-    dialog.style.backdropFilter = 'blur(20px) saturate(180%)';
-    dialog.style.border = '1px solid rgba(255, 255, 255, 0.12)';
-    dialog.style.borderRadius = '12px';
-    dialog.style.padding = '16px';
+    dialog.style.background = THEME.colors.backgroundSecondary;
+    dialog.style.backdropFilter = 'blur(18px) saturate(160%)';
+    dialog.style.border = `1px solid ${THEME.colors.border}`;
+    dialog.style.borderRadius = THEME.radius.card;
+    dialog.style.padding = THEME.spacing.cardPadding;
     dialog.style.boxShadow = '0 8px 32px rgba(0, 0, 0, 0.4)';
     dialog.style.zIndex = '200';
     dialog.style.opacity = '0';
@@ -1780,7 +1869,7 @@ export abstract class BasePost {
     title.textContent = 'Add Tag';
     title.style.fontSize = '16px';
     title.style.fontWeight = '600';
-    title.style.color = 'rgba(255, 255, 255, 0.9)';
+    title.style.color = THEME.colors.textPrimary;
     title.style.marginBottom = '12px';
     dialog.appendChild(title);
 
@@ -1793,11 +1882,11 @@ export abstract class BasePost {
     input.placeholder = 'Search for tag...';
     input.style.width = '100%';
     input.style.padding = '10px 12px';
-    input.style.background = 'rgba(255, 255, 255, 0.08)';
-    input.style.border = '1px solid rgba(255, 255, 255, 0.12)';
-    input.style.borderRadius = '8px';
-    input.style.color = 'rgba(255, 255, 255, 0.9)';
-    input.style.fontSize = '14px';
+    input.style.background = THEME.colors.surface;
+    input.style.border = `1px solid ${THEME.colors.border}`;
+    input.style.borderRadius = THEME.radius.button;
+    input.style.color = THEME.colors.textPrimary;
+    input.style.fontSize = THEME.typography.sizeBody;
     input.style.boxSizing = 'border-box';
     input.setAttribute('aria-label', 'Tag name');
     state.input = input;
@@ -1825,10 +1914,10 @@ export abstract class BasePost {
     suggestions.style.top = '100%';
     suggestions.style.left = '0';
     suggestions.style.right = '0';
-    suggestions.style.background = 'rgba(28, 28, 30, 0.98)';
-    suggestions.style.border = '1px solid rgba(255, 255, 255, 0.12)';
+    suggestions.style.background = THEME.colors.backgroundSecondary;
+    suggestions.style.border = `1px solid ${THEME.colors.border}`;
     suggestions.style.borderTop = 'none';
-    suggestions.style.borderRadius = '0 0 8px 8px';
+    suggestions.style.borderRadius = `0 0 ${THEME.radius.card} ${THEME.radius.card}`;
     suggestions.style.maxHeight = '200px';
     suggestions.style.overflowY = 'auto';
     suggestions.style.zIndex = '201';
@@ -1846,12 +1935,12 @@ export abstract class BasePost {
     const cancelButton = document.createElement('button');
     cancelButton.textContent = 'Cancel';
     cancelButton.style.padding = '8px 16px';
-    cancelButton.style.borderRadius = '8px';
-    cancelButton.style.border = '1px solid rgba(255, 255, 255, 0.2)';
+    cancelButton.style.borderRadius = THEME.radius.button;
+    cancelButton.style.border = `1px solid ${THEME.colors.border}`;
     cancelButton.style.background = 'transparent';
-    cancelButton.style.color = 'rgba(255, 255, 255, 0.9)';
+    cancelButton.style.color = THEME.colors.textSecondary;
     cancelButton.style.cursor = 'pointer';
-    cancelButton.style.fontSize = '14px';
+    cancelButton.style.fontSize = THEME.typography.sizeBody;
     cancelButton.addEventListener('click', () => this.closeAddTagDialogBase({ state, focusAfterClose: options.focusAfterClose }));
     buttonContainer.appendChild(cancelButton);
 
@@ -1859,13 +1948,13 @@ export abstract class BasePost {
     addButton.id = 'add-tag-dialog-action-button';
     addButton.textContent = 'Add';
     addButton.style.padding = '8px 16px';
-    addButton.style.borderRadius = '8px';
+    addButton.style.borderRadius = THEME.radius.button;
     addButton.style.border = 'none';
-    addButton.style.background = '#F5C518';
-    addButton.style.color = '#000000';
+    addButton.style.background = THEME.colors.accentPrimary;
+    addButton.style.color = THEME.colors.textPrimary;
     addButton.style.cursor = 'pointer';
-    addButton.style.fontSize = '14px';
-    addButton.style.fontWeight = '600';
+    addButton.style.fontSize = THEME.typography.sizeBody;
+    addButton.style.fontWeight = THEME.typography.weightTitle;
     addButton.disabled = true;
     addButton.style.opacity = '0.5';
     state.createButton = addButton;
@@ -1994,11 +2083,11 @@ export abstract class BasePost {
     
     if (this.isFavorite) {
       btn.innerHTML = HEART_SVG_FILLED;
-      btn.style.color = '#ff6b9d';
+      btn.style.color = THEME.colors.ratingHigh;
       btn.title = 'Remove from favorites';
     } else {
       btn.innerHTML = HEART_SVG_OUTLINE;
-      btn.style.color = 'rgba(255, 255, 255, 0.7)';
+      btn.style.color = THEME.colors.iconInactive;
       btn.title = 'Add to favorites';
     }
   }
@@ -2018,7 +2107,7 @@ export abstract class BasePost {
     oCountBtn.style.flexShrink = '1';
     oCountBtn.style.minHeight = '44px';
     oCountBtn.style.height = 'auto';
-    oCountBtn.style.fontSize = '16px';
+    oCountBtn.style.fontSize = THEME.typography.sizeBody;
     oCountBtn.style.width = 'auto';
     oCountBtn.style.minWidth = '44px';
     

@@ -14,10 +14,10 @@ import { VisibilityManager } from './VisibilityManager.js';
 import { FavoritesManager } from './FavoritesManager.js';
 import { SettingsPage } from './SettingsPage.js';
 import { AudioManager, AudioPriority } from './AudioManager.js';
-import { debounce, isValidMediaUrl, detectDeviceCapabilities, DeviceCapabilities, isStandaloneNavigator, isMobileDevice, getNetworkInfo, isSlowNetwork, isCellularConnection, detectVideoFromVisualFiles, isMp4File, getImageUrlForDisplay } from './utils.js';
+import { debounce, isValidMediaUrl, detectDeviceCapabilities, DeviceCapabilities, isStandaloneNavigator, isMobileDevice, getNetworkInfo, isSlowNetwork, isCellularConnection, detectVideoFromVisualFiles, isMp4File, getImageUrlForDisplay, THEME, THEME_DEFAULTS } from './utils.js';
 import { posterPreloader } from './PosterPreloader.js';
 import { Image as GraphQLImage } from './graphql/types.js';
-import { HQ_SVG_OUTLINE, HQ_SVG_FILLED, RANDOM_SVG, SETTINGS_SVG, SHUFFLE_CHECK_SVG } from './icons.js';
+import { HQ_SVG_OUTLINE, HQ_SVG_FILLED, RANDOM_SVG, SETTINGS_SVG, SHUFFLE_CHECK_SVG, STASHGIFS_LOGO_SVG } from './icons.js';
 
 const DEFAULT_SETTINGS: FeedSettings = {
   autoPlay: true, // Enable autoplay for markers
@@ -40,6 +40,10 @@ const DEFAULT_SETTINGS: FeedSettings = {
   shortFormMaxDuration: 120, // Maximum duration in seconds for short-form content
   shortFormOnly: false, // When true, only load short-form content and skip regular markers
   snapToCards: false, // When true, scroll/swipe snaps to center next/previous card
+  themeBackground: THEME_DEFAULTS.backgroundPrimary,
+  themePrimary: THEME_DEFAULTS.surface,
+  themeSecondary: THEME_DEFAULTS.backgroundSecondary,
+  themeAccent: THEME_DEFAULTS.accentPrimary,
 };
 
 /**
@@ -147,6 +151,7 @@ export class FeedContainer {
     // If no settings passed, load from localStorage
     const loadedSettings = settings && Object.keys(settings).length > 0 ? settings : this.loadSettingsFromStorage();
     this.settings = { ...DEFAULT_SETTINGS, ...loadedSettings };
+    this.applyThemeSettings(this.settings);
     // Initialize properties that will be set in methods
     this.scrollContainer = null!; // Will be set in initializeContainers
     this.visibilityManager = null!; // Will be set in initializeManagers
@@ -255,6 +260,12 @@ export class FeedContainer {
       this.scrollContainer.className = 'feed-scroll-container';
       this.container.appendChild(this.scrollContainer);
     }
+
+    this.container.style.backgroundColor = THEME.colors.backgroundPrimary;
+    this.container.style.color = THEME.colors.textPrimary;
+    this.container.style.fontFamily = THEME.typography.fontFamily;
+    this.container.style.lineHeight = THEME.typography.lineHeight;
+    this.scrollContainer.style.backgroundColor = THEME.colors.backgroundPrimary;
   }
 
   /**
@@ -286,6 +297,59 @@ export class FeedContainer {
       console.error('Failed to load settings from localStorage', error);
     }
     return {};
+  }
+
+  private applyThemeSettings(settings: FeedSettings): void {
+    const background = this.normalizeThemeColor(settings.themeBackground, THEME.colors.backgroundPrimary);
+    const primary = this.normalizeThemeColor(settings.themePrimary, THEME.colors.surface);
+    const secondary = this.normalizeThemeColor(settings.themeSecondary, THEME.colors.backgroundSecondary);
+    const accent = this.normalizeThemeColor(settings.themeAccent, THEME.colors.accentPrimary);
+
+    THEME.colors.backgroundPrimary = background;
+    THEME.colors.surface = primary;
+    THEME.colors.backgroundSecondary = secondary;
+    THEME.colors.accentPrimary = accent;
+    THEME.colors.overlay = this.toRgba(background, 0.96);
+    THEME.colors.overlayMuted = this.toRgba(secondary, 0.96);
+
+    const root = document.documentElement;
+    root.style.setProperty('--color-bg', background);
+    root.style.setProperty('--color-surface', primary);
+    root.style.setProperty('--color-surface-secondary', secondary);
+    root.style.setProperty('--color-bg-overlay', THEME.colors.overlay);
+    root.style.setProperty('--color-accent', accent);
+    root.style.setProperty('--color-accent-strong', accent);
+    root.style.setProperty('--color-accent-weak', this.toRgba(accent, 0.18));
+    root.style.setProperty('--color-accent-weaker', this.toRgba(accent, 0.1));
+
+    if (this.container) {
+      this.container.style.backgroundColor = THEME.colors.backgroundPrimary;
+      this.container.style.color = THEME.colors.textPrimary;
+    }
+
+    if (this.scrollContainer) {
+      this.scrollContainer.style.backgroundColor = THEME.colors.backgroundPrimary;
+    }
+  }
+
+  private normalizeThemeColor(value: string | undefined, fallback: string): string {
+    if (!value) {
+      return fallback;
+    }
+    const trimmed = value.trim();
+    const normalized = trimmed.startsWith('#') ? trimmed : `#${trimmed}`;
+    if (/^#[0-9a-fA-F]{6}$/.test(normalized)) {
+      return normalized.toUpperCase();
+    }
+    return fallback;
+  }
+
+  private toRgba(hex: string, alpha: number): string {
+    const normalized = this.normalizeThemeColor(hex, '#000000');
+    const r = Number.parseInt(normalized.slice(1, 3), 16);
+    const g = Number.parseInt(normalized.slice(3, 5), 16);
+    const b = Number.parseInt(normalized.slice(5, 7), 16);
+    return `rgba(${r}, ${g}, ${b}, ${alpha})`;
   }
 
   /**
@@ -577,9 +641,9 @@ export class FeedContainer {
     notice.textContent = 'Random mode active — search disabled';
     notice.style.padding = '8px 12px';
     notice.style.borderRadius = '999px';
-    notice.style.background = 'rgba(255,255,255,0.08)';
-    notice.style.border = '1px solid rgba(255,255,255,0.12)';
-    notice.style.color = 'rgba(255,255,255,0.85)';
+    notice.style.background = THEME.colors.surface;
+    notice.style.border = `1px solid ${THEME.colors.border}`;
+    notice.style.color = THEME.colors.textSecondary;
     notice.style.fontSize = '13px';
     container.appendChild(notice);
     suggestions.appendChild(container);
@@ -769,10 +833,10 @@ export class FeedContainer {
     hdBtn.style.padding = '10px';
     hdBtn.style.width = '44px';
     hdBtn.style.height = '44px';
-    hdBtn.style.borderRadius = '10px';
-    hdBtn.style.border = this.useHDMode ? '1px solid rgba(245, 197, 24, 0.55)' : '1px solid rgba(255,255,255,0.06)';
-    hdBtn.style.background = this.useHDMode ? 'rgba(245, 197, 24, 0.25)' : 'rgba(28, 28, 30, 0.6)';
-    hdBtn.style.color = this.useHDMode ? '#F5C518' : 'rgba(255,255,255,0.4)';
+    hdBtn.style.borderRadius = THEME.radius.button;
+    hdBtn.style.border = this.useHDMode ? `1px solid ${THEME.colors.accentPrimary}` : `1px solid ${THEME.colors.border}`;
+    hdBtn.style.background = this.useHDMode ? THEME.colors.surfaceHover : THEME.colors.backgroundSecondary;
+    hdBtn.style.color = this.useHDMode ? THEME.colors.accentPrimary : THEME.colors.iconInactive;
     hdBtn.style.cursor = 'pointer';
     hdBtn.style.display = 'inline-flex';
     hdBtn.style.alignItems = 'center';
@@ -785,14 +849,14 @@ export class FeedContainer {
     const setRandomBtnState = () => {
       const isOn = this.shuffleMode > 0;
       randomBtn.title = isOn ? 'Random Positions: On' : 'Random Positions: Off';
-      randomBtn.style.background = isOn ? 'rgba(33, 150, 243, 0.25)' : 'rgba(28, 28, 30, 0.6)';
-      randomBtn.style.border = isOn ? '1px solid rgba(33, 150, 243, 0.65)' : '1px solid rgba(255,255,255,0.06)';
-      randomBtn.style.color = isOn ? '#64B5F6' : 'rgba(255,255,255,0.4)';
+      randomBtn.style.background = isOn ? THEME.colors.surfaceHover : THEME.colors.backgroundSecondary;
+      randomBtn.style.border = isOn ? `1px solid ${THEME.colors.accentPrimary}` : `1px solid ${THEME.colors.border}`;
+      randomBtn.style.color = isOn ? THEME.colors.accentPrimary : THEME.colors.iconInactive;
     };
     randomBtn.style.padding = '10px';
     randomBtn.style.width = '44px';
     randomBtn.style.height = '44px';
-    randomBtn.style.borderRadius = '10px';
+    randomBtn.style.borderRadius = THEME.radius.button;
     randomBtn.style.cursor = 'pointer';
     randomBtn.style.display = 'inline-flex';
     randomBtn.style.alignItems = 'center';
@@ -801,9 +865,9 @@ export class FeedContainer {
 
     const updateButtonStates = () => {
       hdBtn.innerHTML = this.useHDMode ? HQ_SVG_FILLED : HQ_SVG_OUTLINE;
-      hdBtn.style.background = this.useHDMode ? 'rgba(245, 197, 24, 0.25)' : 'rgba(28, 28, 30, 0.6)';
-      hdBtn.style.border = this.useHDMode ? '1px solid rgba(245, 197, 24, 0.55)' : '1px solid rgba(255,255,255,0.06)';
-      hdBtn.style.color = this.useHDMode ? '#F5C518' : 'rgba(255,255,255,0.4)';
+      hdBtn.style.background = this.useHDMode ? THEME.colors.surfaceHover : THEME.colors.backgroundSecondary;
+      hdBtn.style.border = this.useHDMode ? `1px solid ${THEME.colors.accentPrimary}` : `1px solid ${THEME.colors.border}`;
+      hdBtn.style.color = this.useHDMode ? THEME.colors.accentPrimary : THEME.colors.iconInactive;
       hdBtn.title = this.useHDMode ? 'HD Video: On' : 'HD Video: Off';
       setRandomBtnState();
     };
@@ -1111,9 +1175,9 @@ export class FeedContainer {
       notice.textContent = 'Random mode active — search disabled';
       notice.style.padding = '8px 12px';
       notice.style.borderRadius = '999px';
-      notice.style.background = 'rgba(255,255,255,0.08)';
-      notice.style.border = '1px solid rgba(255,255,255,0.12)';
-      notice.style.color = 'rgba(255,255,255,0.85)';
+      notice.style.background = THEME.colors.surface;
+      notice.style.border = `1px solid ${THEME.colors.border}`;
+      notice.style.color = THEME.colors.textSecondary;
       notice.style.fontSize = '13px';
       banner.appendChild(notice);
       container.appendChild(banner);
@@ -1425,9 +1489,9 @@ export class FeedContainer {
     more.dataset.more = '1';
     more.textContent = 'More results…';
     more.style.padding = '8px 10px';
-    more.style.borderRadius = '10px';
-    more.style.border = '1px solid rgba(255,255,255,0.12)';
-    more.style.background = 'rgba(255,255,255,0.06)';
+    more.style.borderRadius = THEME.radius.button;
+    more.style.border = `1px solid ${THEME.colors.border}`;
+    more.style.background = THEME.colors.backgroundSecondary;
     more.style.cursor = 'pointer';
     more.style.width = '100%';
     more.style.marginTop = '4px';
@@ -1515,11 +1579,33 @@ export class FeedContainer {
     const brandContainer = document.createElement('div');
     brandContainer.className = 'feed-brand-container';
     brandContainer.title = 'Click to refresh feed';
-    
-    const brand = document.createElement('div');
+    brandContainer.style.display = 'inline-flex';
+    brandContainer.style.alignItems = 'center';
+    brandContainer.style.padding = '6px 12px';
+    brandContainer.style.height = '36px';
+    brandContainer.style.borderRadius = THEME.radius.button;
+    brandContainer.style.border = `1px solid ${THEME.colors.border}`;
+    brandContainer.style.background = THEME.colors.backgroundSecondary;
+    brandContainer.style.cursor = 'pointer';
+    brandContainer.style.transition = 'background 0.2s ease, border-color 0.2s ease, color 0.2s ease';
+
+    const brand = document.createElement('span');
     brand.className = 'feed-brand-text';
-    brand.textContent = 'stashgifs';
-    
+    brand.innerHTML = STASHGIFS_LOGO_SVG;
+    brand.style.color = 'var(--color-accent)';
+    brand.style.display = 'inline-flex';
+    brand.style.alignItems = 'center';
+
+    brandContainer.addEventListener('mouseenter', () => {
+      brandContainer.style.background = THEME.colors.surfaceHover;
+      brandContainer.style.borderColor = THEME.colors.accentPrimary;
+    });
+
+    brandContainer.addEventListener('mouseleave', () => {
+      brandContainer.style.background = THEME.colors.backgroundSecondary;
+      brandContainer.style.borderColor = THEME.colors.border;
+    });
+
     brandContainer.addEventListener('click', () => {
       // Clear all filter properties
       this.selectedTagId = undefined;
@@ -1637,7 +1723,7 @@ export class FeedContainer {
       textEl.style.opacity = isEntering ? '0' : '1';
       textEl.style.whiteSpace = 'nowrap';
       textEl.style.fontWeight = 'bold';
-      textEl.style.color = '#F5C518';
+      textEl.style.color = THEME.colors.accentPrimary;
       return textEl;
     };
     
@@ -1833,10 +1919,10 @@ export class FeedContainer {
     settingsButton.title = 'Settings';
     settingsButton.setAttribute('aria-label', 'Open settings');
     settingsButton.style.padding = '10px 12px';
-    settingsButton.style.borderRadius = '10px';
-    settingsButton.style.border = '1px solid rgba(255,255,255,0.12)';
-    settingsButton.style.background = 'rgba(28, 28, 30, 0.9)';
-    settingsButton.style.color = '#F5C518';
+    settingsButton.style.borderRadius = THEME.radius.button;
+    settingsButton.style.border = `1px solid ${THEME.colors.border}`;
+    settingsButton.style.background = THEME.colors.backgroundSecondary;
+    settingsButton.style.color = THEME.colors.iconInactive;
     settingsButton.style.cursor = 'pointer';
     settingsButton.style.display = 'inline-flex';
     settingsButton.style.alignItems = 'center';
@@ -1846,15 +1932,15 @@ export class FeedContainer {
     settingsButton.innerHTML = SETTINGS_SVG;
 
     settingsButton.addEventListener('mouseenter', () => {
-      settingsButton.style.color = '#FFD54F';
-      settingsButton.style.background = 'rgba(28, 28, 30, 0.95)';
-      settingsButton.style.borderColor = 'rgba(255,255,255,0.18)';
+      settingsButton.style.color = THEME.colors.textPrimary;
+      settingsButton.style.background = THEME.colors.surfaceHover;
+      settingsButton.style.borderColor = THEME.colors.border;
     });
 
     settingsButton.addEventListener('mouseleave', () => {
-      settingsButton.style.color = '#F5C518';
-      settingsButton.style.background = 'rgba(28, 28, 30, 0.9)';
-      settingsButton.style.borderColor = 'rgba(255,255,255,0.12)';
+      settingsButton.style.color = THEME.colors.iconInactive;
+      settingsButton.style.background = THEME.colors.backgroundSecondary;
+      settingsButton.style.borderColor = THEME.colors.border;
     });
 
     settingsButton.addEventListener('click', () => {
@@ -1882,6 +1968,7 @@ export class FeedContainer {
         this.settings = updatedSettings;
         // Save updated settings to localStorage
         this.saveSettingsToStorage(updatedSettings);
+        this.applyThemeSettings(updatedSettings);
         // Update card snapping if setting changed
         if (newSettings.snapToCards !== undefined) {
           this.setupCardSnapping();
@@ -1925,14 +2012,14 @@ export class FeedContainer {
     hdToggle.style.height = '44px';
     hdToggle.style.minWidth = '44px';
     hdToggle.style.padding = '0 14px';
-    hdToggle.style.borderRadius = '10px';
-    hdToggle.style.border = '1px solid rgba(255,255,255,0.12)';
-    hdToggle.style.background = 'rgba(28, 28, 30, 0.9)';
-    hdToggle.style.color = 'rgba(255,255,255,0.85)';
-    hdToggle.style.fontSize = '12px';
-    hdToggle.style.fontWeight = '700';
+    hdToggle.style.borderRadius = THEME.radius.button;
+    hdToggle.style.border = `1px solid ${THEME.colors.border}`;
+    hdToggle.style.background = THEME.colors.backgroundSecondary;
+    hdToggle.style.color = THEME.colors.textSecondary;
+    hdToggle.style.fontSize = THEME.typography.sizeMeta;
+    hdToggle.style.fontWeight = THEME.typography.weightTitle;
     hdToggle.style.cursor = 'pointer';
-    hdToggle.style.lineHeight = '1.2';
+    hdToggle.style.lineHeight = THEME.typography.lineHeightTight;
     hdToggle.style.userSelect = 'none';
     hdToggle.style.display = 'inline-flex';
     hdToggle.style.alignItems = 'center';
@@ -1942,17 +2029,17 @@ export class FeedContainer {
     const setHDToggleVisualState = (shuffleToggle: HTMLButtonElement | HTMLElement | null | undefined) => {
       if (this.useHDMode) {
         hdToggle.textContent = 'HD Video';
-        hdToggle.style.background = 'rgba(76, 175, 80, 0.25)';
-        hdToggle.style.borderColor = 'rgba(76, 175, 80, 0.55)';
-        hdToggle.style.color = '#C8E6C9';
+        hdToggle.style.background = THEME.colors.surfaceHover;
+        hdToggle.style.borderColor = THEME.colors.success;
+        hdToggle.style.color = THEME.colors.success;
         if (shuffleToggle) {
           shuffleToggle.style.display = 'inline-flex';
         }
       } else {
         hdToggle.textContent = 'HD Video';
-        hdToggle.style.background = 'rgba(28, 28, 30, 0.6)';
-        hdToggle.style.borderColor = 'rgba(255,255,255,0.06)';
-        hdToggle.style.color = 'rgba(255,255,255,0.4)';
+        hdToggle.style.background = THEME.colors.backgroundSecondary;
+        hdToggle.style.borderColor = THEME.colors.border;
+        hdToggle.style.color = THEME.colors.iconInactive;
         if (shuffleToggle) {
           shuffleToggle.style.display = 'none';
         }
@@ -1960,9 +2047,9 @@ export class FeedContainer {
     };
 
     hdToggle.addEventListener('mouseenter', () => {
-      hdToggle.style.background = 'rgba(28, 28, 30, 0.95)';
-      hdToggle.style.borderColor = 'rgba(255,255,255,0.16)';
-      hdToggle.style.opacity = '0.9';
+      hdToggle.style.background = THEME.colors.surfaceHover;
+      hdToggle.style.borderColor = THEME.colors.border;
+      hdToggle.style.opacity = '0.95';
     });
 
     hdToggle.addEventListener('mouseleave', () => {
@@ -2025,38 +2112,38 @@ export class FeedContainer {
     shuffleToggle.style.height = '44px';
     shuffleToggle.style.minWidth = '44px';
     shuffleToggle.style.padding = '0 14px';
-    shuffleToggle.style.borderRadius = '10px';
-    shuffleToggle.style.border = '1px solid rgba(255,255,255,0.12)';
-    shuffleToggle.style.background = 'rgba(28, 28, 30, 0.9)';
-    shuffleToggle.style.color = 'rgba(255,255,255,0.85)';
+    shuffleToggle.style.borderRadius = THEME.radius.button;
+    shuffleToggle.style.border = `1px solid ${THEME.colors.border}`;
+    shuffleToggle.style.background = THEME.colors.backgroundSecondary;
+    shuffleToggle.style.color = THEME.colors.textSecondary;
     shuffleToggle.style.cursor = 'pointer';
     shuffleToggle.style.display = this.useHDMode ? 'inline-flex' : 'none';
     shuffleToggle.style.alignItems = 'center';
     shuffleToggle.style.justifyContent = 'center';
     shuffleToggle.style.transition = 'background 0.2s ease, border-color 0.2s ease, color 0.2s ease, transform 0.2s cubic-bezier(0.2, 0, 0, 1)';
-    shuffleToggle.style.fontSize = '12px';
-    shuffleToggle.style.fontWeight = '700';
-    shuffleToggle.style.lineHeight = '1.2';
+    shuffleToggle.style.fontSize = THEME.typography.sizeMeta;
+    shuffleToggle.style.fontWeight = THEME.typography.weightTitle;
+    shuffleToggle.style.lineHeight = THEME.typography.lineHeightTight;
     shuffleToggle.style.userSelect = 'none';
 
     const setShuffleToggleVisualState = () => {
       if (this.shuffleMode === 0) {
         shuffleToggle.textContent = 'Random Positions';
-        shuffleToggle.style.background = 'rgba(28, 28, 30, 0.6)';
-        shuffleToggle.style.borderColor = 'rgba(255,255,255,0.06)';
-        shuffleToggle.style.color = 'rgba(255,255,255,0.4)';
+        shuffleToggle.style.background = THEME.colors.backgroundSecondary;
+        shuffleToggle.style.borderColor = THEME.colors.border;
+        shuffleToggle.style.color = THEME.colors.iconInactive;
         shuffleToggle.title = 'Random Positions';
       } else if (this.shuffleMode === 1) {
         shuffleToggle.textContent = 'Random Positions';
-        shuffleToggle.style.background = 'rgba(33, 150, 243, 0.25)';
-        shuffleToggle.style.borderColor = 'rgba(33, 150, 243, 0.65)';
-        shuffleToggle.style.color = '#64B5F6';
+        shuffleToggle.style.background = THEME.colors.surfaceHover;
+        shuffleToggle.style.borderColor = THEME.colors.accentPrimary;
+        shuffleToggle.style.color = THEME.colors.accentPrimary;
         shuffleToggle.title = 'Random Positions';
       } else {
         shuffleToggle.textContent = 'Random Positions';
-        shuffleToggle.style.background = 'rgba(156, 39, 176, 0.25)';
-        shuffleToggle.style.borderColor = 'rgba(156, 39, 176, 0.65)';
-        shuffleToggle.style.color = '#BA68C8';
+        shuffleToggle.style.background = THEME.colors.surfaceHover;
+        shuffleToggle.style.borderColor = THEME.colors.accentPrimary;
+        shuffleToggle.style.color = THEME.colors.accentPrimary;
         shuffleToggle.title = 'Random Positions (No Markers)';
       }
     };
@@ -2064,17 +2151,9 @@ export class FeedContainer {
     setShuffleToggleVisualState();
 
     shuffleToggle.addEventListener('mouseenter', () => {
-      if (this.shuffleMode === 0) {
-        shuffleToggle.style.background = 'rgba(28, 28, 30, 0.95)';
-        shuffleToggle.style.borderColor = 'rgba(255,255,255,0.16)';
-      } else if (this.shuffleMode === 1) {
-        shuffleToggle.style.background = 'rgba(33, 150, 243, 0.35)';
-        shuffleToggle.style.borderColor = 'rgba(33, 150, 243, 0.75)';
-      } else {
-        shuffleToggle.style.background = 'rgba(156, 39, 176, 0.35)';
-        shuffleToggle.style.borderColor = 'rgba(156, 39, 176, 0.75)';
-      }
-      shuffleToggle.style.opacity = '0.9';
+      shuffleToggle.style.background = THEME.colors.surfaceHover;
+      shuffleToggle.style.borderColor = this.shuffleMode === 0 ? THEME.colors.border : THEME.colors.accentPrimary;
+      shuffleToggle.style.opacity = '0.92';
     });
 
     shuffleToggle.addEventListener('mouseleave', () => {
@@ -2190,7 +2269,7 @@ export class FeedContainer {
     suggestions.style.zIndex = '1000';
     suggestions.style.display = 'none';
     suggestions.style.flexDirection = 'column';
-    suggestions.style.background = 'rgba(0, 0, 0, 0.95)';
+    suggestions.style.background = THEME.colors.overlay;
     suggestions.style.backdropFilter = 'blur(20px) saturate(180%)';
     // webkitBackdropFilter for Safari compatibility
     suggestions.style.setProperty('-webkit-backdrop-filter', 'blur(20px) saturate(180%)');
@@ -2459,8 +2538,8 @@ export class FeedContainer {
     const prepareSearchForInput = () => {
       void disableRandomIfActive();
       this.preloadSuggestions().catch((e) => console.warn('Suggestion preload refresh failed', e));
-      queryInput.style.background = 'rgba(28, 28, 30, 0.95)';
-      queryInput.style.borderColor = 'rgba(255,255,255,0.16)';
+      queryInput.style.background = THEME.colors.surface;
+      queryInput.style.borderColor = THEME.colors.border;
       clearSearchSelection();
       queryInput.value = '';
       fetchAndShowSuggestions('', true);
@@ -2517,8 +2596,8 @@ export class FeedContainer {
     queryInput.addEventListener('focus', handleFocus);
     
     queryInput.addEventListener('blur', () => {
-      queryInput.style.background = 'rgba(28, 28, 30, 0.9)';
-      queryInput.style.borderColor = 'rgba(255,255,255,0.12)';
+      queryInput.style.background = THEME.colors.surface;
+      queryInput.style.borderColor = THEME.colors.border;
     });
     
     queryInput.addEventListener('input', () => {
@@ -6511,7 +6590,7 @@ export class FeedContainer {
     const player = document.createElement('div');
     player.className = 'video-post__player aspect-16-9';
     player.style.position = 'relative';
-    player.style.backgroundColor = '#1C1C1E';
+    player.style.backgroundColor = THEME.colors.backgroundSecondary;
     player.style.overflow = 'hidden';
     card.appendChild(player);
     
