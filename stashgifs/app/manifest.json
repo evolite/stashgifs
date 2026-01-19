@@ -4,16 +4,16 @@
   "description": "StashGifs provides a simplified browsing experience for your Stash instance.",
   "icons": [
     {
-      "src": "stashgifs-icon.svg",
-      "sizes": "256x256",
+      "src": "favicon.svg",
+      "sizes": "any",
       "type": "image/svg+xml",
-      "purpose": "maskable any"
+      "purpose": "any"
     },
     {
-      "src": "favicon.svg",
-      "sizes": "256x256",
+      "src": "apple-touch-icon.svg",
+      "sizes": "any",
       "type": "image/svg+xml",
-      "purpose": "monochrome"
+      "purpose": "any"
     }
   ],
   "start_url": ".",

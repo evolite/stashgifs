@@ -12,7 +12,6 @@ import {
   SceneMarkerFilterInput,
   SceneFilterInput,
   TagFilterInput,
-  PerformerFilterInput,
   ImageFilterInput,
   FindSceneMarkersResponse,
   FindScenesResponse,
@@ -366,12 +365,12 @@ export class StashAPI {
 
   /**
    * Search performers (by name) for autocomplete
-   * Only returns performers that have more than 1 scene (filtered directly in GraphQL)
+   * Returns performers regardless of scene/image counts
    * Includes caching for autocomplete results only
    */
   async searchPerformers(term: string, limit: number = 10, signal?: AbortSignal): Promise<Array<{ id: string; name: string; image_path?: string }>> {
     const isEmptyTerm = !term || term.trim() === '';
-    const cacheKey = this.buildCacheKey('performers', term, limit);
+    const cacheKey = this.buildCacheKey('performers-v2', term, limit);
     const hasSearchTerm = term && term.trim() !== '';
     const fetchLimit = hasSearchTerm ? limit * StashAPI.SEARCH_FETCH_MULTIPLIER : Math.max(limit, StashAPI.MIN_SEARCH_LIMIT);
     
@@ -381,20 +380,13 @@ export class StashAPI {
       ...(hasSearchTerm ? { q: term.trim() } : { sort: generateRandomSortSeed() })
     };
     
-    const performer_filter: PerformerFilterInput = {
-      scene_count: {
-        value: 0,
-        modifier: 'GREATER_THAN'
-      }
-    };
-    
     return this.searchWithCache(
       cacheKey,
       isEmptyTerm,
       async () => {
         const result = await this.gqlClient.query<FindPerformersResponse>({
           query: queries.FIND_PERFORMERS,
-          variables: { filter, performer_filter },
+          variables: { filter },
           signal,
         });
         
@@ -1405,14 +1397,31 @@ export class StashAPI {
       throw new Error('Marker must have a primary_tag');
     }
 
+    await this.updateMarkerTagsWithPrimary(marker, marker.primary_tag.id, newTagIds, signal);
+  }
+
+  async updateMarkerTagsWithPrimary(
+    marker: {
+      id: string;
+      title: string;
+      seconds: number;
+      end_seconds?: number | null;
+      scene: { id: string };
+    },
+    primaryTagId: string,
+    tagIds: string[],
+    signal?: AbortSignal
+  ): Promise<void> {
+    if (this.isAborted(signal)) return;
+
     const variables: SceneMarkerUpdateInput = {
       id: marker.id,
       title: marker.title,
       seconds: marker.seconds,
       end_seconds: marker.end_seconds ?? null,
       scene_id: marker.scene.id,
-      primary_tag_id: marker.primary_tag.id,
-      tag_ids: newTagIds
+      primary_tag_id: primaryTagId,
+      tag_ids: tagIds
     };
 
     await this.gqlClient.mutate<SceneMarkerUpdateResponse>({
@@ -1489,6 +1498,34 @@ export class StashAPI {
   }
 
   /**
+   * Update performers for an image
+   */
+  async updateImagePerformers(imageId: string, performerIds: string[], signal?: AbortSignal): Promise<void> {
+    if (this.isAborted(signal)) return;
+
+    try {
+      await this.gqlClient.mutate<ImageUpdateResponse>({
+        mutation: mutations.IMAGE_UPDATE,
+        variables: {
+          input: {
+            id: imageId,
+            performer_ids: performerIds,
+          },
+        },
+        signal,
+      });
+
+      if (this.isAborted(signal)) return;
+    } catch (error) {
+      if (isAbortError(error) || this.isAborted(signal)) {
+        return;
+      }
+      this.logError('updateImagePerformers', error);
+      throw error;
+    }
+  }
+
+  /**
    * Increment image o-counter
    */
   async incrementImageOCount(imageId: string, signal?: AbortSignal): Promise<number> {
@@ -1513,6 +1550,28 @@ export class StashAPI {
       this.logError('incrementImageOCount', error);
       throw error;
     }
+  }
+
+  /**
+   * Update performers on a scene
+   */
+  async updateScenePerformers(sceneId: string, performerIds: string[], signal?: AbortSignal): Promise<void> {
+    if (this.isAborted(signal)) return;
+
+    const variables = {
+      input: {
+        id: sceneId,
+        performer_ids: performerIds
+      }
+    };
+
+    await this.gqlClient.mutate<SceneUpdateResponse>({
+      mutation: mutations.SCENE_UPDATE,
+      variables,
+      signal,
+    });
+
+    if (this.isAborted(signal)) return;
   }
 
   /**

@@ -3035,6 +3035,10 @@ export class VideoPost extends BasePost {
     }
     this.updateMarkerDialogState();
     this.addToRecentTags(tagId, tagName);
+
+    if (this.isAddTagMode) {
+      void this.addTagToMarker();
+    }
   }
 
   /**
@@ -3278,6 +3282,134 @@ export class VideoPost extends BasePost {
    */
   protected openAddTagDialog(): void {
     this.openMarkerDialog('add');
+  }
+
+  protected async removeTagAction(tagId: string, tagName: string): Promise<boolean> {
+    if (!this.api) {
+      showToast('API not available.');
+      return false;
+    }
+
+    const isShortForm = this.isShortFormContent();
+
+    if (isShortForm) {
+      const sceneId = this.data.marker.scene?.id;
+      if (!sceneId) {
+        showToast('Scene ID not available.');
+        return false;
+      }
+
+      const currentTagIds = (this.data.marker.scene.tags || [])
+        .map((tag) => tag.id)
+        .filter((id) => id !== null && id !== undefined)
+        .map((id) => String(id));
+      if (!currentTagIds.includes(String(tagId))) {
+        showToast(`Tag "${tagName}" is not on this scene.`);
+        return false;
+      }
+
+      try {
+        await this.api.removeTagFromScene(sceneId, tagId);
+        this.data.marker.scene.tags = (this.data.marker.scene.tags || []).filter((tag) => String(tag.id) !== String(tagId));
+        showToast(`Tag "${tagName}" removed from scene`);
+        this.refreshHeader();
+        return true;
+      } catch (error) {
+        console.error('Failed to remove tag from scene', error);
+        showToast('Failed to remove tag. Please try again.');
+        return false;
+      }
+    }
+
+    if (!this.isRealMarker()) {
+      showToast('Cannot remove tag from synthetic marker. Please create the marker first.');
+      return false;
+    }
+
+    const primaryTagId = this.data.marker.primary_tag?.id;
+    if (primaryTagId && String(primaryTagId) === String(tagId)) {
+      const availableTags = (this.data.marker.tags || []).filter((tag) => tag.id);
+      if (availableTags.length === 0) {
+        showToast('Add another tag before removing the primary tag.');
+        return false;
+      }
+
+      const nextPrimary = availableTags[0];
+      const remainingTags = availableTags.filter((tag) => String(tag.id) !== String(nextPrimary.id));
+      const remainingTagIds = remainingTags.map((tag) => String(tag.id));
+
+      try {
+        await this.api.updateMarkerTagsWithPrimary(this.data.marker, String(nextPrimary.id), remainingTagIds);
+        this.data.marker.primary_tag = { id: String(nextPrimary.id), name: nextPrimary.name };
+        this.data.marker.tags = remainingTags;
+        showToast(`Primary tag changed to "${nextPrimary.name}"`);
+        this.refreshHeader();
+        return true;
+      } catch (error) {
+        console.error('Failed to remove primary tag from marker', error);
+        showToast('Failed to remove tag. Please try again.');
+        return false;
+      }
+    }
+
+    const currentTagIds = (this.data.marker.tags || [])
+      .map((tag) => tag.id)
+      .filter((id) => id !== null && id !== undefined)
+      .map((id) => String(id));
+    if (!currentTagIds.includes(String(tagId))) {
+      showToast(`Tag "${tagName}" is not on this marker.`);
+      return false;
+    }
+
+    try {
+      await this.api.removeTagFromMarker(this.data.marker, tagId);
+      this.data.marker.tags = (this.data.marker.tags || []).filter((tag) => String(tag.id) !== String(tagId));
+      showToast(`Tag "${tagName}" removed from marker`);
+      this.refreshHeader();
+      return true;
+    } catch (error) {
+      console.error('Failed to remove tag from marker', error);
+      showToast('Failed to remove tag. Please try again.');
+      return false;
+    }
+  }
+
+  protected async removePerformerAction(performerId: string, performerName: string): Promise<boolean> {
+    if (!this.api) {
+      showToast('API not available.');
+      return false;
+    }
+
+    const sceneId = this.data.marker.scene?.id;
+    if (!sceneId) {
+      showToast('Scene ID not available.');
+      return false;
+    }
+
+    const currentPerformerIds = (this.data.marker.scene.performers || [])
+      .map((performer) => performer.id)
+      .filter((id): id is string => typeof id === 'string' && id.length > 0);
+
+    if (!currentPerformerIds.includes(performerId)) {
+      showToast(`Performer "${performerName}" is not on this scene.`);
+      return false;
+    }
+
+    try {
+      const nextPerformerIds = currentPerformerIds.filter((id) => id !== performerId);
+      await this.api.updateScenePerformers(sceneId, nextPerformerIds);
+
+      this.data.marker.scene.performers = (this.data.marker.scene.performers || []).filter(
+        (performer) => performer.id !== performerId
+      );
+      showToast(`Performer "${performerName}" removed from scene`);
+      this.refreshHeader();
+      return true;
+    } catch (error) {
+      console.error('Failed to remove performer from scene', error);
+      showToast('Failed to remove performer. Please try again.');
+      return false;
+    }
   }
 
   /**

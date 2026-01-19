@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="200" height="200" viewBox="0 0 200 200" role="img" aria-label="Stash-style infinity logo">
+  <path
+    d="M40 100 C40 60 80 60 100 100 C120 140 160 140 160 100 C160 60 120 60 100 100 C80 140 40 140 40 100"
+    fill="none"
+    stroke="#664c3d"
+    stroke-width="18"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+  />
+</svg>

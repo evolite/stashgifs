@@ -25,6 +25,7 @@ export interface AddTagDialogState {
   isOpen: boolean;
   selectedTagId?: string;
   selectedTagName?: string;
+  onSubmit?: () => void;
   autocompleteDebounceTimer?: ReturnType<typeof setTimeout>;
   tagSearchLoadingTimer?: ReturnType<typeof setTimeout>;
   outsideClickHandler?: (event: Event) => void;
@@ -399,7 +400,7 @@ export abstract class BasePost {
           clearTimeout(this.performerOverlayHideTimeout);
           this.performerOverlayHideTimeout = undefined;
         }
-        this.showPerformerOverlay(performer.id, chip);
+        this.showPerformerOverlay(performer.id, chip, () => this.removePerformerAction(performer.id, performer.name));
       });
       chip.addEventListener('mouseleave', (e) => {
         // Check if we're moving to another performer chip
@@ -493,12 +494,17 @@ export abstract class BasePost {
   /**
    * Create name row for performer overlay (compact)
    */
-  private createPerformerOverlayNameRow(performerData: PerformerExtended): HTMLElement {
+  private createPerformerOverlayNameRow(performerData: PerformerExtended, onRemove?: () => Promise<boolean>): HTMLElement {
     const nameRow = document.createElement('div');
     nameRow.style.display = 'flex';
     nameRow.style.alignItems = 'center';
     nameRow.style.gap = '6px';
     nameRow.style.marginBottom = '8px';
+
+    const leftGroup = document.createElement('div');
+    leftGroup.style.display = 'flex';
+    leftGroup.style.alignItems = 'center';
+    leftGroup.style.gap = '6px';
 
     const nameLink = document.createElement('a');
     nameLink.href = this.getPerformerLink(performerData.id);
@@ -533,7 +539,7 @@ export abstract class BasePost {
     externalIcon.style.flexShrink = '0';
     nameLink.appendChild(externalIcon);
 
-    nameRow.appendChild(nameLink);
+    leftGroup.appendChild(nameLink);
 
     if (performerData.favorite) {
       const favoriteIcon = document.createElement('span');
@@ -548,7 +554,68 @@ export abstract class BasePost {
         svg.setAttribute('width', '18');
         svg.setAttribute('height', '18');
       }
-      nameRow.appendChild(favoriteIcon);
+      leftGroup.appendChild(favoriteIcon);
+    }
+
+    nameRow.appendChild(leftGroup);
+
+    if (onRemove) {
+      nameRow.style.justifyContent = 'space-between';
+      nameRow.style.width = '100%';
+
+      const removeButton = document.createElement('button');
+      removeButton.type = 'button';
+      removeButton.textContent = '✕';
+      removeButton.setAttribute('aria-label', 'Remove performer');
+      removeButton.title = 'Remove performer';
+      removeButton.style.width = '24px';
+      removeButton.style.height = '24px';
+      removeButton.style.borderRadius = '50%';
+      removeButton.style.border = 'none';
+      removeButton.style.background = 'rgba(232, 92, 92, 0.12)';
+      removeButton.style.color = '#E85C5C';
+      removeButton.style.fontSize = '12px';
+      removeButton.style.fontWeight = THEME.typography.weightBodyStrong;
+      removeButton.style.cursor = 'pointer';
+      removeButton.style.display = 'inline-flex';
+      removeButton.style.alignItems = 'center';
+      removeButton.style.justifyContent = 'center';
+      removeButton.style.lineHeight = '1';
+      removeButton.style.flexShrink = '0';
+      removeButton.style.transition = 'background 0.2s ease, opacity 0.2s ease';
+
+      removeButton.addEventListener('mouseenter', () => {
+        removeButton.style.background = 'rgba(232, 92, 92, 0.2)';
+      });
+      removeButton.addEventListener('mouseleave', () => {
+        removeButton.style.background = 'rgba(232, 92, 92, 0.12)';
+      });
+
+      removeButton.addEventListener('click', async (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        if (removeButton.disabled) return;
+        removeButton.disabled = true;
+        removeButton.textContent = '…';
+        removeButton.style.opacity = '0.7';
+
+        try {
+          const removed = await onRemove();
+          if (removed) {
+            this.hidePerformerOverlay(true);
+            return;
+          }
+        } catch (error) {
+          console.error('Failed to remove performer', error);
+          showToast('Failed to remove performer. Please try again.');
+        } finally {
+          removeButton.disabled = false;
+          removeButton.textContent = '✕';
+          removeButton.style.opacity = '1';
+        }
+      });
+
+      nameRow.appendChild(removeButton);
     }
 
     return nameRow;
@@ -786,7 +853,7 @@ export abstract class BasePost {
   /**
    * Create performer overlay card (compact horizontal layout)
    */
-  private createPerformerOverlay(performerData: PerformerExtended): HTMLElement {
+  private createPerformerOverlay(performerData: PerformerExtended, onRemove?: () => Promise<boolean>): HTMLElement {
     const overlay = document.createElement('div');
     overlay.className = 'performer-overlay';
     overlay.style.position = 'fixed';
@@ -842,7 +909,7 @@ export abstract class BasePost {
     contentSection.style.minWidth = '0';
 
     // Name and favorite
-    const nameRow = this.createPerformerOverlayNameRow(performerData);
+    const nameRow = this.createPerformerOverlayNameRow(performerData, onRemove);
     contentSection.appendChild(nameRow);
 
     // Metadata
@@ -865,7 +932,7 @@ export abstract class BasePost {
   /**
    * Show performer overlay on hover
    */
-  private showPerformerOverlay(performerId: string, chipElement: HTMLElement): void {
+  private showPerformerOverlay(performerId: string, chipElement: HTMLElement, onRemove?: () => Promise<boolean>): void {
     // Prevent showing overlay immediately after a click (within 300ms)
     if (this.performerOverlayClickTime && Date.now() - this.performerOverlayClickTime < 300) {
       return;
@@ -928,7 +995,7 @@ export abstract class BasePost {
         }
 
         // Create overlay
-        const overlay = this.createPerformerOverlay(performerData);
+        const overlay = this.createPerformerOverlay(performerData, onRemove);
         this.performerOverlay = overlay;
         document.body.appendChild(overlay);
 
@@ -1149,7 +1216,10 @@ export abstract class BasePost {
   /**
    * Create tag overlay card (compact horizontal layout)
    */
-  private createTagOverlay(tagData: { id: string; name: string; image_path?: string; description?: string }): HTMLElement {
+  private createTagOverlay(
+    tagData: { id: string; name: string; image_path?: string; description?: string },
+    onRemove?: () => Promise<boolean>
+  ): HTMLElement {
     const overlay = document.createElement('div');
     overlay.className = 'tag-overlay';
     overlay.style.position = 'fixed';
@@ -1203,6 +1273,65 @@ export abstract class BasePost {
 
     // Name with link
     const nameRow = this.createTagOverlayNameRow(tagData);
+
+    if (onRemove) {
+      nameRow.style.justifyContent = 'space-between';
+
+      const removeButton = document.createElement('button');
+      removeButton.type = 'button';
+      removeButton.textContent = '✕';
+      removeButton.setAttribute('aria-label', 'Remove tag');
+      removeButton.title = 'Remove tag';
+      removeButton.style.width = '24px';
+      removeButton.style.height = '24px';
+      removeButton.style.borderRadius = '50%';
+      removeButton.style.border = 'none';
+      removeButton.style.background = 'rgba(232, 92, 92, 0.12)';
+      removeButton.style.color = '#E85C5C';
+      removeButton.style.fontSize = '12px';
+      removeButton.style.fontWeight = THEME.typography.weightBodyStrong;
+      removeButton.style.cursor = 'pointer';
+      removeButton.style.display = 'inline-flex';
+      removeButton.style.alignItems = 'center';
+      removeButton.style.justifyContent = 'center';
+      removeButton.style.lineHeight = '1';
+      removeButton.style.flexShrink = '0';
+      removeButton.style.transition = 'background 0.2s ease, opacity 0.2s ease';
+
+      removeButton.addEventListener('mouseenter', () => {
+        removeButton.style.background = 'rgba(232, 92, 92, 0.2)';
+      });
+      removeButton.addEventListener('mouseleave', () => {
+        removeButton.style.background = 'rgba(232, 92, 92, 0.12)';
+      });
+
+      removeButton.addEventListener('click', async (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        if (removeButton.disabled) return;
+        removeButton.disabled = true;
+        removeButton.textContent = '…';
+        removeButton.style.opacity = '0.7';
+
+        try {
+          const removed = await onRemove();
+          if (removed) {
+            this.hideTagOverlay(true);
+            return;
+          }
+        } catch (error) {
+          console.error('Failed to remove tag', error);
+          showToast('Failed to remove tag. Please try again.');
+        } finally {
+          removeButton.disabled = false;
+          removeButton.textContent = '✕';
+          removeButton.style.opacity = '1';
+        }
+      });
+
+      nameRow.appendChild(removeButton);
+    }
+
     contentSection.appendChild(nameRow);
 
     // Description (optional)
@@ -1218,7 +1347,7 @@ export abstract class BasePost {
   /**
    * Show tag overlay on hover
    */
-  private showTagOverlay(tagId: string, chipElement: HTMLElement): void {
+  private showTagOverlay(tagId: string, chipElement: HTMLElement, onRemove?: () => Promise<boolean>): void {
     // Prevent showing overlay immediately after a click (within 300ms)
     if (this.tagOverlayClickTime && Date.now() - this.tagOverlayClickTime < 300) {
       return;
@@ -1281,7 +1410,7 @@ export abstract class BasePost {
         }
 
         // Create overlay
-        const overlay = this.createTagOverlay(tagData);
+        const overlay = this.createTagOverlay(tagData, onRemove);
         this.tagOverlay = overlay;
         document.body.appendChild(overlay);
 
@@ -1413,7 +1542,7 @@ export abstract class BasePost {
           clearTimeout(this.tagOverlayHideTimeout);
           this.tagOverlayHideTimeout = undefined;
         }
-        this.showTagOverlay(tag.id, hashtag);
+        this.showTagOverlay(tag.id, hashtag, () => this.removeTagAction(tag.id, tag.name));
       });
       hashtag.addEventListener('mouseleave', (e) => {
         // Check if we're moving to another tag chip
@@ -1653,6 +1782,7 @@ export abstract class BasePost {
     state.isOpen = true;
     state.selectedTagId = undefined;
     state.selectedTagName = undefined;
+    state.onSubmit = options.onSubmit;
     if (state.input) {
       state.input.value = '';
     }
@@ -1728,6 +1858,8 @@ export abstract class BasePost {
       clearTimeout(state.tagSearchLoadingTimer);
       state.tagSearchLoadingTimer = undefined;
     }
+
+    state.onSubmit = undefined;
 
     if (state.dialog) {
       state.dialog.style.opacity = '0';
@@ -1824,6 +1956,7 @@ export abstract class BasePost {
           if (state.suggestions) {
             state.suggestions.style.display = 'none';
           }
+          state.onSubmit?.();
         });
         state.suggestions.appendChild(item);
       }
@@ -1980,6 +2113,16 @@ export abstract class BasePost {
    * Abstract method to increment O-count - must be implemented by subclasses
    */
   protected abstract incrementOCountAction(): Promise<void>;
+
+  /**
+   * Abstract method to remove a tag from the current post
+   */
+  protected abstract removeTagAction(tagId: string, tagName: string): Promise<boolean>;
+
+  /**
+   * Abstract method to remove a performer from the current post
+   */
+  protected abstract removePerformerAction(performerId: string, performerName: string): Promise<boolean>;
 
   /**
    * Abstract method to get favorite tag source - must be implemented by subclasses

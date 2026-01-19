@@ -342,6 +342,70 @@ export class SettingsPage {
     themeSectionTitle.style.fontWeight = THEME.typography.weightTitle;
     themeSection.appendChild(themeSectionTitle);
 
+    const themePresets = [
+      {
+        id: 'default',
+        label: 'Stash Default',
+        colors: {
+          background: THEME_DEFAULTS.backgroundPrimary,
+          primary: THEME_DEFAULTS.surface,
+          secondary: THEME_DEFAULTS.backgroundSecondary,
+          accent: THEME_DEFAULTS.accentPrimary,
+        },
+      },
+      {
+        id: 'rounded-yellow',
+        label: 'Rounded Yellow',
+        colors: {
+          background: '#101118',
+          primary: '#1F282C',
+          secondary: '#30404D',
+          accent: '#CFAD0B',
+        },
+      },
+    ];
+
+    const buildThemePresetRow = (labelText: string): { row: HTMLElement; select: HTMLSelectElement } => {
+      const row = document.createElement('div');
+      row.style.display = 'flex';
+      row.style.justifyContent = 'space-between';
+      row.style.alignItems = 'center';
+      row.style.marginBottom = '16px';
+
+      const label = document.createElement('span');
+      label.textContent = labelText;
+      label.style.color = THEME.colors.textSecondary;
+      label.style.fontSize = THEME.typography.sizeBody;
+      row.appendChild(label);
+
+      const select = document.createElement('select');
+      select.style.minWidth = '200px';
+      select.style.padding = '8px 12px';
+      select.style.borderRadius = THEME.radius.button;
+      select.style.border = `1px solid ${THEME.colors.border}`;
+      select.style.backgroundColor = THEME.colors.surface;
+      select.style.color = THEME.colors.textPrimary;
+      select.style.fontSize = THEME.typography.sizeBody;
+      select.style.fontWeight = THEME.typography.weightBodyStrong;
+      select.style.cursor = 'pointer';
+
+      themePresets.forEach((preset) => {
+        const option = document.createElement('option');
+        option.value = preset.id;
+        option.textContent = preset.label;
+        select.appendChild(option);
+      });
+
+      const customOption = document.createElement('option');
+      customOption.value = 'custom';
+      customOption.textContent = 'Custom';
+      select.appendChild(customOption);
+
+      row.appendChild(select);
+
+      return { row, select };
+    };
+
     const buildThemeRow = (labelText: string, value: string): { row: HTMLElement; input: HTMLInputElement; valueLabel: HTMLElement } => {
       const row = document.createElement('div');
       row.style.display = 'flex';
@@ -388,15 +452,74 @@ export class SettingsPage {
     const secondaryValue = normalizeHexColor(this.settings.themeSecondary, THEME_DEFAULTS.backgroundSecondary);
     const accentValue = normalizeHexColor(this.settings.themeAccent, THEME_DEFAULTS.accentPrimary);
 
+    const presetRow = buildThemePresetRow('Theme preset');
+
     const backgroundRow = buildThemeRow('Background (app + search)', backgroundValue);
     const primaryRow = buildThemeRow('Primary surface (cards)', primaryValue);
     const secondaryRow = buildThemeRow('Secondary surface (inputs)', secondaryValue);
     const accentRow = buildThemeRow('Accent (highlights)', accentValue);
 
+    themeSection.appendChild(presetRow.row);
     themeSection.appendChild(backgroundRow.row);
     themeSection.appendChild(primaryRow.row);
     themeSection.appendChild(secondaryRow.row);
     themeSection.appendChild(accentRow.row);
+
+    const updateThemeLabel = (input: HTMLInputElement, label: HTMLElement) => {
+      label.textContent = input.value.toUpperCase();
+    };
+
+    const getPresetIdForValues = (background: string, primary: string, secondary: string, accent: string) => {
+      const normalized = {
+        background: background.toUpperCase(),
+        primary: primary.toUpperCase(),
+        secondary: secondary.toUpperCase(),
+        accent: accent.toUpperCase(),
+      };
+
+      const matchedPreset = themePresets.find((preset) => {
+        return (
+          preset.colors.background.toUpperCase() === normalized.background &&
+          preset.colors.primary.toUpperCase() === normalized.primary &&
+          preset.colors.secondary.toUpperCase() === normalized.secondary &&
+          preset.colors.accent.toUpperCase() === normalized.accent
+        );
+      });
+
+      return matchedPreset ? matchedPreset.id : 'custom';
+    };
+
+    const setPresetSelectValue = () => {
+      presetRow.select.value = getPresetIdForValues(
+        backgroundRow.input.value,
+        primaryRow.input.value,
+        secondaryRow.input.value,
+        accentRow.input.value
+      );
+    };
+
+    const applyThemePreset = (preset: typeof themePresets[number]) => {
+      backgroundRow.input.value = preset.colors.background;
+      primaryRow.input.value = preset.colors.primary;
+      secondaryRow.input.value = preset.colors.secondary;
+      accentRow.input.value = preset.colors.accent;
+
+      updateThemeLabel(backgroundRow.input, backgroundRow.valueLabel);
+      updateThemeLabel(primaryRow.input, primaryRow.valueLabel);
+      updateThemeLabel(secondaryRow.input, secondaryRow.valueLabel);
+      updateThemeLabel(accentRow.input, accentRow.valueLabel);
+
+      setPresetSelectValue();
+      this.saveSettings();
+    };
+
+    presetRow.select.addEventListener('change', () => {
+      const selectedPreset = themePresets.find((preset) => preset.id === presetRow.select.value);
+      if (!selectedPreset) return;
+      applyThemePreset(selectedPreset);
+    });
+
+    setPresetSelectValue();
 
     const resetButton = document.createElement('button');
     resetButton.type = 'button';
@@ -434,29 +557,30 @@ export class SettingsPage {
       updateThemeLabel(primaryRow.input, primaryRow.valueLabel);
       updateThemeLabel(secondaryRow.input, secondaryRow.valueLabel);
       updateThemeLabel(accentRow.input, accentRow.valueLabel);
+      setPresetSelectValue();
       this.saveSettings();
     });
 
     themeSection.appendChild(resetButton);
 
-    const updateThemeLabel = (input: HTMLInputElement, label: HTMLElement) => {
-      label.textContent = input.value.toUpperCase();
-    };
-
     backgroundRow.input.addEventListener('input', () => {
       updateThemeLabel(backgroundRow.input, backgroundRow.valueLabel);
+      setPresetSelectValue();
       this.saveSettings();
     });
     primaryRow.input.addEventListener('input', () => {
       updateThemeLabel(primaryRow.input, primaryRow.valueLabel);
+      setPresetSelectValue();
       this.saveSettings();
     });
     secondaryRow.input.addEventListener('input', () => {
       updateThemeLabel(secondaryRow.input, secondaryRow.valueLabel);
+      setPresetSelectValue();
       this.saveSettings();
     });
     accentRow.input.addEventListener('input', () => {
       updateThemeLabel(accentRow.input, accentRow.valueLabel);
+      setPresetSelectValue();
       this.saveSettings();
     });
 

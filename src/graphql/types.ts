@@ -100,6 +100,10 @@ export interface PerformerFilterInput {
     value: number;
     modifier: ComparisonModifier;
   };
+  image_count?: {
+    value: number;
+    modifier: ComparisonModifier;
+  };
   [key: string]: unknown;
 }
 
@@ -522,6 +526,7 @@ export interface SceneAddOResponse {
 export interface ImageUpdateInput {
   id: string;
   tag_ids?: string[];
+  performer_ids?: string[];
   o_counter?: number;
   rating100?: number;
 }

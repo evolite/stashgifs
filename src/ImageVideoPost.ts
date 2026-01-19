@@ -713,6 +713,66 @@ export class ImageVideoPost extends BasePost {
     });
   }
 
+  protected async removeTagAction(tagId: string, tagName: string): Promise<boolean> {
+    if (!this.api) {
+      showToast('API not available.');
+      return false;
+    }
+
+    const currentTagIds = (this.data.image.tags || [])
+      .map((tag) => tag.id)
+      .filter((id): id is string => typeof id === 'string' && id.length > 0);
+
+    if (!currentTagIds.includes(tagId)) {
+      showToast(`Tag "${tagName}" is not on this image.`);
+      return false;
+    }
+
+    try {
+      const nextTagIds = currentTagIds.filter((id) => id !== tagId);
+      await this.api.updateImageTags(this.data.image.id, nextTagIds);
+
+      this.data.image.tags = (this.data.image.tags || []).filter((tag) => tag.id !== tagId);
+      showToast(`Tag "${tagName}" removed from image`);
+      this.refreshHeader();
+      return true;
+    } catch (error) {
+      console.error('ImageVideoPost: Failed to remove tag from image', error);
+      showToast('Failed to remove tag. Please try again.');
+      return false;
+    }
+  }
+
+  protected async removePerformerAction(performerId: string, performerName: string): Promise<boolean> {
+    if (!this.api) {
+      showToast('API not available.');
+      return false;
+    }
+
+    const currentPerformerIds = (this.data.image.performers || [])
+      .map((performer) => performer.id)
+      .filter((id): id is string => typeof id === 'string' && id.length > 0);
+
+    if (!currentPerformerIds.includes(performerId)) {
+      showToast(`Performer "${performerName}" is not on this image.`);
+      return false;
+    }
+
+    try {
+      const nextPerformerIds = currentPerformerIds.filter((id) => id !== performerId);
+      await this.api.updateImagePerformers(this.data.image.id, nextPerformerIds);
+
+      this.data.image.performers = (this.data.image.performers || []).filter((performer) => performer.id !== performerId);
+      showToast(`Performer "${performerName}" removed from image`);
+      this.refreshHeader();
+      return true;
+    } catch (error) {
+      console.error('ImageVideoPost: Failed to remove performer from image', error);
+      showToast('Failed to remove performer. Please try again.');
+      return false;
+    }
+  }
+
   /**
    * Add tag to image
    */
