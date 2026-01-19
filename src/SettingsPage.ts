@@ -4,7 +4,7 @@
  */
 
 import { FeedSettings } from './types.js';
-import { VERSION, BUILD_HASH } from './version.js';
+import { VERSION } from './version.js';
 import { THEME, THEME_DEFAULTS } from './utils.js';
 
 export class SettingsPage {
@@ -361,6 +361,16 @@ export class SettingsPage {
           primary: '#1F282C',
           secondary: '#30404D',
           accent: '#CFAD0B',
+        },
+      },
+      {
+        id: 'amoled',
+        label: 'AMOLED',
+        colors: {
+          background: '#000000',
+          primary: '#000000',
+          secondary: '#000000',
+          accent: '#4FA3D1',
         },
       },
     ];
@@ -921,7 +931,7 @@ export class SettingsPage {
     versionFooter.style.textAlign = 'center';
 
     const versionText = document.createElement('div');
-    versionText.textContent = `Version ${VERSION} (${BUILD_HASH})`;
+    versionText.textContent = `Version ${VERSION}`;
     versionText.style.color = THEME.colors.textMuted;
     versionText.style.fontSize = THEME.typography.sizeMeta;
     versionFooter.appendChild(versionText);
