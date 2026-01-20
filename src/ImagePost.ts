@@ -892,7 +892,7 @@ export class ImagePost extends BasePost {
   private onRatingOutsideClick(event: Event): void {
     if (!this.isRatingDialogOpen || !this.ratingWrapper) return;
     const target = event.target as Node | null;
-    if (target && this.ratingWrapper.contains(target)) {
+    if (target && (this.ratingWrapper.contains(target) || this.ratingDialog?.contains(target))) {
       return;
     }
     this.closeRatingDialog();
@@ -1114,7 +1114,7 @@ export class ImagePost extends BasePost {
       const updatedRating100 = await this.api.updateImageRating(this.data.image.id, rating10);
       this.data.image.rating100 = updatedRating100;
       this.ratingValue = this.convertRating100ToStars(updatedRating100);
-      this.hasRating = true;
+      this.hasRating = this.ratingValue > 0;
       this.updateRatingDisplay();
       this.updateRatingStarButtons();
     } catch (error) {

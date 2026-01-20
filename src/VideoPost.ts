@@ -1389,7 +1389,7 @@ export class VideoPost extends BasePost {
   private onRatingOutsideClick(event: Event): void {
     if (!this.isRatingDialogOpen || !this.ratingWrapper) return;
     const target = event.target as Node | null;
-    if (target && this.ratingWrapper.contains(target)) {
+    if (target && (this.ratingWrapper.contains(target) || this.ratingDialog?.contains(target))) {
       return;
     }
     this.closeRatingDialog();
@@ -1555,6 +1555,7 @@ export class VideoPost extends BasePost {
     }
 
     this.ratingValue = this.clampRatingValue(nextValue);
+    
     this.updateRatingDisplay();
     this.updateRatingStarButtons();
     this.closeRatingDialog();
@@ -1628,7 +1629,7 @@ export class VideoPost extends BasePost {
       const updatedRating100 = await this.api.updateSceneRating(this.data.marker.scene.id, rating10);
       this.data.marker.scene.rating100 = updatedRating100;
       this.ratingValue = this.convertRating100ToStars(updatedRating100);
-      this.hasRating = true;
+      this.hasRating = this.ratingValue > 0;
       this.updateRatingDisplay();
       this.updateRatingStarButtons();
     } catch (error) {
