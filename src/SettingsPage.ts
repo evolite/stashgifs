@@ -474,10 +474,10 @@ export class SettingsPage {
 
     const presetRow = buildThemePresetRow('Theme preset');
 
-    const backgroundRow = buildThemeRow('Background (app + search)', backgroundValue);
-    const primaryRow = buildThemeRow('Primary surface (cards)', primaryValue);
-    const secondaryRow = buildThemeRow('Secondary surface (inputs)', secondaryValue);
-    const accentRow = buildThemeRow('Accent (highlights)', accentValue);
+    const backgroundRow = buildThemeRow('Background', backgroundValue);
+    const primaryRow = buildThemeRow('Primary', primaryValue);
+    const secondaryRow = buildThemeRow('Secondary', secondaryValue);
+    const accentRow = buildThemeRow('Accent', accentValue);
 
     themeSection.appendChild(presetRow.row);
     themeSection.appendChild(backgroundRow.row);
