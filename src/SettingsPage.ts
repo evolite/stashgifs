@@ -373,6 +373,16 @@ export class SettingsPage {
           accent: '#4FA3D1',
         },
       },
+      {
+        id: 'onyx',
+        label: 'ONYX',
+        colors: {
+          background: '#121212',
+          primary: '#121212',
+          secondary: '#2a2a2a',
+          accent: '#ed6492',
+        },
+      },
     ];
 
     const buildThemePresetRow = (labelText: string): { row: HTMLElement; select: HTMLSelectElement } => {
