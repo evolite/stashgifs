@@ -332,7 +332,10 @@ export class SettingsPage {
 
     // Theme Section
     const themeSection = document.createElement('div');
-    themeSection.style.marginBottom = '32px';
+    themeSection.style.marginBottom = '24px';
+    themeSection.style.border = `1px solid ${THEME.colors.border}`;
+    themeSection.style.borderRadius = THEME.radius.card;
+    themeSection.style.padding = '16px';
 
     const themeSectionTitle = document.createElement('h3');
     themeSectionTitle.textContent = 'Theme';
@@ -611,9 +614,48 @@ export class SettingsPage {
 
     themeContent.appendChild(themeSection);
 
+    // Layout Settings Section
+    const layoutSection = document.createElement('div');
+    layoutSection.style.marginBottom = '24px';
+    layoutSection.style.border = `1px solid ${THEME.colors.border}`;
+    layoutSection.style.borderRadius = THEME.radius.card;
+    layoutSection.style.padding = '16px';
+
+    const layoutSectionTitle = document.createElement('h3');
+    layoutSectionTitle.textContent = 'Layout';
+    layoutSectionTitle.style.margin = '0 0 16px 0';
+    layoutSectionTitle.style.color = THEME.colors.textPrimary;
+    layoutSectionTitle.style.fontSize = THEME.typography.sizeTitle;
+    layoutSectionTitle.style.fontWeight = THEME.typography.weightTitle;
+    layoutSection.appendChild(layoutSectionTitle);
+
+    const reelModeContainer = document.createElement('div');
+    reelModeContainer.style.display = 'flex';
+    reelModeContainer.style.justifyContent = 'space-between';
+    reelModeContainer.style.alignItems = 'center';
+    reelModeContainer.style.marginBottom = '16px';
+
+    const reelModeLabel = document.createElement('span');
+    reelModeLabel.textContent = 'Reel mode (full-screen, swipe)';
+    reelModeLabel.style.color = THEME.colors.textSecondary;
+    reelModeLabel.style.fontSize = THEME.typography.sizeBody;
+    reelModeContainer.appendChild(reelModeLabel);
+
+    const { container: reelModeToggleContainer, input: reelModeToggle } = this.createToggleSwitch(
+      this.settings.reelMode === true,
+      () => this.saveSettings()
+    );
+    reelModeContainer.appendChild(reelModeToggleContainer);
+
+    layoutSection.appendChild(reelModeContainer);
+    generalContent.appendChild(layoutSection);
+
     // Image Feed Settings Section
     const imageSection = document.createElement('div');
-    imageSection.style.marginBottom = '32px';
+    imageSection.style.marginBottom = '24px';
+    imageSection.style.border = `1px solid ${THEME.colors.border}`;
+    imageSection.style.borderRadius = THEME.radius.card;
+    imageSection.style.padding = '16px';
 
     const imageSectionTitleContainer = document.createElement('div');
     imageSectionTitleContainer.style.display = 'flex';
@@ -621,7 +663,7 @@ export class SettingsPage {
     imageSectionTitleContainer.style.marginBottom = '16px';
 
     const imageSectionTitle = document.createElement('h3');
-    imageSectionTitle.textContent = 'Image feed';
+    imageSectionTitle.textContent = 'Image Feed';
     imageSectionTitle.style.margin = '0';
     imageSectionTitle.style.color = THEME.colors.textPrimary;
     imageSectionTitle.style.fontSize = THEME.typography.sizeTitle;
@@ -763,7 +805,10 @@ export class SettingsPage {
 
     // Short Form Content Settings Section
     const shortFormSection = document.createElement('div');
-    shortFormSection.style.marginBottom = '32px';
+    shortFormSection.style.marginBottom = '24px';
+    shortFormSection.style.border = `1px solid ${THEME.colors.border}`;
+    shortFormSection.style.borderRadius = THEME.radius.card;
+    shortFormSection.style.padding = '16px';
 
     const shortFormSectionTitleContainer = document.createElement('div');
     shortFormSectionTitleContainer.style.display = 'flex';
@@ -771,7 +816,7 @@ export class SettingsPage {
     shortFormSectionTitleContainer.style.marginBottom = '16px';
 
     const shortFormSectionTitle = document.createElement('h3');
-    shortFormSectionTitle.textContent = 'Short form Video Content';
+    shortFormSectionTitle.textContent = 'Short-Form Videos';
     shortFormSectionTitle.style.margin = '0';
     shortFormSectionTitle.style.color = THEME.colors.textPrimary;
     shortFormSectionTitle.style.fontSize = THEME.typography.sizeTitle;
@@ -787,47 +832,26 @@ export class SettingsPage {
     shortFormSectionTitleContainer.appendChild(shortFormInfo);
     shortFormSection.appendChild(shortFormSectionTitleContainer);
 
-    // Include in HD mode toggle
-    const shortFormHDContainer = document.createElement('div');
-    shortFormHDContainer.style.display = 'flex';
-    shortFormHDContainer.style.justifyContent = 'space-between';
-    shortFormHDContainer.style.alignItems = 'center';
-    shortFormHDContainer.style.marginBottom = '16px';
+    // Include short-form videos toggle
+    const shortFormIncludeContainer = document.createElement('div');
+    shortFormIncludeContainer.style.display = 'flex';
+    shortFormIncludeContainer.style.justifyContent = 'space-between';
+    shortFormIncludeContainer.style.alignItems = 'center';
+    shortFormIncludeContainer.style.marginBottom = '16px';
 
-    const shortFormHDLabel = document.createElement('span');
-    shortFormHDLabel.textContent = 'Include in HD mode';
-    shortFormHDLabel.style.color = THEME.colors.textSecondary;
-    shortFormHDLabel.style.fontSize = THEME.typography.sizeBody;
-    shortFormHDContainer.appendChild(shortFormHDLabel);
+    const shortFormIncludeLabel = document.createElement('span');
+    shortFormIncludeLabel.textContent = 'Include short-form videos in feed';
+    shortFormIncludeLabel.style.color = THEME.colors.textSecondary;
+    shortFormIncludeLabel.style.fontSize = THEME.typography.sizeBody;
+    shortFormIncludeContainer.appendChild(shortFormIncludeLabel);
 
-    const { container: shortFormHDToggleContainer, input: shortFormHDToggle } = this.createToggleSwitch(
-      this.settings.shortFormInHDMode === true,
+    const { container: shortFormIncludeToggleContainer, input: shortFormIncludeToggle } = this.createToggleSwitch(
+      this.settings.shortFormInHDMode !== false || this.settings.shortFormInNonHDMode !== false,
       () => this.saveSettings()
     );
-    shortFormHDContainer.appendChild(shortFormHDToggleContainer);
+    shortFormIncludeContainer.appendChild(shortFormIncludeToggleContainer);
 
-    shortFormSection.appendChild(shortFormHDContainer);
-
-    // Include in non-HD mode toggle
-    const shortFormNonHDContainer = document.createElement('div');
-    shortFormNonHDContainer.style.display = 'flex';
-    shortFormNonHDContainer.style.justifyContent = 'space-between';
-    shortFormNonHDContainer.style.alignItems = 'center';
-    shortFormNonHDContainer.style.marginBottom = '16px';
-
-    const shortFormNonHDLabel = document.createElement('span');
-    shortFormNonHDLabel.textContent = 'Include in non-HD mode';
-    shortFormNonHDLabel.style.color = THEME.colors.textSecondary;
-    shortFormNonHDLabel.style.fontSize = THEME.typography.sizeBody;
-    shortFormNonHDContainer.appendChild(shortFormNonHDLabel);
-
-    const { container: shortFormNonHDToggleContainer, input: shortFormNonHDToggle } = this.createToggleSwitch(
-      this.settings.shortFormInNonHDMode !== false,
-      () => this.saveSettings()
-    );
-    shortFormNonHDContainer.appendChild(shortFormNonHDToggleContainer);
-
-    shortFormSection.appendChild(shortFormNonHDContainer);
+    shortFormSection.appendChild(shortFormIncludeContainer);
 
     // Max duration input
     const maxDurationContainer = document.createElement('div');
@@ -874,7 +898,7 @@ export class SettingsPage {
     shortFormOnlyContainer.style.marginBottom = '16px';
 
     const shortFormOnlyLabel = document.createElement('span');
-    shortFormOnlyLabel.textContent = 'Only load short form content (skip regular videos)';
+    shortFormOnlyLabel.textContent = 'Only short-form videos (skip regular videos)';
     shortFormOnlyLabel.style.color = THEME.colors.textSecondary;
     shortFormOnlyLabel.style.fontSize = THEME.typography.sizeBody;
     shortFormOnlyContainer.appendChild(shortFormOnlyLabel);
@@ -883,11 +907,8 @@ export class SettingsPage {
       this.settings.shortFormOnly === true,
       (checked) => {
         if (checked) {
-          // When "only load short form content" is enabled, enable both HD and non-HD modes
-          shortFormHDToggle.checked = true;
-          shortFormHDToggle.dispatchEvent(new Event('change'));
-          shortFormNonHDToggle.checked = true;
-          shortFormNonHDToggle.dispatchEvent(new Event('change'));
+          shortFormIncludeToggle.checked = true;
+          shortFormIncludeToggle.dispatchEvent(new Event('change'));
         }
         this.saveSettings();
       }
@@ -898,66 +919,6 @@ export class SettingsPage {
 
     generalContent.appendChild(shortFormSection);
 
-    // Scrolling Settings Section
-    const scrollingSection = document.createElement('div');
-    scrollingSection.style.marginBottom = '32px';
-
-    const scrollingSectionTitle = document.createElement('h3');
-    scrollingSectionTitle.textContent = 'Scrolling';
-    scrollingSectionTitle.style.margin = '0 0 16px 0';
-    scrollingSectionTitle.style.color = THEME.colors.textPrimary;
-    scrollingSectionTitle.style.fontSize = THEME.typography.sizeTitle;
-    scrollingSectionTitle.style.fontWeight = THEME.typography.weightTitle;
-    scrollingSection.appendChild(scrollingSectionTitle);
-
-    const reelModeContainer = document.createElement('div');
-    reelModeContainer.style.display = 'flex';
-    reelModeContainer.style.justifyContent = 'space-between';
-    reelModeContainer.style.alignItems = 'center';
-    reelModeContainer.style.marginBottom = '16px';
-
-    const reelModeLabel = document.createElement('span');
-    reelModeLabel.textContent = 'Reel mode (full-screen)';
-    reelModeLabel.style.color = THEME.colors.textSecondary;
-    reelModeLabel.style.fontSize = THEME.typography.sizeBody;
-    reelModeContainer.appendChild(reelModeLabel);
-
-    const { container: reelModeToggleContainer, input: reelModeToggle } = this.createToggleSwitch(
-      this.settings.reelMode === true,
-      (checked) => {
-        if (checked) {
-          snapToCardsToggle.checked = true;
-          snapToCardsToggle.dispatchEvent(new Event('change'));
-        }
-        this.saveSettings();
-      }
-    );
-    reelModeContainer.appendChild(reelModeToggleContainer);
-
-    scrollingSection.appendChild(reelModeContainer);
-
-    // Snap to cards toggle
-    const snapToCardsContainer = document.createElement('div');
-    snapToCardsContainer.style.display = 'flex';
-    snapToCardsContainer.style.justifyContent = 'space-between';
-    snapToCardsContainer.style.alignItems = 'center';
-    snapToCardsContainer.style.marginBottom = '16px';
-
-    const snapToCardsLabel = document.createElement('span');
-    snapToCardsLabel.textContent = 'Snap to cards';
-    snapToCardsLabel.style.color = THEME.colors.textSecondary;
-    snapToCardsLabel.style.fontSize = THEME.typography.sizeBody;
-    snapToCardsContainer.appendChild(snapToCardsLabel);
-
-    const { container: snapToCardsToggleContainer, input: snapToCardsToggle } = this.createToggleSwitch(
-      this.settings.snapToCards === true,
-      () => this.saveSettings()
-    );
-    snapToCardsContainer.appendChild(snapToCardsToggleContainer);
-
-    scrollingSection.appendChild(snapToCardsContainer);
-
-    generalContent.appendChild(scrollingSection);
 
     // Version footer
     const versionFooter = document.createElement('div');
@@ -979,11 +940,9 @@ export class SettingsPage {
     (this as any).maxDurationInput = maxDurationInput;
     (this as any).includeImagesToggle = includeImagesToggle;
     (this as any).imagesOnlyToggle = imagesOnlyToggle;
-    (this as any).shortFormHDToggle = shortFormHDToggle;
-    (this as any).shortFormNonHDToggle = shortFormNonHDToggle;
+    (this as any).shortFormIncludeToggle = shortFormIncludeToggle;
     (this as any).shortFormOnlyToggle = shortFormOnlyToggle;
     (this as any).reelModeToggle = reelModeToggle;
-    (this as any).snapToCardsToggle = snapToCardsToggle;
 
     this.container.appendChild(modal);
 
@@ -1017,18 +976,16 @@ export class SettingsPage {
     const maxDurationInput = (this as any).maxDurationInput as HTMLInputElement | undefined;
     const includeImagesToggle = (this as any).includeImagesToggle as HTMLInputElement | undefined;
     const imagesOnlyToggle = (this as any).imagesOnlyToggle as HTMLInputElement | undefined;
-    const shortFormHDToggle = (this as any).shortFormHDToggle as HTMLInputElement | undefined;
-    const shortFormNonHDToggle = (this as any).shortFormNonHDToggle as HTMLInputElement | undefined;
+    const shortFormIncludeToggle = (this as any).shortFormIncludeToggle as HTMLInputElement | undefined;
     const shortFormOnlyToggle = (this as any).shortFormOnlyToggle as HTMLInputElement | undefined;
     const reelModeToggle = (this as any).reelModeToggle as HTMLInputElement | undefined;
-    const snapToCardsToggle = (this as any).snapToCardsToggle as HTMLInputElement | undefined;
     const themeBackgroundInput = (this as any).themeBackgroundInput as HTMLInputElement | undefined;
     const themePrimaryInput = (this as any).themePrimaryInput as HTMLInputElement | undefined;
     const themeSecondaryInput = (this as any).themeSecondaryInput as HTMLInputElement | undefined;
     const themeAccentInput = (this as any).themeAccentInput as HTMLInputElement | undefined;
 
     if (!fileTypesInput || !maxDurationInput || !includeImagesToggle || !imagesOnlyToggle || 
-        !shortFormHDToggle || !shortFormNonHDToggle || !shortFormOnlyToggle || !reelModeToggle || !snapToCardsToggle ||
+        !shortFormIncludeToggle || !shortFormOnlyToggle || !reelModeToggle ||
         !themeBackgroundInput || !themePrimaryInput || !themeSecondaryInput || !themeAccentInput) {
       return; // Settings not fully initialized yet
     }
@@ -1046,12 +1003,12 @@ export class SettingsPage {
       includeImagesInFeed: includeImagesToggle.checked,
       enabledFileTypes: extensions.length > 0 ? extensions : ['.jpg', '.png', '.gif', '.mp4', '.m4v', '.webm'],
       imagesOnly: imagesOnlyToggle.checked,
-      shortFormInHDMode: shortFormHDToggle.checked,
-      shortFormInNonHDMode: shortFormNonHDToggle.checked,
+      shortFormInHDMode: shortFormIncludeToggle.checked,
+      shortFormInNonHDMode: shortFormIncludeToggle.checked,
       shortFormMaxDuration: validMaxDuration,
       shortFormOnly: shortFormOnlyToggle.checked,
       reelMode: reelModeToggle.checked,
-      snapToCards: snapToCardsToggle.checked,
+      snapToCards: reelModeToggle.checked,
       themeBackground: themeBackgroundInput.value,
       themePrimary: themePrimaryInput.value,
       themeSecondary: themeSecondaryInput.value,
