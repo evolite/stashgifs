@@ -2,4 +2,4 @@
  * Version information - auto-generated from package.json
  * This file is updated automatically during the build process
  */
-export const VERSION = '5.25.0';
+export const VERSION = '5.26.0';
