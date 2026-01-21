@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [5.24.0] - 2026-01-21
+
+### Changed
+- Fix reel overlay stacking and height
+- Refactor reel layout helpers
+- Refine settings layout for reel mode
+- Add reel mode support with settings toggle
+- Improve feed random indicator contrast
+- Simplify content fetch helpers and dialog queries
+- Refactor tag handling and feed helpers to simplify control flow
+
 ## [5.23.1] - 2026-01-20
 
 ### Changed
