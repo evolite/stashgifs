@@ -57,7 +57,7 @@ export class ImageVideoPost extends BasePost {
   private muteOverlayButton?: HTMLElement;
   
   // Add tag dialog state
-  private addTagDialogState: AddTagDialogState = { isOpen: false };
+  private readonly addTagDialogState: AddTagDialogState = { isOpen: false };
   
   // Rating state
   private ratingValue: number = 0;
@@ -1536,7 +1536,7 @@ export class ImageVideoPost extends BasePost {
       }
       return this.cachedStarButtonWidth * this.ratingStarButtons.length;
     }
-    const starsContainer = dialog.querySelector('.rating-dialog__stars') as HTMLElement;
+    const starsContainer = dialog.querySelector<HTMLElement>('.rating-dialog__stars');
     if (starsContainer) {
       return starsContainer.scrollWidth;
     }
@@ -1554,7 +1554,7 @@ export class ImageVideoPost extends BasePost {
 
     const margin = 8; // Small margin from card edges
     const maxWidth = cardRect.width - (margin * 2);
-    const starsContainer = dialog.querySelector('.rating-dialog__stars') as HTMLElement | null;
+    const starsContainer = dialog.querySelector<HTMLElement>('.rating-dialog__stars');
     let requiredWidth = 0;
 
     if (this.ratingStarButtons.length > 0 && starsContainer) {

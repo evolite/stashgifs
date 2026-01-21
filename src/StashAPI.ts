@@ -126,21 +126,21 @@ export class StashAPI {
     if (!input || typeof input !== 'object') return {};
     const out: Record<string, unknown> = { ...(input as Record<string, unknown>) };
 
-    const normalizedTags = this.normalizeTagField(out.tags, true);
+    const normalizedTags = this.normalizeTagFieldAsStrings(out.tags);
     if (normalizedTags) {
       out.tags = normalizedTags;
     } else {
       delete out.tags;
     }
 
-    const normalizedSceneTags = this.normalizeTagField(out.scene_tags, true);
+    const normalizedSceneTags = this.normalizeTagFieldAsStrings(out.scene_tags);
     if (normalizedSceneTags) {
       out.scene_tags = normalizedSceneTags;
     } else {
       delete out.scene_tags;
     }
 
-    const normalizedScenePerformers = this.normalizeTagField(out.scene_performers, false);
+    const normalizedScenePerformers = this.normalizeTagFieldAsNumbers(out.scene_performers);
     if (normalizedScenePerformers) {
       out.scene_performers = normalizedScenePerformers;
     } else {
@@ -177,17 +177,23 @@ export class StashAPI {
   /**
    * Normalize a tag field (tags, scene_tags, or scene_performers)
    * @param fieldValue The field value to normalize
-   * @param asString Whether to convert IDs to strings (true for tags/scene_tags, false for scene_performers)
    * @returns Normalized field value or undefined if invalid
    */
-  private normalizeTagField(fieldValue: unknown, asString: boolean): unknown {
+  private normalizeTagFieldAsStrings(fieldValue: unknown): unknown {
+    return this.normalizeTagField(fieldValue, (values) => values.map(String));
+  }
+
+  private normalizeTagFieldAsNumbers(fieldValue: unknown): unknown {
+    return this.normalizeTagField(fieldValue, (values) => values.map(Number));
+  }
+
+  private normalizeTagField(
+    fieldValue: unknown,
+    normalizeValueArray: (values: number[]) => Array<string | number>
+  ): unknown {
     if (!fieldValue) return undefined;
 
     type TagsModifier = 'INCLUDES' | 'INCLUDES_ALL' | 'EXCLUDES';
-
-    const normalizeValueArray = (values: number[]): string[] | number[] => {
-      return asString ? values.map(String) : values.map(Number);
-    };
 
     const normalizeFieldValue = (rawValue: unknown): number[] | undefined => {
       let raw = rawValue;
@@ -222,17 +228,7 @@ export class StashAPI {
       const normalizedExcludes = normalizeFieldValue(excludesSource);
       const depthSource = fieldObj.depth ?? valueObj?.depth;
       const includeSubtags = fieldObj.include_subtags ?? valueObj?.include_subtags;
-      const depth = typeof depthSource === 'number'
-        ? depthSource
-        : typeof depthSource === 'string'
-          ? Number.parseInt(depthSource, 10)
-          : includeSubtags === true
-            ? 1
-            : typeof includeSubtags === 'string'
-              ? Number.parseInt(includeSubtags, 10)
-              : typeof includeSubtags === 'number'
-                ? includeSubtags
-                : undefined;
+      const depth = this.resolveTagDepth(depthSource, includeSubtags);
 
       return {
         value: normalizeValueArray(ids),
@@ -242,6 +238,25 @@ export class StashAPI {
       };
     }
 
+    return undefined;
+  }
+
+  private resolveTagDepth(depthSource: unknown, includeSubtags: unknown): number | undefined {
+    if (typeof depthSource === 'number') {
+      return depthSource;
+    }
+    if (typeof depthSource === 'string') {
+      return Number.parseInt(depthSource, 10);
+    }
+    if (includeSubtags === true) {
+      return 1;
+    }
+    if (typeof includeSubtags === 'string') {
+      return Number.parseInt(includeSubtags, 10);
+    }
+    if (typeof includeSubtags === 'number') {
+      return includeSubtags;
+    }
     return undefined;
   }
 

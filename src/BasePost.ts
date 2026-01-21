@@ -1640,31 +1640,44 @@ export abstract class BasePost {
 
     chips.appendChild(this.createImageBadgeIcon());
 
-    if (options.performers && options.performers.length > 0) {
-      for (const performer of options.performers) {
-        const chip = this.createPerformerChip(performer);
-        chips.appendChild(chip);
-      }
+    if (options.performers?.length) {
+      this.appendPerformerChips(chips, options.performers);
     }
 
-    if (options.tags && options.tags.length > 0) {
-      const hasPerformers = !!options.performers && options.performers.length > 0;
-      let isFirstTag = true;
-      for (const tag of options.tags) {
-        if (!tag?.id || !tag?.name || tag.name === options.favoriteTagName) {
-          continue;
-        }
-        const chip = this.createTagChip(tag);
-        if (hasPerformers && isFirstTag) {
-          chip.style.marginLeft = '8px';
-          isFirstTag = false;
-        }
-        chips.appendChild(chip);
-      }
+    if (options.tags?.length) {
+      const hasPerformers = !!options.performers?.length;
+      this.appendTagChips(chips, options.tags, options.favoriteTagName, hasPerformers);
     }
 
     header.appendChild(chips);
     return header;
+  }
+
+  private appendPerformerChips(chips: HTMLElement, performers: Performer[]): void {
+    for (const performer of performers) {
+      const chip = this.createPerformerChip(performer);
+      chips.appendChild(chip);
+    }
+  }
+
+  private appendTagChips(
+    chips: HTMLElement,
+    tags: Tag[],
+    favoriteTagName?: string,
+    hasPerformers: boolean = false
+  ): void {
+    let isFirstTag = true;
+    for (const tag of tags) {
+      if (!tag?.id || !tag?.name || tag.name === favoriteTagName) {
+        continue;
+      }
+      const chip = this.createTagChip(tag);
+      if (hasPerformers && isFirstTag) {
+        chip.style.marginLeft = '8px';
+        isFirstTag = false;
+      }
+      chips.appendChild(chip);
+    }
   }
 
   protected getImageLink(imageId: string): string {
@@ -1821,32 +1834,28 @@ export abstract class BasePost {
       });
     }
 
-    if (!state.outsideClickHandler) {
-      state.outsideClickHandler = (event: Event) => {
-        if (!state.isOpen || !state.dialog) return;
-        const target = event.target as Node | null;
-        if (target && state.dialog.contains(target)) {
-          return;
-        }
+    state.outsideClickHandler ??= (event: Event) => {
+      if (!state.isOpen || !state.dialog) return;
+      const target = event.target as Node | null;
+      if (target && state.dialog.contains(target)) {
+        return;
+      }
+      this.closeAddTagDialogBase({
+        state,
+        focusAfterClose: options.focusAfterClose
+      });
+    };
+
+    state.keydownHandler ??= (event: KeyboardEvent) => {
+      if (!state.isOpen) return;
+      if (event.key === 'Escape') {
+        event.preventDefault();
         this.closeAddTagDialogBase({
           state,
           focusAfterClose: options.focusAfterClose
         });
-      };
-    }
-
-    if (!state.keydownHandler) {
-      state.keydownHandler = (event: KeyboardEvent) => {
-        if (!state.isOpen) return;
-        if (event.key === 'Escape') {
-          event.preventDefault();
-          this.closeAddTagDialogBase({
-            state,
-            focusAfterClose: options.focusAfterClose
-          });
-        }
-      };
-    }
+      }
+    };
 
     document.addEventListener('mousedown', state.outsideClickHandler);
     document.addEventListener('touchstart', state.outsideClickHandler);

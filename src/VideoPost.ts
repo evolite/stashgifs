@@ -1710,7 +1710,7 @@ export class VideoPost extends BasePost {
     // Ensure dialog fits within card bounds (with small margin)
     const margin = 8; // Small margin from card edges
     const maxWidth = cardRect.width - (margin * 2);
-    const starsContainer = dialog.querySelector('.rating-dialog__stars') as HTMLElement | null;
+    const starsContainer = dialog.querySelector<HTMLElement>('.rating-dialog__stars');
     let requiredWidth = 0;
 
     if (this.ratingStarButtons.length > 0 && starsContainer) {
@@ -3286,40 +3286,14 @@ export class VideoPost extends BasePost {
   }
 
   protected async removeTagAction(tagId: string, tagName: string): Promise<boolean> {
-    if (!this.api) {
+    const api = this.api;
+    if (!api) {
       showToast('API not available.');
       return false;
     }
 
-    const isShortForm = this.isShortFormContent();
-
-    if (isShortForm) {
-      const sceneId = this.data.marker.scene?.id;
-      if (!sceneId) {
-        showToast('Scene ID not available.');
-        return false;
-      }
-
-      const currentTagIds = (this.data.marker.scene.tags || [])
-        .map((tag) => tag.id)
-        .filter((id) => id !== null && id !== undefined)
-        .map((id) => String(id));
-      if (!currentTagIds.includes(String(tagId))) {
-        showToast(`Tag "${tagName}" is not on this scene.`);
-        return false;
-      }
-
-      try {
-        await this.api.removeTagFromScene(sceneId, tagId);
-        this.data.marker.scene.tags = (this.data.marker.scene.tags || []).filter((tag) => String(tag.id) !== String(tagId));
-        showToast(`Tag "${tagName}" removed from scene`);
-        this.refreshHeader();
-        return true;
-      } catch (error) {
-        console.error('Failed to remove tag from scene', error);
-        showToast('Failed to remove tag. Please try again.');
-        return false;
-      }
+    if (this.isShortFormContent()) {
+      return this.removeTagFromScene(api, tagId, tagName);
     }
 
     if (!this.isRealMarker()) {
@@ -3327,6 +3301,39 @@ export class VideoPost extends BasePost {
       return false;
     }
 
+    return this.removeTagFromMarker(api, tagId, tagName);
+  }
+
+  private async removeTagFromScene(api: StashAPI, tagId: string, tagName: string): Promise<boolean> {
+    const sceneId = this.data.marker.scene?.id;
+    if (!sceneId) {
+      showToast('Scene ID not available.');
+      return false;
+    }
+
+    const currentTagIds = (this.data.marker.scene.tags || [])
+      .map((tag) => tag.id)
+      .filter((id): id is string => id !== null && id !== undefined)
+      .map(String);
+    if (!currentTagIds.includes(String(tagId))) {
+      showToast(`Tag "${tagName}" is not on this scene.`);
+      return false;
+    }
+
+    try {
+      await api.removeTagFromScene(sceneId, tagId);
+      this.data.marker.scene.tags = (this.data.marker.scene.tags || []).filter((tag) => String(tag.id) !== String(tagId));
+      showToast(`Tag "${tagName}" removed from scene`);
+      this.refreshHeader();
+      return true;
+    } catch (error) {
+      console.error('Failed to remove tag from scene', error);
+      showToast('Failed to remove tag. Please try again.');
+      return false;
+    }
+  }
+
+  private async removeTagFromMarker(api: StashAPI, tagId: string, tagName: string): Promise<boolean> {
     const primaryTagId = this.data.marker.primary_tag?.id;
     if (primaryTagId && String(primaryTagId) === String(tagId)) {
       const availableTags = (this.data.marker.tags || []).filter((tag) => tag.id);
@@ -3340,7 +3347,7 @@ export class VideoPost extends BasePost {
       const remainingTagIds = remainingTags.map((tag) => String(tag.id));
 
       try {
-        await this.api.updateMarkerTagsWithPrimary(this.data.marker, String(nextPrimary.id), remainingTagIds);
+        await api.updateMarkerTagsWithPrimary(this.data.marker, String(nextPrimary.id), remainingTagIds);
         this.data.marker.primary_tag = { id: String(nextPrimary.id), name: nextPrimary.name };
         this.data.marker.tags = remainingTags;
         showToast(`Primary tag changed to "${nextPrimary.name}"`);
@@ -3355,15 +3362,15 @@ export class VideoPost extends BasePost {
 
     const currentTagIds = (this.data.marker.tags || [])
       .map((tag) => tag.id)
-      .filter((id) => id !== null && id !== undefined)
-      .map((id) => String(id));
+      .filter((id): id is string => id !== null && id !== undefined)
+      .map(String);
     if (!currentTagIds.includes(String(tagId))) {
       showToast(`Tag "${tagName}" is not on this marker.`);
       return false;
     }
 
     try {
-      await this.api.removeTagFromMarker(this.data.marker, tagId);
+      await api.removeTagFromMarker(this.data.marker, tagId);
       this.data.marker.tags = (this.data.marker.tags || []).filter((tag) => String(tag.id) !== String(tagId));
       showToast(`Tag "${tagName}" removed from marker`);
       this.refreshHeader();

@@ -3824,33 +3824,20 @@ export class FeedContainer {
       shouldLoadShortForm ? this.fetchShortFormVideosForLoad(currentFilters, shortFormLimit, shortFormOffset, signal) : Promise.resolve<{ markers: SceneMarker[]; totalCount: number; unfilteredOffsetConsumed: number }>({ markers: [], totalCount: 0, unfilteredOffsetConsumed: 0 }),
     ]);
     
-    // Debug logging for fetched results
-    if (shouldLoadMarkers) {
-      console.log(`[Load] Fetched ${markersResult.markers.length} markers (limit: ${markerLimit}, total: ${markersResult.totalCount})`);
-    }
+    this.logFetchedContentResults({
+      shouldLoadMarkers,
+      shouldLoadShortForm,
+      shouldLoadImages,
+      markerLimit,
+      shortFormLimit,
+      limit,
+      markersResult,
+      shortFormResult,
+      imagesResult
+    });
+
     if (shouldLoadShortForm) {
-      console.log(`[Load] Fetched ${shortFormResult.markers.length} short-form markers (limit: ${shortFormLimit}, total: ${shortFormResult.totalCount})`);
-    }
-    if (shouldLoadImages) {
-      console.log(`[Load] Fetched ${imagesResult.images.length} images (limit: ${limit}, total: ${imagesResult.totalCount})`);
-    }
-    
-    // Update unfiltered offset for short-form based on what was consumed
-    // unfilteredOffsetConsumed is the offset WITHIN the current page (offsetInPage + scenes processed)
-    // To get the total offset, we need: (page-1)*24 + unfilteredOffsetConsumed
-    if (shouldLoadShortForm && 'unfilteredOffsetConsumed' in shortFormResult) {
-      const scenesPerPage = 24;
-      const unfilteredOffsetConsumed = typeof shortFormResult.unfilteredOffsetConsumed === 'number' ? shortFormResult.unfilteredOffsetConsumed : 0;
-      if (append) {
-        // Calculate which page we fetched
-        const page = Math.floor(this.shortFormUnfilteredOffset / scenesPerPage) + 1;
-        // Total offset = offset at start of page + offset consumed in this page
-        // = (page-1)*scenesPerPage + unfilteredOffsetConsumed
-        this.shortFormUnfilteredOffset = (page - 1) * scenesPerPage + unfilteredOffsetConsumed;
-      } else {
-        // For first load, the offset consumed is the total (we started at 0)
-        this.shortFormUnfilteredOffset = unfilteredOffsetConsumed;
-      }
+      this.updateShortFormUnfilteredOffset(append, shortFormResult);
     }
     
     return {
@@ -3861,6 +3848,59 @@ export class FeedContainer {
       imageCount: imagesResult.totalCount,
       shortFormCount: shortFormResult.totalCount
     };
+  }
+
+  private logFetchedContentResults(options: {
+    shouldLoadMarkers: boolean;
+    shouldLoadShortForm: boolean;
+    shouldLoadImages: boolean;
+    markerLimit: number;
+    shortFormLimit: number;
+    limit: number;
+    markersResult: { markers: SceneMarker[]; totalCount: number };
+    shortFormResult: { markers: SceneMarker[]; totalCount: number };
+    imagesResult: { images: Image[]; totalCount: number };
+  }): void {
+    const {
+      shouldLoadMarkers,
+      shouldLoadShortForm,
+      shouldLoadImages,
+      markerLimit,
+      shortFormLimit,
+      limit,
+      markersResult,
+      shortFormResult,
+      imagesResult
+    } = options;
+
+    if (shouldLoadMarkers) {
+      console.log(`[Load] Fetched ${markersResult.markers.length} markers (limit: ${markerLimit}, total: ${markersResult.totalCount})`);
+    }
+    if (shouldLoadShortForm) {
+      console.log(`[Load] Fetched ${shortFormResult.markers.length} short-form markers (limit: ${shortFormLimit}, total: ${shortFormResult.totalCount})`);
+    }
+    if (shouldLoadImages) {
+      console.log(`[Load] Fetched ${imagesResult.images.length} images (limit: ${limit}, total: ${imagesResult.totalCount})`);
+    }
+  }
+
+  private updateShortFormUnfilteredOffset(
+    append: boolean,
+    shortFormResult: { unfilteredOffsetConsumed?: number }
+  ): void {
+    const unfilteredOffsetConsumed = shortFormResult.unfilteredOffsetConsumed;
+    if (typeof unfilteredOffsetConsumed !== 'number') {
+      return;
+    }
+
+    const scenesPerPage = 24;
+    if (append) {
+      const page = Math.floor(this.shortFormUnfilteredOffset / scenesPerPage) + 1;
+      this.shortFormUnfilteredOffset = (page - 1) * scenesPerPage + unfilteredOffsetConsumed;
+      return;
+    }
+
+    this.shortFormUnfilteredOffset = unfilteredOffsetConsumed;
   }
 
   /**
@@ -5727,7 +5767,7 @@ export class FeedContainer {
    * Check if a post is near the viewport
    */
   private isPostNearViewport(
-    post: VideoPost | ImagePost | ImageVideoPost,
+    post: PostType,
     viewportTop: number,
     viewportBottom: number,
     margin: number
@@ -5759,7 +5799,7 @@ export class FeedContainer {
    * Check if a post is far from the viewport
    */
   private isPostFarFromViewport(
-    post: VideoPost | ImagePost | ImageVideoPost,
+    post: PostType,
     viewportTop: number,
     viewportBottom: number,
     unloadDistance: number
@@ -5808,7 +5848,7 @@ export class FeedContainer {
    * Check if a post is immediately visible in the viewport
    */
   private isPostImmediatelyVisible(
-    post: VideoPost | ImagePost | ImageVideoPost,
+    post: PostType,
     viewportTop: number,
     viewportBottom: number
   ): boolean {
@@ -5823,7 +5863,7 @@ export class FeedContainer {
   /**
    * Unload a post's video if it's loaded
    */
-  private unloadPostVideo(post: VideoPost | ImagePost | ImageVideoPost): void {
+  private unloadPostVideo(post: PostType): void {
     const player = post.getPlayer();
     // Only unload video players (images don't need unloading)
     if (isNativeVideoPlayer(player) && !player.getIsUnloaded()) {
