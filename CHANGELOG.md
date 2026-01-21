@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [5.25.0] - 2026-01-21
+
+### Changed
+- Fix autoplay after layout changes
+- Handle optional build hash in settings
+- Improve reel mode immersion and add support links
+- Clean up overlay stacking and ignore opencode config
+
 ## [5.24.0] - 2026-01-21
 
 ### Changed
