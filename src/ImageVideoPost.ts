@@ -180,8 +180,7 @@ export class ImageVideoPost extends BasePost {
     }
 
     if (aspectRatio && Number.isFinite(aspectRatio)) {
-      container.dataset.aspectRatio = aspectRatio.toString();
-      container.dataset.orientation = aspectRatio < 0.95 ? 'portrait' : aspectRatio > 1.05 ? 'landscape' : 'square';
+      this.setAspectRatioMetadata(container, aspectRatio);
     }
     
     // Use inline aspectRatio style for better browser compatibility

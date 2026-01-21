@@ -133,11 +133,36 @@ export abstract class BasePost {
     return { header, playerContainer, footer };
   }
 
+  private getOrientationFromAspectRatio(aspectRatio: number): 'portrait' | 'landscape' | 'square' {
+    if (aspectRatio < 0.95) {
+      return 'portrait';
+    }
+    if (aspectRatio > 1.05) {
+      return 'landscape';
+    }
+    return 'square';
+  }
+
+  protected setAspectRatioMetadata(container: HTMLElement, aspectRatio: number): void {
+    container.dataset.aspectRatio = aspectRatio.toString();
+    container.dataset.orientation = this.getOrientationFromAspectRatio(aspectRatio);
+  }
+
   protected applyReelModeLayout(elements: {
     header: HTMLElement;
     playerContainer: HTMLElement;
     footer: HTMLElement;
   }): void {
+    this.applyReelContainerStyles();
+    const isPortrait = this.applyReelPlayerStyles(elements.playerContainer);
+    this.applyReelMediaStyles(elements.playerContainer, isPortrait);
+
+    const isMobile = isMobileDevice();
+    this.applyReelHeaderStyles(elements.header, isMobile);
+    this.applyReelFooterStyles(elements.footer, isMobile);
+  }
+
+  private applyReelContainerStyles(): void {
     this.container.style.border = 'none';
     this.container.style.borderRadius = '0';
     this.container.style.backgroundColor = 'transparent';
@@ -151,66 +176,87 @@ export abstract class BasePost {
     this.container.style.scrollSnapAlign = 'start';
     this.container.style.scrollSnapStop = 'always';
     this.container.dataset.reelMode = 'true';
+  }
 
-    elements.playerContainer.style.flex = '1 1 auto';
-    elements.playerContainer.style.width = '100%';
-    elements.playerContainer.style.height = '100%';
-    elements.playerContainer.style.maxHeight = '100%';
-    elements.playerContainer.style.aspectRatio = 'auto';
-    elements.playerContainer.style.margin = '';
+  private applyReelPlayerStyles(playerContainer: HTMLElement): boolean {
+    playerContainer.style.flex = '1 1 auto';
+    playerContainer.style.width = '100%';
+    playerContainer.style.height = '100%';
+    playerContainer.style.maxHeight = '100%';
+    playerContainer.style.aspectRatio = 'auto';
+    playerContainer.style.margin = '';
 
-    const aspectRatioValue = Number.parseFloat(elements.playerContainer.dataset.aspectRatio ?? '');
-    const orientation = elements.playerContainer.dataset.orientation;
-    const isPortrait = orientation === 'portrait' || (!Number.isNaN(aspectRatioValue) && aspectRatioValue < 0.95);
+    const aspectRatioValue = Number.parseFloat(playerContainer.dataset.aspectRatio ?? '');
+    const orientationValue = playerContainer.dataset.orientation;
+    const resolvedOrientation = orientationValue ?? (Number.isFinite(aspectRatioValue)
+      ? this.getOrientationFromAspectRatio(aspectRatioValue)
+      : 'landscape');
+    const isPortrait = resolvedOrientation === 'portrait';
 
     if (isPortrait && Number.isFinite(aspectRatioValue) && aspectRatioValue > 0) {
-      elements.playerContainer.style.width = `min(100%, ${aspectRatioValue * 100}vh)`;
-      elements.playerContainer.style.margin = '0 auto';
+      playerContainer.style.width = `min(100%, ${aspectRatioValue * 100}vh)`;
+      playerContainer.style.margin = '0 auto';
     }
 
-    for (const className of Array.from(elements.playerContainer.classList)) {
+    this.removeAspectClasses(playerContainer);
+    return isPortrait;
+  }
+
+  private removeAspectClasses(container: HTMLElement): void {
+    for (const className of Array.from(container.classList)) {
       if (className.startsWith('aspect-')) {
-        elements.playerContainer.classList.remove(className);
+        container.classList.remove(className);
       }
     }
+  }
 
-    const mediaElements = elements.playerContainer.querySelectorAll<HTMLElement>('video, img');
+  private applyReelMediaStyles(playerContainer: HTMLElement, isPortrait: boolean): void {
+    const mediaElements = playerContainer.querySelectorAll<HTMLElement>('video, img');
     for (const mediaElement of mediaElements) {
       mediaElement.style.objectFit = isPortrait ? 'contain' : 'cover';
     }
+  }
 
-    const isMobile = isMobileDevice();
+  private applyReelHeaderStyles(header: HTMLElement, isMobile: boolean): void {
     const bottomOffset = isMobile ? 16 : 88;
     const headerRightOffset = isMobile ? 96 : 120;
     const headerPadding = isMobile ? '8px 12px' : '10px 14px';
 
-    elements.header.style.position = 'absolute';
-    elements.header.style.left = '16px';
-    elements.header.style.right = `${headerRightOffset}px`;
-    elements.header.style.bottom = `${bottomOffset}px`;
-    elements.header.style.top = 'auto';
-    elements.header.style.zIndex = '6';
-    elements.header.style.padding = headerPadding;
-    elements.header.style.borderRadius = THEME.radius.button;
-    elements.header.style.background = 'rgba(0, 0, 0, 0.35)';
-    elements.header.style.backdropFilter = 'blur(6px)';
-    elements.header.style.pointerEvents = 'auto';
-    elements.header.style.fontSize = isMobile ? '' : '15px';
-    elements.header.style.width = 'fit-content';
-    elements.header.style.maxWidth = isMobile ? 'calc(100% - 120px)' : '55%';
+    header.style.position = 'absolute';
+    header.style.left = '16px';
+    header.style.right = `${headerRightOffset}px`;
+    header.style.bottom = `${bottomOffset}px`;
+    header.style.top = 'auto';
+    header.style.zIndex = '6';
+    header.style.padding = headerPadding;
+    header.style.borderRadius = THEME.radius.button;
+    header.style.background = 'rgba(0, 0, 0, 0.35)';
+    header.style.backdropFilter = 'blur(6px)';
+    header.style.pointerEvents = 'auto';
+    header.style.fontSize = isMobile ? '' : '15px';
+    header.style.width = 'fit-content';
+    header.style.maxWidth = isMobile ? 'calc(100% - 120px)' : '55%';
+  }
 
-    elements.footer.style.position = 'absolute';
-    elements.footer.style.right = '16px';
-    elements.footer.style.bottom = `${bottomOffset}px`;
-    elements.footer.style.top = 'auto';
-    elements.footer.style.transform = 'none';
-    elements.footer.style.padding = '0';
-    elements.footer.style.background = 'transparent';
-    elements.footer.style.pointerEvents = 'auto';
+  private applyReelFooterStyles(footer: HTMLElement, isMobile: boolean): void {
+    const bottomOffset = isMobile ? 16 : 88;
 
-    const info = elements.footer.querySelector<HTMLElement>('.video-post__info');
-    const row = elements.footer.querySelector<HTMLElement>('.video-post__row');
-    const buttonGroup = elements.footer.querySelector<HTMLElement>('.video-post__button-group');
+    footer.style.position = 'absolute';
+    footer.style.right = '16px';
+    footer.style.bottom = `${bottomOffset}px`;
+    footer.style.top = 'auto';
+    footer.style.transform = 'none';
+    footer.style.padding = '0';
+    footer.style.background = 'transparent';
+    footer.style.pointerEvents = 'auto';
+
+    this.applyReelFooterStack(footer, isMobile);
+  }
+
+  private applyReelFooterStack(footer: HTMLElement, isMobile: boolean): void {
+    const info = footer.querySelector<HTMLElement>('.video-post__info');
+    const row = footer.querySelector<HTMLElement>('.video-post__row');
+    const buttonGroup = footer.querySelector<HTMLElement>('.video-post__button-group');
 
     const stackGap = isMobile ? '8px' : '6px';
 
@@ -252,9 +298,9 @@ export abstract class BasePost {
     if (!isReelMode) {
       return;
     }
-    const header = this.container.querySelector('.video-post__header') as HTMLElement | null;
-    const playerContainer = this.container.querySelector('.video-post__player') as HTMLElement | null;
-    const footer = this.container.querySelector('.video-post__footer') as HTMLElement | null;
+    const header = this.container.querySelector<HTMLElement>('.video-post__header');
+    const playerContainer = this.container.querySelector<HTMLElement>('.video-post__player');
+    const footer = this.container.querySelector<HTMLElement>('.video-post__footer');
     if (header && playerContainer && footer) {
       this.applyReelModeLayout({ header, playerContainer, footer });
     }

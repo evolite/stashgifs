@@ -340,9 +340,17 @@ export class FeedContainer {
 
   private applyReelModeLayout(): void {
     const isReelMode = this.isReelModeEnabled();
-    const root = document.documentElement;
-    root.style.scrollSnapType = isReelMode ? 'y mandatory' : '';
+    this.applyReelRootStyles(isReelMode);
+    this.applyReelContainerStyles(isReelMode);
+    this.applyReelHeaderStyles(isReelMode);
+    this.applyReelPostStyles(isReelMode);
+  }
 
+  private applyReelRootStyles(isReelMode: boolean): void {
+    document.documentElement.style.scrollSnapType = isReelMode ? 'y mandatory' : '';
+  }
+
+  private applyReelContainerStyles(isReelMode: boolean): void {
     if (this.container) {
       this.container.style.width = isReelMode ? '100%' : '';
       this.container.style.maxWidth = isReelMode ? '100%' : '';
@@ -361,102 +369,131 @@ export class FeedContainer {
       this.postsContainer.style.padding = isReelMode ? '0' : '';
       this.postsContainer.style.margin = isReelMode ? '0' : '';
     }
+  }
 
-    const header = this.headerBar || this.scrollContainer?.querySelector('.feed-header-bar');
-    if (header instanceof HTMLElement) {
-      const headerInner = header.querySelector('.feed-header-inner') as HTMLElement | null;
-      const inputWrapper = header.querySelector('.feed-input-wrapper') as HTMLElement | null;
-      const queryInput = header.querySelector('.feed-filters__input') as HTMLInputElement | null;
-      const brandContainer = header.querySelector('.feed-brand-container') as HTMLElement | null;
-      const settingsButton = header.querySelector('[aria-label="Open settings"]') as HTMLElement | null;
-
-      if (isReelMode) {
-        header.style.position = 'fixed';
-        header.style.left = '0';
-        header.style.right = '0';
-        header.style.width = '100%';
-        header.style.maxWidth = '100%';
-        header.style.zIndex = '900';
-        header.style.background = 'rgba(0, 0, 0, 0.3)';
-        header.style.backdropFilter = 'blur(12px)';
-        header.style.borderRadius = '0';
-        header.style.padding = '8px 16px';
-        header.style.display = 'flex';
-        header.style.justifyContent = 'center';
-        header.style.alignItems = 'center';
-
-        if (headerInner) {
-          headerInner.style.maxWidth = `${this.settings.cardMaxWidth}px`;
-          headerInner.style.width = '100%';
-          headerInner.style.margin = '0 auto';
-        }
-
-        if (inputWrapper) {
-          inputWrapper.style.background = 'transparent';
-        }
-
-        if (queryInput) {
-          queryInput.style.background = 'rgba(0, 0, 0, 0.35)';
-          queryInput.style.border = '1px solid rgba(255, 255, 255, 0.2)';
-          queryInput.style.color = THEME.colors.textPrimary;
-          queryInput.style.backdropFilter = 'blur(8px)';
-        }
-
-        if (brandContainer) {
-          brandContainer.style.background = 'rgba(0, 0, 0, 0.35)';
-          brandContainer.style.border = '1px solid rgba(255, 255, 255, 0.2)';
-        }
-
-        if (settingsButton) {
-          settingsButton.style.background = 'rgba(0, 0, 0, 0.35)';
-          settingsButton.style.border = '1px solid rgba(255, 255, 255, 0.2)';
-          settingsButton.style.color = THEME.colors.textPrimary;
-        }
-      } else {
-        header.style.position = '';
-        header.style.left = '';
-        header.style.right = '';
-        header.style.width = '';
-        header.style.maxWidth = `${this.settings.cardMaxWidth + 24}px`;
-        header.style.zIndex = '';
-        header.style.background = '';
-        header.style.backdropFilter = '';
-        header.style.borderRadius = '';
-        header.style.padding = '';
-        header.style.display = '';
-        header.style.justifyContent = '';
-        header.style.alignItems = '';
-
-        if (headerInner) {
-          headerInner.style.maxWidth = `${this.settings.cardMaxWidth}px`;
-          headerInner.style.width = '';
-          headerInner.style.margin = '';
-        }
-
-        if (inputWrapper) {
-          inputWrapper.style.background = '';
-        }
-
-        if (queryInput) {
-          queryInput.style.background = '';
-          queryInput.style.border = '';
-          queryInput.style.color = '';
-          queryInput.style.backdropFilter = '';
-        }
-
-        if (brandContainer) {
-          brandContainer.style.background = '';
-          brandContainer.style.border = `1px solid ${THEME.colors.border}`;
-        }
-
-        if (settingsButton) {
-          settingsButton.style.background = THEME.colors.backgroundSecondary;
-          settingsButton.style.border = `1px solid ${THEME.colors.border}`;
-          settingsButton.style.color = THEME.colors.iconInactive;
-        }
-      }
+  private applyReelHeaderStyles(isReelMode: boolean): void {
+    const header = this.headerBar || this.scrollContainer?.querySelector<HTMLElement>('.feed-header-bar');
+    if (!header) {
+      return;
     }
 
+    const headerInner = header.querySelector<HTMLElement>('.feed-header-inner');
+    const inputWrapper = header.querySelector<HTMLElement>('.feed-input-wrapper');
+    const queryInput = header.querySelector<HTMLInputElement>('.feed-filters__input');
+    const brandContainer = header.querySelector<HTMLElement>('.feed-brand-container');
+    const settingsButton = header.querySelector<HTMLElement>('[aria-label="Open settings"]');
+
+    if (isReelMode) {
+      this.applyReelHeaderActiveStyles(header, headerInner, inputWrapper, queryInput, brandContainer, settingsButton);
+      return;
+    }
+
+    this.applyReelHeaderDefaultStyles(header, headerInner, inputWrapper, queryInput, brandContainer, settingsButton);
+  }
+
+  private applyReelHeaderActiveStyles(
+    header: HTMLElement,
+    headerInner: HTMLElement | null,
+    inputWrapper: HTMLElement | null,
+    queryInput: HTMLInputElement | null,
+    brandContainer: HTMLElement | null,
+    settingsButton: HTMLElement | null
+  ): void {
+    header.style.position = 'fixed';
+    header.style.left = '0';
+    header.style.right = '0';
+    header.style.width = '100%';
+    header.style.maxWidth = '100%';
+    header.style.zIndex = '900';
+    header.style.background = 'rgba(0, 0, 0, 0.3)';
+    header.style.backdropFilter = 'blur(12px)';
+    header.style.borderRadius = '0';
+    header.style.padding = '8px 16px';
+    header.style.display = 'flex';
+    header.style.justifyContent = 'center';
+    header.style.alignItems = 'center';
+
+    if (headerInner) {
+      headerInner.style.maxWidth = `${this.settings.cardMaxWidth}px`;
+      headerInner.style.width = '100%';
+      headerInner.style.margin = '0 auto';
+    }
+
+    if (inputWrapper) {
+      inputWrapper.style.background = 'transparent';
+    }
+
+    if (queryInput) {
+      queryInput.style.background = 'rgba(0, 0, 0, 0.35)';
+      queryInput.style.border = '1px solid rgba(255, 255, 255, 0.2)';
+      queryInput.style.color = THEME.colors.textPrimary;
+      queryInput.style.backdropFilter = 'blur(8px)';
+    }
+
+    if (brandContainer) {
+      brandContainer.style.background = 'rgba(0, 0, 0, 0.35)';
+      brandContainer.style.border = '1px solid rgba(255, 255, 255, 0.2)';
+    }
+
+    if (settingsButton) {
+      settingsButton.style.background = 'rgba(0, 0, 0, 0.35)';
+      settingsButton.style.border = '1px solid rgba(255, 255, 255, 0.2)';
+      settingsButton.style.color = THEME.colors.textPrimary;
+    }
+  }
+
+  private applyReelHeaderDefaultStyles(
+    header: HTMLElement,
+    headerInner: HTMLElement | null,
+    inputWrapper: HTMLElement | null,
+    queryInput: HTMLInputElement | null,
+    brandContainer: HTMLElement | null,
+    settingsButton: HTMLElement | null
+  ): void {
+    header.style.position = '';
+    header.style.left = '';
+    header.style.right = '';
+    header.style.width = '';
+    header.style.maxWidth = `${this.settings.cardMaxWidth + 24}px`;
+    header.style.zIndex = '';
+    header.style.background = '';
+    header.style.backdropFilter = '';
+    header.style.borderRadius = '';
+    header.style.padding = '';
+    header.style.display = '';
+    header.style.justifyContent = '';
+    header.style.alignItems = '';
+
+    if (headerInner) {
+      headerInner.style.maxWidth = `${this.settings.cardMaxWidth}px`;
+      headerInner.style.width = '';
+      headerInner.style.margin = '';
+    }
+
+    if (inputWrapper) {
+      inputWrapper.style.background = '';
+    }
+
+    if (queryInput) {
+      queryInput.style.background = '';
+      queryInput.style.border = '';
+      queryInput.style.color = '';
+      queryInput.style.backdropFilter = '';
+    }
+
+    if (brandContainer) {
+      brandContainer.style.background = '';
+      brandContainer.style.border = `1px solid ${THEME.colors.border}`;
+    }
+
+    if (settingsButton) {
+      settingsButton.style.background = THEME.colors.backgroundSecondary;
+      settingsButton.style.border = `1px solid ${THEME.colors.border}`;
+      settingsButton.style.color = THEME.colors.iconInactive;
+    }
+  }
+
+  private applyReelPostStyles(isReelMode: boolean): void {
     for (const post of this.posts.values()) {
       post.setReelMode?.(isReelMode);
     }

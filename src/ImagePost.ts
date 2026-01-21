@@ -143,8 +143,7 @@ export class ImagePost extends BasePost {
     const aspectRatio = this.getTargetAspectRatio();
     if (aspectRatio) {
       container.style.aspectRatio = `${aspectRatio}`;
-      container.dataset.aspectRatio = aspectRatio.toString();
-      container.dataset.orientation = aspectRatio < 0.95 ? 'portrait' : aspectRatio > 1.05 ? 'landscape' : 'square';
+      this.setAspectRatioMetadata(container, aspectRatio);
     } else {
       let aspectRatioClass = 'aspect-16-9';
       if (this.data.aspectRatio) {
