@@ -152,7 +152,6 @@ export class FeedContainer {
     // If no settings passed, load from localStorage
     const loadedSettings = settings && Object.keys(settings).length > 0 ? settings : this.loadSettingsFromStorage();
     this.settings = { ...DEFAULT_SETTINGS, ...loadedSettings };
-    this.applyThemeSettings(this.settings);
     // Initialize properties that will be set in methods
     this.scrollContainer = null!; // Will be set in initializeContainers
     this.visibilityManager = null!; // Will be set in initializeManagers
@@ -165,6 +164,7 @@ export class FeedContainer {
 
     this.initializeDeviceConfiguration();
     this.initializeContainers();
+    this.applyThemeSettings(this.settings);
     this.loadUserPreferences();
     
     // Create header bar with unified search
@@ -352,6 +352,16 @@ export class FeedContainer {
     this.applyReelContainerStyles(isReelMode);
     this.applyReelHeaderStyles(isReelMode);
     this.applyReelPostStyles(isReelMode);
+  }
+
+  private refreshAutoplayAfterLayout(): void {
+    if (!this.visibilityManager) {
+      return;
+    }
+
+    requestAnimationFrame(() => {
+      this.visibilityManager.refreshVisibilityAndAutoplay();
+    });
   }
 
   private applyReelRootStyles(isReelMode: boolean): void {
@@ -2203,6 +2213,9 @@ export class FeedContainer {
         if (reelModeChanged) {
           this.applyReelModeLayout();
         }
+        if (!reelModeChanged && newSettings.snapToCards !== undefined) {
+          this.refreshAutoplayAfterLayout();
+        }
         // Reload feed if images or short-form settings changed
         if (
           newSettings.includeImagesInFeed !== undefined ||
@@ -2218,6 +2231,7 @@ export class FeedContainer {
             console.error('Failed to reload feed after settings change', e);
           });
         }
+
       },
       () => {
         // On close, remove settings container and clear reference
@@ -3855,6 +3869,10 @@ export class FeedContainer {
     }
 
     this.updateInfiniteScrollTrigger();
+
+    if (!append) {
+      this.refreshAutoplayAfterLayout();
+    }
   }
 
   /**
@@ -5354,7 +5372,10 @@ export class FeedContainer {
     // Stop background preloading
     this.stopBackgroundPreloading();
     
-    for (const post of this.posts.values()) {
+    for (const [postId, post] of this.posts.entries()) {
+      if (this.visibilityManager) {
+        this.visibilityManager.unobservePost(postId);
+      }
       post.destroy();
     }
     this.posts.clear();
@@ -7062,6 +7083,8 @@ export class FeedContainer {
     this.visibilityManager = new VisibilityManager({
       threshold: this.settings.autoPlayThreshold,
       autoPlay: this.settings.autoPlay,
+      debug: this.shouldEnableVisibilityDebug(),
+      onHoverLoadRequest: (postId: string) => this.triggerVideoLoadOnHover(postId),
     });
 
     // Re-observe all posts
@@ -7077,6 +7100,8 @@ export class FeedContainer {
         }
       }
     }
+
+    this.refreshAutoplayAfterLayout();
   }
 
   /**

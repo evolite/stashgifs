@@ -1147,6 +1147,21 @@ export class VisibilityManager {
     }
   }
 
+  /**
+   * Recalculate visibility and retry autoplay for visible videos
+   */
+  refreshVisibilityAndAutoplay(): void {
+    for (const [postId, entry] of this.entries.entries()) {
+      this.updateVisibilityState(postId, true);
+      if (!entry.isVisible || !this.options.autoPlay) {
+        continue;
+      }
+
+      entry.pendingVisibilityPlay = true;
+      this.requestPlaybackIfReady(postId, entry, 'retry');
+    }
+  }
+
 
   /**
    * Cleanup
