@@ -324,13 +324,21 @@ export class FeedContainer {
     root.style.setProperty('--color-accent-weak', this.toRgba(accent, 0.18));
     root.style.setProperty('--color-accent-weaker', this.toRgba(accent, 0.1));
 
+    const accentGlow = this.toRgba(accent, 0.3);
+    const backgroundGradient = `linear-gradient(180deg, ${background} 0%, ${background} 70%, ${accentGlow} 100%)`;
+
     if (this.container) {
       this.container.style.backgroundColor = THEME.colors.backgroundPrimary;
+      this.container.style.backgroundImage = backgroundGradient;
+      this.container.style.backgroundAttachment = 'fixed';
+      this.container.style.backgroundRepeat = 'no-repeat';
+      this.container.style.backgroundSize = '100% 100%';
       this.container.style.color = THEME.colors.textPrimary;
     }
 
     if (this.scrollContainer) {
-      this.scrollContainer.style.backgroundColor = THEME.colors.backgroundPrimary;
+      this.scrollContainer.style.backgroundColor = 'transparent';
+      this.scrollContainer.style.backgroundImage = 'none';
     }
   }
 
@@ -361,9 +369,15 @@ export class FeedContainer {
       return;
     }
 
-    this.container.style.width = isReelMode ? '100%' : '';
-    this.container.style.maxWidth = isReelMode ? '100%' : '';
+    this.container.style.width = isReelMode ? '100vw' : '';
+    this.container.style.maxWidth = isReelMode ? '100vw' : '';
     this.container.style.margin = isReelMode ? '0' : '';
+    this.container.style.marginLeft = isReelMode ? 'calc(50% - 50vw)' : '';
+    this.container.style.marginRight = isReelMode ? 'calc(50% - 50vw)' : '';
+    this.container.style.padding = isReelMode ? '0' : '';
+    this.container.style.left = '';
+    this.container.style.right = '';
+    this.container.style.transform = '';
   }
 
   private applyReelScrollContainerLayout(isReelMode: boolean): void {
@@ -371,8 +385,12 @@ export class FeedContainer {
       return;
     }
 
-    this.scrollContainer.style.maxWidth = isReelMode ? '100%' : '';
+    this.scrollContainer.style.width = isReelMode ? '100vw' : '';
+    this.scrollContainer.style.maxWidth = isReelMode ? '100vw' : '';
     this.scrollContainer.style.margin = isReelMode ? '0' : '';
+    this.scrollContainer.style.marginLeft = isReelMode ? 'calc(50% - 50vw)' : '';
+    this.scrollContainer.style.marginRight = isReelMode ? 'calc(50% - 50vw)' : '';
+    this.scrollContainer.style.padding = isReelMode ? '0' : '';
   }
 
   private applyReelPostsLayout(isReelMode: boolean): void {
@@ -385,6 +403,13 @@ export class FeedContainer {
     this.postsContainer.style.gap = isReelMode ? '0' : '';
     this.postsContainer.style.padding = isReelMode ? '0' : '';
     this.postsContainer.style.margin = isReelMode ? '0' : '';
+
+    const wrappers = this.postsContainer.querySelectorAll<HTMLElement>('.video-post-wrapper');
+    for (const wrapper of wrappers) {
+      wrapper.style.width = isReelMode ? '100%' : '';
+      wrapper.style.maxWidth = isReelMode ? '100%' : '';
+      wrapper.style.margin = isReelMode ? '0' : '';
+    }
   }
 
   private applyReelHeaderStyles(isReelMode: boolean): void {

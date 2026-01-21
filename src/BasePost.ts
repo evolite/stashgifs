@@ -184,8 +184,9 @@ export abstract class BasePost {
     playerContainer.style.width = '100%';
     playerContainer.style.height = '100%';
     playerContainer.style.maxHeight = '100%';
+    playerContainer.style.maxWidth = '100%';
     playerContainer.style.aspectRatio = 'auto';
-    playerContainer.style.margin = '';
+    playerContainer.style.margin = '0';
 
     const aspectRatioValue = Number.parseFloat(playerContainer.dataset.aspectRatio ?? '');
     const orientationValue = playerContainer.dataset.orientation;
@@ -197,6 +198,11 @@ export abstract class BasePost {
     if (isPortrait && Number.isFinite(aspectRatioValue) && aspectRatioValue > 0) {
       playerContainer.style.width = `min(100%, ${aspectRatioValue * 100}vh)`;
       playerContainer.style.margin = '0 auto';
+      playerContainer.style.backgroundColor = THEME.colors.backgroundPrimary;
+      playerContainer.style.backgroundImage = 'linear-gradient(90deg, var(--color-accent-weak) 0%, transparent 22%, transparent 78%, var(--color-accent-weak) 100%)';
+    } else {
+      playerContainer.style.backgroundColor = '';
+      playerContainer.style.backgroundImage = '';
     }
 
     this.removeAspectClasses(playerContainer);

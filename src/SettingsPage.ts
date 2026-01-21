@@ -933,6 +933,61 @@ export class SettingsPage {
     versionText.style.fontSize = THEME.typography.sizeMeta;
     versionFooter.appendChild(versionText);
 
+    const feedbackText = document.createElement('div');
+    feedbackText.textContent = 'Suggestions or requests:';
+    feedbackText.style.color = THEME.colors.textMuted;
+    feedbackText.style.fontSize = THEME.typography.sizeMeta;
+    feedbackText.style.marginTop = '8px';
+    versionFooter.appendChild(feedbackText);
+
+    const feedbackLinks = document.createElement('div');
+    feedbackLinks.style.marginTop = '6px';
+    feedbackLinks.style.display = 'flex';
+    feedbackLinks.style.justifyContent = 'center';
+    feedbackLinks.style.gap = '12px';
+
+    const createFooterLink = (label: string, href: string): HTMLAnchorElement => {
+      const link = document.createElement('a');
+      link.textContent = label;
+      link.href = href;
+      link.target = '_blank';
+      link.rel = 'noreferrer';
+      link.style.color = THEME.colors.accentPrimary;
+      link.style.fontSize = THEME.typography.sizeMeta;
+      link.style.textDecoration = 'none';
+      link.style.transition = 'color 0.2s ease';
+
+      link.addEventListener('mouseenter', () => {
+        link.style.color = THEME.colors.textPrimary;
+      });
+      link.addEventListener('mouseleave', () => {
+        link.style.color = THEME.colors.accentPrimary;
+      });
+
+      return link;
+    };
+
+    feedbackLinks.appendChild(
+      createFooterLink(
+        '💬 Discourse',
+        'https://discourse.stashapp.cc/t/stashgifs-social-media-style-browsing-experience'
+      )
+    );
+    feedbackLinks.appendChild(
+      createFooterLink('💻 GitHub', 'https://github.com/evolite/stashgifs')
+    );
+    versionFooter.appendChild(feedbackLinks);
+
+    const supportLinks = document.createElement('div');
+    supportLinks.style.marginTop = '6px';
+    supportLinks.style.display = 'flex';
+    supportLinks.style.justifyContent = 'center';
+    supportLinks.style.gap = '12px';
+    supportLinks.appendChild(
+      createFooterLink('☕ Buy Me a Coffee', 'https://buymeacoffee.com/evolite')
+    );
+    versionFooter.appendChild(supportLinks);
+
     generalContent.appendChild(versionFooter);
 
     // Store references to inputs for saveSettings method
