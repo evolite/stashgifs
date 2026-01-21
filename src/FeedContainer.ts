@@ -779,9 +779,10 @@ export class FeedContainer {
         el.firstChild.remove();
       }
     }
-    
+
+    this.setHeaderOverlayState(false);
     this.unlockBodyScroll();
-    
+
     // Refresh cache in the background for next time the overlay opens
     // Don't await - let it run asynchronously
     if (!this.isPreloading) {
@@ -789,10 +790,29 @@ export class FeedContainer {
     }
   }
 
+  private setHeaderOverlayState(isOpen: boolean): void {
+    if (!this.headerBar) {
+      return;
+    }
+
+    if (isOpen) {
+      if (this.headerBar.dataset.overlayZIndex === undefined) {
+        this.headerBar.dataset.overlayZIndex = this.headerBar.style.zIndex;
+      }
+      this.headerBar.style.zIndex = '1100';
+      return;
+    }
+
+    const previousZIndex = this.headerBar.dataset.overlayZIndex ?? '';
+    this.headerBar.style.zIndex = previousZIndex;
+    delete this.headerBar.dataset.overlayZIndex;
+  }
+
   /**
    * Show random mode notice in suggestions panel
    */
   private showRandomModeNotice(suggestions: HTMLElement): void {
+    this.setHeaderOverlayState(true);
     suggestions.style.display = 'flex';
     this.lockBodyScroll();
     while (suggestions.firstChild) {
@@ -2545,14 +2565,15 @@ export class FeedContainer {
       while (panel.firstChild) {
         panel.firstChild.remove();
       }
-      
+
       if (!ensureLatest()) {
         return false;
       }
-      
+
+      this.setHeaderOverlayState(true);
       panel.style.display = 'flex';
       this.lockBodyScroll();
-      
+
       return ensureLatest();
     };
 

@@ -167,8 +167,9 @@ export abstract class BasePost {
     this.container.style.borderRadius = '0';
     this.container.style.backgroundColor = 'transparent';
     this.container.style.width = '100%';
-    this.container.style.height = '100vh';
-    this.container.style.minHeight = '100vh';
+    const reelHeight = CSS.supports('height', '100svh') ? '100svh' : '100vh';
+    this.container.style.height = reelHeight;
+    this.container.style.minHeight = reelHeight;
     this.container.style.display = 'flex';
     this.container.style.flexDirection = 'column';
     this.container.style.justifyContent = 'center';
