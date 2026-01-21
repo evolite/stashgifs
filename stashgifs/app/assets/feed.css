@@ -1374,7 +1374,7 @@
   padding: 4px 8px;
   border-radius: 999px;
   border: 1px solid var(--color-separator);
-  background: rgba(33, 150, 243, 0.6);
+  background: #1565c0;
   color: #ffffff;
   font-size: 12px;
   pointer-events: none;
