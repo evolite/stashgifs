@@ -351,24 +351,40 @@ export class FeedContainer {
   }
 
   private applyReelContainerStyles(isReelMode: boolean): void {
-    if (this.container) {
-      this.container.style.width = isReelMode ? '100%' : '';
-      this.container.style.maxWidth = isReelMode ? '100%' : '';
-      this.container.style.margin = isReelMode ? '0' : '';
+    this.applyReelContainerLayout(isReelMode);
+    this.applyReelScrollContainerLayout(isReelMode);
+    this.applyReelPostsLayout(isReelMode);
+  }
+
+  private applyReelContainerLayout(isReelMode: boolean): void {
+    if (!this.container) {
+      return;
     }
 
-    if (this.scrollContainer) {
-      this.scrollContainer.style.maxWidth = isReelMode ? '100%' : '';
-      this.scrollContainer.style.margin = isReelMode ? '0' : '';
+    this.container.style.width = isReelMode ? '100%' : '';
+    this.container.style.maxWidth = isReelMode ? '100%' : '';
+    this.container.style.margin = isReelMode ? '0' : '';
+  }
+
+  private applyReelScrollContainerLayout(isReelMode: boolean): void {
+    if (!this.scrollContainer) {
+      return;
     }
 
-    if (this.postsContainer) {
-      this.postsContainer.style.display = isReelMode ? 'flex' : '';
-      this.postsContainer.style.flexDirection = isReelMode ? 'column' : '';
-      this.postsContainer.style.gap = isReelMode ? '0' : '';
-      this.postsContainer.style.padding = isReelMode ? '0' : '';
-      this.postsContainer.style.margin = isReelMode ? '0' : '';
+    this.scrollContainer.style.maxWidth = isReelMode ? '100%' : '';
+    this.scrollContainer.style.margin = isReelMode ? '0' : '';
+  }
+
+  private applyReelPostsLayout(isReelMode: boolean): void {
+    if (!this.postsContainer) {
+      return;
     }
+
+    this.postsContainer.style.display = isReelMode ? 'flex' : '';
+    this.postsContainer.style.flexDirection = isReelMode ? 'column' : '';
+    this.postsContainer.style.gap = isReelMode ? '0' : '';
+    this.postsContainer.style.padding = isReelMode ? '0' : '';
+    this.postsContainer.style.margin = isReelMode ? '0' : '';
   }
 
   private applyReelHeaderStyles(isReelMode: boolean): void {
@@ -796,9 +812,7 @@ export class FeedContainer {
     }
 
     if (isOpen) {
-      if (this.headerBar.dataset.overlayZIndex === undefined) {
-        this.headerBar.dataset.overlayZIndex = this.headerBar.style.zIndex;
-      }
+      this.headerBar.dataset.overlayZIndex ??= this.headerBar.style.zIndex;
       this.headerBar.style.zIndex = '1100';
       return;
     }

@@ -22,3 +22,6 @@ Thumbs.db
 # Build artifacts
 stashgifs.zip
 stashgifs.zip.sha256
+
+# Local tooling
+opencode.json
