@@ -456,8 +456,8 @@ export class FeedContainer {
     header.style.width = '100%';
     header.style.maxWidth = '100%';
     header.style.zIndex = '900';
-    header.style.background = 'rgba(0, 0, 0, 0.3)';
-    header.style.backdropFilter = 'blur(12px)';
+    header.style.background = 'transparent';
+    header.style.backdropFilter = '';
     header.style.borderRadius = '0';
     header.style.padding = '8px 16px';
     header.style.display = 'flex';
@@ -2078,10 +2078,7 @@ export class FeedContainer {
     randomLeftIconSpan.innerHTML = RANDOM_SVG;
     randomLeftIconSpan.querySelector('svg')?.setAttribute('width', '16');
     randomLeftIconSpan.querySelector('svg')?.setAttribute('height', '16');
-    const randomLeftText = document.createElement('span');
-    randomLeftText.textContent = 'Discovering randomly';
     randomLeftIcon.appendChild(randomLeftIconSpan);
-    randomLeftIcon.appendChild(randomLeftText);
     
     return randomLeftIcon;
   }
@@ -2417,10 +2414,6 @@ export class FeedContainer {
       
       setShuffleToggleVisualState();
       
-      if (this.shuffleMode > 0 && this.headerBar) {
-        this.headerBar.style.transform = 'translateY(0)';
-        this.headerBar.style.opacity = '1';
-      }
       
       this.clearPosts();
       
@@ -2554,11 +2547,7 @@ export class FeedContainer {
       // Hide tag header since we're showing it in the search bar
       tagHeader.style.display = 'none';
       // Ensure animated placeholder hides when we have any value or focus
-      if (this.shuffleMode > 0) {
-        placeholderWrapper.style.display = 'none';
-      } else {
-        updatePlaceholderVisibility();
-      }
+      updatePlaceholderVisibility();
       // Disable search input in random mode
       const disabled = this.shuffleMode > 0;
       // Use readOnly so clicks can disable random mode
@@ -2567,12 +2556,12 @@ export class FeedContainer {
       }
       // Keep opacity at 1 in both modes for consistent appearance
       queryInput.style.opacity = '1';
-      // Adjust left padding to accommodate left helper when random is active
-      queryInput.style.paddingLeft = this.shuffleMode > 0 ? '180px' : '14px';
+      // Keep padding consistent across modes
+      queryInput.style.paddingLeft = '14px';
       // Hide deprecated right pill (no longer used)
       shuffleIndicator.style.display = 'none';
-      // Show left icon when random is active
-      randomLeftIcon.style.display = this.shuffleMode > 0 ? 'inline-flex' : 'none';
+      // Hide left indicator in random mode
+      randomLeftIcon.style.display = 'none';
     };
 
     const apply = async () => {
@@ -2842,8 +2831,8 @@ export class FeedContainer {
     queryInput.addEventListener('focus', handleFocus);
     
     queryInput.addEventListener('blur', () => {
-      queryInput.style.background = THEME.colors.surface;
-      queryInput.style.borderColor = THEME.colors.border;
+      updateSearchBarDisplay();
+      this.applyReelHeaderStyles(this.isReelModeEnabled());
     });
     
     queryInput.addEventListener('input', () => {
@@ -6241,27 +6230,7 @@ export class FeedContainer {
       return true;
     }
 
-    if (this.shuffleMode > 0) {
-      this.ensureHeaderVisibleInRandomMode();
-      return true;
-    }
-
     return false;
-  }
-
-  /**
-   * Ensure header is visible in random discovery mode
-   */
-  private ensureHeaderVisibleInRandomMode(): void {
-    if (!this.headerBar) {
-      return;
-    }
-    
-    const currentTransform = this.headerBar.style.transform;
-    if (currentTransform && currentTransform !== 'translateY(0)' && currentTransform !== '') {
-      this.headerBar.style.transform = 'translateY(0)';
-    }
-    this.headerBar.style.opacity = '1';
   }
 
   /**
