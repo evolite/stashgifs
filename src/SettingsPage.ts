@@ -910,6 +910,32 @@ export class SettingsPage {
     scrollingSectionTitle.style.fontWeight = THEME.typography.weightTitle;
     scrollingSection.appendChild(scrollingSectionTitle);
 
+    const reelModeContainer = document.createElement('div');
+    reelModeContainer.style.display = 'flex';
+    reelModeContainer.style.justifyContent = 'space-between';
+    reelModeContainer.style.alignItems = 'center';
+    reelModeContainer.style.marginBottom = '16px';
+
+    const reelModeLabel = document.createElement('span');
+    reelModeLabel.textContent = 'Reel mode (full-screen)';
+    reelModeLabel.style.color = THEME.colors.textSecondary;
+    reelModeLabel.style.fontSize = THEME.typography.sizeBody;
+    reelModeContainer.appendChild(reelModeLabel);
+
+    const { container: reelModeToggleContainer, input: reelModeToggle } = this.createToggleSwitch(
+      this.settings.reelMode === true,
+      (checked) => {
+        if (checked) {
+          snapToCardsToggle.checked = true;
+          snapToCardsToggle.dispatchEvent(new Event('change'));
+        }
+        this.saveSettings();
+      }
+    );
+    reelModeContainer.appendChild(reelModeToggleContainer);
+
+    scrollingSection.appendChild(reelModeContainer);
+
     // Snap to cards toggle
     const snapToCardsContainer = document.createElement('div');
     snapToCardsContainer.style.display = 'flex';
@@ -956,6 +982,7 @@ export class SettingsPage {
     (this as any).shortFormHDToggle = shortFormHDToggle;
     (this as any).shortFormNonHDToggle = shortFormNonHDToggle;
     (this as any).shortFormOnlyToggle = shortFormOnlyToggle;
+    (this as any).reelModeToggle = reelModeToggle;
     (this as any).snapToCardsToggle = snapToCardsToggle;
 
     this.container.appendChild(modal);
@@ -993,6 +1020,7 @@ export class SettingsPage {
     const shortFormHDToggle = (this as any).shortFormHDToggle as HTMLInputElement | undefined;
     const shortFormNonHDToggle = (this as any).shortFormNonHDToggle as HTMLInputElement | undefined;
     const shortFormOnlyToggle = (this as any).shortFormOnlyToggle as HTMLInputElement | undefined;
+    const reelModeToggle = (this as any).reelModeToggle as HTMLInputElement | undefined;
     const snapToCardsToggle = (this as any).snapToCardsToggle as HTMLInputElement | undefined;
     const themeBackgroundInput = (this as any).themeBackgroundInput as HTMLInputElement | undefined;
     const themePrimaryInput = (this as any).themePrimaryInput as HTMLInputElement | undefined;
@@ -1000,7 +1028,7 @@ export class SettingsPage {
     const themeAccentInput = (this as any).themeAccentInput as HTMLInputElement | undefined;
 
     if (!fileTypesInput || !maxDurationInput || !includeImagesToggle || !imagesOnlyToggle || 
-        !shortFormHDToggle || !shortFormNonHDToggle || !shortFormOnlyToggle || !snapToCardsToggle ||
+        !shortFormHDToggle || !shortFormNonHDToggle || !shortFormOnlyToggle || !reelModeToggle || !snapToCardsToggle ||
         !themeBackgroundInput || !themePrimaryInput || !themeSecondaryInput || !themeAccentInput) {
       return; // Settings not fully initialized yet
     }
@@ -1022,6 +1050,7 @@ export class SettingsPage {
       shortFormInNonHDMode: shortFormNonHDToggle.checked,
       shortFormMaxDuration: validMaxDuration,
       shortFormOnly: shortFormOnlyToggle.checked,
+      reelMode: reelModeToggle.checked,
       snapToCards: snapToCardsToggle.checked,
       themeBackground: themeBackgroundInput.value,
       themePrimary: themePrimaryInput.value,

@@ -36,6 +36,7 @@ interface VideoPostOptions {
   useShuffleMode?: boolean;
   onCancelRequests?: () => void;
   ratingSystemConfig?: { type?: string; starPrecision?: string } | null; // Rating system configuration
+  reelMode?: boolean;
 }
 
 export class VideoPost extends BasePost {
@@ -119,6 +120,7 @@ export class VideoPost extends BasePost {
     this.getGlobalMuteState = options.getGlobalMuteState;
     this.oCount = this.data.marker.scene.o_counter || 0;
     this.ratingSystemConfig = options.ratingSystemConfig;
+    this.isReelMode = options.reelMode === true;
     this.ratingValue = this.convertRating100ToStars(this.data.marker.scene.rating100);
     this.hasRating = typeof this.data.marker.scene.rating100 === 'number' && !Number.isNaN(this.data.marker.scene.rating100);
     
@@ -202,7 +204,7 @@ export class VideoPost extends BasePost {
    * Render the complete video post structure
    */
   private render(): void {
-    const { playerContainer, footer } = this.renderBasePost({
+    const { header, playerContainer, footer } = this.renderBasePost({
       className: 'video-post',
       postId: this.data.marker.id,
       createHeader: () => this.createHeader(),
@@ -211,6 +213,10 @@ export class VideoPost extends BasePost {
     });
     this.playerContainer = playerContainer;
     this.footer = footer;
+
+    if (this.isReelMode) {
+      this.applyReelModeLayout({ header, playerContainer, footer });
+    }
   }
 
 
@@ -232,6 +238,11 @@ export class VideoPost extends BasePost {
         aspectRatio = calculateAspectRatio(file.width, file.height);
         aspectRatioClass = getAspectRatioClass(aspectRatio);
       }
+    }
+
+    if (aspectRatio && Number.isFinite(aspectRatio)) {
+      container.dataset.aspectRatio = aspectRatio.toString();
+      container.dataset.orientation = aspectRatio < 0.95 ? 'portrait' : aspectRatio > 1.05 ? 'landscape' : 'square';
     }
     
     // Use inline aspectRatio style for better browser compatibility (Chrome/Safari)

@@ -40,6 +40,7 @@ const DEFAULT_SETTINGS: FeedSettings = {
   shortFormMaxDuration: 120, // Maximum duration in seconds for short-form content
   shortFormOnly: false, // When true, only load short-form content and skip regular markers
   snapToCards: false, // When true, scroll/swipe snaps to center next/previous card
+  reelMode: false, // When true, use full-screen reel layout
   themeBackground: THEME_DEFAULTS.backgroundPrimary,
   themePrimary: THEME_DEFAULTS.surface,
   themeSecondary: THEME_DEFAULTS.backgroundSecondary,
@@ -170,6 +171,7 @@ export class FeedContainer {
     this.createHeaderBar();
     
     this.initializePostsContainer();
+    this.applyReelModeLayout();
     this.initializeManagers();
 
     // Setup scroll handler
@@ -329,6 +331,134 @@ export class FeedContainer {
 
     if (this.scrollContainer) {
       this.scrollContainer.style.backgroundColor = THEME.colors.backgroundPrimary;
+    }
+  }
+
+  private isReelModeEnabled(): boolean {
+    return this.settings.reelMode === true;
+  }
+
+  private applyReelModeLayout(): void {
+    const isReelMode = this.isReelModeEnabled();
+    const root = document.documentElement;
+    root.style.scrollSnapType = isReelMode ? 'y mandatory' : '';
+
+    if (this.container) {
+      this.container.style.width = isReelMode ? '100%' : '';
+      this.container.style.maxWidth = isReelMode ? '100%' : '';
+      this.container.style.margin = isReelMode ? '0' : '';
+    }
+
+    if (this.scrollContainer) {
+      this.scrollContainer.style.maxWidth = isReelMode ? '100%' : '';
+      this.scrollContainer.style.margin = isReelMode ? '0' : '';
+    }
+
+    if (this.postsContainer) {
+      this.postsContainer.style.display = isReelMode ? 'flex' : '';
+      this.postsContainer.style.flexDirection = isReelMode ? 'column' : '';
+      this.postsContainer.style.gap = isReelMode ? '0' : '';
+      this.postsContainer.style.padding = isReelMode ? '0' : '';
+      this.postsContainer.style.margin = isReelMode ? '0' : '';
+    }
+
+    const header = this.headerBar || this.scrollContainer?.querySelector('.feed-header-bar');
+    if (header instanceof HTMLElement) {
+      const headerInner = header.querySelector('.feed-header-inner') as HTMLElement | null;
+      const inputWrapper = header.querySelector('.feed-input-wrapper') as HTMLElement | null;
+      const queryInput = header.querySelector('.feed-filters__input') as HTMLInputElement | null;
+      const brandContainer = header.querySelector('.feed-brand-container') as HTMLElement | null;
+      const settingsButton = header.querySelector('[aria-label="Open settings"]') as HTMLElement | null;
+
+      if (isReelMode) {
+        header.style.position = 'fixed';
+        header.style.left = '0';
+        header.style.right = '0';
+        header.style.width = '100%';
+        header.style.maxWidth = '100%';
+        header.style.zIndex = '900';
+        header.style.background = 'rgba(0, 0, 0, 0.3)';
+        header.style.backdropFilter = 'blur(12px)';
+        header.style.borderRadius = '0';
+        header.style.padding = '8px 16px';
+        header.style.display = 'flex';
+        header.style.justifyContent = 'center';
+        header.style.alignItems = 'center';
+
+        if (headerInner) {
+          headerInner.style.maxWidth = `${this.settings.cardMaxWidth}px`;
+          headerInner.style.width = '100%';
+          headerInner.style.margin = '0 auto';
+        }
+
+        if (inputWrapper) {
+          inputWrapper.style.background = 'transparent';
+        }
+
+        if (queryInput) {
+          queryInput.style.background = 'rgba(0, 0, 0, 0.35)';
+          queryInput.style.border = '1px solid rgba(255, 255, 255, 0.2)';
+          queryInput.style.color = THEME.colors.textPrimary;
+          queryInput.style.backdropFilter = 'blur(8px)';
+        }
+
+        if (brandContainer) {
+          brandContainer.style.background = 'rgba(0, 0, 0, 0.35)';
+          brandContainer.style.border = '1px solid rgba(255, 255, 255, 0.2)';
+        }
+
+        if (settingsButton) {
+          settingsButton.style.background = 'rgba(0, 0, 0, 0.35)';
+          settingsButton.style.border = '1px solid rgba(255, 255, 255, 0.2)';
+          settingsButton.style.color = THEME.colors.textPrimary;
+        }
+      } else {
+        header.style.position = '';
+        header.style.left = '';
+        header.style.right = '';
+        header.style.width = '';
+        header.style.maxWidth = `${this.settings.cardMaxWidth + 24}px`;
+        header.style.zIndex = '';
+        header.style.background = '';
+        header.style.backdropFilter = '';
+        header.style.borderRadius = '';
+        header.style.padding = '';
+        header.style.display = '';
+        header.style.justifyContent = '';
+        header.style.alignItems = '';
+
+        if (headerInner) {
+          headerInner.style.maxWidth = `${this.settings.cardMaxWidth}px`;
+          headerInner.style.width = '';
+          headerInner.style.margin = '';
+        }
+
+        if (inputWrapper) {
+          inputWrapper.style.background = '';
+        }
+
+        if (queryInput) {
+          queryInput.style.background = '';
+          queryInput.style.border = '';
+          queryInput.style.color = '';
+          queryInput.style.backdropFilter = '';
+        }
+
+        if (brandContainer) {
+          brandContainer.style.background = '';
+          brandContainer.style.border = `1px solid ${THEME.colors.border}`;
+        }
+
+        if (settingsButton) {
+          settingsButton.style.background = THEME.colors.backgroundSecondary;
+          settingsButton.style.border = `1px solid ${THEME.colors.border}`;
+          settingsButton.style.color = THEME.colors.iconInactive;
+        }
+      }
+    }
+
+    for (const post of this.posts.values()) {
+      post.setReelMode?.(isReelMode);
     }
   }
 
@@ -1969,9 +2099,13 @@ export class FeedContainer {
         // Save updated settings to localStorage
         this.saveSettingsToStorage(updatedSettings);
         this.applyThemeSettings(updatedSettings);
+        const reelModeChanged = newSettings.reelMode !== undefined;
         // Update card snapping if setting changed
-        if (newSettings.snapToCards !== undefined) {
+        if (newSettings.snapToCards !== undefined || reelModeChanged) {
           this.setupCardSnapping();
+        }
+        if (reelModeChanged) {
+          this.applyReelModeLayout();
         }
         // Reload feed if images or short-form settings changed
         if (
@@ -1981,7 +2115,8 @@ export class FeedContainer {
           newSettings.shortFormInHDMode !== undefined ||
           newSettings.shortFormInNonHDMode !== undefined ||
           newSettings.shortFormMaxDuration !== undefined ||
-          newSettings.shortFormOnly !== undefined
+          newSettings.shortFormOnly !== undefined ||
+          reelModeChanged
         ) {
           this.loadVideos(this.currentFilters, false, undefined, true).catch(e => {
             console.error('Failed to reload feed after settings change', e);
@@ -3273,6 +3408,7 @@ export class FeedContainer {
         onMuteToggle: (isMuted: boolean) => this.setGlobalMuteState(isMuted),
         getGlobalMuteState: () => this.getGlobalMuteState(),
         ratingSystemConfig: this.ratingSystemConfig,
+        reelMode: this.settings.reelMode === true,
       }
     );
     
@@ -3412,7 +3548,8 @@ export class FeedContainer {
         onPerformerChipClick: (performerId, performerName) => { void this.handlePerformerChipClick(performerId, performerName); },
         onTagChipClick: (tagId, tagName) => { void this.handleTagChipClick(tagId, tagName); },
         onLoadFullVideo: undefined,
-        ratingSystemConfig: this.ratingSystemConfig
+        ratingSystemConfig: this.ratingSystemConfig,
+        reelMode: this.settings.reelMode === true
       }
     );
     
@@ -4997,7 +5134,8 @@ export class FeedContainer {
         onCancelRequests: () => this.cancelAllPendingRequests(),
         onMuteToggle: (isMuted: boolean) => this.setGlobalMuteState(isMuted),
         getGlobalMuteState: () => this.getGlobalMuteState(),
-        ratingSystemConfig: this.ratingSystemConfig
+        ratingSystemConfig: this.ratingSystemConfig,
+        reelMode: this.settings.reelMode === true
       }
     );
     
@@ -6122,8 +6260,9 @@ export class FeedContainer {
     // Clean up existing handlers
     this.cleanupCardSnapping();
 
+    const shouldSnap = this.settings.snapToCards === true || this.settings.reelMode === true;
     // Only setup if snapToCards is enabled
-    if (!this.settings.snapToCards) {
+    if (!shouldSnap) {
       return;
     }
 
@@ -6711,6 +6850,43 @@ export class FeedContainer {
       footer.appendChild(btn);
     }
     card.appendChild(footer);
+
+    if (this.isReelModeEnabled()) {
+      skeleton.style.height = '100vh';
+      skeleton.style.minHeight = '100vh';
+      skeleton.style.scrollSnapAlign = 'start';
+      skeleton.style.scrollSnapStop = 'always';
+
+      card.style.border = 'none';
+      card.style.borderRadius = '0';
+      card.style.backgroundColor = 'transparent';
+      card.style.height = '100%';
+      card.style.display = 'flex';
+      card.style.flexDirection = 'column';
+      card.style.position = 'relative';
+
+      header.style.position = 'absolute';
+      header.style.left = '16px';
+      header.style.right = '120px';
+      header.style.bottom = '88px';
+      header.style.top = 'auto';
+      header.style.padding = '10px 14px';
+      header.style.borderRadius = THEME.radius.button;
+      header.style.background = 'rgba(0, 0, 0, 0.35)';
+
+      player.style.height = '100%';
+      player.style.aspectRatio = 'auto';
+      player.classList.remove('aspect-16-9');
+
+      footer.style.position = 'absolute';
+      footer.style.right = '16px';
+      footer.style.bottom = '88px';
+      footer.style.top = 'auto';
+      footer.style.transform = 'none';
+      footer.style.padding = '0';
+      footer.style.flexDirection = 'column';
+      footer.style.alignItems = 'center';
+    }
     
     skeleton.appendChild(card);
     return skeleton;
@@ -6776,7 +6952,14 @@ export class FeedContainer {
    * Update settings
    */
   updateSettings(newSettings: Partial<FeedSettings>): void {
+    const reelModeChanged = newSettings.reelMode !== undefined;
     this.settings = { ...this.settings, ...newSettings };
+    if (reelModeChanged || newSettings.snapToCards !== undefined) {
+      this.setupCardSnapping();
+    }
+    if (reelModeChanged) {
+      this.applyReelModeLayout();
+    }
     // Recreate visibility manager with new settings
     this.visibilityManager.cleanup();
     this.visibilityManager = new VisibilityManager({

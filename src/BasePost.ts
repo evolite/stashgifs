@@ -62,6 +62,7 @@ export abstract class BasePost {
   protected isTogglingFavorite: boolean = false;
   protected oCountButton?: HTMLElement;
   protected oCount: number = 0;
+  protected isReelMode: boolean = false;
   // Performer overlay properties
   private performerOverlay?: HTMLElement;
   private performerOverlayTimeout?: number;
@@ -132,6 +133,133 @@ export abstract class BasePost {
     return { header, playerContainer, footer };
   }
 
+  protected applyReelModeLayout(elements: {
+    header: HTMLElement;
+    playerContainer: HTMLElement;
+    footer: HTMLElement;
+  }): void {
+    this.container.style.border = 'none';
+    this.container.style.borderRadius = '0';
+    this.container.style.backgroundColor = 'transparent';
+    this.container.style.width = '100%';
+    this.container.style.height = '100vh';
+    this.container.style.minHeight = '100vh';
+    this.container.style.display = 'flex';
+    this.container.style.flexDirection = 'column';
+    this.container.style.justifyContent = 'center';
+    this.container.style.overflow = 'hidden';
+    this.container.style.scrollSnapAlign = 'start';
+    this.container.style.scrollSnapStop = 'always';
+    this.container.dataset.reelMode = 'true';
+
+    elements.playerContainer.style.flex = '1 1 auto';
+    elements.playerContainer.style.width = '100%';
+    elements.playerContainer.style.height = '100%';
+    elements.playerContainer.style.maxHeight = '100%';
+    elements.playerContainer.style.aspectRatio = 'auto';
+    elements.playerContainer.style.margin = '';
+
+    const aspectRatioValue = Number.parseFloat(elements.playerContainer.dataset.aspectRatio ?? '');
+    const orientation = elements.playerContainer.dataset.orientation;
+    const isPortrait = orientation === 'portrait' || (!Number.isNaN(aspectRatioValue) && aspectRatioValue < 0.95);
+
+    if (isPortrait && Number.isFinite(aspectRatioValue) && aspectRatioValue > 0) {
+      elements.playerContainer.style.width = `min(100%, ${aspectRatioValue * 100}vh)`;
+      elements.playerContainer.style.margin = '0 auto';
+    }
+
+    for (const className of Array.from(elements.playerContainer.classList)) {
+      if (className.startsWith('aspect-')) {
+        elements.playerContainer.classList.remove(className);
+      }
+    }
+
+    const mediaElements = elements.playerContainer.querySelectorAll<HTMLElement>('video, img');
+    for (const mediaElement of mediaElements) {
+      mediaElement.style.objectFit = isPortrait ? 'contain' : 'cover';
+    }
+
+    const isMobile = isMobileDevice();
+    const bottomOffset = isMobile ? 16 : 88;
+    const headerRightOffset = isMobile ? 96 : 120;
+    const headerPadding = isMobile ? '8px 12px' : '10px 14px';
+
+    elements.header.style.position = 'absolute';
+    elements.header.style.left = '16px';
+    elements.header.style.right = `${headerRightOffset}px`;
+    elements.header.style.bottom = `${bottomOffset}px`;
+    elements.header.style.top = 'auto';
+    elements.header.style.zIndex = '6';
+    elements.header.style.padding = headerPadding;
+    elements.header.style.borderRadius = THEME.radius.button;
+    elements.header.style.background = 'rgba(0, 0, 0, 0.35)';
+    elements.header.style.backdropFilter = 'blur(6px)';
+    elements.header.style.pointerEvents = 'auto';
+    elements.header.style.fontSize = isMobile ? '' : '15px';
+    elements.header.style.width = 'fit-content';
+    elements.header.style.maxWidth = isMobile ? 'calc(100% - 120px)' : '55%';
+
+    elements.footer.style.position = 'absolute';
+    elements.footer.style.right = '16px';
+    elements.footer.style.bottom = `${bottomOffset}px`;
+    elements.footer.style.top = 'auto';
+    elements.footer.style.transform = 'none';
+    elements.footer.style.padding = '0';
+    elements.footer.style.background = 'transparent';
+    elements.footer.style.pointerEvents = 'auto';
+
+    const info = elements.footer.querySelector<HTMLElement>('.video-post__info');
+    const row = elements.footer.querySelector<HTMLElement>('.video-post__row');
+    const buttonGroup = elements.footer.querySelector<HTMLElement>('.video-post__button-group');
+
+    const stackGap = isMobile ? '8px' : '6px';
+
+    if (info) {
+      info.style.flexDirection = 'column';
+      info.style.alignItems = 'center';
+      info.style.justifyContent = 'center';
+      info.style.gap = stackGap;
+    }
+
+    if (row) {
+      row.style.flexDirection = 'column';
+      row.style.alignItems = 'center';
+      row.style.justifyContent = 'center';
+      row.style.gap = stackGap;
+    }
+
+    if (buttonGroup) {
+      buttonGroup.style.flexDirection = 'column';
+      buttonGroup.style.alignItems = 'center';
+      buttonGroup.style.gap = isMobile ? '10px' : '8px';
+
+      const buttonSize = isMobile ? '56px' : '64px';
+      const buttons = Array.from(buttonGroup.querySelectorAll<HTMLElement>('button, a'));
+      for (const button of buttons) {
+        button.style.width = buttonSize;
+        button.style.height = buttonSize;
+        button.style.minWidth = buttonSize;
+        button.style.minHeight = buttonSize;
+        if (!isMobile) {
+          button.style.fontSize = '15px';
+        }
+      }
+    }
+  }
+
+  public setReelMode(isReelMode: boolean): void {
+    this.isReelMode = isReelMode;
+    if (!isReelMode) {
+      return;
+    }
+    const header = this.container.querySelector('.video-post__header') as HTMLElement | null;
+    const playerContainer = this.container.querySelector('.video-post__player') as HTMLElement | null;
+    const footer = this.container.querySelector('.video-post__footer') as HTMLElement | null;
+    if (header && playerContainer && footer) {
+      this.applyReelModeLayout({ header, playerContainer, footer });
+    }
+  }
+
   protected buildFooterContainer(): {
     footer: HTMLElement;
     info: HTMLElement;
@@ -163,6 +291,7 @@ export abstract class BasePost {
     row.style.zIndex = '10';
 
     const buttonGroup = document.createElement('div');
+    buttonGroup.className = 'video-post__button-group';
     buttonGroup.style.display = 'flex';
     buttonGroup.style.alignItems = 'center';
     buttonGroup.style.gap = '4px';

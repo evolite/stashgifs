@@ -233,6 +233,8 @@ export class NativeVideoPlayer {
     
     // Set object-fit for proper video display
     this.videoElement.style.objectFit = 'cover';
+    this.videoElement.style.width = '100%';
+    this.videoElement.style.height = '100%';
     
     // On mobile, set video element to opacity 0 initially to prevent animated previews
     // Video will fade in smoothly when playing event fires

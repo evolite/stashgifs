@@ -109,6 +109,7 @@ export interface FeedSettings {
   shortFormMaxDuration?: number; // Maximum duration in seconds for short-form content, default: 120
   shortFormOnly?: boolean; // When true, only load short-form content and skip regular markers
   snapToCards?: boolean; // When true, scroll/swipe snaps to center next/previous card
+  reelMode?: boolean; // When true, use full-screen reel layout
   themeBackground?: string; // Background color for app + search overlay
   themePrimary?: string; // Primary surface color for cards
   themeSecondary?: string; // Secondary surface color for inputs/panels

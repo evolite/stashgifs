@@ -825,13 +825,16 @@ export function getImageUrlForDisplay(image: Image, treatMp4AsVideo: boolean): s
  * Configures loop, muted, autoplay, playsInline, and mobile attributes
  * @param videoElement The video element to configure
  */
-export function setupLoopingVideoElement(videoElement: HTMLVideoElement): void {
+export function setupLoopingVideoElement(
+  videoElement: HTMLVideoElement,
+  options?: { objectFit?: 'cover' | 'contain' }
+): void {
   // Basic looping video properties
   videoElement.loop = true;
   videoElement.muted = true;
   videoElement.autoplay = true;
   videoElement.playsInline = true;
-  videoElement.style.objectFit = 'cover';
+  videoElement.style.objectFit = options?.objectFit ?? 'cover';
   videoElement.style.width = '100%';
   videoElement.style.height = '100%';
   videoElement.style.display = 'block';

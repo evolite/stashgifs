@@ -32,6 +32,7 @@ interface ImageVideoPostOptions {
   onTagChipClick?: (tagId: number, tagName: string) => void;
   onCancelRequests?: () => void;
   ratingSystemConfig?: { type?: string; starPrecision?: string } | null;
+  reelMode?: boolean;
 }
 
 export class ImageVideoPost extends BasePost {
@@ -101,6 +102,7 @@ export class ImageVideoPost extends BasePost {
     this.onMuteToggle = options?.onMuteToggle;
     this.getGlobalMuteState = options?.getGlobalMuteState;
     this.ratingSystemConfig = options?.ratingSystemConfig;
+    this.isReelMode = options?.reelMode === true;
     
     // Initialize rating from image data
     if (this.data.image.rating100 !== undefined) {
@@ -129,7 +131,7 @@ export class ImageVideoPost extends BasePost {
    * Render the complete image video post structure
    */
   private render(): void {
-    const { playerContainer, footer } = this.renderBasePost({
+    const { header, playerContainer, footer } = this.renderBasePost({
       className: 'video-post',
       postId: this.data.image.id,
       createHeader: () => this.createHeader(),
@@ -138,6 +140,10 @@ export class ImageVideoPost extends BasePost {
     });
     this.playerContainer = playerContainer;
     this.footer = footer;
+
+    if (this.isReelMode) {
+      this.applyReelModeLayout({ header, playerContainer, footer });
+    }
   }
 
   /**
@@ -171,6 +177,11 @@ export class ImageVideoPost extends BasePost {
       if (aspectRatio !== undefined) {
         aspectRatioClass = getAspectRatioClass(aspectRatio);
       }
+    }
+
+    if (aspectRatio && Number.isFinite(aspectRatio)) {
+      container.dataset.aspectRatio = aspectRatio.toString();
+      container.dataset.orientation = aspectRatio < 0.95 ? 'portrait' : aspectRatio > 1.05 ? 'landscape' : 'square';
     }
     
     // Use inline aspectRatio style for better browser compatibility
