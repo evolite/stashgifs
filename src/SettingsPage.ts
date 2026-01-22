@@ -648,6 +648,41 @@ export class SettingsPage {
     reelModeContainer.appendChild(reelModeToggleContainer);
 
     layoutSection.appendChild(reelModeContainer);
+
+    const excludedTagsContainer = document.createElement('div');
+    excludedTagsContainer.style.marginBottom = '16px';
+
+    const excludedTagsLabel = document.createElement('label');
+    excludedTagsLabel.textContent = 'Exclude tags (comma-separated)';
+    excludedTagsLabel.style.display = 'block';
+    excludedTagsLabel.style.color = THEME.colors.textSecondary;
+    excludedTagsLabel.style.fontSize = THEME.typography.sizeBody;
+    excludedTagsLabel.style.marginBottom = '8px';
+    excludedTagsLabel.style.fontWeight = THEME.typography.weightBodyStrong;
+    excludedTagsContainer.appendChild(excludedTagsLabel);
+
+    const excludedTagsInput = document.createElement('input');
+    excludedTagsInput.type = 'text';
+    excludedTagsInput.value = (this.settings.excludedTagNames || []).join(', ');
+    excludedTagsInput.style.width = '100%';
+    excludedTagsInput.style.padding = '12px';
+    excludedTagsInput.style.borderRadius = THEME.radius.button;
+    excludedTagsInput.style.border = `1px solid ${THEME.colors.border}`;
+    excludedTagsInput.style.backgroundColor = THEME.colors.surface;
+    excludedTagsInput.style.color = THEME.colors.textPrimary;
+    excludedTagsInput.style.fontSize = THEME.typography.sizeBody;
+    excludedTagsInput.style.boxSizing = 'border-box';
+    excludedTagsInput.placeholder = 'VR, POV';
+    excludedTagsContainer.appendChild(excludedTagsInput);
+
+    excludedTagsInput.addEventListener('input', () => {
+      clearTimeout((excludedTagsInput as any).saveTimeout);
+      (excludedTagsInput as any).saveTimeout = setTimeout(() => {
+        this.saveSettings();
+      }, 500);
+    });
+
+    layoutSection.appendChild(excludedTagsContainer);
     generalContent.appendChild(layoutSection);
 
     // Image Feed Settings Section
@@ -727,50 +762,13 @@ export class SettingsPage {
     fileTypesInput.placeholder = '.gif, .webm, .mp4';
     fileTypesContainer.appendChild(fileTypesInput);
 
-    // Regex preview
-    const regexPreview = document.createElement('div');
-    regexPreview.style.marginTop = '8px';
-    regexPreview.style.padding = '8px';
-    regexPreview.style.backgroundColor = THEME.colors.backgroundSecondary;
-    regexPreview.style.borderRadius = THEME.radius.button;
-    regexPreview.style.fontSize = THEME.typography.sizeMeta;
-    regexPreview.style.color = THEME.colors.textMuted;
-    regexPreview.style.fontFamily = 'monospace';
-    fileTypesContainer.appendChild(regexPreview);
-
-    const updateRegexPreview = () => {
-      const extensions = fileTypesInput.value
-        .split(',')
-        .map(ext => ext.trim())
-        .filter(ext => ext.length > 0);
-      
-      if (extensions.length === 0) {
-        regexPreview.textContent = String.raw`Regex: (?i)\.(gif)$`;
-        return;
-      }
-
-      const cleanExtensions = extensions
-        .map(ext => ext.replace(/^\./, '').toLowerCase())
-        .filter(ext => /^[a-z0-9]+$/i.test(ext));
-      
-      if (cleanExtensions.length === 0) {
-        regexPreview.textContent = String.raw`Regex: (?i)\.(gif)$`;
-        return;
-      }
-
-      const regex = String.raw`(?i)\.(${cleanExtensions.join('|')})$`;
-      regexPreview.textContent = `Regex: ${regex}`;
-    };
-
     fileTypesInput.addEventListener('input', () => {
-      updateRegexPreview();
       // Debounce the save to avoid too many saves while typing
       clearTimeout((fileTypesInput as any).saveTimeout);
       (fileTypesInput as any).saveTimeout = setTimeout(() => {
         this.saveSettings();
       }, 500);
     });
-    updateRegexPreview();
 
     imageSection.appendChild(fileTypesContainer);
 
@@ -999,6 +997,7 @@ export class SettingsPage {
     (this as any).shortFormIncludeToggle = shortFormIncludeToggle;
     (this as any).shortFormOnlyToggle = shortFormOnlyToggle;
     (this as any).reelModeToggle = reelModeToggle;
+    (this as any).excludedTagsInput = excludedTagsInput;
 
     this.container.appendChild(modal);
 
@@ -1039,10 +1038,11 @@ export class SettingsPage {
     const themePrimaryInput = (this as any).themePrimaryInput as HTMLInputElement | undefined;
     const themeSecondaryInput = (this as any).themeSecondaryInput as HTMLInputElement | undefined;
     const themeAccentInput = (this as any).themeAccentInput as HTMLInputElement | undefined;
+    const excludedTagsInput = (this as any).excludedTagsInput as HTMLInputElement | undefined;
 
     if (!fileTypesInput || !maxDurationInput || !includeImagesToggle || !imagesOnlyToggle || 
         !shortFormIncludeToggle || !shortFormOnlyToggle || !reelModeToggle ||
-        !themeBackgroundInput || !themePrimaryInput || !themeSecondaryInput || !themeAccentInput) {
+        !themeBackgroundInput || !themePrimaryInput || !themeSecondaryInput || !themeAccentInput || !excludedTagsInput) {
       return; // Settings not fully initialized yet
     }
 
@@ -1054,6 +1054,11 @@ export class SettingsPage {
 
     const maxDuration = Number.parseInt(maxDurationInput.value, 10);
     const validMaxDuration = !Number.isNaN(maxDuration) && maxDuration > 0 ? maxDuration : 120;
+
+    const excludedTagNames = excludedTagsInput.value
+      .split(',')
+      .map((name) => name.trim())
+      .filter((name) => name.length > 0);
 
     const newSettings: Partial<FeedSettings> = {
       includeImagesInFeed: includeImagesToggle.checked,
@@ -1069,6 +1074,7 @@ export class SettingsPage {
       themePrimary: themePrimaryInput.value,
       themeSecondary: themeSecondaryInput.value,
       themeAccent: themeAccentInput.value,
+      excludedTagNames,
     };
 
     // Notify parent to update settings and reload feed if needed

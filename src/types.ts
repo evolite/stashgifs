@@ -85,6 +85,7 @@ export interface FilterOptions {
   includeScenesWithoutMarkers?: boolean; // When true in shuffle mode, include scenes with 0 markers
   orientationFilter?: ('landscape' | 'portrait' | 'square')[]; // Filter content by orientation
   sortSeed?: string; // Sort seed for consistent pagination (reused across pages)
+  excludedTagIds?: string[]; // Tags to exclude (resolved IDs)
 }
 
 export interface FeedSettings {
@@ -114,6 +115,7 @@ export interface FeedSettings {
   themePrimary?: string; // Primary surface color for cards
   themeSecondary?: string; // Secondary surface color for inputs/panels
   themeAccent?: string; // Accent color for highlights
+  excludedTagNames?: string[]; // Tags to exclude from feed (names)
 }
 
 export interface VideoPostData {

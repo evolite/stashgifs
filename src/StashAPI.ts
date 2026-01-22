@@ -651,6 +651,11 @@ export class StashAPI {
         };
       }
     }
+
+    const { excludedTagIds } = this.extractTagAndPerformerFilters(filters);
+    if (excludedTagIds.length > 0) {
+      this.applyExcludedTagsToMarkerFilter(countSceneFilter, excludedTagIds);
+    }
     
     return countSceneFilter;
   }
@@ -671,9 +676,11 @@ export class StashAPI {
   extractTagAndPerformerFilters(filters?: FilterOptions): {
     tagIds: string[];
     performerIds: number[];
+    excludedTagIds: string[];
   } {
     const tagIds: string[] = [];
     const performerIds: number[] = [];
+    const excludedTagIds: string[] = [];
     
     // Extract tags (include both tags and primary_tags)
     if (filters?.tags && filters.tags.length > 0) {
@@ -684,6 +691,11 @@ export class StashAPI {
       const parsed = this.parseTagIds(filters.primary_tags);
       tagIds.push(...parsed.map(String));
     }
+
+    if (filters?.excludedTagIds && filters.excludedTagIds.length > 0) {
+      const parsed = this.parseTagIds(filters.excludedTagIds);
+      excludedTagIds.push(...parsed.map(String));
+    }
     
     // Extract performers
     if (filters?.performers && filters.performers.length > 0) {
@@ -692,7 +704,8 @@ export class StashAPI {
     
     return {
       tagIds,
-      performerIds
+      performerIds,
+      excludedTagIds
     };
   }
 
@@ -734,7 +747,7 @@ export class StashAPI {
     const sceneMarkerFilter = this.normalizeMarkerFilter(sceneMarkerFilterRaw);
     
     if (!filters?.savedFilterId) {
-      this.applyTagAndPerformerFilters(filters, sceneMarkerFilter);
+      this.applyTagAndPerformerFilters(filters, sceneMarkerFilter, { isMarkerFilter: true });
     }
     
     return sceneMarkerFilter;
@@ -766,6 +779,45 @@ export class StashAPI {
     }
   }
 
+  private applyExcludedTagsToMarkerFilter(targetFilter: SceneMarkerFilterInput, excludedTagIds: string[]): void {
+    const uniqueExcluded = Array.from(new Set(excludedTagIds));
+    if (uniqueExcluded.length === 0) {
+      return;
+    }
+
+    if (!targetFilter.tags) {
+      targetFilter.tags = {
+        value: [],
+        excludes: uniqueExcluded,
+        modifier: 'INCLUDES',
+        depth: 0,
+      };
+      return;
+    }
+
+    targetFilter.tags.excludes = uniqueExcluded;
+    targetFilter.tags.value ??= [];
+    targetFilter.tags.depth ??= 0;
+  }
+
+  private applyExcludedTagsToSceneFilter(targetFilter: SceneFilterInput, excludedTagIds: string[]): void {
+    const uniqueExcluded = Array.from(new Set(excludedTagIds));
+    if (uniqueExcluded.length === 0) {
+      return;
+    }
+
+    if (!targetFilter.tags) {
+      targetFilter.tags = {
+        value: [],
+        modifier: 'INCLUDES',
+      };
+    }
+
+    const tagsFilter = targetFilter.tags as { excludes?: string[]; value?: string[] };
+    tagsFilter.excludes = uniqueExcluded;
+    tagsFilter.value ??= [];
+  }
+
   /**
    * Apply performer filters to a filter object
    */
@@ -783,15 +835,24 @@ export class StashAPI {
    */
   private applyTagAndPerformerFilters(
     filters: FilterOptions | undefined,
-    targetFilter: SceneMarkerFilterInput | SceneFilterInput
+    targetFilter: SceneMarkerFilterInput | SceneFilterInput,
+    options: { isMarkerFilter: boolean }
   ): void {
-    const { tagIds, performerIds } = this.extractTagAndPerformerFilters(filters);
+    const { tagIds, performerIds, excludedTagIds } = this.extractTagAndPerformerFilters(filters);
     
     if (tagIds.length > 0) {
-      if ('tags' in targetFilter) {
-        this.applyTagsToMarkerFilter(targetFilter, tagIds);
+      if (options.isMarkerFilter) {
+        this.applyTagsToMarkerFilter(targetFilter as SceneMarkerFilterInput, tagIds);
       } else {
-        this.applyTagsToSceneFilter(targetFilter, tagIds);
+        this.applyTagsToSceneFilter(targetFilter as SceneFilterInput, tagIds);
+      }
+    }
+
+    if (excludedTagIds.length > 0) {
+      if (options.isMarkerFilter) {
+        this.applyExcludedTagsToMarkerFilter(targetFilter as SceneMarkerFilterInput, excludedTagIds);
+      } else {
+        this.applyExcludedTagsToSceneFilter(targetFilter as SceneFilterInput, excludedTagIds);
       }
     }
     
@@ -945,8 +1006,8 @@ export class StashAPI {
     if (filters?.includeScenesWithoutMarkers) {
       sceneFilter.has_markers = 'false';
     }
-    
-    this.applyTagAndPerformerFilters(filters, sceneFilter);
+    this.applyTagAndPerformerFilters(filters, sceneFilter, { isMarkerFilter: false });
+
     
     return Object.keys(sceneFilter).length > 0 ? sceneFilter : null;
   }
@@ -1111,7 +1172,7 @@ export class StashAPI {
       };
     }
 
-    this.applyTagAndPerformerFilters(filters, sceneFilter);
+    this.applyTagAndPerformerFilters(filters, sceneFilter, { isMarkerFilter: false });
 
     return Object.keys(sceneFilter).length > 0 ? sceneFilter : null;
   }
@@ -2168,6 +2229,7 @@ export class StashAPI {
     filters?: {
       performerIds?: number[];
       tagIds?: string[];
+      excludedTagIds?: string[];
       orientationFilter?: ImageOrientation[];
       sortSeed?: string;
     },
@@ -2207,12 +2269,15 @@ export class StashAPI {
       };
     }
 
+    const excludedTagIds = filters?.excludedTagIds ?? [];
+
     // Add tag filter if provided
-    if (filters?.tagIds && filters.tagIds.length > 0) {
+    if ((filters?.tagIds && filters.tagIds.length > 0) || excludedTagIds.length > 0) {
       imageFilter.tags = {
-        value: filters.tagIds,
+        value: filters?.tagIds ?? [],
         modifier: 'INCLUDES',
       };
+      (imageFilter.tags as { excludes?: string[] }).excludes = excludedTagIds;
     }
 
     // Reuse existing sort seed for pagination, or generate new one for first page

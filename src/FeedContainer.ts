@@ -45,6 +45,7 @@ const DEFAULT_SETTINGS: FeedSettings = {
   themePrimary: THEME_DEFAULTS.surface,
   themeSecondary: THEME_DEFAULTS.backgroundSecondary,
   themeAccent: THEME_DEFAULTS.accentPrimary,
+  excludedTagNames: [],
 };
 
 /**
@@ -115,6 +116,8 @@ export class FeedContainer {
   private preloadedPerformers: Array<{ id: string; name: string; image_path?: string }> = [];
   private isPreloading: boolean = false;
   private backgroundPreloadActive: boolean = false;
+  private excludedTagIds: string[] = [];
+  private excludedTagNamesNormalized: string[] = [];
   private backgroundPreloadHandle?: number;
   private backgroundPreloadPriorityQueue: string[] = [];
   private readonly activePreloadPosts: Set<string> = new Set();
@@ -590,6 +593,125 @@ export class FeedContainer {
     this.useHDMode = this.loadHDModePreference();
     this.shuffleMode = this.loadShuffleModePreference();
     this.globalMuteState = this.loadGlobalMuteState();
+  }
+
+  private getExcludedTagNames(): string[] {
+    return (this.settings.excludedTagNames ?? [])
+      .map((name) => name.trim())
+      .filter((name) => name.length > 0);
+  }
+
+  private normalizeExcludedTagNames(names: string[]): string[] {
+    return names.map((name) => name.toLowerCase());
+  }
+
+  private areExcludedTagNamesEqual(a: string[], b: string[]): boolean {
+    if (a.length !== b.length) {
+      return false;
+    }
+
+    const sortedA = [...a].sort();
+    const sortedB = [...b].sort();
+
+    return sortedA.every((value, index) => value === sortedB[index]);
+  }
+
+  private async updateExcludedTagIds(): Promise<void> {
+    const trimmedNames = this.getExcludedTagNames();
+    const normalizedNames = this.normalizeExcludedTagNames(trimmedNames);
+
+    if (this.areExcludedTagNamesEqual(normalizedNames, this.excludedTagNamesNormalized)) {
+      return;
+    }
+
+    this.excludedTagNamesNormalized = normalizedNames;
+
+    if (!this.api || normalizedNames.length === 0) {
+      this.excludedTagIds = [];
+      return;
+    }
+
+    const uniqueNameMap = new Map<string, string>();
+    for (const name of trimmedNames) {
+      const key = name.toLowerCase();
+      if (!uniqueNameMap.has(key)) {
+        uniqueNameMap.set(key, name);
+      }
+    }
+
+    const resolvedTags = await Promise.all(
+      Array.from(uniqueNameMap.values()).map(async (name) => {
+        try {
+          return await this.api.findTagByName(name);
+        } catch (error) {
+          console.warn('Failed to resolve excluded tag', { name, error });
+          return null;
+        }
+      })
+    );
+
+    this.excludedTagIds = resolvedTags
+      .filter((tag): tag is { id: string; name: string } => Boolean(tag))
+      .map((tag) => tag.id);
+  }
+
+  private applyExcludedTagsToFilters(filters: FilterOptions): void {
+    if (this.excludedTagIds.length > 0) {
+      filters.excludedTagIds = [...this.excludedTagIds];
+      return;
+    }
+
+    delete filters.excludedTagIds;
+  }
+
+  private shouldExcludeTags(tags?: Array<{ id: string; name: string }>): boolean {
+    if (!tags || tags.length === 0) {
+      return false;
+    }
+
+    if (this.excludedTagIds.length > 0) {
+      const excludedIds = new Set(this.excludedTagIds);
+      if (tags.some((tag) => excludedIds.has(tag.id))) {
+        return true;
+      }
+    }
+
+    if (this.excludedTagNamesNormalized.length > 0) {
+      const excludedNames = new Set(this.excludedTagNamesNormalized);
+      if (tags.some((tag) => excludedNames.has(tag.name.toLowerCase()))) {
+        return true;
+      }
+    }
+
+    return false;
+  }
+
+  private shouldExcludeMarker(marker: SceneMarker): boolean {
+    if (marker.primary_tag && this.shouldExcludeTags([marker.primary_tag])) {
+      return true;
+    }
+
+    if (this.shouldExcludeTags(marker.tags)) {
+      return true;
+    }
+
+    return this.shouldExcludeTags(marker.scene?.tags);
+  }
+
+  private filterMarkersByExcludedTags(markers: SceneMarker[]): SceneMarker[] {
+    if (this.excludedTagIds.length === 0 && this.excludedTagNamesNormalized.length === 0) {
+      return markers;
+    }
+
+    return markers.filter((marker) => !this.shouldExcludeMarker(marker));
+  }
+
+  private filterImagesByExcludedTags(images: Image[]): Image[] {
+    if (this.excludedTagIds.length === 0 && this.excludedTagNamesNormalized.length === 0) {
+      return images;
+    }
+
+    return images.filter((image) => !this.shouldExcludeTags(image.tags));
   }
 
   /**
@@ -2203,6 +2325,9 @@ export class FeedContainer {
         this.saveSettingsToStorage(updatedSettings);
         this.applyThemeSettings(updatedSettings);
         const reelModeChanged = newSettings.reelMode !== undefined;
+        const previousExcludedTags = this.normalizeExcludedTagNames(this.settings.excludedTagNames ?? []);
+        const nextExcludedTags = this.normalizeExcludedTagNames(updatedSettings.excludedTagNames ?? []);
+        const excludedTagsChanged = !this.areExcludedTagNamesEqual(previousExcludedTags, nextExcludedTags);
         // Update card snapping if setting changed
         if (newSettings.snapToCards !== undefined || reelModeChanged) {
           this.setupCardSnapping();
@@ -2222,7 +2347,8 @@ export class FeedContainer {
           newSettings.shortFormInNonHDMode !== undefined ||
           newSettings.shortFormMaxDuration !== undefined ||
           newSettings.shortFormOnly !== undefined ||
-          reelModeChanged
+          reelModeChanged ||
+          excludedTagsChanged
         ) {
           this.loadVideos(this.currentFilters, false, undefined, true).catch(e => {
             console.error('Failed to reload feed after settings change', e);
@@ -3819,8 +3945,11 @@ export class FeedContainer {
     if (result.sortSeed && currentFilters) {
       currentFilters.sortSeed = result.sortSeed;
     }
-    
-    return result;
+
+    return {
+      ...result,
+      markers: this.filterMarkersByExcludedTags(result.markers),
+    };
   }
 
   /**
@@ -4309,6 +4438,8 @@ export class FeedContainer {
 
     try {
       const currentFilters = filters || this.currentFilters || {};
+      await this.updateExcludedTagIds();
+      this.applyExcludedTagsToFilters(currentFilters);
       const { limit, offset, page } = this.calculatePaginationParams(currentFilters, append);
 
       if (this.checkAbortAndCleanup(signal)) {
@@ -4632,8 +4763,11 @@ export class FeedContainer {
     if (result.sortSeed && currentFilters) {
       currentFilters.sortSeed = result.sortSeed;
     }
-    
-    return result;
+
+    return {
+      ...result,
+      markers: this.filterMarkersByExcludedTags(result.markers),
+    };
   }
 
   /**
@@ -4653,11 +4787,12 @@ export class FeedContainer {
       const fileExtensions = this.settings.enabledFileTypes || ['.jpg', '.png', '.gif', '.mp4', '.m4v', '.webm'];
       
       // Use unified filter extraction for consistent filtering
-      const { tagIds, performerIds } = this.api.extractTagAndPerformerFilters(filters);
+      const { tagIds, performerIds, excludedTagIds } = this.api.extractTagAndPerformerFilters(filters);
       
       const imageFilters: {
         performerIds?: number[];
         tagIds?: string[];
+        excludedTagIds?: string[];
       } = {};
 
       if (performerIds.length > 0) {
@@ -4666,6 +4801,10 @@ export class FeedContainer {
 
       if (tagIds.length > 0) {
         imageFilters.tagIds = tagIds;
+      }
+
+      if (excludedTagIds.length > 0) {
+        imageFilters.excludedTagIds = excludedTagIds;
       }
 
       const imageFiltersWithOrientation = {
@@ -4690,7 +4829,9 @@ export class FeedContainer {
       }
 
       // Convert GraphQL Image to simplified Image type
-      const images = graphQLImages.map(img => this.convertGraphQLImageToImage(img));
+      const images = this.filterImagesByExcludedTags(
+        graphQLImages.map((img) => this.convertGraphQLImageToImage(img))
+      );
       return { images, totalCount };
     } catch (error) {
       console.error('FeedContainer: Failed to load images', error);
@@ -7040,7 +7181,10 @@ export class FeedContainer {
    */
   updateSettings(newSettings: Partial<FeedSettings>): void {
     const reelModeChanged = newSettings.reelMode !== undefined;
+    const previousExcludedTags = this.normalizeExcludedTagNames(this.settings.excludedTagNames ?? []);
     this.settings = { ...this.settings, ...newSettings };
+    const nextExcludedTags = this.normalizeExcludedTagNames(this.settings.excludedTagNames ?? []);
+    const excludedTagsChanged = !this.areExcludedTagNamesEqual(previousExcludedTags, nextExcludedTags);
     if (reelModeChanged || newSettings.snapToCards !== undefined) {
       this.setupCardSnapping();
     }
@@ -7071,6 +7215,12 @@ export class FeedContainer {
     }
 
     this.refreshAutoplayAfterLayout();
+
+    if (excludedTagsChanged) {
+      this.loadVideos(this.currentFilters, false, undefined, true).catch((e) => {
+        console.error('Failed to reload feed after excluded tag update', e);
+      });
+    }
   }
 
   /**
