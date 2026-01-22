@@ -610,8 +610,8 @@ export class FeedContainer {
       return false;
     }
 
-    const sortedA = [...a].sort();
-    const sortedB = [...b].sort();
+    const sortedA = [...a].sort((left, right) => left.localeCompare(right));
+    const sortedB = [...b].sort((left, right) => left.localeCompare(right));
 
     return sortedA.every((value, index) => value === sortedB[index]);
   }
@@ -651,7 +651,7 @@ export class FeedContainer {
     );
 
     this.excludedTagIds = resolvedTags
-      .filter((tag): tag is { id: string; name: string } => Boolean(tag))
+      .filter((tag): tag is { id: string; name: string } => tag !== null)
       .map((tag) => tag.id);
   }
 
@@ -2604,7 +2604,6 @@ export class FeedContainer {
     const inputSetup = this.setupSearchInput();
     const inputWrapper = inputSetup.inputWrapper;
     const queryInput = inputSetup.queryInput;
-    const placeholderWrapper = inputSetup.placeholderWrapper;
     const loadingSpinner = inputSetup.loadingSpinner;
     const shuffleIndicator = inputSetup.shuffleIndicator;
     const randomLeftIcon = inputSetup.randomLeftIcon;
@@ -7279,4 +7278,3 @@ export class FeedContainer {
     }
   }
 }
-

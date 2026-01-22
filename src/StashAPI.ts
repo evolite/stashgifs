@@ -806,12 +806,10 @@ export class StashAPI {
       return;
     }
 
-    if (!targetFilter.tags) {
-      targetFilter.tags = {
-        value: [],
-        modifier: 'INCLUDES',
-      };
-    }
+    targetFilter.tags ??= {
+      value: [],
+      modifier: 'INCLUDES',
+    };
 
     const tagsFilter = targetFilter.tags as { excludes?: string[]; value?: string[] };
     tagsFilter.excludes = uniqueExcluded;
@@ -2357,6 +2355,5 @@ export class StashAPI {
   }
 
 }
-
 
 
