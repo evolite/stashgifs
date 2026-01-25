@@ -671,7 +671,7 @@ export abstract class BasePost {
     checkmarkIcon.style.width = '18px';
     checkmarkIcon.style.height = '18px';
     checkmarkIcon.style.flexShrink = '0';
-    checkmarkIcon.style.marginLeft = '2px';
+    checkmarkIcon.style.marginLeft = '-4px';
     checkmarkIcon.style.color = THEME.colors.accentPrimary;
     chip.appendChild(checkmarkIcon);
     
@@ -1804,10 +1804,6 @@ export abstract class BasePost {
       hashtag.style.backdropFilter = 'none';
       hashtag.style.color = '#ffffff';
       hashtag.style.textShadow = '0 2px 8px rgba(0, 0, 0, 0.65)';
-      hashtag.style.fontSize = '11px';
-      hashtag.style.lineHeight = '1.2';
-      hashtag.style.minHeight = '24px';
-      hashtag.style.height = '24px';
     }
     
     const handleClick = () => {
@@ -2662,6 +2658,10 @@ export abstract class BasePost {
       btn.innerHTML = HEART_SVG_OUTLINE;
       btn.style.color = '#ffffff';
       btn.title = 'Add to favorites';
+    }
+
+    if (this.isReelMode) {
+      btn.style.filter = 'drop-shadow(0 2px 6px rgba(0, 0, 0, 0.6))';
     }
   }
 
