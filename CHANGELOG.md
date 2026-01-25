@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [5.31.0] - 2026-01-25
+
+### Changed
+- Add verified badge toggle and orientation filters
+
 ## [5.30.0] - 2026-01-25
 
 ### Changed
