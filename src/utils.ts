@@ -32,7 +32,7 @@ export const THEME = {
     surfaceHover: '#324351',
   },
   typography: {
-    fontFamily: 'Inter, Roboto, "Source Sans 3", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
+    fontFamily: '"Manrope", "Space Grotesk", "Sora", system-ui, -apple-system, "Segoe UI", sans-serif',
     lineHeight: '1.5',
     lineHeightTight: '1.4',
     sizeTitle: '16px',

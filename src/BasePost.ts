@@ -7,7 +7,7 @@ import { FavoritesManager } from './FavoritesManager.js';
 import { StashAPI } from './StashAPI.js';
 import { VisibilityManager } from './VisibilityManager.js';
 import { toAbsoluteUrl, showToast, isMobileDevice, THEME } from './utils.js';
-import { VERIFIED_CHECKMARK_SVG, ADD_TAG_SVG, HEART_SVG_OUTLINE, HEART_SVG_FILLED, OCOUNT_SVG, IMAGE_BADGE_SVG, EXTERNAL_LINK_SVG, STAR_SVG, STAR_SVG_OUTLINE } from './icons.js';
+import { VERIFIED_CHECKMARK_SVG, ADD_TAG_SVG, HEART_SVG_OUTLINE, HEART_SVG_FILLED, OCOUNT_SVG, EXTERNAL_LINK_SVG, STAR_SVG, STAR_SVG_OUTLINE } from './icons.js';
 import { setupTouchHandlers, preventClickAfterTouch } from './utils/touchHandlers.js';
 import { PerformerExtended } from './graphql/types.js';
 import { Performer, Tag } from './types.js';
@@ -177,6 +177,43 @@ export abstract class BasePost {
     this.container.style.scrollSnapAlign = 'start';
     this.container.style.scrollSnapStop = 'always';
     this.container.dataset.reelMode = 'true';
+    
+    // Add gradient overlay
+    this.addReelGradientOverlay();
+  }
+
+  private addReelGradientOverlay(): void {
+    // Remove existing gradient overlay if any
+    const existingOverlay = this.container.querySelector('.reel-gradient-overlay');
+    if (existingOverlay) {
+      existingOverlay.remove();
+    }
+    
+    // Only add gradient if in reel mode
+    if (!this.isReelMode) {
+      return;
+    }
+    
+    // Create gradient overlay
+    const gradient = document.createElement('div');
+    gradient.className = 'reel-gradient-overlay';
+    gradient.style.position = 'absolute';
+    gradient.style.bottom = '0';
+    gradient.style.left = '0';
+    gradient.style.right = '0';
+    gradient.style.height = '20%';
+    gradient.style.background = 'linear-gradient(to top, rgba(0, 0, 0, 0.4) 0%, transparent 100%)';
+    gradient.style.pointerEvents = 'none';
+    gradient.style.zIndex = '1';
+    
+    this.container.appendChild(gradient);
+  }
+
+  private removeReelGradientOverlay(): void {
+    const existingOverlay = this.container.querySelector('.reel-gradient-overlay');
+    if (existingOverlay) {
+      existingOverlay.remove();
+    }
   }
 
   private applyReelPlayerStyles(playerContainer: HTMLElement): boolean {
@@ -225,9 +262,10 @@ export abstract class BasePost {
   }
 
   private applyReelHeaderStyles(header: HTMLElement, isMobile: boolean): void {
-    const bottomOffset = isMobile ? 16 : 88;
+    const bottomOffset = 70;
     const headerRightOffset = isMobile ? 96 : 120;
     const headerPadding = isMobile ? '8px 12px' : '10px 14px';
+    const textShadow = '0 2px 8px rgba(0, 0, 0, 0.65)';
 
     header.style.position = 'absolute';
     header.style.left = '16px';
@@ -236,17 +274,37 @@ export abstract class BasePost {
     header.style.top = 'auto';
     header.style.zIndex = '6';
     header.style.padding = headerPadding;
-    header.style.borderRadius = THEME.radius.button;
-    header.style.background = 'rgba(0, 0, 0, 0.35)';
-    header.style.backdropFilter = 'blur(6px)';
+    header.style.borderRadius = '0';
+    header.style.background = 'transparent';
+    header.style.backdropFilter = 'none';
+    header.style.boxShadow = 'none';
     header.style.pointerEvents = 'auto';
     header.style.fontSize = isMobile ? '' : '15px';
     header.style.width = 'fit-content';
     header.style.maxWidth = isMobile ? 'calc(100% - 120px)' : '55%';
+    header.style.color = '#ffffff';
+    header.style.textShadow = textShadow;
+
+    const headerElements = header.querySelectorAll<HTMLElement>('a, span, button, div, p, h1, h2, h3, h4');
+    for (const element of headerElements) {
+      element.style.color = '#ffffff';
+      element.style.textShadow = textShadow;
+    }
+
+    const headerIcons = header.querySelectorAll<SVGElement>('svg');
+    for (const icon of headerIcons) {
+      icon.style.filter = 'drop-shadow(0 2px 6px rgba(0, 0, 0, 0.6))';
+    }
+
+    const verifiedIcons = header.querySelectorAll<HTMLElement>('.performer-chip__verified');
+    for (const icon of verifiedIcons) {
+      icon.style.color = THEME.colors.accentPrimary;
+      icon.style.textShadow = textShadow;
+    }
   }
 
   private applyReelFooterStyles(footer: HTMLElement, isMobile: boolean): void {
-    const bottomOffset = isMobile ? 16 : 88;
+    const bottomOffset = 70;
 
     footer.style.position = 'absolute';
     footer.style.right = '16px';
@@ -256,8 +314,29 @@ export abstract class BasePost {
     footer.style.padding = '0';
     footer.style.background = 'transparent';
     footer.style.pointerEvents = 'auto';
+    footer.style.color = '#ffffff';
+    footer.style.textShadow = '0 2px 8px rgba(0, 0, 0, 0.65)';
+
+    const footerElements = footer.querySelectorAll<HTMLElement>('a, span, button, div, p, h1, h2, h3, h4');
+    for (const element of footerElements) {
+      element.style.color = '#ffffff';
+      element.style.textShadow = '0 2px 8px rgba(0, 0, 0, 0.65)';
+    }
+
+    const footerIcons = footer.querySelectorAll<SVGElement>('svg');
+    for (const icon of footerIcons) {
+      icon.style.filter = 'drop-shadow(0 2px 6px rgba(0, 0, 0, 0.6))';
+    }
 
     this.applyReelFooterStack(footer, isMobile);
+
+    const activeRatingIcons = footer.querySelectorAll<HTMLElement>(
+      '.icon-btn--rating-active .rating-display__icon'
+    );
+    for (const icon of activeRatingIcons) {
+      icon.style.color = '#FFD700';
+      icon.style.textShadow = '0 2px 8px rgba(0, 0, 0, 0.65)';
+    }
   }
 
   private applyReelFooterStack(footer: HTMLElement, isMobile: boolean): void {
@@ -265,7 +344,7 @@ export abstract class BasePost {
     const row = footer.querySelector<HTMLElement>('.video-post__row');
     const buttonGroup = footer.querySelector<HTMLElement>('.video-post__button-group');
 
-    const stackGap = isMobile ? '8px' : '6px';
+    const stackGap = isMobile ? '10px' : '8px';
 
     if (info) {
       info.style.flexDirection = 'column';
@@ -284,18 +363,29 @@ export abstract class BasePost {
     if (buttonGroup) {
       buttonGroup.style.flexDirection = 'column';
       buttonGroup.style.alignItems = 'center';
-      buttonGroup.style.gap = isMobile ? '10px' : '8px';
+      buttonGroup.style.gap = '12px';
 
-      const buttonSize = isMobile ? '56px' : '64px';
+      const buttonSize = '44px';
       const buttons = Array.from(buttonGroup.querySelectorAll<HTMLElement>('button, a'));
       for (const button of buttons) {
         button.style.width = buttonSize;
         button.style.height = buttonSize;
         button.style.minWidth = buttonSize;
         button.style.minHeight = buttonSize;
+        button.style.color = '#ffffff';
+        button.style.textShadow = '0 2px 8px rgba(0, 0, 0, 0.65)';
+        button.style.filter = 'drop-shadow(0 2px 6px rgba(0, 0, 0, 0.6))';
         if (!isMobile) {
           button.style.fontSize = '15px';
         }
+      }
+
+      const accentButtons = buttonGroup.querySelectorAll<HTMLElement>(
+        '.icon-btn--play, .icon-btn--image, .icon-btn--add-tag'
+      );
+      for (const button of accentButtons) {
+        button.style.color = THEME.colors.accentPrimary;
+        button.style.textShadow = '0 2px 8px rgba(0, 0, 0, 0.65)';
       }
     }
   }
@@ -339,7 +429,7 @@ export abstract class BasePost {
     row.style.display = 'flex';
     row.style.alignItems = 'center';
     row.style.justifyContent = 'flex-end';
-    row.style.gap = '4px';
+    row.style.gap = '12px';
     row.style.position = 'relative';
     row.style.zIndex = '10';
 
@@ -347,7 +437,7 @@ export abstract class BasePost {
     buttonGroup.className = 'video-post__button-group';
     buttonGroup.style.display = 'flex';
     buttonGroup.style.alignItems = 'center';
-    buttonGroup.style.gap = '4px';
+    buttonGroup.style.gap = '12px';
     buttonGroup.style.position = 'relative';
     buttonGroup.style.zIndex = '10';
 
@@ -472,15 +562,25 @@ export abstract class BasePost {
     chip.rel = 'noopener noreferrer';
     chip.style.display = 'inline-flex';
     chip.style.alignItems = 'center';
-    chip.style.gap = '4px';
-    chip.style.fontSize = THEME.typography.sizeBody;
-    chip.style.lineHeight = THEME.typography.lineHeightTight;
+    chip.style.gap = '8px';
+    chip.style.fontSize = '16px';
+    chip.style.lineHeight = '1.2';
     chip.style.color = THEME.colors.textSecondary;
     chip.style.textDecoration = 'none';
     chip.style.transition = 'color 0.2s ease, opacity 0.2s ease';
     chip.style.cursor = 'pointer';
     chip.style.minHeight = '44px';
     chip.style.height = '44px';
+    
+    // Apply reel mode specific styling
+    if (this.isReelMode) {
+      chip.style.background = 'transparent';
+      chip.style.border = 'none';
+      chip.style.boxShadow = 'none';
+      chip.style.backdropFilter = 'none';
+      chip.style.color = '#ffffff';
+      chip.style.textShadow = '0 2px 8px rgba(0, 0, 0, 0.65)';
+    }
     
     const handleClick = () => {
       // Hide overlay when clicking to filter
@@ -497,6 +597,7 @@ export abstract class BasePost {
     };
     
     const isMobile = isMobileDevice();
+    const canHover = typeof window !== 'undefined' && window.matchMedia('(hover: hover)').matches;
     
     if (isMobile) {
       // Use unified touch handler utility
@@ -523,14 +624,14 @@ export abstract class BasePost {
     
     // Add performer image (circular, 20px) before the name
     const imageContainer = document.createElement('div');
-    imageContainer.style.width = '20px';
-    imageContainer.style.height = '20px';
+    imageContainer.style.width = '40px';
+    imageContainer.style.height = '40px';
     imageContainer.style.borderRadius = '50%';
     imageContainer.style.background = THEME.colors.backgroundSecondary;
     imageContainer.style.display = 'flex';
     imageContainer.style.alignItems = 'center';
     imageContainer.style.justifyContent = 'center';
-    imageContainer.style.fontSize = THEME.typography.sizeMeta;
+    imageContainer.style.fontSize = '24px';
     imageContainer.style.fontWeight = THEME.typography.weightTitle;
     imageContainer.style.color = THEME.colors.textSecondary;
     imageContainer.style.flexShrink = '0';
@@ -563,31 +664,27 @@ export abstract class BasePost {
     
     // Add verified checkmark icon after the name
     const checkmarkIcon = document.createElement('span');
+    checkmarkIcon.className = 'performer-chip__verified';
     checkmarkIcon.innerHTML = VERIFIED_CHECKMARK_SVG;
     checkmarkIcon.style.display = 'inline-flex';
     checkmarkIcon.style.alignItems = 'center';
-    checkmarkIcon.style.width = '14px';
-    checkmarkIcon.style.height = '14px';
+    checkmarkIcon.style.width = '18px';
+    checkmarkIcon.style.height = '18px';
     checkmarkIcon.style.flexShrink = '0';
-    checkmarkIcon.style.marginLeft = '-4px';
+    checkmarkIcon.style.marginLeft = '2px';
     checkmarkIcon.style.color = THEME.colors.accentPrimary;
-    const svg = checkmarkIcon.querySelector('svg');
-    if (svg) {
-      svg.setAttribute('width', '14');
-      svg.setAttribute('height', '14');
-    }
     chip.appendChild(checkmarkIcon);
     
     // Hover effect
     chip.addEventListener('mouseenter', () => {
-      chip.style.color = THEME.colors.textPrimary;
+      chip.style.color = this.isReelMode ? '#ffffff' : THEME.colors.textPrimary;
     });
     chip.addEventListener('mouseleave', () => {
-      chip.style.color = THEME.colors.textSecondary;
+      chip.style.color = this.isReelMode ? '#ffffff' : THEME.colors.textSecondary;
     });
 
     // Add hover overlay handlers
-    if (this.api && !isMobile) {
+    if (this.api && canHover) {
       chip.addEventListener('mouseenter', () => {
         // Cancel any pending hide timeout (when moving from another chip)
         if (this.performerOverlayHideTimeout) {
@@ -726,11 +823,12 @@ export abstract class BasePost {
     nameLink.appendChild(name);
 
     const externalIcon = document.createElement('span');
-    externalIcon.innerHTML = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" xmlns="http://www.w3.org/2000/svg"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><polyline points="15 3 21 3 21 9"></polyline><line x1="10" y1="14" x2="21" y2="3"></line></svg>';
+    externalIcon.innerHTML = EXTERNAL_LINK_SVG;
     externalIcon.style.display = 'inline-flex';
     externalIcon.style.alignItems = 'center';
     externalIcon.style.opacity = '0.7';
     externalIcon.style.flexShrink = '0';
+    externalIcon.style.color = THEME.colors.accentPrimary;
     nameLink.appendChild(externalIcon);
 
     leftGroup.appendChild(nameLink);
@@ -740,14 +838,7 @@ export abstract class BasePost {
       favoriteIcon.innerHTML = HEART_SVG_FILLED;
       favoriteIcon.style.display = 'inline-flex';
       favoriteIcon.style.alignItems = 'center';
-      favoriteIcon.style.width = '18px';
-      favoriteIcon.style.height = '18px';
       favoriteIcon.style.color = THEME.colors.ratingHigh;
-      const svg = favoriteIcon.querySelector('svg');
-      if (svg) {
-        svg.setAttribute('width', '18');
-        svg.setAttribute('height', '18');
-      }
       leftGroup.appendChild(favoriteIcon);
     }
 
@@ -1705,6 +1796,20 @@ export abstract class BasePost {
     hashtag.style.minHeight = '44px';
     hashtag.style.height = '44px';
     
+    // Apply reel mode specific styling
+    if (this.isReelMode) {
+      hashtag.style.background = 'transparent';
+      hashtag.style.border = 'none';
+      hashtag.style.boxShadow = 'none';
+      hashtag.style.backdropFilter = 'none';
+      hashtag.style.color = '#ffffff';
+      hashtag.style.textShadow = '0 2px 8px rgba(0, 0, 0, 0.65)';
+      hashtag.style.fontSize = '11px';
+      hashtag.style.lineHeight = '1.2';
+      hashtag.style.minHeight = '24px';
+      hashtag.style.height = '24px';
+    }
+    
     const handleClick = () => {
       // Hide overlay when clicking to filter
       this.hideTagOverlay(true);
@@ -1720,16 +1825,17 @@ export abstract class BasePost {
     };
     
     hashtag.addEventListener('mouseenter', () => {
-      hashtag.style.color = THEME.colors.textPrimary;
+      hashtag.style.color = this.isReelMode ? '#ffffff' : THEME.colors.textPrimary;
     });
     hashtag.addEventListener('mouseleave', () => {
-      hashtag.style.color = THEME.colors.textSecondary;
+      hashtag.style.color = this.isReelMode ? '#ffffff' : THEME.colors.textSecondary;
     });
     
     const isMobile = isMobileDevice();
+    const canHover = typeof window !== 'undefined' && window.matchMedia('(hover: hover)').matches;
     
     // Add hover overlay handlers for tags (desktop only)
-    if (this.api && !isMobile) {
+    if (this.api && canHover) {
       hashtag.addEventListener('mouseenter', () => {
         // Cancel any pending hide timeout (when moving from another chip)
         if (this.tagOverlayHideTimeout) {
@@ -1782,24 +1888,6 @@ export abstract class BasePost {
     return hashtag;
   }
 
-  protected createImageBadgeIcon(): HTMLElement {
-    const badge = document.createElement('span');
-    badge.className = 'content-badge';
-    badge.style.display = 'inline-flex';
-    badge.style.alignItems = 'center';
-    badge.style.justifyContent = 'center';
-    badge.style.width = '30px';
-    badge.style.height = '30px';
-    badge.style.flexShrink = '0';
-    badge.style.color = THEME.colors.textSecondary;
-    badge.style.pointerEvents = 'none';
-    badge.innerHTML = IMAGE_BADGE_SVG;
-    badge.title = 'Image';
-    badge.setAttribute('role', 'img');
-    badge.setAttribute('aria-label', 'Image');
-    return badge;
-  }
-
   protected buildImageHeader(options: {
     performers?: Performer[];
     tags?: Tag[];
@@ -1807,31 +1895,35 @@ export abstract class BasePost {
   }): HTMLElement {
     const header = document.createElement('div');
     header.className = 'video-post__header';
-    header.style.padding = '2px 16px';
+    header.style.padding = '8px 16px';
     header.style.marginBottom = '0';
     header.style.borderBottom = 'none';
 
-    const chips = document.createElement('div');
-    chips.className = 'chips';
-    chips.style.display = 'flex';
-    chips.style.flexWrap = 'wrap';
-    chips.style.alignItems = 'center';
-    chips.style.gap = '4px';
-    chips.style.margin = '0';
-    chips.style.padding = '0';
-
-    chips.appendChild(this.createImageBadgeIcon());
-
+    // Performer section - name and image
     if (options.performers?.length) {
-      this.appendPerformerChips(chips, options.performers);
+      const performersSection = document.createElement('div');
+      performersSection.className = 'video-post__performers';
+      this.appendPerformerChips(performersSection, options.performers);
+      header.appendChild(performersSection);
     }
 
+    // Tag chips section - clean line without box
     if (options.tags?.length) {
+      const tagsSection = document.createElement('div');
+      tagsSection.className = 'video-post__tags';
       const hasPerformers = !!options.performers?.length;
-      this.appendTagChips(chips, options.tags, options.favoriteTagName, hasPerformers);
+      this.appendTagChips(tagsSection, options.tags, options.favoriteTagName, hasPerformers);
+      if (this.isReelMode) {
+        tagsSection.style.display = 'flex';
+        tagsSection.style.flexWrap = 'wrap';
+        tagsSection.style.alignItems = 'center';
+        tagsSection.style.gap = '4px';
+        tagsSection.style.marginTop = '4px';
+        tagsSection.style.opacity = '0.85';
+      }
+      header.appendChild(tagsSection);
     }
 
-    header.appendChild(chips);
     return header;
   }
 
@@ -1855,7 +1947,7 @@ export abstract class BasePost {
       }
       const chip = this.createTagChip(tag);
       if (hasPerformers && isFirstTag) {
-        chip.style.marginLeft = '8px';
+        chip.style.marginLeft = this.isReelMode ? '0' : '8px';
         isFirstTag = false;
       }
       chips.appendChild(chip);
@@ -1899,11 +1991,11 @@ export abstract class BasePost {
     displayButton.setAttribute('aria-expanded', 'false');
     displayButton.title = options.title;
     this.applyIconButtonStyles(displayButton);
-    displayButton.style.padding = '8px 12px';
-    displayButton.style.gap = '3px';
-    displayButton.style.width = 'auto';
+    displayButton.style.padding = '0';
+    displayButton.style.gap = '0';
+    displayButton.style.width = '44px';
     displayButton.style.minWidth = '44px';
-    displayButton.style.height = 'auto';
+    displayButton.style.height = '44px';
     displayButton.style.minHeight = '44px';
 
     displayButton.addEventListener('click', (event) => {
@@ -1928,6 +2020,8 @@ export abstract class BasePost {
     valueSpan.style.fontWeight = THEME.typography.weightBodyStrong;
     valueSpan.style.minWidth = '14px';
     valueSpan.style.textAlign = 'left';
+    valueSpan.textContent = '';
+    valueSpan.style.display = 'none';
 
     displayButton.appendChild(iconSpan);
     displayButton.appendChild(valueSpan);
@@ -2483,6 +2577,7 @@ export abstract class BasePost {
     addTagBtn.title = title;
     this.applyIconButtonStyles(addTagBtn);
     addTagBtn.style.padding = '0';
+    addTagBtn.style.color = THEME.colors.accentPrimary;
     addTagBtn.innerHTML = ADD_TAG_SVG;
 
     const clickHandler = (e: Event) => {
@@ -2565,7 +2660,7 @@ export abstract class BasePost {
       btn.title = 'Remove from favorites';
     } else {
       btn.innerHTML = HEART_SVG_OUTLINE;
-      btn.style.color = THEME.colors.iconInactive;
+      btn.style.color = '#ffffff';
       btn.title = 'Add to favorites';
     }
   }
@@ -2604,6 +2699,7 @@ export abstract class BasePost {
       try {
         await this.incrementOCountAction();
         this.updateOCountButton();
+        showToast('O-count logged');
       } catch (error) {
         console.error('Failed to increment o count', error);
         showToast('Failed to update o-count. Please try again.');
@@ -2623,27 +2719,8 @@ export abstract class BasePost {
    */
   protected updateOCountButton(): void {
     if (!this.oCountButton) return;
-    
-    const OCOUNT_MIN_WIDTH_PX = 14;
-    const OCOUNT_DIGIT_WIDTH_PX = 8;
-    
-    const digitCount = this.oCount > 0 ? this.oCount.toString().length : 0;
-    const minWidth = digitCount > 0 ? `${Math.max(OCOUNT_MIN_WIDTH_PX, digitCount * OCOUNT_DIGIT_WIDTH_PX)}px` : `${OCOUNT_MIN_WIDTH_PX}px`;
-    
-    // Find existing countSpan or create new one
-    let countSpan = this.oCountButton.querySelector('span') as HTMLSpanElement;
-    if (!countSpan) {
-      countSpan = document.createElement('span');
-      countSpan.style.fontSize = '14px';
-      countSpan.style.fontWeight = '500';
-      countSpan.style.textAlign = 'left';
-      countSpan.style.display = 'inline-block';
-      this.oCountButton.innerHTML = OCOUNT_SVG;
-      this.oCountButton.appendChild(countSpan);
-    }
-    
-    countSpan.style.minWidth = minWidth;
-    countSpan.textContent = this.oCount > 0 ? this.oCount.toString() : '-';
+
+    this.oCountButton.innerHTML = OCOUNT_SVG;
   }
 
   /**
@@ -2659,4 +2736,3 @@ export abstract class BasePost {
     }
   }
 }
-

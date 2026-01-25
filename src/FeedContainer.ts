@@ -258,7 +258,7 @@ export class FeedContainer {
     // Check if container structure already exists (from initial HTML skeleton)
     const existingScrollContainer = this.container.querySelector('.feed-scroll-container') as HTMLElement;
     if (existingScrollContainer) {
-      this.scrollContainer = existingScrollContainer;
+    this.scrollContainer = existingScrollContainer;
     } else {
       // Create scroll container
       this.scrollContainer = document.createElement('div');
@@ -266,11 +266,18 @@ export class FeedContainer {
       this.container.appendChild(this.scrollContainer);
     }
 
-    this.container.style.backgroundColor = THEME.colors.backgroundPrimary;
-    this.container.style.color = THEME.colors.textPrimary;
+    const hasEarlyTheme = document.documentElement.dataset.stashgifsThemeReady === 'true';
+    this.container.style.backgroundColor = hasEarlyTheme
+      ? 'var(--color-bg, #1F2A33)'
+      : THEME.colors.backgroundPrimary;
+    this.container.style.color = hasEarlyTheme
+      ? 'var(--color-text-primary, #E6EEF4)'
+      : THEME.colors.textPrimary;
     this.container.style.fontFamily = THEME.typography.fontFamily;
     this.container.style.lineHeight = THEME.typography.lineHeight;
-    this.scrollContainer.style.backgroundColor = THEME.colors.backgroundPrimary;
+    this.scrollContainer.style.backgroundColor = hasEarlyTheme
+      ? 'var(--color-bg, #1F2A33)'
+      : THEME.colors.backgroundPrimary;
   }
 
   /**
@@ -343,6 +350,8 @@ export class FeedContainer {
       this.scrollContainer.style.backgroundColor = 'transparent';
       this.scrollContainer.style.backgroundImage = 'none';
     }
+
+    document.documentElement.dataset.stashgifsThemeReady = 'true';
   }
 
   private isReelModeEnabled(): boolean {
@@ -855,9 +864,10 @@ export class FeedContainer {
     // Enable autoplay for non-HD mode (viewport-based), disable for HD mode (hover-based only)
     this.visibilityManager = new VisibilityManager({
       threshold: this.settings.autoPlayThreshold,
-      autoPlay: !this.useHDMode, // Enable autoplay in non-HD mode, disable in HD mode
+      autoPlay: !this.useHDMode || this.settings.reelMode, // Enable autoplay in non-HD mode or reel mode
       debug: this.shouldEnableVisibilityDebug(),
       onHoverLoadRequest: (postId: string) => this.triggerVideoLoadOnHover(postId),
+      isReelMode: this.settings.reelMode, // Pass reel mode state
     });
 
     // Set HD mode state for more aggressive unloading
@@ -2198,8 +2208,6 @@ export class FeedContainer {
     
     const randomLeftIconSpan = document.createElement('span');
     randomLeftIconSpan.innerHTML = RANDOM_SVG;
-    randomLeftIconSpan.querySelector('svg')?.setAttribute('width', '16');
-    randomLeftIconSpan.querySelector('svg')?.setAttribute('height', '16');
     randomLeftIcon.appendChild(randomLeftIconSpan);
     
     return randomLeftIcon;
@@ -2225,8 +2233,6 @@ export class FeedContainer {
     
     const randomIconSvg = document.createElement('span');
     randomIconSvg.innerHTML = SHUFFLE_CHECK_SVG;
-    randomIconSvg.querySelector('svg')?.setAttribute('width', '14');
-    randomIconSvg.querySelector('svg')?.setAttribute('height', '14');
     const shuffleText = document.createElement('span');
     shuffleText.textContent = 'Random';
     shuffleIndicator.appendChild(randomIconSvg);
@@ -7189,28 +7195,10 @@ export class FeedContainer {
     }
     if (reelModeChanged) {
       this.applyReelModeLayout();
-    }
-    // Recreate visibility manager with new settings
-    this.visibilityManager.cleanup();
-    this.visibilityManager = new VisibilityManager({
-      threshold: this.settings.autoPlayThreshold,
-      autoPlay: this.settings.autoPlay,
-      debug: this.shouldEnableVisibilityDebug(),
-      onHoverLoadRequest: (postId: string) => this.triggerVideoLoadOnHover(postId),
-    });
-
-    // Re-observe all posts
-    for (const post of this.posts.values()) {
-      const postId = post.getPostId();
-      // Only observe video posts with VisibilityManager (images use their own IntersectionObserver)
-      if (post.hasVideoSource()) {
-        this.visibilityManager.observePost(post.getContainer(), postId);
-        const player = post.getPlayer();
-        // Only register video players with visibility manager
-        if (isNativeVideoPlayer(player)) {
-          this.visibilityManager.registerPlayer(postId, player);
-        }
-      }
+      // Update reel mode in visibility manager
+      this.visibilityManager.setReelMode(this.settings.reelMode === true);
+      // Also update autoplay setting based on HD mode and reel mode
+      this.visibilityManager.setAutoPlay(!this.useHDMode || this.settings.reelMode === true);
     }
 
     this.refreshAutoplayAfterLayout();

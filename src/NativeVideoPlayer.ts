@@ -5,7 +5,7 @@
 
 import { VideoPlayerState } from './types.js';
 import { formatDuration, isValidMediaUrl, hasWebkitFullscreen, hasMozFullscreen, hasMsFullscreen, hasWebkitFullscreenHTMLElement, hasMozFullscreenHTMLElement, hasMsFullscreenHTMLElement, hasWebkitFullscreenDocument, hasMozFullscreenDocument, hasMsFullscreenDocument, type ElementWebkitFullscreen, type ElementMozFullscreen, type ElementMsFullscreen, isMobileDevice, getNetworkInfo, isSlowNetwork, isCellularConnection, THEME } from './utils.js';
-import { VOLUME_MUTED_SVG, VOLUME_UNMUTED_SVG } from './icons.js';
+import { VOLUME_MUTED_SVG, VOLUME_UNMUTED_SVG, PLAY_BUTTON_SVG, PAUSE_SVG, FULLSCREEN_SVG } from './icons.js';
 import { setupTouchHandlers, createTouchState, type TouchState } from './utils/touchHandlers.js';
 
 /**
@@ -1057,7 +1057,7 @@ export class NativeVideoPlayer {
     this.playButton = document.createElement('button');
     this.playButton.className = 'video-player__play-button';
     this.playButton.setAttribute('aria-label', 'Play');
-    this.playButton.innerHTML = '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>';
+    this.playButton.innerHTML = PLAY_BUTTON_SVG;
     this.playButton.style.display = 'none'; // Hide play button
     this.controlsContainer.appendChild(this.playButton);
 
@@ -1098,7 +1098,7 @@ export class NativeVideoPlayer {
     this.fullscreenButton = document.createElement('button');
     this.fullscreenButton.className = 'video-player__fullscreen-button';
     this.fullscreenButton.setAttribute('aria-label', 'Fullscreen');
-    this.fullscreenButton.innerHTML = '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M7 14H5v5h5v-2H7v-3zm-2-4h2V7h3V5H5v5zm12 7h-3v2h5v-5h-2v3zM14 5v2h3v3h2V5h-5z"/></svg>';
+    this.fullscreenButton.innerHTML = FULLSCREEN_SVG;
     this.controlsContainer.appendChild(this.fullscreenButton);
 
     this.container.appendChild(this.controlsContainer);
@@ -1603,10 +1603,10 @@ export class NativeVideoPlayer {
 
   private updatePlayButton(): void {
     if (this.state.isPlaying) {
-      this.playButton.innerHTML = '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M6 4h4v16H6V4zm8 0h4v16h-4V4z"/></svg>';
+      this.playButton.innerHTML = PAUSE_SVG;
       this.playButton.setAttribute('aria-label', 'Pause');
     } else {
-      this.playButton.innerHTML = '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>';
+      this.playButton.innerHTML = PLAY_BUTTON_SVG;
       this.playButton.setAttribute('aria-label', 'Play');
     }
   }
@@ -2742,4 +2742,3 @@ export class NativeVideoPlayer {
     this.originalEndTime = undefined;
   }
 }
-

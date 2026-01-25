@@ -55,6 +55,7 @@ export class VisibilityManager {
     threshold: number;
     rootMargin: string;
     autoPlay: boolean;
+    isReelMode?: boolean;
   };
 
   constructor(options?: {
@@ -64,6 +65,7 @@ export class VisibilityManager {
     debug?: boolean;
     logger?: (event: string, payload?: Record<string, unknown>) => void;
     onHoverLoadRequest?: (postId: string) => void; // Callback to trigger video loading when hovered before loaded
+    isReelMode?: boolean; // When true, autoplay works without hover requirement
   }) {
     // On mobile, use larger rootMargin to start playing videos earlier
     const isMobile = isMobileDevice();
@@ -75,6 +77,7 @@ export class VisibilityManager {
       threshold: options?.threshold ?? 0, // Only pause when completely out of viewport
       rootMargin: options?.rootMargin ?? defaultRootMargin,
       autoPlay: options?.autoPlay ?? false,
+      isReelMode: options?.isReelMode ?? false,
     };
 
     this.entries = new Map();
@@ -484,6 +487,17 @@ export class VisibilityManager {
   }
 
   /**
+   * Set reel mode state to enable autoplay without hover requirement
+   */
+  setReelMode(enabled: boolean): void {
+    this.options.isReelMode = !!enabled;
+    // Re-evaluate playback if reel mode is enabled to trigger autoplay
+    if (this.options.isReelMode && this.options.autoPlay) {
+      this.reevaluatePlayback();
+    }
+  }
+
+  /**
    * Determine which video should play based on AudioManager priority logic
    * Returns the postId that should be playing, or undefined if none should play
    * In HD mode, only the most centered visible video should autoplay
@@ -574,6 +588,10 @@ export class VisibilityManager {
    */
   setAutoPlay(enabled: boolean): void {
     this.options.autoPlay = !!enabled;
+    // Re-evaluate playback if autoplay is enabled to trigger autoplay
+    if (this.options.autoPlay) {
+      this.reevaluatePlayback();
+    }
   }
 
   /**
@@ -829,7 +847,9 @@ export class VisibilityManager {
     if (entry.player?.isManuallyPaused()) {
       return { canPlay: false, reason: 'manually-paused' };
     }
-    if (!this.options.autoPlay && this.hoveredPostId && this.hoveredPostId !== postId) {
+    // In reel mode, allow autoplay even when other videos are hovered
+    // This enables autoplay without hover requirement in reel/fullscreen mode
+    if (!this.options.isReelMode && !this.options.autoPlay && this.hoveredPostId && this.hoveredPostId !== postId) {
       return { canPlay: false, reason: 'hover-active' };
     }
     return { canPlay: true };

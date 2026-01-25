@@ -10,7 +10,7 @@ import { StashAPI } from './StashAPI.js';
 import { VisibilityManager } from './VisibilityManager.js';
 import { calculateAspectRatio, getAspectRatioClass, isValidMediaUrl, showToast, throttle, toAbsoluteUrl, isMobileDevice, THEME } from './utils.js';
 import { posterPreloader } from './PosterPreloader.js';
-import { HQ_SVG_OUTLINE, HQ_SVG_FILLED, EXTERNAL_LINK_SVG, MARKER_SVG, STAR_SVG, STAR_SVG_OUTLINE, MARKER_BADGE_SVG, SCENE_BADGE_SVG, IMAGE_BADGE_SVG, VOLUME_MUTED_SVG, VOLUME_UNMUTED_SVG } from './icons.js';
+import { HQ_SVG_OUTLINE, HQ_SVG_FILLED, EXTERNAL_LINK_SVG, MARKER_SVG, STAR_SVG, STAR_SVG_OUTLINE, VOLUME_MUTED_SVG, VOLUME_UNMUTED_SVG } from './icons.js';
 import { BasePost } from './BasePost.js';
 import { setupTouchHandlers, preventClickAfterTouch } from './utils/touchHandlers.js';
 
@@ -333,10 +333,10 @@ export class VideoPost extends BasePost {
     
     const isMuted = this.getGlobalMuteState();
     if (isMuted) {
-      btn.innerHTML = VOLUME_MUTED_SVG.replace('width="24"', 'width="24"').replace('height="24"', 'height="24"');
+      btn.innerHTML = VOLUME_MUTED_SVG;
       btn.setAttribute('aria-label', 'Unmute');
     } else {
-      btn.innerHTML = VOLUME_UNMUTED_SVG.replace('width="24"', 'width="24"').replace('height="24"', 'height="24"');
+      btn.innerHTML = VOLUME_UNMUTED_SVG;
       btn.setAttribute('aria-label', 'Mute');
     }
     
@@ -427,39 +427,38 @@ export class VideoPost extends BasePost {
   private createHeader(): HTMLElement {
     const header = document.createElement('div');
     header.className = 'video-post__header';
-    header.style.padding = '2px 16px';
+    header.style.padding = '8px 16px';
     header.style.marginBottom = '0';
     header.style.borderBottom = 'none';
 
-    const chips = document.createElement('div');
-    chips.className = 'chips';
-    chips.style.display = 'flex';
-    chips.style.flexWrap = 'wrap';
-    chips.style.alignItems = 'center';
-    chips.style.gap = '4px';
-    chips.style.margin = '0';
-    chips.style.padding = '0';
-
-    const badge = this.createContentBadgeIcon();
-    if (badge) {
-      chips.appendChild(badge);
-    }
-    
-    // Add performer chips
+    // Performer section - name and image
     if (this.data.marker.scene.performers && this.data.marker.scene.performers.length > 0) {
+      const performersSection = document.createElement('div');
+      performersSection.className = 'video-post__performers';
       for (const performer of this.data.marker.scene.performers) {
         const chip = this.createPerformerChip(performer);
-        chips.appendChild(chip);
+        performersSection.appendChild(chip);
       }
+      header.appendChild(performersSection);
     }
 
-    // Add tag chips: show all tags from the tags array
+    // Tag chips section - clean line without box
     // Skip in shuffle mode UNLESS a marker has been created (to show the assigned tag)
     if (!this.useShuffleMode || this.hasCreatedMarker) {
-      this.addTagChips(chips);
+      const tagsSection = document.createElement('div');
+      tagsSection.className = 'video-post__tags';
+      this.addTagChips(tagsSection);
+      if (this.isReelMode) {
+        tagsSection.style.display = 'flex';
+        tagsSection.style.flexWrap = 'wrap';
+        tagsSection.style.alignItems = 'center';
+        tagsSection.style.gap = '4px';
+        tagsSection.style.marginTop = '4px';
+        tagsSection.style.opacity = '0.85';
+      }
+      header.appendChild(tagsSection);
     }
 
-    header.appendChild(chips);
     return header;
   }
 
@@ -584,54 +583,6 @@ export class VideoPost extends BasePost {
   private isSyntheticMarker(): boolean {
     const markerId = this.data.marker?.id;
     return typeof markerId === 'string' && markerId.startsWith('synthetic-');
-  }
-
-  /**
-   * Create an icon badge describing the content type
-   */
-  private createContentBadgeIcon(): HTMLElement | null {
-    // Check if this is an image-based marker (marker.id starts with 'image-')
-    const markerId = this.data.marker.id;
-    const isImageMarker = typeof markerId === 'string' && markerId.startsWith('image-');
-    
-    if (isImageMarker) {
-      return this.buildBadgeIcon(IMAGE_BADGE_SVG, 'Image');
-    }
-    
-    const isShortForm = this.isShortFormContent();
-    const isSynthetic = this.isSyntheticMarker();
-
-    if (isSynthetic || isShortForm) {
-      const label = isShortForm ? 'Short form scene' : 'Synthetic scene';
-      return this.buildBadgeIcon(SCENE_BADGE_SVG, label);
-    }
-
-    if (this.isRealMarker()) {
-      return this.buildBadgeIcon(MARKER_BADGE_SVG, 'Marker');
-    }
-
-    return null;
-  }
-
-  /**
-   * Build a styled badge element
-   */
-  private buildBadgeIcon(svg: string, label: string): HTMLElement {
-    const badge = document.createElement('span');
-    badge.className = 'content-badge';
-    badge.style.display = 'inline-flex';
-    badge.style.alignItems = 'center';
-    badge.style.justifyContent = 'center';
-    badge.style.width = '30px';
-    badge.style.height = '30px';
-    badge.style.flexShrink = '0';
-    badge.style.color = THEME.colors.textSecondary;
-    badge.style.pointerEvents = 'none';
-    badge.innerHTML = svg;
-    badge.title = label;
-    badge.setAttribute('role', 'img');
-    badge.setAttribute('aria-label', label);
-    return badge;
   }
 
   /**
@@ -1430,12 +1381,12 @@ export class VideoPost extends BasePost {
       this.ratingDisplayButton.classList.toggle('icon-btn--rating-active', this.hasRating);
     }
     if (this.ratingDisplayValue) {
-      this.ratingDisplayValue.textContent = this.hasRating ? this.formatRatingValue(this.ratingValue) : '0';
+      this.ratingDisplayValue.textContent = '';
     }
     if (this.ratingDisplayIcon) {
       if (this.hasRating) {
         this.ratingDisplayIcon.innerHTML = STAR_SVG;
-        this.ratingDisplayIcon.style.color = THEME.colors.ratingLow;
+        this.ratingDisplayIcon.style.color = '#FFD700';
       } else {
         this.ratingDisplayIcon.innerHTML = STAR_SVG_OUTLINE;
         this.ratingDisplayIcon.style.color = THEME.colors.iconInactive;
@@ -2889,7 +2840,7 @@ export class VideoPost extends BasePost {
   }
 
   /**
-   * Show loading skeleton in tag suggestions dropdown
+   * Show loading state in tag suggestions dropdown
    */
   private showTagSuggestionsLoading(): void {
     if (!this.markerDialogSuggestions || this.isTagSearchLoading) return;
@@ -2898,43 +2849,26 @@ export class VideoPost extends BasePost {
     this.markerDialogSuggestions.innerHTML = '';
     this.markerDialogSuggestions.style.display = 'block';
 
-    // Create 4 skeleton suggestion items
-    for (let i = 0; i < 4; i++) {
-      const skeletonItem = document.createElement('div');
-      skeletonItem.dataset.tagSuggestionSkeleton = 'true';
-      skeletonItem.style.width = '100%';
-      skeletonItem.style.padding = '10px 12px';
-      skeletonItem.style.display = 'flex';
-      skeletonItem.style.alignItems = 'center';
-      
-      const skeletonText = document.createElement('div');
-      skeletonText.className = 'chip-skeleton';
-      skeletonText.dataset.tagSuggestionSkeleton = 'true';
-      skeletonText.style.height = '16px';
-      skeletonText.style.borderRadius = '4px';
-      skeletonText.style.flex = '1';
-      
-      // Vary width for more natural look
-      const widths = [120, 140, 100, 130];
-      skeletonText.style.width = `${widths[i % widths.length]}px`;
-      
-      skeletonItem.appendChild(skeletonText);
-      this.markerDialogSuggestions.appendChild(skeletonItem);
-    }
+    // Show simple loading text
+    const loadingItem = document.createElement('div');
+    loadingItem.style.width = '100%';
+    loadingItem.style.padding = '10px 12px';
+    loadingItem.style.display = 'flex';
+    loadingItem.style.alignItems = 'center';
+    loadingItem.style.color = THEME.colors.textSecondary;
+    loadingItem.style.fontSize = '14px';
+    loadingItem.textContent = 'Loading tags...';
+    
+    this.markerDialogSuggestions.appendChild(loadingItem);
   }
 
   /**
-   * Clear loading skeleton from tag suggestions dropdown
+   * Clear loading from tag suggestions dropdown
    */
   private clearTagSuggestionsLoading(): void {
     if (!this.markerDialogSuggestions) return;
 
-    // Remove all skeleton items
-    const skeletonItems = Array.from(this.markerDialogSuggestions.querySelectorAll('[data-tag-suggestion-skeleton="true"]'));
-    for (const item of skeletonItems) {
-      item.remove();
-    }
-
+    this.markerDialogSuggestions.innerHTML = '';
     this.isTagSearchLoading = false;
   }
 
@@ -2947,7 +2881,7 @@ export class VideoPost extends BasePost {
     // Clear any existing loading state from previous search
     this.clearTagSuggestionsLoading();
 
-    // Show loading skeleton if search takes longer than 200ms
+    // Show loading state if search takes longer than 200ms
     this.tagSearchLoadingTimer = setTimeout(() => {
       if (!this.isTagSearchLoading) {
         this.showTagSuggestionsLoading();
@@ -2964,7 +2898,7 @@ export class VideoPost extends BasePost {
         this.tagSearchLoadingTimer = undefined;
       }
       
-      // Clear any loading skeletons that were shown
+      // Clear any loading state that was shown
       this.clearTagSuggestionsLoading();
       
       this.displayTagSuggestions(tags);
@@ -2985,7 +2919,7 @@ export class VideoPost extends BasePost {
   private displayTagSuggestions(tags: Array<{ id: string; name: string }>): void {
     if (!this.markerDialogSuggestions) return;
 
-    // Clear any loading skeletons first
+    // Clear any loading state first
     this.clearTagSuggestionsLoading();
 
     this.markerDialogSuggestions.innerHTML = '';

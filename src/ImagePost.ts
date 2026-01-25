@@ -930,12 +930,12 @@ export class ImagePost extends BasePost {
       this.ratingDisplayButton.classList.toggle('icon-btn--rating-active', this.hasRating);
     }
     if (this.ratingDisplayValue) {
-      this.ratingDisplayValue.textContent = this.hasRating ? this.formatRatingValue(this.ratingValue) : '0';
+      this.ratingDisplayValue.textContent = '';
     }
     if (this.ratingDisplayIcon) {
       if (this.hasRating) {
         this.ratingDisplayIcon.innerHTML = STAR_SVG;
-        this.ratingDisplayIcon.style.color = THEME.colors.ratingLow;
+        this.ratingDisplayIcon.style.color = '#FFD700';
       } else {
         this.ratingDisplayIcon.innerHTML = STAR_SVG_OUTLINE;
         this.ratingDisplayIcon.style.color = THEME.colors.iconInactive;
@@ -1332,4 +1332,3 @@ export class ImagePost extends BasePost {
     this.container?.remove();
   }
 }
-
