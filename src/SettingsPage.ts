@@ -65,6 +65,7 @@ export class SettingsPage {
     tooltip.style.backgroundColor = THEME.colors.overlay;
     tooltip.style.color = THEME.colors.textPrimary;
     tooltip.style.fontSize = THEME.typography.sizeMeta;
+    tooltip.style.fontFamily = THEME.typography.fontFamily;
     tooltip.style.borderRadius = THEME.radius.button;
     tooltip.style.whiteSpace = 'pre-wrap';
     tooltip.style.maxWidth = '300px';

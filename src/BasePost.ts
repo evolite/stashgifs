@@ -166,6 +166,19 @@ export abstract class BasePost {
     this.applyReelFooterStyles(elements.footer, isMobile);
   }
 
+  protected applyReelModeLayoutIfNeeded(header?: HTMLElement): void {
+    if (!this.isReelMode) {
+      return;
+    }
+    const headerElement = header ?? this.container.querySelector<HTMLElement>('.video-post__header');
+    const playerContainer = this.container.querySelector<HTMLElement>('.video-post__player');
+    const footer = this.container.querySelector<HTMLElement>('.video-post__footer');
+    if (!headerElement || !playerContainer || !footer) {
+      return;
+    }
+    this.applyReelModeLayout({ header: headerElement, playerContainer, footer });
+  }
+
   private applyReelContainerStyles(): void {
     this.container.style.border = 'none';
     this.container.style.borderRadius = '0';
@@ -604,7 +617,9 @@ export abstract class BasePost {
     };
     
     const isMobile = isMobileDevice();
-    const canHover = typeof window !== 'undefined' && window.matchMedia('(hover: hover)').matches;
+    const canHover = typeof globalThis !== 'undefined'
+      && 'matchMedia' in globalThis
+      && globalThis.matchMedia('(hover: hover)').matches;
     
     if (isMobile) {
       // Use unified touch handler utility
@@ -1832,7 +1847,9 @@ export abstract class BasePost {
     });
     
     const isMobile = isMobileDevice();
-    const canHover = typeof window !== 'undefined' && window.matchMedia('(hover: hover)').matches;
+    const canHover = typeof globalThis !== 'undefined'
+      && 'matchMedia' in globalThis
+      && globalThis.matchMedia('(hover: hover)').matches;
     
     // Add hover overlay handlers for tags (desktop only)
     if (this.api && canHover) {

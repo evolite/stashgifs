@@ -200,12 +200,14 @@ export class NativeVideoPlayer {
       
       // canPlayType returns "" (empty string), "maybe", or "probably"
       // Empty string means not supported
-      if (!hevcSupport || hevcSupport.length === 0) {
-        console.warn('NativeVideoPlayer: HEVC/H.265 codec may not be supported in this browser', {
-          url,
-          canPlayType: hevcSupport || '(empty)',
-        });
+      const supportsHevc = Boolean(hevcSupport && hevcSupport.length > 0);
+      if (supportsHevc) {
+        return;
       }
+      console.warn('NativeVideoPlayer: HEVC/H.265 codec may not be supported in this browser', {
+        url,
+        canPlayType: hevcSupport || '(empty)',
+      });
     }
   }
 
@@ -213,32 +215,8 @@ export class NativeVideoPlayer {
    * Setup basic video element properties
    */
   private setupVideoElementBasicProperties(options?: { startTime?: number; muted?: boolean; posterUrl?: string }): void {
-    // Set poster image if provided
     const isMobile = isMobileDevice();
-    if (options?.posterUrl) {
-      const normalizedPosterUrl = normalizeMediaUrl(options.posterUrl);
-      if (!normalizedPosterUrl) {
-        console.warn('NativeVideoPlayer: Invalid poster URL, skipping poster', { posterUrl: options.posterUrl });
-        this.shouldExtractFirstFrame = true;
-      } else {
-        // On mobile, don't use video element's poster attribute - use fallback image instead
-        // This prevents browser from showing video preview/thumbnail instead of static image
-        if (!isMobile) {
-          this.videoElement.poster = normalizedPosterUrl;
-        }
-        
-        // On mobile, create fallback poster image element and don't use video element's poster
-        // This ensures we always show the static image, not a video preview
-        if (isMobile) {
-          this.createPosterFallback(normalizedPosterUrl);
-        }
-      }
-    } else {
-      // No poster URL provided - will extract first frame from video as fallback
-      // This is handled after video metadata loads
-      // Don't set video element's poster attribute - we'll use extracted frame instead
-      this.shouldExtractFirstFrame = true;
-    }
+    this.applyPosterConfig(options?.posterUrl, isMobile);
     
     // Set object-fit for proper video display
     this.videoElement.style.objectFit = 'cover';
@@ -252,19 +230,7 @@ export class NativeVideoPlayer {
       this.videoElement.style.transition = 'opacity 0.3s ease-out';
     }
     
-    // Optimize preload strategy for mobile
-    // On mobile: use 'metadata' by default to reduce bandwidth
-    // On desktop: use 'auto' for non-HD videos, 'metadata' for HD videos
-    const hasStartTimeForPreload = typeof options?.startTime === 'number' && Number.isFinite(options.startTime) && options.startTime > 0;
-    
-    if (isMobile) {
-      // Mobile: always start with 'metadata' to save bandwidth
-      // Will switch to 'auto' when video is about to play
-      this.videoElement.preload = 'metadata';
-    } else {
-      // Desktop: use 'auto' for non-HD videos, 'metadata' for HD videos
-      this.videoElement.preload = hasStartTimeForPreload ? 'metadata' : 'auto';
-    }
+    this.applyPreloadStrategy(options?.startTime, isMobile);
     
     this.videoElement.playsInline = true; // Required for iOS inline playback
     this.videoElement.muted = options?.muted ?? false; // Default to unmuted (markers don't have sound anyway)
@@ -283,6 +249,41 @@ export class NativeVideoPlayer {
     
     // Apply adaptive buffering based on network conditions
     this.applyAdaptiveBuffering();
+  }
+
+  private applyPosterConfig(posterUrl: string | undefined, isMobile: boolean): void {
+    if (!posterUrl) {
+      this.shouldExtractFirstFrame = true;
+      return;
+    }
+
+    const normalizedPosterUrl = normalizeMediaUrl(posterUrl);
+    if (!normalizedPosterUrl) {
+      console.warn('NativeVideoPlayer: Invalid poster URL, skipping poster', { posterUrl });
+      this.shouldExtractFirstFrame = true;
+      return;
+    }
+
+    if (!isMobile) {
+      this.videoElement.poster = normalizedPosterUrl;
+    }
+
+    if (isMobile) {
+      this.createPosterFallback(normalizedPosterUrl);
+    }
+  }
+
+  private applyPreloadStrategy(startTime: number | undefined, isMobile: boolean): void {
+    const hasStartTimeForPreload = typeof startTime === 'number'
+      && Number.isFinite(startTime)
+      && startTime > 0;
+
+    if (isMobile) {
+      this.videoElement.preload = 'metadata';
+      return;
+    }
+
+    this.videoElement.preload = hasStartTimeForPreload ? 'metadata' : 'auto';
   }
 
   /**
@@ -633,79 +634,24 @@ export class NativeVideoPlayer {
       
       const errorCode = this.videoElement.error?.code;
       const errorMessage = this.videoElement.error?.message;
-      const lowerErrorMessage = errorMessage?.toLowerCase();
-      
-      // Check if this is a known invalid URL error (MediaLoadInvalidURI)
-      // Error code 4 = MEDIA_ERR_SRC_NOT_SUPPORTED / MediaLoadInvalidURI
-      // Also check for empty/blank error messages (Firefox with privacy.resistFingerprinting)
-      const isInvalidUriError = errorCode === 4 || 
-        (errorMessage && (errorMessage.includes('MediaLoadInvalidURI') || errorMessage.includes('INVALID_STATE_ERR'))) ||
-        (!errorMessage && errorCode === 4); // Firefox may blank the message when privacy.resistFingerprinting is enabled
-      
-      // Check for codec/format errors (including HEVC)
-      const isCodecError = errorCode === 4 && 
-        errorMessage &&
-        (errorMessage.includes('codec') || 
-         errorMessage.includes('format') ||
-         errorMessage.includes('not supported') ||
-         lowerErrorMessage?.includes('hevc') ||
-         lowerErrorMessage?.includes('h.265'));
+      const isCodecError = this.isCodecError(errorCode, errorMessage);
 
-      const isDecodeRangeError = errorCode === 3 &&
-        (lowerErrorMessage?.includes('range') ||
-         lowerErrorMessage?.includes('decode') ||
-         lowerErrorMessage?.includes('sample'));
-
-      if (isDecodeRangeError && !this.hasRetriedDecode) {
-        const baseUrl = this.originalVideoUrl || this.videoElement.currentSrc || this.videoElement.src;
-        const normalized = normalizeMediaUrl(baseUrl);
-        if (normalized) {
-          this.hasRetriedDecode = true;
-          const retryUrl = addCacheBusting(normalized);
-          try {
-            this.videoElement.pause();
-            this.videoElement.removeAttribute('src');
-            this.videoElement.src = retryUrl;
-            this.videoElement.load();
-          } catch {
-            // Ignore retry errors and fall through to default handler
-          }
-          e.stopPropagation();
-          e.preventDefault();
-          return;
-        }
-      }
-      
-      if (isInvalidUriError && !isCodecError) {
-        // Mark as handled and silently suppress - validation should have caught this
-        this.errorHandled = true;
-        // Stop propagation to prevent browser from logging the error
+      if (this.isDecodeRangeError(errorCode, errorMessage) && this.tryRetryDecodeError()) {
         e.stopPropagation();
         e.preventDefault();
-        // Don't clear src or do anything that could trigger more events
         return;
       }
-      
-      // Mark as handled and log errors (including codec errors)
-      this.errorHandled = true;
-      this.hideLoadingIndicator(); // Hide loading indicator on error
-      
-      if (isCodecError) {
-        console.error('NativeVideoPlayer: Video codec not supported (possibly HEVC/H.265)', {
-          error: e,
-          errorCode,
-          errorMessage,
-          src: this.videoElement.src,
-          hint: 'HEVC/H.265 codec may not be supported in this browser. Consider using H.264 or transcoding the video.',
-        });
-      } else {
-        console.error('NativeVideoPlayer: Video error', {
-          error: e,
-          errorCode,
-          errorMessage,
-          src: this.videoElement.src,
-        });
+
+      if (this.isInvalidUriError(errorCode, errorMessage) && !isCodecError) {
+        this.errorHandled = true;
+        e.stopPropagation();
+        e.preventDefault();
+        return;
       }
+
+      this.errorHandled = true;
+      this.hideLoadingIndicator();
+      this.logVideoError(e, errorCode, errorMessage, isCodecError);
     }, { once: true, capture: true }); // Use capture phase to catch errors early
     
     // Track load start time for timeout detection
@@ -724,6 +670,73 @@ export class NativeVideoPlayer {
         });
       }
     }, 15000);
+  }
+
+  private isInvalidUriError(errorCode?: number, errorMessage?: string): boolean {
+    return errorCode === 4 ||
+      (errorMessage && (errorMessage.includes('MediaLoadInvalidURI') || errorMessage.includes('INVALID_STATE_ERR'))) ||
+      (!errorMessage && errorCode === 4);
+  }
+
+  private isCodecError(errorCode?: number, errorMessage?: string): boolean {
+    if (errorCode !== 4 || !errorMessage) return false;
+    const lowerErrorMessage = errorMessage.toLowerCase();
+    return errorMessage.includes('codec')
+      || errorMessage.includes('format')
+      || errorMessage.includes('not supported')
+      || lowerErrorMessage.includes('hevc')
+      || lowerErrorMessage.includes('h.265');
+  }
+
+  private isDecodeRangeError(errorCode?: number, errorMessage?: string): boolean {
+    if (errorCode !== 3 || !errorMessage) return false;
+    const lowerErrorMessage = errorMessage.toLowerCase();
+    return lowerErrorMessage.includes('range')
+      || lowerErrorMessage.includes('decode')
+      || lowerErrorMessage.includes('sample');
+  }
+
+  private tryRetryDecodeError(): boolean {
+    if (this.hasRetriedDecode) return false;
+    const baseUrl = this.originalVideoUrl || this.videoElement.currentSrc || this.videoElement.src;
+    const normalized = normalizeMediaUrl(baseUrl);
+    if (!normalized) return false;
+    this.hasRetriedDecode = true;
+    const retryUrl = addCacheBusting(normalized);
+    try {
+      this.videoElement.pause();
+      this.videoElement.removeAttribute('src');
+      this.videoElement.src = retryUrl;
+      this.videoElement.load();
+    } catch {
+      return false;
+    }
+    return true;
+  }
+
+  private logVideoError(
+    errorEvent: Event,
+    errorCode: number | undefined,
+    errorMessage: string | undefined,
+    isCodecError: boolean
+  ): void {
+    if (isCodecError) {
+      console.error('NativeVideoPlayer: Video codec not supported (possibly HEVC/H.265)', {
+        error: errorEvent,
+        errorCode,
+        errorMessage,
+        src: this.videoElement.src,
+        hint: 'HEVC/H.265 codec may not be supported in this browser. Consider using H.264 or transcoding the video.',
+      });
+      return;
+    }
+
+    console.error('NativeVideoPlayer: Video error', {
+      error: errorEvent,
+      errorCode,
+      errorMessage,
+      src: this.videoElement.src,
+    });
   }
 
   /**
@@ -2593,7 +2606,7 @@ export class NativeVideoPlayer {
         playerWrapper.style.willChange = 'transform';
         
         // Insert playerWrapper before controlsContainer if it exists
-        if (this.controlsContainer && this.controlsContainer.parentNode === this.container) {
+        if (this.controlsContainer?.parentNode === this.container) {
           this.container.insertBefore(playerWrapper, this.controlsContainer);
         } else {
           this.container.appendChild(playerWrapper);

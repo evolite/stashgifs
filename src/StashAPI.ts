@@ -863,7 +863,7 @@ export class StashAPI {
       return;
     }
 
-    const sceneFilter = (targetFilter.scene_filter ?? {}) as SceneFilterInput;
+    const sceneFilter: SceneFilterInput = targetFilter.scene_filter ?? {};
     sceneFilter.orientation = {
       value: orientations.length === 1 ? orientations[0] : orientations
     };

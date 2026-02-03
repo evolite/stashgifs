@@ -622,17 +622,14 @@ export class FeedContainer {
   }
 
   private areExcludedTagNamesEqual(a: string[], b: string[]): boolean {
-    if (a.length !== b.length) {
-      return false;
-    }
-
-    const sortedA = [...a].sort((left, right) => left.localeCompare(right));
-    const sortedB = [...b].sort((left, right) => left.localeCompare(right));
-
-    return sortedA.every((value, index) => value === sortedB[index]);
+    return this.areStringListsEqual(a, b);
   }
 
   private areOrientationFiltersEqual(a: string[], b: string[]): boolean {
+    return this.areStringListsEqual(a, b);
+  }
+
+  private areStringListsEqual(a: string[], b: string[]): boolean {
     if (a.length !== b.length) {
       return false;
     }
@@ -3515,10 +3512,15 @@ export class FeedContainer {
       return;
     }
 
-    if (this.loadMoreTrigger && this.loadMoreTrigger.parentNode === this.postsContainer) {
-      this.postsContainer.insertBefore(fragment, this.loadMoreTrigger);
+    const postsContainer = this.postsContainer;
+    if (!postsContainer) {
+      return;
+    }
+
+    if (this.loadMoreTrigger?.parentNode === postsContainer) {
+      postsContainer.insertBefore(fragment, this.loadMoreTrigger);
     } else {
-      this.postsContainer.appendChild(fragment);
+      postsContainer.appendChild(fragment);
     }
   }
 

@@ -420,6 +420,7 @@ export class VideoPost extends BasePost {
     if (header) {
       const newHeader = this.createHeader();
       header.replaceWith(newHeader);
+      this.applyReelModeLayoutIfNeeded(newHeader);
     }
   }
 

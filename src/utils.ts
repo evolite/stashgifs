@@ -229,6 +229,7 @@ export function showToast(message: string, duration: number = 2000): void {
   toast.style.padding = '12px 24px';
   toast.style.borderRadius = THEME.radius.button;
   toast.style.fontSize = THEME.typography.sizeBody;
+  toast.style.fontFamily = THEME.typography.fontFamily;
   toast.style.zIndex = '10000';
   toast.style.opacity = '0';
   toast.style.transition = 'opacity 0.3s ease, transform 0.3s ease';
