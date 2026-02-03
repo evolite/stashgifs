@@ -6,7 +6,7 @@
 import { FavoritesManager } from './FavoritesManager.js';
 import { StashAPI } from './StashAPI.js';
 import { VisibilityManager } from './VisibilityManager.js';
-import { toAbsoluteUrl, showToast, isMobileDevice, THEME } from './utils.js';
+import { normalizeMediaUrl, showToast, isMobileDevice, THEME } from './utils.js';
 import { VERIFIED_CHECKMARK_SVG, ADD_TAG_SVG, HEART_SVG_OUTLINE, HEART_SVG_FILLED, OCOUNT_SVG, EXTERNAL_LINK_SVG, STAR_SVG, STAR_SVG_OUTLINE } from './icons.js';
 import { setupTouchHandlers, preventClickAfterTouch } from './utils/touchHandlers.js';
 import { PerformerExtended } from './graphql/types.js';
@@ -644,9 +644,7 @@ export abstract class BasePost {
     imageContainer.style.overflow = 'hidden';
     
     if (performer.image_path) {
-      const imageSrc = performer.image_path.startsWith('http')
-        ? performer.image_path
-        : toAbsoluteUrl(performer.image_path);
+      const imageSrc = normalizeMediaUrl(performer.image_path);
       if (imageSrc) {
         const img = document.createElement('img');
         img.src = imageSrc;
@@ -657,6 +655,7 @@ export abstract class BasePost {
         img.style.objectPosition = 'top center';
         imageContainer.appendChild(img);
       } else {
+        console.warn('BasePost: Invalid performer image URL', { url: performer.image_path, performer: performer.name });
         imageContainer.textContent = performer.name.charAt(0).toUpperCase();
       }
     } else {
@@ -738,9 +737,7 @@ export abstract class BasePost {
     imageSection.style.position = 'relative';
 
     if (performerData.image_path) {
-      const imageSrc = performerData.image_path.startsWith('http')
-        ? performerData.image_path
-        : toAbsoluteUrl(performerData.image_path);
+      const imageSrc = normalizeMediaUrl(performerData.image_path);
       if (imageSrc) {
         const img = document.createElement('img');
         img.src = imageSrc;
@@ -751,6 +748,7 @@ export abstract class BasePost {
         img.style.objectPosition = 'center center';
         imageSection.appendChild(img);
       } else {
+        console.warn('BasePost: Invalid performer overlay image URL', { url: performerData.image_path, performer: performerData.name });
         imageSection.textContent = performerData.name.charAt(0).toUpperCase();
         imageSection.style.fontSize = '64px';
         imageSection.style.color = THEME.colors.textMuted;
@@ -1419,9 +1417,7 @@ export abstract class BasePost {
     imageSection.style.flexShrink = '0';
 
     if (tagData.image_path) {
-      const imageSrc = tagData.image_path.startsWith('http')
-        ? tagData.image_path
-        : toAbsoluteUrl(tagData.image_path);
+      const imageSrc = normalizeMediaUrl(tagData.image_path);
       if (imageSrc) {
         const img = document.createElement('img');
         img.src = imageSrc;
@@ -1433,6 +1429,7 @@ export abstract class BasePost {
         imageSection.appendChild(img);
         return imageSection;
       }
+      console.warn('BasePost: Invalid tag image URL', { url: tagData.image_path, tag: tagData.name });
     }
     imageSection.textContent = tagData.name.charAt(0).toUpperCase();
     imageSection.style.fontSize = '32px';

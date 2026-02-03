@@ -5,7 +5,7 @@
  * Caches resolved poster URLs for quick lookup when rendering posts.
  */
 import { SceneMarker } from './types.js';
-import { toAbsoluteUrl } from './utils.js';
+import { normalizeMediaUrl, toAbsoluteUrl } from './utils.js';
 
 class PosterPreloader {
   private readonly cache: Map<string, string> = new Map();
@@ -55,7 +55,13 @@ class PosterPreloader {
         // Keep silent; just drop inflight and don't cache failures
         this.inflight.delete(idStr);
       };
-      img.src = url;
+      const normalizedUrl = normalizeMediaUrl(url);
+      if (!normalizedUrl) {
+        console.warn('PosterPreloader: Invalid poster URL', { url });
+        this.inflight.delete(idStr);
+        continue;
+      }
+      img.src = normalizedUrl;
     }
   }
 
@@ -74,6 +80,5 @@ class PosterPreloader {
 }
 
 export const posterPreloader = new PosterPreloader();
-
 
 

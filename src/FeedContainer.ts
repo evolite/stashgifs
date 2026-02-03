@@ -13,8 +13,9 @@ import { ImagePlayer } from './ImagePlayer.js';
 import { VisibilityManager } from './VisibilityManager.js';
 import { FavoritesManager } from './FavoritesManager.js';
 import { SettingsPage } from './SettingsPage.js';
+import { ScenePlayerDevLayout } from './layouts/ScenePlayerDevLayout.js';
 import { AudioManager, AudioPriority } from './AudioManager.js';
-import { debounce, isValidMediaUrl, detectDeviceCapabilities, DeviceCapabilities, isStandaloneNavigator, isMobileDevice, getNetworkInfo, isSlowNetwork, isCellularConnection, detectVideoFromVisualFiles, isMp4File, getImageUrlForDisplay, THEME, THEME_DEFAULTS } from './utils.js';
+import { debounce, isValidMediaUrl, normalizeMediaUrl, detectDeviceCapabilities, DeviceCapabilities, isStandaloneNavigator, isMobileDevice, getNetworkInfo, isSlowNetwork, isCellularConnection, detectVideoFromVisualFiles, isMp4File, getImageUrlForDisplay, THEME, THEME_DEFAULTS } from './utils.js';
 import { posterPreloader } from './PosterPreloader.js';
 import { Image as GraphQLImage } from './graphql/types.js';
 import { HQ_SVG_OUTLINE, HQ_SVG_FILLED, RANDOM_SVG, SETTINGS_SVG, SHUFFLE_CHECK_SVG, STASHGIFS_LOGO_SVG } from './icons.js';
@@ -41,6 +42,7 @@ const DEFAULT_SETTINGS: FeedSettings = {
   shortFormOnly: false, // When true, only load short-form content and skip regular markers
   snapToCards: false, // When true, scroll/swipe snaps to center next/previous card
   reelMode: false, // When true, use full-screen reel layout
+  layoutMode: 'default',
   themeBackground: THEME_DEFAULTS.backgroundPrimary,
   themePrimary: THEME_DEFAULTS.surface,
   themeSecondary: THEME_DEFAULTS.backgroundSecondary,
@@ -148,6 +150,7 @@ export class FeedContainer {
   private touchStartTime: number = 0;
   private isSnapping: boolean = false; // Prevent multiple snaps in progress
   private snapThrottleTimeout?: ReturnType<typeof setTimeout>;
+  private scenePlayerDevLayout?: ScenePlayerDevLayout;
 
   constructor(container: HTMLElement, api?: StashAPI, settings?: Partial<FeedSettings>) {
     this.container = container;
@@ -698,6 +701,29 @@ export class FeedContainer {
     delete filters.orientationFilter;
   }
 
+  private isScenePlayerDevLayoutActive(): boolean {
+    return this.settings.layoutMode === 'sceneplayer-dev';
+  }
+
+  private renderScenePlayerDevLayout(): void {
+    if (this.postsContainer) {
+      this.postsContainer.innerHTML = '';
+    }
+
+    const targetContainer = this.postsContainer || this.scrollContainer || this.container;
+    this.scenePlayerDevLayout = new ScenePlayerDevLayout(targetContainer);
+    this.scenePlayerDevLayout.init();
+  }
+
+  private reloadForLayoutModeChange(): void {
+    try {
+      sessionStorage.setItem('stashgifs-scroll-to-top', 'true');
+    } catch {
+      // Ignore storage errors
+    }
+    globalThis.location.reload();
+  }
+
   private shouldExcludeTags(tags?: Array<{ id: string; name: string }>): boolean {
     if (!tags || tags.length === 0) {
       return false;
@@ -1088,10 +1114,15 @@ export class FeedContainer {
       leading.className = 'feed-list-button__leading';
 
       if (options.leadingImage) {
-        const img = document.createElement('img');
-        img.src = options.leadingImage;
-        img.alt = label;
-        leading.appendChild(img);
+        const normalizedImage = normalizeMediaUrl(options.leadingImage);
+        if (normalizedImage) {
+          const img = document.createElement('img');
+          img.src = normalizedImage;
+          img.alt = label;
+          leading.appendChild(img);
+        } else {
+          console.warn('FeedContainer: Invalid leading image URL', { url: options.leadingImage, label });
+        }
       } else if (options.leadingText) {
         leading.textContent = options.leadingText;
       }
@@ -2355,6 +2386,7 @@ export class FeedContainer {
         const previousShowVerified = this.settings.showVerifiedCheckmarks;
         const previousExcludedTags = this.normalizeExcludedTagNames(this.settings.excludedTagNames ?? []);
         const previousOrientation = this.normalizeOrientationFilter(this.settings.orientationFilter ?? []);
+        const previousLayoutMode = this.settings.layoutMode;
         // Update settings by merging with current settings
         const updatedSettings = { ...this.settings, ...newSettings };
         this.settings = updatedSettings;
@@ -2369,12 +2401,18 @@ export class FeedContainer {
           && updatedSettings.showVerifiedCheckmarks !== previousShowVerified;
         const orientationFilterChanged = newSettings.orientationFilter !== undefined
           && !this.areOrientationFiltersEqual(previousOrientation, nextOrientation);
+        const layoutModeChanged = newSettings.layoutMode !== undefined
+          && updatedSettings.layoutMode !== previousLayoutMode;
         // Update card snapping if setting changed
         if (newSettings.snapToCards !== undefined || reelModeChanged) {
           this.setupCardSnapping();
         }
         if (reelModeChanged) {
           this.applyReelModeLayout();
+        }
+        if (layoutModeChanged) {
+          this.reloadForLayoutModeChange();
+          return;
         }
         if (!reelModeChanged && newSettings.snapToCards !== undefined) {
           this.refreshAutoplayAfterLayout();
@@ -3355,6 +3393,10 @@ export class FeedContainer {
    * Initialize the feed
    */
   async init(filters?: FilterOptions): Promise<void> {
+    if (this.isScenePlayerDevLayoutActive()) {
+      this.renderScenePlayerDevLayout();
+      return;
+    }
     // Load rating system configuration
     try {
       const config = await this.api.getUIConfiguration();
@@ -3364,7 +3406,10 @@ export class FeedContainer {
       this.ratingSystemConfig = { type: 'stars', starPrecision: 'full' }; // Default fallback
     }
     this.currentFilters = filters;
-    await this.loadVideos(filters, false, undefined, true);
+    await this.refreshFeed();
+    if (this.posts.size === 0) {
+      await this.loadVideos(this.currentFilters, false, undefined, true);
+    }
     
     // Defer suggestion preloading significantly to avoid competing with initial load
     // Wait 10 seconds on mobile, 5 seconds on desktop to ensure initial content is loaded first
@@ -3596,7 +3641,8 @@ export class FeedContainer {
     const { isVideo, videoFile } = detectVideoFromVisualFiles(image.visualFiles);
     
     // Check if this is a .m4v or .mp4 file (always treat as video, behavior controlled by HD mode)
-    const isMp4Video = isVideo && videoFile?.path && isMp4File(videoFile.path);
+    const videoPath = videoFile?.path;
+    const isMp4Video = isVideo && videoPath && isMp4File(videoPath);
     
     if (isMp4Video) {
       return this.createVideoPostFromImage(image, signal);
@@ -3732,7 +3778,15 @@ export class FeedContainer {
    * Build URL from path with base URL
    */
   private buildUrlFromPath(path: string, baseUrl: string): string {
-    return path.startsWith('http') ? path : `${baseUrl}${path}`;
+    try {
+      return new URL(path, baseUrl).toString();
+    } catch {
+      try {
+        return new URL(encodeURI(path), baseUrl).toString();
+      } catch {
+        return path.startsWith('http') ? path : `${baseUrl}${path}`;
+      }
+    }
   }
 
   /**
@@ -3747,27 +3801,35 @@ export class FeedContainer {
   /**
    * Get MP4 video URL for image post in HD mode
    */
-  private getMp4VideoUrlForImageHD(image: Image, baseUrl: string): string | undefined {
+  private getMp4VideoUrlForImageHD(image: Image, videoPath: string | undefined, baseUrl: string): string | undefined {
+    if (videoPath && /^https?:\/\//i.test(videoPath)) {
+      return this.tryGetValidMediaUrl(videoPath, baseUrl);
+    }
     return this.tryGetValidMediaUrl(image.paths?.image, baseUrl);
   }
 
   /**
    * Get MP4 video URL for image post in non-HD mode
    */
-  private getMp4VideoUrlForImageNonHD(image: Image, baseUrl: string): string | undefined {
+  private getMp4VideoUrlForImageNonHD(image: Image, videoPath: string | undefined, baseUrl: string): string | undefined {
     const previewUrl = this.tryGetValidMediaUrl(image.paths?.preview, baseUrl);
     if (previewUrl) return previewUrl;
-    // Fallback to full video if preview unavailable
+    // Fallback to MP4 video file only if it's a valid absolute URL
+    if (videoPath && /^https?:\/\//i.test(videoPath)) {
+      const videoUrl = this.tryGetValidMediaUrl(videoPath, baseUrl);
+      if (videoUrl) return videoUrl;
+    }
+    // Fallback to Stash media endpoint
     return this.tryGetValidMediaUrl(image.paths?.image, baseUrl);
   }
 
   /**
    * Get MP4 video URL for image post
    */
-  private getMp4VideoUrlForImage(image: Image, baseUrl: string): string | undefined {
+  private getMp4VideoUrlForImage(image: Image, videoPath: string | undefined, baseUrl: string): string | undefined {
     return this.useHDMode
-      ? this.getMp4VideoUrlForImageHD(image, baseUrl)
-      : this.getMp4VideoUrlForImageNonHD(image, baseUrl);
+      ? this.getMp4VideoUrlForImageHD(image, videoPath, baseUrl)
+      : this.getMp4VideoUrlForImageNonHD(image, videoPath, baseUrl);
   }
 
   /**
@@ -3781,11 +3843,12 @@ export class FeedContainer {
     // Detect if this is a video from visualFiles
     const { isVideo, videoFile } = detectVideoFromVisualFiles(image.visualFiles);
     
+    const videoPath = videoFile?.path;
     // Check if this is a .m4v or .mp4 file (always treat as video, behavior controlled by HD mode)
-    const isMp4Video = isVideo && videoFile?.path && isMp4File(videoFile.path);
+    const isMp4Video = isVideo && videoPath && isMp4File(videoPath);
     
     if (isMp4Video) {
-      const mp4Url = this.getMp4VideoUrlForImage(image, baseUrl);
+      const mp4Url = this.getMp4VideoUrlForImage(image, videoPath, baseUrl);
       if (mp4Url) {
         return mp4Url;
       }
@@ -4475,6 +4538,9 @@ export class FeedContainer {
   }
 
   async loadVideos(filters?: FilterOptions, append: boolean = false, signal?: AbortSignal, force: boolean = false): Promise<void> {
+    if (this.isScenePlayerDevLayoutActive()) {
+      return;
+    }
     signal = this.prepareLoadVideos(signal);
 
     if (!force && this.isLoading) {
@@ -5301,7 +5367,8 @@ export class FeedContainer {
         if (videoElement.networkState === 2 || videoElement.readyState < 2) {
           try {
             videoElement.pause();
-            videoElement.src = '';
+            videoElement.removeAttribute('src');
+            videoElement.load();
             videoElement.load(); // This cancels the network request
           } catch (e: unknown) {
             // Ignore errors when stopping video (non-critical)
@@ -7233,6 +7300,7 @@ export class FeedContainer {
     const previousExcludedTags = this.normalizeExcludedTagNames(this.settings.excludedTagNames ?? []);
     const previousShowVerified = this.settings.showVerifiedCheckmarks;
     const previousOrientation = this.normalizeOrientationFilter(this.settings.orientationFilter ?? []);
+    const previousLayoutMode = this.settings.layoutMode;
     this.settings = { ...this.settings, ...newSettings };
     const nextExcludedTags = this.normalizeExcludedTagNames(this.settings.excludedTagNames ?? []);
     const nextOrientation = this.normalizeOrientationFilter(this.settings.orientationFilter ?? []);
@@ -7241,6 +7309,8 @@ export class FeedContainer {
       && this.settings.showVerifiedCheckmarks !== previousShowVerified;
     const orientationFilterChanged = newSettings.orientationFilter !== undefined
       && !this.areOrientationFiltersEqual(previousOrientation, nextOrientation);
+    const layoutModeChanged = newSettings.layoutMode !== undefined
+      && this.settings.layoutMode !== previousLayoutMode;
     if (reelModeChanged || newSettings.snapToCards !== undefined) {
       this.setupCardSnapping();
     }
@@ -7250,6 +7320,11 @@ export class FeedContainer {
       this.visibilityManager.setReelMode(this.settings.reelMode === true);
       // Also update autoplay setting based on HD mode and reel mode
       this.visibilityManager.setAutoPlay(!this.useHDMode || this.settings.reelMode === true);
+    }
+
+    if (layoutModeChanged) {
+      this.reloadForLayoutModeChange();
+      return;
     }
 
     this.refreshAutoplayAfterLayout();

@@ -4,7 +4,7 @@
  */
 
 import { VideoPlayerState } from './types.js';
-import { formatDuration, isValidMediaUrl, hasWebkitFullscreen, hasMozFullscreen, hasMsFullscreen, hasWebkitFullscreenHTMLElement, hasMozFullscreenHTMLElement, hasMsFullscreenHTMLElement, hasWebkitFullscreenDocument, hasMozFullscreenDocument, hasMsFullscreenDocument, type ElementWebkitFullscreen, type ElementMozFullscreen, type ElementMsFullscreen, isMobileDevice, getNetworkInfo, isSlowNetwork, isCellularConnection, THEME } from './utils.js';
+import { formatDuration, isValidMediaUrl, normalizeMediaUrl, hasWebkitFullscreen, hasMozFullscreen, hasMsFullscreen, hasWebkitFullscreenHTMLElement, hasMozFullscreenHTMLElement, hasMsFullscreenHTMLElement, hasWebkitFullscreenDocument, hasMozFullscreenDocument, hasMsFullscreenDocument, type ElementWebkitFullscreen, type ElementMozFullscreen, type ElementMsFullscreen, isMobileDevice, getNetworkInfo, isSlowNetwork, isCellularConnection, THEME } from './utils.js';
 import { VOLUME_MUTED_SVG, VOLUME_UNMUTED_SVG, PLAY_BUTTON_SVG, PAUSE_SVG, FULLSCREEN_SVG } from './icons.js';
 import { setupTouchHandlers, createTouchState, type TouchState } from './utils/touchHandlers.js';
 
@@ -90,8 +90,9 @@ export class NativeVideoPlayer {
     showLoadingIndicator?: boolean; // Toggle internal loading spinner
     // onMuteToggle removed - mute is now controlled by overlay button in VideoPost
   }) {
+    const normalizedVideoUrl = normalizeMediaUrl(videoUrl);
     // Validate video URL before proceeding
-    if (!videoUrl || !isValidMediaUrl(videoUrl)) {
+    if (!normalizedVideoUrl || !isValidMediaUrl(normalizedVideoUrl)) {
       const error = new Error(`Invalid video URL: ${videoUrl}`);
       console.error('NativeVideoPlayer: Invalid video URL provided', {
         videoUrl,
@@ -119,11 +120,11 @@ export class NativeVideoPlayer {
     this.readyPromise = new Promise<void>((resolve) => { this.readyResolver = resolve; });
 
     // Store original values for reload
-    this.originalVideoUrl = videoUrl;
+    this.originalVideoUrl = normalizedVideoUrl;
     this.originalStartTime = options?.startTime;
     this.originalEndTime = options?.endTime;
 
-    this.createVideoElement(videoUrl, {
+    this.createVideoElement(normalizedVideoUrl, {
       autoplay: options?.autoplay,
       muted: options?.muted,
       startTime: options?.startTime,
@@ -213,16 +214,22 @@ export class NativeVideoPlayer {
     // Set poster image if provided
     const isMobile = isMobileDevice();
     if (options?.posterUrl) {
-      // On mobile, don't use video element's poster attribute - use fallback image instead
-      // This prevents browser from showing video preview/thumbnail instead of static image
-      if (!isMobile) {
-        this.videoElement.poster = options.posterUrl;
-      }
-      
-      // On mobile, create fallback poster image element and don't use video element's poster
-      // This ensures we always show the static image, not a video preview
-      if (isMobile) {
-        this.createPosterFallback(options.posterUrl);
+      const normalizedPosterUrl = normalizeMediaUrl(options.posterUrl);
+      if (!normalizedPosterUrl) {
+        console.warn('NativeVideoPlayer: Invalid poster URL, skipping poster', { posterUrl: options.posterUrl });
+        this.shouldExtractFirstFrame = true;
+      } else {
+        // On mobile, don't use video element's poster attribute - use fallback image instead
+        // This prevents browser from showing video preview/thumbnail instead of static image
+        if (!isMobile) {
+          this.videoElement.poster = normalizedPosterUrl;
+        }
+        
+        // On mobile, create fallback poster image element and don't use video element's poster
+        // This ensures we always show the static image, not a video preview
+        if (isMobile) {
+          this.createPosterFallback(normalizedPosterUrl);
+        }
       }
     } else {
       // No poster URL provided - will extract first frame from video as fallback
@@ -322,13 +329,18 @@ export class NativeVideoPlayer {
    * Poster will fade out smoothly when video plays, and fade in when video pauses
    */
   private createPosterFallback(posterUrl: string): void {
+    const normalizedPosterUrl = normalizeMediaUrl(posterUrl);
+    if (!normalizedPosterUrl) {
+      console.warn('NativeVideoPlayer: Invalid poster URL, skipping fallback', { posterUrl });
+      return;
+    }
     // Remove existing poster fallback if any
     if (this.posterImage) {
       this.posterImage.remove();
     }
 
     const img = document.createElement('img');
-    img.src = posterUrl;
+    img.src = normalizedPosterUrl;
     img.className = 'video-player__poster-fallback';
     img.style.position = 'absolute';
     img.style.top = '0';
@@ -535,8 +547,9 @@ export class NativeVideoPlayer {
     
     // Now set src - this will trigger loading
     try {
-      if (videoUrl && isValidMediaUrl(videoUrl)) {
-        this.videoElement.src = videoUrl;
+      const normalizedVideoUrl = normalizeMediaUrl(videoUrl);
+      if (normalizedVideoUrl && isValidMediaUrl(normalizedVideoUrl)) {
+        this.videoElement.src = normalizedVideoUrl;
         this.showLoadingIndicator();
       } else {
         // URL is invalid, don't set src to prevent error
@@ -918,8 +931,9 @@ export class NativeVideoPlayer {
     
     // Set src - this will trigger loading
     try {
-      if (videoUrl && isValidMediaUrl(videoUrl)) {
-        this.videoElement.src = videoUrl;
+      const normalizedVideoUrl = normalizeMediaUrl(videoUrl);
+      if (normalizedVideoUrl && isValidMediaUrl(normalizedVideoUrl)) {
+        this.videoElement.src = normalizedVideoUrl;
         this.showLoadingIndicator();
       } else {
         // URL is invalid, don't set src to prevent error
@@ -947,8 +961,9 @@ export class NativeVideoPlayer {
     // This is a last line of defense in case validation was bypassed
     // If invalid, create element but don't set src - error handler will catch it
     this.videoElement = document.createElement('video');
-    
-    if (!videoUrl || !isValidMediaUrl(videoUrl)) {
+
+    const normalizedVideoUrl = normalizeMediaUrl(videoUrl);
+    if (!normalizedVideoUrl || !isValidMediaUrl(normalizedVideoUrl)) {
       console.warn('NativeVideoPlayer: Invalid URL detected in createVideoElement, skipping src', {
         videoUrl,
       });
@@ -958,7 +973,7 @@ export class NativeVideoPlayer {
     }
 
     // Check codec support before setting src (helps with HEVC detection)
-    this.checkCodecSupport(videoUrl);
+    this.checkCodecSupport(normalizedVideoUrl);
     
     // Setup basic video element properties
     this.setupVideoElementBasicProperties(options);
@@ -969,8 +984,8 @@ export class NativeVideoPlayer {
     
     // Set video source based on whether we have startTime
     const sourceSet = hasStartTime 
-      ? this.setVideoSourceWithStartTime(videoUrl, initialStartTime)
-      : this.setVideoSourceWithoutStartTime(videoUrl);
+      ? this.setVideoSourceWithStartTime(normalizedVideoUrl, initialStartTime)
+      : this.setVideoSourceWithoutStartTime(normalizedVideoUrl);
     if (!sourceSet) {
       return;
     }
@@ -2347,7 +2362,7 @@ export class NativeVideoPlayer {
 
     try {
       // Clear all sources to stop network requests
-      this.videoElement.src = '';
+      this.videoElement.removeAttribute('src');
       this.videoElement.srcObject = null;
 
       // Remove all child nodes (source elements, etc.)
@@ -2464,8 +2479,8 @@ export class NativeVideoPlayer {
     // Remove from DOM first to release references and help GC
     this.videoElement.remove();
     
-    // Clear all sources to stop network requests and release buffers
-    this.videoElement.src = '';
+     // Clear all sources to stop network requests and release buffers
+     this.videoElement.removeAttribute('src');
     // Clear srcObject to fully release video buffers (critical for memory)
     if (this.videoElement.srcObject) {
       this.videoElement.srcObject = null;
@@ -2648,6 +2663,7 @@ export class NativeVideoPlayer {
     this.ensureElementsInWrapper(playerWrapper);
 
     // Recreate video element with original URL and settings
+    this.videoElement.removeAttribute('src');
     this.videoElement.src = this.originalVideoUrl;
     this.videoElement.load();
     this.isUnloaded = false;

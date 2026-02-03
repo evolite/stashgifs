@@ -3,7 +3,7 @@
  * Displays GIFs, static images, and looping videos with support for looping and fullscreen
  */
 
-import { setupLoopingVideoElement, THEME } from './utils.js';
+import { addCacheBusting, normalizeMediaUrl, setupLoopingVideoElement, THEME } from './utils.js';
 
 export class ImagePlayer {
   private readonly container: HTMLElement;
@@ -13,6 +13,7 @@ export class ImagePlayer {
   private readonly isGif: boolean;
   private readonly isVideo: boolean;
   private isLoaded: boolean = false;
+  private hasRetried: boolean = false;
   private loadingIndicator?: HTMLElement;
   private wrapper?: HTMLElement;
   private errorMessage?: HTMLElement;
@@ -76,18 +77,30 @@ export class ImagePlayer {
     wrapper.appendChild(this.imageElement);
 
     // Handle image load
-    this.imageElement.addEventListener('load', () => {
+    const handleLoad = () => {
       this.isLoaded = true;
       this.hideLoadingIndicator();
-    }, { once: true });
+    };
 
-    this.imageElement.addEventListener('error', () => {
+    const handleError = () => {
       this.hideLoadingIndicator();
+      if (!this.hasRetried) {
+        const retryUrl = this.getRetryUrl();
+        if (retryUrl && retryUrl !== this.imageElement?.src) {
+          this.hasRetried = true;
+          this.showLoadingIndicator();
+          this.setImageSource(retryUrl);
+          return;
+        }
+      }
       console.error('ImagePlayer: Failed to load image', this.imageUrl);
-    }, { once: true });
+    };
+
+    this.imageElement.addEventListener('load', handleLoad);
+    this.imageElement.addEventListener('error', handleError);
 
     // Set src to start loading
-    this.imageElement.src = this.imageUrl;
+    this.setImageSource(this.imageUrl);
   }
 
   private createVideoElement(wrapper: HTMLElement): void {
@@ -143,6 +156,16 @@ export class ImagePlayer {
 
     this.videoElement.addEventListener('error', (e) => {
       this.hideLoadingIndicator();
+      if (!this.hasRetried) {
+        const retryUrl = this.getRetryUrl();
+        if (retryUrl && retryUrl !== this.videoElement?.src) {
+          this.hasRetried = true;
+          this.showLoadingIndicator();
+          this.setVideoSource(retryUrl);
+          tryPlay();
+          return;
+        }
+      }
       const error = this.videoElement?.error;
       console.error('ImagePlayer: Video error', e, error, {
         code: error?.code,
@@ -153,7 +176,7 @@ export class ImagePlayer {
       // WebM is well-supported, so errors are likely network/CORS/file issues
       this.showVideoError('Failed to load video', 
         'The video failed to load. This may be due to network issues, CORS restrictions, or file corruption. Please check the console for details.');
-    }, { once: true });
+    });
 
     // Set up IntersectionObserver to play when visible
     this.setupVisibilityPlayback(wrapper);
@@ -162,7 +185,41 @@ export class ImagePlayer {
     this.setupInteractionPlayback();
 
     // Set src to start loading
-    this.videoElement.src = this.imageUrl;
+    this.setVideoSource(this.imageUrl);
+  }
+
+  private getRetryUrl(): string | undefined {
+    const normalized = normalizeMediaUrl(this.imageUrl);
+    if (!normalized) return undefined;
+    return addCacheBusting(normalized);
+  }
+
+  private setImageSource(url: string): void {
+    if (!this.imageElement) return;
+    const normalized = normalizeMediaUrl(url);
+    if (!normalized) {
+      this.hideLoadingIndicator();
+      console.warn('ImagePlayer: Invalid image URL, skipping', { url });
+      return;
+    }
+    this.imageElement.src = normalized;
+  }
+
+  private setVideoSource(url: string): void {
+    if (!this.videoElement) return;
+    const normalized = normalizeMediaUrl(url);
+    if (!normalized) {
+      this.hideLoadingIndicator();
+      console.warn('ImagePlayer: Invalid video URL, skipping', { url });
+      return;
+    }
+    this.videoElement.src = normalized;
+    this.videoElement.load();
+  }
+
+  private showLoadingIndicator(): void {
+    if (!this.loadingIndicator) return;
+    this.loadingIndicator.style.display = 'flex';
   }
 
   /**
@@ -355,7 +412,8 @@ export class ImagePlayer {
     // Clean up video element
     if (this.videoElement) {
       this.videoElement.pause();
-      this.videoElement.src = '';
+      this.videoElement.removeAttribute('src');
+      this.videoElement.load();
       this.videoElement.load();
       this.videoElement = undefined;
     }
@@ -366,4 +424,3 @@ export class ImagePlayer {
     this.isLoaded = false;
   }
 }
-

@@ -78,7 +78,7 @@ function loadThemeEarly(settings: Partial<FeedSettings>): void {
 }
 
 function applyReelModeEarly(settings: Partial<FeedSettings>, container?: HTMLElement | null): void {
-  if (!settings.reelMode) return;
+  if (!settings.reelMode || settings.layoutMode === 'sceneplayer-dev') return;
   document.documentElement.style.scrollSnapType = 'y mandatory';
   document.documentElement.dataset.stashgifsReelReady = 'true';
 
@@ -94,6 +94,27 @@ function applyReelModeEarly(settings: Partial<FeedSettings>, container?: HTMLEle
 
 // Initialize when DOM is ready
 function init(): void {
+  const handleMediaError = (event: Event): void => {
+    const target = event.target as HTMLElement | null;
+    if (!target) return;
+    if (target instanceof HTMLImageElement) {
+      const src = target.currentSrc || target.src || '';
+      console.warn('Media error: image failed to load', { src });
+      return;
+    }
+    if (target instanceof HTMLVideoElement) {
+      const src = target.currentSrc || target.src || '';
+      console.warn('Media error: video failed to load', { src });
+      return;
+    }
+    if (target instanceof HTMLSourceElement) {
+      const src = target.src || '';
+      console.warn('Media error: source failed to load', { src });
+    }
+  };
+
+  globalThis.addEventListener('error', handleMediaError, true);
+
   loadFonts();
   const savedSettings = getSavedSettings();
   // Load theme early to prevent color flash

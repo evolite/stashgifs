@@ -354,9 +354,36 @@ export function getOptimizedThumbnailUrl(baseUrl: string, maxWidth: number, maxH
  */
 export function toAbsoluteUrl(url?: string): string | undefined {
   if (!url) return undefined;
-  if (/^https?:\/\//i.test(url)) return url;
-  if (url.startsWith('/')) return `${globalThis.location.origin}${url}`;
-  return `${globalThis.location.origin}/${url}`;
+  try {
+    return new URL(url, globalThis.location.origin).toString();
+  } catch {
+    try {
+      return new URL(encodeURI(url), globalThis.location.origin).toString();
+    } catch {
+      if (/^https?:\/\//i.test(url)) return url;
+      if (url.startsWith('/')) return `${globalThis.location.origin}${url}`;
+      return `${globalThis.location.origin}/${url}`;
+    }
+  }
+}
+
+/**
+ * Normalize media URL to a safe absolute URL
+ */
+export function normalizeMediaUrl(url?: string): string | undefined {
+  if (!url) return undefined;
+  const trimmed = url.trim();
+  if (!trimmed) return undefined;
+  if (trimmed.startsWith('data:') || trimmed.startsWith('blob:')) return trimmed;
+  try {
+    return new URL(trimmed, globalThis.location.origin).toString();
+  } catch {
+    try {
+      return new URL(encodeURI(trimmed), globalThis.location.origin).toString();
+    } catch {
+      return undefined;
+    }
+  }
 }
 
 /**
@@ -762,7 +789,15 @@ export function isMp4File(path?: string): boolean {
  * Build full URL from path
  */
 function buildFullUrl(path: string, baseUrl: string): string {
-  return path.startsWith('http') ? path : `${baseUrl}${path}`;
+  try {
+    return new URL(path, baseUrl).toString();
+  } catch {
+    try {
+      return new URL(encodeURI(path), baseUrl).toString();
+    } catch {
+      return path.startsWith('http') ? path : `${baseUrl}${path}`;
+    }
+  }
 }
 
 /**
@@ -778,8 +813,15 @@ function tryGetUrlFromPath(path: string | undefined | null, baseUrl: string): st
  * Get URL for MP4 video files
  */
 function getMp4VideoUrl(image: Image, videoFile: { path?: string }, baseUrl: string): string | undefined {
-  if (!videoFile.path || !isMp4File(videoFile.path) || !image.paths?.image) return undefined;
-  return tryGetUrlFromPath(image.paths.image, baseUrl);
+  if (!videoFile.path || !isMp4File(videoFile.path)) return undefined;
+  const videoPath = videoFile.path;
+  if (/^https?:\/\//i.test(videoPath)) {
+    return tryGetUrlFromPath(videoPath, baseUrl);
+  }
+  if (image.paths?.image) {
+    return tryGetUrlFromPath(image.paths.image, baseUrl);
+  }
+  return undefined;
 }
 
 /**
