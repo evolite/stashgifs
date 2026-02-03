@@ -148,6 +148,8 @@ export class FeedContainer {
   private touchStartTime: number = 0;
   private isSnapping: boolean = false; // Prevent multiple snaps in progress
   private snapThrottleTimeout?: ReturnType<typeof setTimeout>;
+  private cardSnapScrollHandler?: () => void;
+  private cardSnapScrollTimeout?: ReturnType<typeof setTimeout>;
 
   constructor(container: HTMLElement, api?: StashAPI, settings?: Partial<FeedSettings>) {
     this.container = container;
@@ -6649,6 +6651,35 @@ export class FeedContainer {
     globalThis.addEventListener('touchstart', this.cardSnapTouchStartHandler, { passive: true });
     globalThis.addEventListener('touchmove', this.cardSnapTouchMoveHandler, { passive: false });
     globalThis.addEventListener('touchend', this.cardSnapTouchEndHandler, { passive: false });
+
+    if (this.settings.reelMode === true) {
+      this.cardSnapScrollHandler = () => {
+        if (this.cardSnapScrollTimeout) {
+          clearTimeout(this.cardSnapScrollTimeout);
+        }
+        this.cardSnapScrollTimeout = setTimeout(() => {
+          this.cardSnapScrollTimeout = undefined;
+          if (this.isSnapping) {
+            return;
+          }
+          const closestCard = this.findCardClosestToCenter();
+          if (!closestCard) {
+            return;
+          }
+          const postId = this.getPostIdFromCard(closestCard);
+          if (!postId) {
+            return;
+          }
+          this.triggerAutoplayForSnappedCard(postId).catch(() => {
+            // Ignore autoplay errors
+          });
+          setTimeout(() => {
+            this.requestAudioFocusForSnappedCard(postId);
+          }, 300);
+        }, 200);
+      };
+      globalThis.addEventListener('scroll', this.cardSnapScrollHandler, { passive: true });
+    }
   }
 
   /**
@@ -6671,9 +6702,17 @@ export class FeedContainer {
       globalThis.removeEventListener('touchend', this.cardSnapTouchEndHandler);
       this.cardSnapTouchEndHandler = undefined;
     }
+    if (this.cardSnapScrollHandler) {
+      globalThis.removeEventListener('scroll', this.cardSnapScrollHandler);
+      this.cardSnapScrollHandler = undefined;
+    }
     if (this.snapThrottleTimeout) {
       clearTimeout(this.snapThrottleTimeout);
       this.snapThrottleTimeout = undefined;
+    }
+    if (this.cardSnapScrollTimeout) {
+      clearTimeout(this.cardSnapScrollTimeout);
+      this.cardSnapScrollTimeout = undefined;
     }
   }
 

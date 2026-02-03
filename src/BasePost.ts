@@ -25,6 +25,7 @@ export interface AddTagDialogState {
   isOpen: boolean;
   selectedTagId?: string;
   selectedTagName?: string;
+  lastTagResults?: Array<{ id: string; name: string }>;
   onSubmit?: () => void;
   autocompleteDebounceTimer?: ReturnType<typeof setTimeout>;
   tagSearchLoadingTimer?: ReturnType<typeof setTimeout>;
@@ -2197,6 +2198,7 @@ export abstract class BasePost {
       if (state.suggestions) {
         state.suggestions.style.display = 'none';
       }
+      state.lastTagResults = [];
       return;
     }
 
@@ -2217,6 +2219,7 @@ export abstract class BasePost {
 
     try {
       const tags = await this.api.findTagsForSelect(searchTerm, 10);
+      state.lastTagResults = tags;
       state.suggestions.innerHTML = '';
       state.suggestions.style.display = tags.length > 0 ? 'block' : 'none';
 
@@ -2317,10 +2320,25 @@ export abstract class BasePost {
     });
 
     input.addEventListener('keydown', (event) => {
-      if (event.key === 'Enter' && state.selectedTagId && state.createButton && !state.createButton.disabled) {
-        event.preventDefault();
-        onSubmit();
-      } else if (event.key === 'Escape') {
+      if (event.key === 'Enter') {
+        if (!state.selectedTagId && state.lastTagResults && state.lastTagResults.length > 0) {
+          const topResult = state.lastTagResults[0];
+          state.selectedTagId = topResult.id;
+          state.selectedTagName = topResult.name;
+          input.value = topResult.name;
+          this.updateAddTagDialogState(state);
+          if (state.suggestions) {
+            state.suggestions.style.display = 'none';
+          }
+        }
+
+        if (state.selectedTagId && state.createButton && !state.createButton.disabled) {
+          event.preventDefault();
+          onSubmit();
+        }
+        return;
+      }
+      if (event.key === 'Escape') {
         event.preventDefault();
         this.closeAddTagDialogBase({ state, focusAfterClose: options.focusAfterClose });
       }
