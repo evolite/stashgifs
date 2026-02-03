@@ -13,7 +13,6 @@ import { ImagePlayer } from './ImagePlayer.js';
 import { VisibilityManager } from './VisibilityManager.js';
 import { FavoritesManager } from './FavoritesManager.js';
 import { SettingsPage } from './SettingsPage.js';
-import { ScenePlayerDevLayout } from './layouts/ScenePlayerDevLayout.js';
 import { AudioManager, AudioPriority } from './AudioManager.js';
 import { debounce, isValidMediaUrl, normalizeMediaUrl, detectDeviceCapabilities, DeviceCapabilities, isStandaloneNavigator, isMobileDevice, getNetworkInfo, isSlowNetwork, isCellularConnection, detectVideoFromVisualFiles, isMp4File, getImageUrlForDisplay, THEME, THEME_DEFAULTS } from './utils.js';
 import { posterPreloader } from './PosterPreloader.js';
@@ -42,7 +41,6 @@ const DEFAULT_SETTINGS: FeedSettings = {
   shortFormOnly: false, // When true, only load short-form content and skip regular markers
   snapToCards: false, // When true, scroll/swipe snaps to center next/previous card
   reelMode: false, // When true, use full-screen reel layout
-  layoutMode: 'default',
   themeBackground: THEME_DEFAULTS.backgroundPrimary,
   themePrimary: THEME_DEFAULTS.surface,
   themeSecondary: THEME_DEFAULTS.backgroundSecondary,
@@ -150,7 +148,6 @@ export class FeedContainer {
   private touchStartTime: number = 0;
   private isSnapping: boolean = false; // Prevent multiple snaps in progress
   private snapThrottleTimeout?: ReturnType<typeof setTimeout>;
-  private scenePlayerDevLayout?: ScenePlayerDevLayout;
 
   constructor(container: HTMLElement, api?: StashAPI, settings?: Partial<FeedSettings>) {
     this.container = container;
@@ -701,28 +698,6 @@ export class FeedContainer {
     delete filters.orientationFilter;
   }
 
-  private isScenePlayerDevLayoutActive(): boolean {
-    return this.settings.layoutMode === 'sceneplayer-dev';
-  }
-
-  private renderScenePlayerDevLayout(): void {
-    if (this.postsContainer) {
-      this.postsContainer.innerHTML = '';
-    }
-
-    const targetContainer = this.postsContainer || this.scrollContainer || this.container;
-    this.scenePlayerDevLayout = new ScenePlayerDevLayout(targetContainer);
-    this.scenePlayerDevLayout.init();
-  }
-
-  private reloadForLayoutModeChange(): void {
-    try {
-      sessionStorage.setItem('stashgifs-scroll-to-top', 'true');
-    } catch {
-      // Ignore storage errors
-    }
-    globalThis.location.reload();
-  }
 
   private shouldExcludeTags(tags?: Array<{ id: string; name: string }>): boolean {
     if (!tags || tags.length === 0) {
@@ -2386,7 +2361,6 @@ export class FeedContainer {
         const previousShowVerified = this.settings.showVerifiedCheckmarks;
         const previousExcludedTags = this.normalizeExcludedTagNames(this.settings.excludedTagNames ?? []);
         const previousOrientation = this.normalizeOrientationFilter(this.settings.orientationFilter ?? []);
-        const previousLayoutMode = this.settings.layoutMode;
         // Update settings by merging with current settings
         const updatedSettings = { ...this.settings, ...newSettings };
         this.settings = updatedSettings;
@@ -2401,18 +2375,12 @@ export class FeedContainer {
           && updatedSettings.showVerifiedCheckmarks !== previousShowVerified;
         const orientationFilterChanged = newSettings.orientationFilter !== undefined
           && !this.areOrientationFiltersEqual(previousOrientation, nextOrientation);
-        const layoutModeChanged = newSettings.layoutMode !== undefined
-          && updatedSettings.layoutMode !== previousLayoutMode;
         // Update card snapping if setting changed
         if (newSettings.snapToCards !== undefined || reelModeChanged) {
           this.setupCardSnapping();
         }
         if (reelModeChanged) {
           this.applyReelModeLayout();
-        }
-        if (layoutModeChanged) {
-          this.reloadForLayoutModeChange();
-          return;
         }
         if (!reelModeChanged && newSettings.snapToCards !== undefined) {
           this.refreshAutoplayAfterLayout();
@@ -3393,10 +3361,6 @@ export class FeedContainer {
    * Initialize the feed
    */
   async init(filters?: FilterOptions): Promise<void> {
-    if (this.isScenePlayerDevLayoutActive()) {
-      this.renderScenePlayerDevLayout();
-      return;
-    }
     // Load rating system configuration
     try {
       const config = await this.api.getUIConfiguration();
@@ -4538,9 +4502,6 @@ export class FeedContainer {
   }
 
   async loadVideos(filters?: FilterOptions, append: boolean = false, signal?: AbortSignal, force: boolean = false): Promise<void> {
-    if (this.isScenePlayerDevLayoutActive()) {
-      return;
-    }
     signal = this.prepareLoadVideos(signal);
 
     if (!force && this.isLoading) {
@@ -7300,7 +7261,6 @@ export class FeedContainer {
     const previousExcludedTags = this.normalizeExcludedTagNames(this.settings.excludedTagNames ?? []);
     const previousShowVerified = this.settings.showVerifiedCheckmarks;
     const previousOrientation = this.normalizeOrientationFilter(this.settings.orientationFilter ?? []);
-    const previousLayoutMode = this.settings.layoutMode;
     this.settings = { ...this.settings, ...newSettings };
     const nextExcludedTags = this.normalizeExcludedTagNames(this.settings.excludedTagNames ?? []);
     const nextOrientation = this.normalizeOrientationFilter(this.settings.orientationFilter ?? []);
@@ -7309,8 +7269,6 @@ export class FeedContainer {
       && this.settings.showVerifiedCheckmarks !== previousShowVerified;
     const orientationFilterChanged = newSettings.orientationFilter !== undefined
       && !this.areOrientationFiltersEqual(previousOrientation, nextOrientation);
-    const layoutModeChanged = newSettings.layoutMode !== undefined
-      && this.settings.layoutMode !== previousLayoutMode;
     if (reelModeChanged || newSettings.snapToCards !== undefined) {
       this.setupCardSnapping();
     }
@@ -7322,10 +7280,6 @@ export class FeedContainer {
       this.visibilityManager.setAutoPlay(!this.useHDMode || this.settings.reelMode === true);
     }
 
-    if (layoutModeChanged) {
-      this.reloadForLayoutModeChange();
-      return;
-    }
 
     this.refreshAutoplayAfterLayout();
 

@@ -78,7 +78,7 @@ function loadThemeEarly(settings: Partial<FeedSettings>): void {
 }
 
 function applyReelModeEarly(settings: Partial<FeedSettings>, container?: HTMLElement | null): void {
-  if (!settings.reelMode || settings.layoutMode === 'sceneplayer-dev') return;
+  if (!settings.reelMode) return;
   document.documentElement.style.scrollSnapType = 'y mandatory';
   document.documentElement.dataset.stashgifsReelReady = 'true';
 

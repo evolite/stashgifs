@@ -649,43 +649,6 @@ export class SettingsPage {
     layoutSectionTitle.style.fontWeight = THEME.typography.weightTitle;
     layoutSection.appendChild(layoutSectionTitle);
 
-    const layoutModeContainer = document.createElement('div');
-    layoutModeContainer.style.marginBottom = '16px';
-
-    const layoutModeLabel = document.createElement('label');
-    layoutModeLabel.textContent = 'Layout mode';
-    layoutModeLabel.style.display = 'block';
-    layoutModeLabel.style.color = THEME.colors.textSecondary;
-    layoutModeLabel.style.fontSize = THEME.typography.sizeBody;
-    layoutModeLabel.style.marginBottom = '8px';
-    layoutModeLabel.style.fontWeight = THEME.typography.weightBodyStrong;
-    layoutModeContainer.appendChild(layoutModeLabel);
-
-    const layoutModeSelect = document.createElement('select');
-    layoutModeSelect.style.width = '100%';
-    layoutModeSelect.style.padding = '10px 12px';
-    layoutModeSelect.style.borderRadius = THEME.radius.button;
-    layoutModeSelect.style.border = `1px solid ${THEME.colors.border}`;
-    layoutModeSelect.style.backgroundColor = THEME.colors.surface;
-    layoutModeSelect.style.color = THEME.colors.textPrimary;
-    layoutModeSelect.style.fontSize = THEME.typography.sizeBody;
-    layoutModeSelect.style.boxSizing = 'border-box';
-
-    const layoutDefaultOption = document.createElement('option');
-    layoutDefaultOption.value = 'default';
-    layoutDefaultOption.textContent = 'Default feed';
-
-    const layoutDevOption = document.createElement('option');
-    layoutDevOption.value = 'sceneplayer-dev';
-    layoutDevOption.textContent = 'ScenePlayer Dev';
-
-    layoutModeSelect.appendChild(layoutDefaultOption);
-    layoutModeSelect.appendChild(layoutDevOption);
-    layoutModeSelect.value = this.settings.layoutMode ?? 'default';
-    layoutModeSelect.addEventListener('change', () => this.saveSettings());
-
-    layoutModeContainer.appendChild(layoutModeSelect);
-    layoutSection.appendChild(layoutModeContainer);
 
     const reelModeContainer = document.createElement('div');
     reelModeContainer.style.display = 'flex';
@@ -1100,7 +1063,6 @@ export class SettingsPage {
     (this as any).shortFormIncludeToggle = shortFormIncludeToggle;
     (this as any).shortFormOnlyToggle = shortFormOnlyToggle;
     (this as any).reelModeToggle = reelModeToggle;
-    (this as any).layoutModeSelect = layoutModeSelect;
     (this as any).portraitToggle = portraitToggle;
     (this as any).landscapeToggle = landscapeToggle;
     (this as any).excludedTagsInput = excludedTagsInput;
@@ -1140,7 +1102,6 @@ export class SettingsPage {
     const shortFormIncludeToggle = (this as any).shortFormIncludeToggle as HTMLInputElement | undefined;
     const shortFormOnlyToggle = (this as any).shortFormOnlyToggle as HTMLInputElement | undefined;
     const reelModeToggle = (this as any).reelModeToggle as HTMLInputElement | undefined;
-    const layoutModeSelect = (this as any).layoutModeSelect as HTMLSelectElement | undefined;
     const portraitToggle = (this as any).portraitToggle as HTMLInputElement | undefined;
     const landscapeToggle = (this as any).landscapeToggle as HTMLInputElement | undefined;
     const themeBackgroundInput = (this as any).themeBackgroundInput as HTMLInputElement | undefined;
@@ -1151,7 +1112,7 @@ export class SettingsPage {
     const excludedTagsInput = (this as any).excludedTagsInput as HTMLInputElement | undefined;
 
     if (!fileTypesInput || !maxDurationInput || !includeImagesToggle || !imagesOnlyToggle || 
-        !shortFormIncludeToggle || !shortFormOnlyToggle || !reelModeToggle || !layoutModeSelect ||
+        !shortFormIncludeToggle || !shortFormOnlyToggle || !reelModeToggle ||
         !portraitToggle || !landscapeToggle ||
         !themeBackgroundInput || !themePrimaryInput || !themeSecondaryInput || !themeAccentInput ||
         !showVerifiedCheckmarksToggle || !excludedTagsInput) {
@@ -1193,7 +1154,6 @@ export class SettingsPage {
       shortFormOnly: shortFormOnlyToggle.checked,
       reelMode: reelModeToggle.checked,
       snapToCards: reelModeToggle.checked,
-      layoutMode: layoutModeSelect.value === 'sceneplayer-dev' ? 'sceneplayer-dev' : 'default',
       orientationFilter,
       themeBackground: themeBackgroundInput.value,
       themePrimary: themePrimaryInput.value,
