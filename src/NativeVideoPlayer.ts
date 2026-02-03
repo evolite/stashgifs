@@ -4,7 +4,7 @@
  */
 
 import { VideoPlayerState } from './types.js';
-import { formatDuration, isValidMediaUrl, normalizeMediaUrl, hasWebkitFullscreen, hasMozFullscreen, hasMsFullscreen, hasWebkitFullscreenHTMLElement, hasMozFullscreenHTMLElement, hasMsFullscreenHTMLElement, hasWebkitFullscreenDocument, hasMozFullscreenDocument, hasMsFullscreenDocument, type ElementWebkitFullscreen, type ElementMozFullscreen, type ElementMsFullscreen, isMobileDevice, getNetworkInfo, isSlowNetwork, isCellularConnection, THEME } from './utils.js';
+import { addCacheBusting, formatDuration, isValidMediaUrl, normalizeMediaUrl, hasWebkitFullscreen, hasMozFullscreen, hasMsFullscreen, hasWebkitFullscreenHTMLElement, hasMozFullscreenHTMLElement, hasMsFullscreenHTMLElement, hasWebkitFullscreenDocument, hasMozFullscreenDocument, hasMsFullscreenDocument, type ElementWebkitFullscreen, type ElementMozFullscreen, type ElementMsFullscreen, isMobileDevice, getNetworkInfo, isSlowNetwork, isCellularConnection, THEME } from './utils.js';
 import { VOLUME_MUTED_SVG, VOLUME_UNMUTED_SVG, PLAY_BUTTON_SVG, PAUSE_SVG, FULLSCREEN_SVG } from './icons.js';
 import { setupTouchHandlers, createTouchState, type TouchState } from './utils/touchHandlers.js';
 
@@ -34,12 +34,14 @@ export class NativeVideoPlayer {
   private readyResolver?: () => void;
   private readyPromise: Promise<void>;
   private errorHandled: boolean = false;
+  private hasRetriedDecode: boolean = false;
   private desiredStartTime?: number; // Track desired start time for enforcement
   private startTimeEnforced: boolean = false; // Track if we've successfully enforced startTime
   private isUnloaded: boolean = false;
   private originalVideoUrl?: string; // Store original URL for reload
   private originalStartTime?: number; // Store original start time for reload
   private originalEndTime?: number; // Store original end time for reload
+  private unloadRetryTimeout?: ReturnType<typeof setTimeout>;
   private readonly isHDMode: boolean = false; // Track if this is HD mode (affects mute button visibility)
   private posterImage?: HTMLImageElement; // Fallback poster image for mobile
   private shouldExtractFirstFrame: boolean = false; // Track if we need to extract first frame as poster
@@ -631,6 +633,7 @@ export class NativeVideoPlayer {
       
       const errorCode = this.videoElement.error?.code;
       const errorMessage = this.videoElement.error?.message;
+      const lowerErrorMessage = errorMessage?.toLowerCase();
       
       // Check if this is a known invalid URL error (MediaLoadInvalidURI)
       // Error code 4 = MEDIA_ERR_SRC_NOT_SUPPORTED / MediaLoadInvalidURI
@@ -645,8 +648,33 @@ export class NativeVideoPlayer {
         (errorMessage.includes('codec') || 
          errorMessage.includes('format') ||
          errorMessage.includes('not supported') ||
-         errorMessage.toLowerCase().includes('hevc') ||
-         errorMessage.toLowerCase().includes('h.265'));
+         lowerErrorMessage?.includes('hevc') ||
+         lowerErrorMessage?.includes('h.265'));
+
+      const isDecodeRangeError = errorCode === 3 &&
+        (lowerErrorMessage?.includes('range') ||
+         lowerErrorMessage?.includes('decode') ||
+         lowerErrorMessage?.includes('sample'));
+
+      if (isDecodeRangeError && !this.hasRetriedDecode) {
+        const baseUrl = this.originalVideoUrl || this.videoElement.currentSrc || this.videoElement.src;
+        const normalized = normalizeMediaUrl(baseUrl);
+        if (normalized) {
+          this.hasRetriedDecode = true;
+          const retryUrl = addCacheBusting(normalized);
+          try {
+            this.videoElement.pause();
+            this.videoElement.removeAttribute('src');
+            this.videoElement.src = retryUrl;
+            this.videoElement.load();
+          } catch {
+            // Ignore retry errors and fall through to default handler
+          }
+          e.stopPropagation();
+          e.preventDefault();
+          return;
+        }
+      }
       
       if (isInvalidUriError && !isCodecError) {
         // Mark as handled and silently suppress - validation should have caught this
@@ -2473,6 +2501,16 @@ export class NativeVideoPlayer {
       return;
     }
 
+    if (this.videoElement.networkState === 2 || this.videoElement.readyState < 2) {
+      if (!this.unloadRetryTimeout) {
+        this.unloadRetryTimeout = setTimeout(() => {
+          this.unloadRetryTimeout = undefined;
+          this.unload();
+        }, 400);
+      }
+      return;
+    }
+
     this.videoElement.pause();
     this.videoElement.currentTime = 0;
     
@@ -2668,6 +2706,7 @@ export class NativeVideoPlayer {
     this.videoElement.load();
     this.isUnloaded = false;
     this.errorHandled = false;
+    this.hasRetriedDecode = false;
     this.startTimeEnforced = false;
     this.desiredStartTime = this.originalStartTime;
 
@@ -2706,6 +2745,11 @@ export class NativeVideoPlayer {
     if (this.scrollTimeoutId) {
       clearTimeout(this.scrollTimeoutId);
       this.scrollTimeoutId = undefined;
+    }
+
+    if (this.unloadRetryTimeout) {
+      clearTimeout(this.unloadRetryTimeout);
+      this.unloadRetryTimeout = undefined;
     }
 
     // Clean up touch handlers
