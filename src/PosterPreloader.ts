@@ -9,7 +9,7 @@ import { normalizeMediaUrl, toAbsoluteUrl } from './utils.js';
 
 class PosterPreloader {
   private readonly cache: Map<string, string> = new Map();
-  private readonly inflight: Set<string> = new Set();
+  private readonly inflight: Map<string, HTMLImageElement> = new Map();
 
   /**
    * Build the marker screenshot URL using scene + marker IDs.
@@ -44,9 +44,9 @@ class PosterPreloader {
       if (this.cache.has(idStr) || this.inflight.has(idStr)) continue;
       const url = this.buildMarkerScreenshotUrl(marker);
       if (!url) continue;
-      this.inflight.add(idStr);
       // Use Image to warm cache; store on load
       const img = new Image();
+      this.inflight.set(idStr, img);
       img.onload = () => {
         this.cache.set(idStr, url);
         this.inflight.delete(idStr);
@@ -66,6 +66,16 @@ class PosterPreloader {
   }
 
   /**
+   * Cancel all inflight prefetches
+   */
+  cancelInflight(): void {
+    for (const img of this.inflight.values()) {
+      img.src = '';
+    }
+    this.inflight.clear();
+  }
+
+  /**
    * Get a cached poster URL for a marker, if available.
    */
   getPosterForMarker(marker: SceneMarker): string | undefined {
@@ -80,5 +90,4 @@ class PosterPreloader {
 }
 
 export const posterPreloader = new PosterPreloader();
-
 

@@ -3550,12 +3550,7 @@ export class VideoPost extends BasePost {
       this.detachRatingGlobalListeners();
     }
 
-    // Remove all hover effect listeners
-    for (const [button] of this.hoverHandlers) {
-      this.removeHoverEffect(button);
-    }
-    this.hoverHandlers.clear();
-
+    super.destroy();
     // Remove container from DOM
     this.container.remove();
   }

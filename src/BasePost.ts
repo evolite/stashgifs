@@ -140,6 +140,53 @@ export abstract class BasePost {
     return { header, playerContainer, footer };
   }
 
+  destroy(): void {
+    if (this.performerOverlayScrollHandler) {
+      globalThis.removeEventListener('scroll', this.performerOverlayScrollHandler);
+      this.performerOverlayScrollHandler = undefined;
+    }
+
+    if (this.performerOverlayAbortController) {
+      this.performerOverlayAbortController.abort();
+      this.performerOverlayAbortController = undefined;
+    }
+    if (this.tagOverlayAbortController) {
+      this.tagOverlayAbortController.abort();
+      this.tagOverlayAbortController = undefined;
+    }
+
+    if (this.performerOverlayTimeout) {
+      clearTimeout(this.performerOverlayTimeout);
+      this.performerOverlayTimeout = undefined;
+    }
+    if (this.performerOverlayHideTimeout) {
+      clearTimeout(this.performerOverlayHideTimeout);
+      this.performerOverlayHideTimeout = undefined;
+    }
+    if (this.tagOverlayTimeout) {
+      clearTimeout(this.tagOverlayTimeout);
+      this.tagOverlayTimeout = undefined;
+    }
+    if (this.tagOverlayHideTimeout) {
+      clearTimeout(this.tagOverlayHideTimeout);
+      this.tagOverlayHideTimeout = undefined;
+    }
+
+    if (this.performerOverlay) {
+      this.performerOverlay.remove();
+      this.performerOverlay = undefined;
+    }
+    if (this.tagOverlay) {
+      this.tagOverlay.remove();
+      this.tagOverlay = undefined;
+    }
+
+    for (const [button] of this.hoverHandlers) {
+      this.removeHoverEffect(button);
+    }
+    this.hoverHandlers.clear();
+  }
+
   private static loadFavoritePerformerCache(): void {
     if (this.favoriteCacheLoaded) {
       return;

@@ -1320,17 +1320,12 @@ export class ImagePost extends BasePost {
       this.addTagDialogState.tagSearchLoadingTimer = undefined;
     }
 
-    // Clean up hover handlers
-    for (const [button] of this.hoverHandlers) {
-      this.removeHoverEffect(button);
-    }
-    this.hoverHandlers.clear();
-
     if (this.player) {
       this.player.destroy();
       this.player = undefined;
     }
     this.isLoaded = false;
+    super.destroy();
     // Remove the entire container from the DOM so stale cards don't linger
     this.container?.remove();
   }

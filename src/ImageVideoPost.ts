@@ -1718,18 +1718,13 @@ export class ImageVideoPost extends BasePost {
       this.addTagDialogState.tagSearchLoadingTimer = undefined;
     }
 
-    // Clean up hover handlers
-    for (const [button] of this.hoverHandlers) {
-      this.removeHoverEffect(button);
-    }
-    this.hoverHandlers.clear();
-
     if (this.player) {
       this.player.destroy();
       this.player = undefined;
     }
     this.isLoaded = false;
     
+    super.destroy();
     // Remove the entire container from the DOM
     this.container?.remove();
   }

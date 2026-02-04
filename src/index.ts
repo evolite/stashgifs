@@ -133,6 +133,10 @@ function init(): void {
     }
   }
   
+  interface WindowWithStashgifs extends Window {
+    stashgifsFeed?: FeedContainer;
+  }
+
   const appContainer = document.getElementById('app');
   if (!appContainer) {
     console.error('App container not found');
@@ -152,6 +156,12 @@ function init(): void {
     // Get settings from localStorage or use defaults
     const settings = savedSettings;
 
+    const existingFeed = (globalThis.window as WindowWithStashgifs).stashgifsFeed;
+    if (existingFeed) {
+      existingFeed.destroy();
+      (globalThis.window as WindowWithStashgifs).stashgifsFeed = undefined;
+    }
+
     // Create feed
     const feed = new FeedContainer(appContainer, api, settings);
 
@@ -168,10 +178,6 @@ function init(): void {
        `;
     });
 
-    // Expose feed to window for debugging/extension
-    interface WindowWithStashgifs extends Window {
-      stashgifsFeed?: FeedContainer;
-    }
     (globalThis.window as WindowWithStashgifs).stashgifsFeed = feed;
   } catch (error: unknown) {
     console.error('Stashgifs Feed UI: Fatal error during initialization:', error);

@@ -125,6 +125,11 @@ export class FeedContainer {
   private lastScrollTop: number = 0;
   private lastScrollTime: number = 0;
   private scrollVelocity: number = 0;
+  private cleanupScrollTimeout?: ReturnType<typeof setTimeout>;
+  private scrollHandler?: () => void;
+  private visibilityChangeHandler?: () => void;
+  private suggestionsClickOutsideHandler?: (event: Event) => void;
+  private suggestionsTouchOutsideHandler?: (event: Event) => void;
   private currentlyPreloadingCount: number = 0;
   private placeholderAnimationInterval?: ReturnType<typeof setInterval>; // For scrolling placeholder animation
   private savedFiltersCache: Array<{ id: string; name: string }> = [];
@@ -3060,11 +3065,20 @@ export class FeedContainer {
       }, 0) as unknown as number);
     };
     
+    if (this.suggestionsClickOutsideHandler) {
+      document.removeEventListener('click', this.suggestionsClickOutsideHandler);
+    }
+    this.suggestionsClickOutsideHandler = handleClickOutside;
     document.addEventListener('click', handleClickOutside);
     
     // On mobile, also listen to touch events to ensure suggestions close when tapping outside
     const isMobileDeviceLocal = isMobileDevice();
+    if (this.suggestionsTouchOutsideHandler) {
+      document.removeEventListener('touchend', this.suggestionsTouchOutsideHandler);
+      this.suggestionsTouchOutsideHandler = undefined;
+    }
     if (isMobileDeviceLocal) {
+      this.suggestionsTouchOutsideHandler = handleClickOutside;
       document.addEventListener('touchend', handleClickOutside, { passive: true });
     }
 
@@ -3522,6 +3536,8 @@ export class FeedContainer {
     } else {
       postsContainer.appendChild(fragment);
     }
+
+    this.cleanupDistantPosts();
   }
 
   /**
@@ -5583,6 +5599,7 @@ export class FeedContainer {
   private clearPosts(): void {
     // Stop background preloading
     this.stopBackgroundPreloading();
+    posterPreloader.cancelInflight();
     
     for (const [postId, post] of this.posts.entries()) {
       if (this.visibilityManager) {
@@ -6546,13 +6563,22 @@ export class FeedContainer {
       const headerState = this.handleHeaderVisibility(currentScrollY, lastScrollY, isHeaderHidden);
       lastScrollY = headerState.lastScrollY;
       isHeaderHidden = headerState.isHeaderHidden;
+
+      if (this.cleanupScrollTimeout) {
+        clearTimeout(this.cleanupScrollTimeout);
+      }
+      this.cleanupScrollTimeout = setTimeout(() => {
+        this.cleanupScrollTimeout = undefined;
+        this.cleanupDistantPosts();
+      }, 2000);
     };
 
     // Use passive listener for better performance
+    this.scrollHandler = handleScroll;
     globalThis.addEventListener('scroll', handleScroll, { passive: true });
 
     // Listen for page visibility changes to pause/resume preloading
-    document.addEventListener('visibilitychange', () => {
+    const handleVisibilityChange = () => {
       if (document.hidden) {
         // Pause preloading when tab is hidden
         this.stopBackgroundPreloading();
@@ -6560,7 +6586,9 @@ export class FeedContainer {
         // Resume preloading when tab becomes visible
         this.startBackgroundPreloading();
       }
-    });
+    };
+    this.visibilityChangeHandler = handleVisibilityChange;
+    document.addEventListener('visibilitychange', handleVisibilityChange);
   }
 
   /**
@@ -6717,6 +6745,59 @@ export class FeedContainer {
       clearTimeout(this.cardSnapScrollTimeout);
       this.cardSnapScrollTimeout = undefined;
     }
+  }
+
+  destroy(): void {
+    this.stopBackgroundPreloading();
+    posterPreloader.cancelInflight();
+
+    if (this.scrollHandler) {
+      globalThis.removeEventListener('scroll', this.scrollHandler);
+      this.scrollHandler = undefined;
+    }
+    if (this.visibilityChangeHandler) {
+      document.removeEventListener('visibilitychange', this.visibilityChangeHandler);
+      this.visibilityChangeHandler = undefined;
+    }
+
+    if (this.suggestionsClickOutsideHandler) {
+      document.removeEventListener('click', this.suggestionsClickOutsideHandler);
+      this.suggestionsClickOutsideHandler = undefined;
+    }
+    if (this.suggestionsTouchOutsideHandler) {
+      document.removeEventListener('touchend', this.suggestionsTouchOutsideHandler);
+      this.suggestionsTouchOutsideHandler = undefined;
+    }
+
+    if (this.cleanupScrollTimeout) {
+      clearTimeout(this.cleanupScrollTimeout);
+      this.cleanupScrollTimeout = undefined;
+    }
+    if (this.snapThrottleTimeout) {
+      clearTimeout(this.snapThrottleTimeout);
+      this.snapThrottleTimeout = undefined;
+    }
+    if (this.cardSnapScrollTimeout) {
+      clearTimeout(this.cardSnapScrollTimeout);
+      this.cardSnapScrollTimeout = undefined;
+    }
+    if (this.backgroundPreloadHandle) {
+      globalThis.clearTimeout(this.backgroundPreloadHandle);
+      this.backgroundPreloadHandle = undefined;
+    }
+    if (this.placeholderAnimationInterval) {
+      clearInterval(this.placeholderAnimationInterval);
+      this.placeholderAnimationInterval = undefined;
+    }
+
+    this.cleanupCardSnapping();
+    this.cleanupLoadObservers();
+    if (this.scrollObserver) {
+      this.scrollObserver.disconnect();
+      this.scrollObserver = undefined;
+    }
+
+    this.clearPosts();
   }
 
   /**
