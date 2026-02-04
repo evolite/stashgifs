@@ -3249,6 +3249,17 @@ export class VideoPost extends BasePost {
     return this.removeTagFromMarker(api, tagId, tagName);
   }
 
+  private getTagIds<T extends { id?: string | null }>(tags: T[] | undefined): string[] {
+    return (tags || [])
+      .map((tag) => tag.id)
+      .filter((id): id is string => id !== null && id !== undefined)
+      .map(String);
+  }
+
+  private removeTagFromList<T extends { id?: string | null }>(tags: T[], tagId: string): T[] {
+    return tags.filter((tag) => String(tag.id) !== String(tagId));
+  }
+
   private async removeTagFromScene(api: StashAPI, tagId: string, tagName: string): Promise<boolean> {
     const sceneId = this.data.marker.scene?.id;
     if (!sceneId) {
@@ -3256,10 +3267,7 @@ export class VideoPost extends BasePost {
       return false;
     }
 
-    const currentTagIds = (this.data.marker.scene.tags || [])
-      .map((tag) => tag.id)
-      .filter((id): id is string => id !== null && id !== undefined)
-      .map(String);
+    const currentTagIds = this.getTagIds(this.data.marker.scene.tags);
     if (!currentTagIds.includes(String(tagId))) {
       showToast(`Tag "${tagName}" is not on this scene.`);
       return false;
@@ -3267,7 +3275,8 @@ export class VideoPost extends BasePost {
 
     try {
       await api.removeTagFromScene(sceneId, tagId);
-      this.data.marker.scene.tags = (this.data.marker.scene.tags || []).filter((tag) => String(tag.id) !== String(tagId));
+      const sceneTags = this.data.marker.scene.tags ?? [];
+      this.data.marker.scene.tags = this.removeTagFromList(sceneTags, tagId);
       showToast(`Tag "${tagName}" removed from scene`);
       this.refreshHeader();
       return true;
@@ -3305,10 +3314,7 @@ export class VideoPost extends BasePost {
       }
     }
 
-    const currentTagIds = (this.data.marker.tags || [])
-      .map((tag) => tag.id)
-      .filter((id): id is string => id !== null && id !== undefined)
-      .map(String);
+    const currentTagIds = this.getTagIds(this.data.marker.tags);
     if (!currentTagIds.includes(String(tagId))) {
       showToast(`Tag "${tagName}" is not on this marker.`);
       return false;
@@ -3316,7 +3322,8 @@ export class VideoPost extends BasePost {
 
     try {
       await api.removeTagFromMarker(this.data.marker, tagId);
-      this.data.marker.tags = (this.data.marker.tags || []).filter((tag) => String(tag.id) !== String(tagId));
+      const markerTags = this.data.marker.tags ?? [];
+      this.data.marker.tags = this.removeTagFromList(markerTags, tagId);
       showToast(`Tag "${tagName}" removed from marker`);
       this.refreshHeader();
       return true;

@@ -671,6 +671,7 @@ export class SettingsPage {
 
     layoutSection.appendChild(reelModeContainer);
 
+
     const orientationFilter = this.settings.orientationFilter ?? [];
     const hasOrientationFilter = orientationFilter.length > 0;
     const portraitEnabled = !hasOrientationFilter || orientationFilter.includes('portrait');
@@ -1144,6 +1145,7 @@ export class SettingsPage {
     const orientationFilter = selectedOrientations.length === 0 || selectedOrientations.length === 2
       ? undefined
       : selectedOrientations;
+
 
     const newSettings: Partial<FeedSettings> = {
       includeImagesInFeed: includeImagesToggle.checked,

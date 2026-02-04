@@ -665,6 +665,38 @@ export abstract class BasePost {
    * Create a performer chip element
    */
   protected createPerformerChip(performer: { id: string; name: string; image_path?: string; favorite?: boolean }): HTMLElement {
+    const chip = this.buildPerformerChipBase(performer);
+    chip.dataset.performerId = performer.id;
+    const handleClick = (event?: Event): void => {
+      if (event) {
+        const target = event.target as HTMLElement | null;
+        if (target?.closest('.performer-chip__favorite')) {
+          return;
+        }
+      }
+      this.hidePerformerOverlay(true);
+      this.performerOverlayClickTime = Date.now();
+      if (this.onPerformerChipClick) {
+        const performerId = Number.parseInt(performer.id, 10);
+        if (!Number.isNaN(performerId)) {
+          this.onPerformerChipClick(performerId, performer.name);
+        }
+      }
+    };
+
+    this.bindPerformerChipInteractions(chip, performer, handleClick);
+    chip.appendChild(this.buildPerformerImage(performer));
+    chip.appendChild(document.createTextNode(performer.name));
+
+    const favoriteState = this.getPerformerFavoriteState(performer);
+    const favoriteIcon = this.buildFavoriteToggle(performer, favoriteState);
+    chip.appendChild(favoriteIcon);
+    this.bindPerformerHover(chip, performer);
+
+    return chip;
+  }
+
+  private buildPerformerChipBase(performer: { id: string; name: string }): HTMLElement {
     const chip = document.createElement('a');
     chip.className = 'performer-chip';
     chip.href = this.getPerformerLink(performer.id);
@@ -681,8 +713,7 @@ export abstract class BasePost {
     chip.style.cursor = 'pointer';
     chip.style.minHeight = '44px';
     chip.style.height = '44px';
-    
-    // Apply reel mode specific styling
+
     if (this.isReelMode) {
       chip.style.background = 'transparent';
       chip.style.border = 'none';
@@ -691,34 +722,17 @@ export abstract class BasePost {
       chip.style.color = '#ffffff';
       chip.style.textShadow = '0 2px 8px rgba(0, 0, 0, 0.65)';
     }
-    
-    const handleClick = (event?: Event): void => {
-      if (event) {
-        const target = event.target as HTMLElement | null;
-        if (target?.closest('.performer-chip__favorite')) {
-          return;
-        }
-      }
-      // Hide overlay when clicking to filter
-      this.hidePerformerOverlay(true);
-      // Record click time to prevent immediate re-show on hover
-      this.performerOverlayClickTime = Date.now();
-      
-      if (this.onPerformerChipClick) {
-        const performerId = Number.parseInt(performer.id, 10);
-        if (!Number.isNaN(performerId)) {
-          this.onPerformerChipClick(performerId, performer.name);
-        }
-      }
-    };
-    
+
+    return chip;
+  }
+
+  private bindPerformerChipInteractions(
+    chip: HTMLElement,
+    performer: { id: string; name: string },
+    handleClick: (event?: Event) => void
+  ): void {
     const isMobile = isMobileDevice();
-    const canHover = typeof globalThis !== 'undefined'
-      && 'matchMedia' in globalThis
-      && globalThis.matchMedia('(hover: hover)').matches;
-    
     if (isMobile) {
-      // Use unified touch handler utility
       setupTouchHandlers(chip, {
         onTap: (e) => {
           e.preventDefault();
@@ -728,19 +742,24 @@ export abstract class BasePost {
         preventDefault: true,
         stopPropagation: true,
       });
-      
-      // Prevent click event from firing after touch to avoid double-firing
       preventClickAfterTouch(chip);
     }
-    
-    // Desktop click handler
+
     chip.addEventListener('click', (e) => {
       e.preventDefault();
       e.stopPropagation();
       handleClick(e);
     });
-    
-    // Add performer image (circular, 20px) before the name
+
+    chip.addEventListener('mouseenter', () => {
+      chip.style.color = this.isReelMode ? '#ffffff' : THEME.colors.textPrimary;
+    });
+    chip.addEventListener('mouseleave', () => {
+      chip.style.color = this.isReelMode ? '#ffffff' : THEME.colors.textSecondary;
+    });
+  }
+
+  private buildPerformerImage(performer: { name: string; image_path?: string }): HTMLElement {
     const imageContainer = document.createElement('div');
     imageContainer.style.width = '40px';
     imageContainer.style.height = '40px';
@@ -754,7 +773,7 @@ export abstract class BasePost {
     imageContainer.style.color = THEME.colors.textSecondary;
     imageContainer.style.flexShrink = '0';
     imageContainer.style.overflow = 'hidden';
-    
+
     if (performer.image_path) {
       const imageSrc = normalizeMediaUrl(performer.image_path);
       if (imageSrc) {
@@ -773,23 +792,26 @@ export abstract class BasePost {
     } else {
       imageContainer.textContent = performer.name.charAt(0).toUpperCase();
     }
-    
-    chip.appendChild(imageContainer);
-    
-    // Add performer name
-    chip.appendChild(document.createTextNode(performer.name));
-    
+
+    return imageContainer;
+  }
+
+  private getPerformerFavoriteState(performer: { id: string; favorite?: boolean }): boolean {
     const cachedFavorite = BasePost.getCachedPerformerFavorite(performer.id);
     const isFavorite = performer.favorite ?? cachedFavorite ?? false;
     if (performer.favorite !== undefined) {
       BasePost.setCachedPerformerFavorite(performer.id, performer.favorite);
     }
+    return isFavorite;
+  }
 
-    // Add favorite performer toggle icon after the name
+  private buildFavoriteToggle(
+    performer: { id: string; favorite?: boolean; name: string },
+    isFavorite: boolean
+  ): HTMLElement {
     const favoriteIcon = document.createElement('span');
     favoriteIcon.className = 'performer-chip__favorite';
     favoriteIcon.dataset.performerId = performer.id;
-    chip.dataset.performerId = performer.id;
     favoriteIcon.innerHTML = isFavorite ? HEART_SVG_FILLED : HEART_SVG_OUTLINE;
     favoriteIcon.style.display = 'inline-flex';
     favoriteIcon.style.alignItems = 'center';
@@ -806,26 +828,26 @@ export abstract class BasePost {
     favoriteIcon.setAttribute('aria-label', isFavorite ? 'Unfavorite performer' : 'Favorite performer');
     favoriteIcon.title = isFavorite ? 'Unfavorite performer' : 'Favorite performer';
 
-    const updateFavoriteIcon = (isFavorite: boolean): void => {
-      favoriteIcon.innerHTML = isFavorite ? HEART_SVG_FILLED : HEART_SVG_OUTLINE;
-      favoriteIcon.style.color = isFavorite
+    const updateFavoriteIcon = (nextFavorite: boolean): void => {
+      favoriteIcon.innerHTML = nextFavorite ? HEART_SVG_FILLED : HEART_SVG_OUTLINE;
+      favoriteIcon.style.color = nextFavorite
         ? THEME.colors.ratingHigh
         : (this.isReelMode ? THEME.colors.textPrimary : THEME.colors.textSecondary);
-      favoriteIcon.setAttribute('aria-label', isFavorite ? 'Unfavorite performer' : 'Favorite performer');
-      favoriteIcon.title = isFavorite ? 'Unfavorite performer' : 'Favorite performer';
+      favoriteIcon.setAttribute('aria-label', nextFavorite ? 'Unfavorite performer' : 'Favorite performer');
+      favoriteIcon.title = nextFavorite ? 'Unfavorite performer' : 'Favorite performer';
     };
 
-    const updateFavoriteIconsInDocument = (isFavorite: boolean): void => {
-      updateFavoriteIcon(isFavorite);
+    const updateFavoriteIconsInDocument = (nextFavorite: boolean): void => {
+      updateFavoriteIcon(nextFavorite);
       const selector = `.performer-chip__favorite[data-performer-id="${performer.id}"]`;
       const icons = document.querySelectorAll<HTMLElement>(selector);
       for (const icon of icons) {
-        icon.innerHTML = isFavorite ? HEART_SVG_FILLED : HEART_SVG_OUTLINE;
-        icon.style.color = isFavorite
+        icon.innerHTML = nextFavorite ? HEART_SVG_FILLED : HEART_SVG_OUTLINE;
+        icon.style.color = nextFavorite
           ? THEME.colors.ratingHigh
           : (this.isReelMode ? THEME.colors.textPrimary : THEME.colors.textSecondary);
-        icon.setAttribute('aria-label', isFavorite ? 'Unfavorite performer' : 'Favorite performer');
-        icon.title = isFavorite ? 'Unfavorite performer' : 'Favorite performer';
+        icon.setAttribute('aria-label', nextFavorite ? 'Unfavorite performer' : 'Favorite performer');
+        icon.title = nextFavorite ? 'Unfavorite performer' : 'Favorite performer';
       }
     };
 
@@ -871,44 +893,40 @@ export abstract class BasePost {
       }
     });
 
-    chip.appendChild(favoriteIcon);
-    
-    // Hover effect
+    return favoriteIcon;
+  }
+
+  private bindPerformerHover(
+    chip: HTMLElement,
+    performer: { id: string; name: string }
+  ): void {
+    const canHover = typeof globalThis !== 'undefined'
+      && 'matchMedia' in globalThis
+      && globalThis.matchMedia('(hover: hover)').matches;
+    if (!this.api || !canHover) {
+      return;
+    }
+
     chip.addEventListener('mouseenter', () => {
-      chip.style.color = this.isReelMode ? '#ffffff' : THEME.colors.textPrimary;
-    });
-    chip.addEventListener('mouseleave', () => {
-      chip.style.color = this.isReelMode ? '#ffffff' : THEME.colors.textSecondary;
+      if (this.performerOverlayHideTimeout) {
+        clearTimeout(this.performerOverlayHideTimeout);
+        this.performerOverlayHideTimeout = undefined;
+      }
+      this.showPerformerOverlay(performer.id, chip, () => this.removePerformerAction(performer.id, performer.name));
     });
 
-    // Add hover overlay handlers
-    if (this.api && canHover) {
-      chip.addEventListener('mouseenter', () => {
-        // Cancel any pending hide timeout (when moving from another chip)
-        if (this.performerOverlayHideTimeout) {
-          clearTimeout(this.performerOverlayHideTimeout);
+    chip.addEventListener('mouseleave', (e) => {
+      const relatedTarget = e.relatedTarget as HTMLElement | null;
+      const isMovingToAnotherChip = relatedTarget?.closest('.performer-chip') !== null;
+      if (!isMovingToAnotherChip) {
+        this.performerOverlayHideTimeout = setTimeout(() => {
+          if (!this.performerOverlay?.matches(':hover')) {
+            this.hidePerformerOverlay();
+          }
           this.performerOverlayHideTimeout = undefined;
-        }
-        this.showPerformerOverlay(performer.id, chip, () => this.removePerformerAction(performer.id, performer.name));
-      });
-      chip.addEventListener('mouseleave', (e) => {
-        // Check if we're moving to another performer chip
-        const relatedTarget = e.relatedTarget as HTMLElement | null;
-        const isMovingToAnotherChip = relatedTarget?.closest('.performer-chip') !== null;
-        
-        if (!isMovingToAnotherChip) {
-          // Small delay to allow mouse to move to overlay
-          this.performerOverlayHideTimeout = setTimeout(() => {
-            if (!this.performerOverlay?.matches(':hover')) {
-              this.hidePerformerOverlay();
-            }
-            this.performerOverlayHideTimeout = undefined;
-          }, 100) as unknown as number;
-        }
-      });
-    }
-    
-    return chip;
+        }, 100) as unknown as number;
+      }
+    });
   }
 
   /**

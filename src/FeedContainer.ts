@@ -3037,41 +3037,40 @@ export class FeedContainer {
       }
     });
     
-    // Use a single, debounced document click handler
+    this.registerSuggestionsOutsideHandlers(searchArea, suggestions);
+
+    // Initial render of search bar display (in case defaults are provided)
+    updateSearchBarDisplay();
+  }
+
+  private registerSuggestionsOutsideHandlers(searchArea: HTMLElement, suggestions: HTMLElement): void {
     let clickHandlerTimeout: number | null = null;
     const handleClickOutside = (e: Event) => {
-      // Clear any pending handler
       if (clickHandlerTimeout !== null) {
         clearTimeout(clickHandlerTimeout);
       }
-      
-      // Defer the check to next tick to ensure overlay state is updated
+
       clickHandlerTimeout = (globalThis.setTimeout(() => {
-        // Check if suggestions are visible
         const isSuggestionsVisible = suggestions.style.display !== 'none';
-        
-        // Don't close if clicking inside searchArea or suggestions overlay
         const clickedInsideSearch = searchArea.contains(e.target as Node);
         const clickedInsideSuggestions = suggestions.contains(e.target as Node);
-        
-        // Don't close if clicking on header control buttons (HD toggle, shuffle, volume, etc.)
+
         const target = e.target as HTMLElement;
-        const clickedOnHeaderButton = target.closest('button') && 
+        const clickedOnHeaderButton = target.closest('button') &&
           (target.closest('.feed-header-bar') || target.closest('header'));
-        
+
         if (isSuggestionsVisible && !clickedInsideSearch && !clickedInsideSuggestions && !clickedOnHeaderButton) {
           this.closeSuggestions();
         }
       }, 0) as unknown as number);
     };
-    
+
     if (this.suggestionsClickOutsideHandler) {
       document.removeEventListener('click', this.suggestionsClickOutsideHandler);
     }
     this.suggestionsClickOutsideHandler = handleClickOutside;
     document.addEventListener('click', handleClickOutside);
-    
-    // On mobile, also listen to touch events to ensure suggestions close when tapping outside
+
     const isMobileDeviceLocal = isMobileDevice();
     if (this.suggestionsTouchOutsideHandler) {
       document.removeEventListener('touchend', this.suggestionsTouchOutsideHandler);
@@ -3081,9 +3080,6 @@ export class FeedContainer {
       this.suggestionsTouchOutsideHandler = handleClickOutside;
       document.addEventListener('touchend', handleClickOutside, { passive: true });
     }
-
-    // Initial render of search bar display (in case defaults are provided)
-    updateSearchBarDisplay();
   }
 
   /**
@@ -3573,10 +3569,7 @@ export class FeedContainer {
         return;
       }
 
-      const item = items[i];
-      const result: { fragment: DocumentFragment; postContainer: HTMLElement | null } = item.type === 'marker'
-        ? await this.processMarkerForRender(item.data as SceneMarker, fragment, signal)
-        : await this.processImageForRender(item.data as Image, fragment, signal);
+      const result = await this.renderItemForRender(items[i], fragment, signal);
       fragment = result.fragment;
       
       if (result.postContainer) {
@@ -3586,13 +3579,32 @@ export class FeedContainer {
       this.removeSkeletonIfNeeded(append, i);
 
       if (this.shouldInsertFragment(i, renderChunkSize, items.length) && fragment && fragmentPostCount > 0) {
-        this.insertFragment(fragment, fragmentPostCount);
-        fragment = null;
-        fragmentPostCount = 0;
+        const flushed = this.flushFragment(fragment, fragmentPostCount);
+        fragment = flushed.fragment;
+        fragmentPostCount = flushed.fragmentPostCount;
 
         await this.waitForRenderDelay(i, items.length, renderDelay);
       }
     }
+  }
+
+  private async renderItemForRender(
+    item: { type: 'marker' | 'image'; data: SceneMarker | Image; date?: string },
+    fragment: DocumentFragment | null,
+    signal?: AbortSignal
+  ): Promise<{ fragment: DocumentFragment; postContainer: HTMLElement | null }> {
+    if (item.type === 'marker') {
+      return this.processMarkerForRender(item.data as SceneMarker, fragment, signal);
+    }
+    return this.processImageForRender(item.data as Image, fragment, signal);
+  }
+
+  private flushFragment(
+    fragment: DocumentFragment,
+    fragmentPostCount: number
+  ): { fragment: DocumentFragment | null; fragmentPostCount: number } {
+    this.insertFragment(fragment, fragmentPostCount);
+    return { fragment: null, fragmentPostCount: 0 };
   }
 
   /**
@@ -5686,63 +5698,49 @@ export class FeedContainer {
    */
   private async autoplayInitial(count: number): Promise<void> {
     const initial = this.markers.slice(0, Math.min(count, this.markers.length));
-    
-    // Load all players first
-    for (const marker of initial) {
-      const post = this.posts.get(marker.id);
-      if (!post) continue;
-      if (!post.hasVideoSource()) continue;
-      const player = post.preload();
-      if (isNativeVideoPlayer(player)) {
-        // Register with visibility manager (only video players)
-        this.visibilityManager.registerPlayer(marker.id, player);
-      }
-    }
-    
-    // Wait a bit for players to initialize
+    const players = this.preloadInitialPlayers(initial);
     await new Promise((r) => setTimeout(r, 100));
-    
-    // Now attempt to play with robust retry logic
-    for (const marker of initial) {
-      const post = this.posts.get(marker.id);
-      if (!post) continue;
-      const player = post.getPlayer();
-      if (!player) continue;
-      
-      // Only handle video players (skip image players)
-      if (!isNativeVideoPlayer(player)) continue;
-      
-      // Robust play with multiple retries
-      const tryPlay = async (attempt: number = 1, maxAttempts: number = 5): Promise<void> => {
-        try {
-          // Wait for video to be ready
-          await player.waitUntilCanPlay(5000);
-          
-          // Small delay to ensure layout/visibility settles
-          await new Promise((r) => setTimeout(r, 100));
-          
-          // Attempt to play
-          await player.play();
-        } catch (e) {
-          console.warn(`Autoplay initial attempt ${attempt} failed for marker ${marker.id}`, e);
-          
-          if (attempt < maxAttempts) {
-            // Exponential backoff: 200ms, 400ms, 800ms, 1600ms
-            const delay = Math.min(200 * Math.pow(2, attempt - 1), 1600);
-            await new Promise((r) => setTimeout(r, delay));
-            await tryPlay(attempt + 1, maxAttempts);
-          } else {
-            console.error(`Autoplay initial: All attempts failed for marker ${marker.id}`);
-          }
-        }
-      };
-      
-      // Start playing attempt (don't await to allow parallel attempts)
-      // Intentionally ignore errors - errors are handled within tryPlay()
-      tryPlay().catch(() => {
-        // Errors are handled within tryPlay() function
+
+    for (const entry of players) {
+      this.attemptAutoplay(entry.player, entry.markerId).catch(() => {
+        // Errors are handled inside attemptAutoplay
       });
     }
+  }
+
+  private preloadInitialPlayers(markers: SceneMarker[]): Array<{ markerId: string; player: NativeVideoPlayer }> {
+    const players: Array<{ markerId: string; player: NativeVideoPlayer }> = [];
+    for (const marker of markers) {
+      const post = this.posts.get(marker.id);
+      if (!post || !post.hasVideoSource()) continue;
+      const player = post.preload();
+      if (!isNativeVideoPlayer(player)) continue;
+      this.visibilityManager.registerPlayer(marker.id, player);
+      players.push({ markerId: marker.id, player });
+    }
+    return players;
+  }
+
+  private async attemptAutoplay(player: NativeVideoPlayer, markerId: string): Promise<void> {
+    const maxAttempts = 5;
+    const attemptPlay = async (attempt: number): Promise<void> => {
+      try {
+        await player.waitUntilCanPlay(5000);
+        await new Promise((r) => setTimeout(r, 100));
+        await player.play();
+      } catch (e) {
+        console.warn(`Autoplay initial attempt ${attempt} failed for marker ${markerId}`, e);
+        if (attempt < maxAttempts) {
+          const delay = Math.min(200 * Math.pow(2, attempt - 1), 1600);
+          await new Promise((r) => setTimeout(r, delay));
+          await attemptPlay(attempt + 1);
+        } else {
+          console.error(`Autoplay initial: All attempts failed for marker ${markerId}`);
+        }
+      }
+    };
+
+    await attemptPlay(1);
   }
 
   private shouldEnableVisibilityDebug(): boolean {
@@ -6523,6 +6521,24 @@ export class FeedContainer {
     }
   }
 
+  private scheduleCleanupAfterScroll(): void {
+    if (this.cleanupScrollTimeout) {
+      clearTimeout(this.cleanupScrollTimeout);
+    }
+    this.cleanupScrollTimeout = setTimeout(() => {
+      this.cleanupScrollTimeout = undefined;
+      this.cleanupDistantPosts();
+    }, 2000);
+  }
+
+  private handleVisibilityChange(): void {
+    if (document.hidden) {
+      this.stopBackgroundPreloading();
+    } else if (this.settings.backgroundPreloadEnabled && this.posts.size > 0) {
+      this.startBackgroundPreloading();
+    }
+  }
+
   /**
    * Setup scroll handler
    * Handles header hide/show based on scroll direction and tracks scroll velocity
@@ -6550,27 +6566,19 @@ export class FeedContainer {
       const now = Date.now();
       const currentScrollY = globalThis.scrollY || document.documentElement.scrollTop;
       const timeDelta = now - this.lastScrollTime;
-      
+
       this.updateScrollVelocity(currentScrollY, timeDelta);
       this.handleScrollVideoUnloading(timeDelta);
       this.handleFastScrolling();
       this.cancelOutOfViewPreloads();
 
-      if (this.shouldSkipHeaderHandling()) {
-        return;
+      if (!this.shouldSkipHeaderHandling()) {
+        const headerState = this.handleHeaderVisibility(currentScrollY, lastScrollY, isHeaderHidden);
+        lastScrollY = headerState.lastScrollY;
+        isHeaderHidden = headerState.isHeaderHidden;
       }
 
-      const headerState = this.handleHeaderVisibility(currentScrollY, lastScrollY, isHeaderHidden);
-      lastScrollY = headerState.lastScrollY;
-      isHeaderHidden = headerState.isHeaderHidden;
-
-      if (this.cleanupScrollTimeout) {
-        clearTimeout(this.cleanupScrollTimeout);
-      }
-      this.cleanupScrollTimeout = setTimeout(() => {
-        this.cleanupScrollTimeout = undefined;
-        this.cleanupDistantPosts();
-      }, 2000);
+      this.scheduleCleanupAfterScroll();
     };
 
     // Use passive listener for better performance
@@ -6578,15 +6586,7 @@ export class FeedContainer {
     globalThis.addEventListener('scroll', handleScroll, { passive: true });
 
     // Listen for page visibility changes to pause/resume preloading
-    const handleVisibilityChange = () => {
-      if (document.hidden) {
-        // Pause preloading when tab is hidden
-        this.stopBackgroundPreloading();
-      } else if (this.settings.backgroundPreloadEnabled && this.posts.size > 0) {
-        // Resume preloading when tab becomes visible
-        this.startBackgroundPreloading();
-      }
-    };
+    const handleVisibilityChange = () => this.handleVisibilityChange();
     this.visibilityChangeHandler = handleVisibilityChange;
     document.addEventListener('visibilitychange', handleVisibilityChange);
   }
@@ -6920,6 +6920,7 @@ export class FeedContainer {
     
     return null;
   }
+
 
   /**
    * Trigger autoplay for a snapped card

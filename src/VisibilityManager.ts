@@ -1827,4 +1827,3 @@ export class VisibilityManager {
     }
   }
 }
-
