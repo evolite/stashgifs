@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [5.33.0] - 2026-02-04
+
+### Changed
+- Improve memory management and teardown
+
 ## [5.32.0] - 2026-02-04
 
 ### Changed
