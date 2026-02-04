@@ -1,6 +1,6 @@
 {
   "name": "stashgifs",
-  "version": "5.31.3",
+  "version": "5.32.0",
   "description": "StashGifs - TikTok-like vertical scroller interface for Stash.",
   "scripts": {
     "prebuild": "node scripts/generate-version.js",
