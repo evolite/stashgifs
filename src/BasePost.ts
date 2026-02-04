@@ -7,7 +7,7 @@ import { FavoritesManager } from './FavoritesManager.js';
 import { StashAPI } from './StashAPI.js';
 import { VisibilityManager } from './VisibilityManager.js';
 import { normalizeMediaUrl, showToast, isMobileDevice, THEME } from './utils.js';
-import { VERIFIED_CHECKMARK_SVG, ADD_TAG_SVG, HEART_SVG_OUTLINE, HEART_SVG_FILLED, OCOUNT_SVG, EXTERNAL_LINK_SVG, STAR_SVG, STAR_SVG_OUTLINE } from './icons.js';
+import { ADD_TAG_SVG, HEART_SVG_OUTLINE, HEART_SVG_FILLED, OCOUNT_SVG, EXTERNAL_LINK_SVG, STAR_SVG, STAR_SVG_OUTLINE } from './icons.js';
 import { setupTouchHandlers, preventClickAfterTouch } from './utils/touchHandlers.js';
 import { PerformerExtended } from './graphql/types.js';
 import { Performer, Tag } from './types.js';
@@ -83,6 +83,9 @@ export abstract class BasePost {
   private hadTagOverlayBefore: boolean = false; // Track if tag overlay was showing before (for delay logic)
   private tagOverlayClickTime?: number; // Track when chip was clicked to prevent immediate re-show
 
+  private static favoritePerformerCache: Map<string, boolean> = new Map();
+  private static favoriteCacheLoaded: boolean = false;
+
 
   constructor(
     container: HTMLElement,
@@ -135,6 +138,46 @@ export abstract class BasePost {
     this.container.appendChild(footer);
 
     return { header, playerContainer, footer };
+  }
+
+  private static loadFavoritePerformerCache(): void {
+    if (this.favoriteCacheLoaded) {
+      return;
+    }
+    this.favoriteCacheLoaded = true;
+    try {
+      const stored = globalThis.localStorage?.getItem('stashgifs-performer-favorites');
+      if (!stored) return;
+      const parsed = JSON.parse(stored) as Record<string, boolean>;
+      for (const [id, value] of Object.entries(parsed)) {
+        this.favoritePerformerCache.set(id, Boolean(value));
+      }
+    } catch {
+      // Ignore storage parsing errors
+    }
+  }
+
+  private static persistFavoritePerformerCache(): void {
+    try {
+      const data: Record<string, boolean> = {};
+      for (const [id, value] of this.favoritePerformerCache.entries()) {
+        data[id] = value;
+      }
+      globalThis.localStorage?.setItem('stashgifs-performer-favorites', JSON.stringify(data));
+    } catch {
+      // Ignore storage errors
+    }
+  }
+
+  protected static getCachedPerformerFavorite(performerId: string): boolean | undefined {
+    this.loadFavoritePerformerCache();
+    return this.favoritePerformerCache.get(performerId);
+  }
+
+  protected static setCachedPerformerFavorite(performerId: string, favorite: boolean): void {
+    this.loadFavoritePerformerCache();
+    this.favoritePerformerCache.set(performerId, favorite);
+    this.persistFavoritePerformerCache();
   }
 
   private getOrientationFromAspectRatio(aspectRatio: number): 'portrait' | 'landscape' | 'square' {
@@ -417,7 +460,7 @@ export abstract class BasePost {
 
   public setShowVerifiedCheckmarks(showVerified: boolean): void {
     this.showVerifiedCheckmarks = showVerified;
-    const verifiedIcons = this.container.querySelectorAll<HTMLElement>('.performer-chip__verified');
+    const verifiedIcons = this.container.querySelectorAll<HTMLElement>('.performer-chip__favorite');
     for (const icon of verifiedIcons) {
       icon.style.display = showVerified ? 'inline-flex' : 'none';
     }
@@ -574,7 +617,7 @@ export abstract class BasePost {
   /**
    * Create a performer chip element
    */
-  protected createPerformerChip(performer: { id: string; name: string; image_path?: string }): HTMLElement {
+  protected createPerformerChip(performer: { id: string; name: string; image_path?: string; favorite?: boolean }): HTMLElement {
     const chip = document.createElement('a');
     chip.className = 'performer-chip';
     chip.href = this.getPerformerLink(performer.id);
@@ -602,7 +645,13 @@ export abstract class BasePost {
       chip.style.textShadow = '0 2px 8px rgba(0, 0, 0, 0.65)';
     }
     
-    const handleClick = () => {
+    const handleClick = (event?: Event): void => {
+      if (event) {
+        const target = event.target as HTMLElement | null;
+        if (target?.closest('.performer-chip__favorite')) {
+          return;
+        }
+      }
       // Hide overlay when clicking to filter
       this.hidePerformerOverlay(true);
       // Record click time to prevent immediate re-show on hover
@@ -627,7 +676,7 @@ export abstract class BasePost {
         onTap: (e) => {
           e.preventDefault();
           e.stopPropagation();
-          handleClick();
+          handleClick(e);
         },
         preventDefault: true,
         stopPropagation: true,
@@ -641,7 +690,7 @@ export abstract class BasePost {
     chip.addEventListener('click', (e) => {
       e.preventDefault();
       e.stopPropagation();
-      handleClick();
+      handleClick(e);
     });
     
     // Add performer image (circular, 20px) before the name
@@ -683,18 +732,99 @@ export abstract class BasePost {
     // Add performer name
     chip.appendChild(document.createTextNode(performer.name));
     
-    // Add verified checkmark icon after the name
-    const checkmarkIcon = document.createElement('span');
-    checkmarkIcon.className = 'performer-chip__verified';
-    checkmarkIcon.innerHTML = VERIFIED_CHECKMARK_SVG;
-    checkmarkIcon.style.display = this.showVerifiedCheckmarks ? 'inline-flex' : 'none';
-    checkmarkIcon.style.alignItems = 'center';
-    checkmarkIcon.style.width = '18px';
-    checkmarkIcon.style.height = '18px';
-    checkmarkIcon.style.flexShrink = '0';
-    checkmarkIcon.style.marginLeft = '-4px';
-    checkmarkIcon.style.color = THEME.colors.accentPrimary;
-    chip.appendChild(checkmarkIcon);
+    const cachedFavorite = BasePost.getCachedPerformerFavorite(performer.id);
+    const isFavorite = performer.favorite ?? cachedFavorite ?? false;
+    if (performer.favorite !== undefined) {
+      BasePost.setCachedPerformerFavorite(performer.id, performer.favorite);
+    }
+
+    // Add favorite performer toggle icon after the name
+    const favoriteIcon = document.createElement('span');
+    favoriteIcon.className = 'performer-chip__favorite';
+    favoriteIcon.dataset.performerId = performer.id;
+    chip.dataset.performerId = performer.id;
+    favoriteIcon.innerHTML = isFavorite ? HEART_SVG_FILLED : HEART_SVG_OUTLINE;
+    favoriteIcon.style.display = 'inline-flex';
+    favoriteIcon.style.alignItems = 'center';
+    favoriteIcon.style.width = '18px';
+    favoriteIcon.style.height = '18px';
+    favoriteIcon.style.flexShrink = '0';
+    favoriteIcon.style.marginLeft = '-6px';
+    favoriteIcon.style.color = isFavorite
+      ? THEME.colors.ratingHigh
+      : (this.isReelMode ? THEME.colors.textPrimary : THEME.colors.textSecondary);
+    favoriteIcon.style.cursor = 'pointer';
+    favoriteIcon.setAttribute('role', 'button');
+    favoriteIcon.setAttribute('tabindex', '0');
+    favoriteIcon.setAttribute('aria-label', isFavorite ? 'Unfavorite performer' : 'Favorite performer');
+    favoriteIcon.title = isFavorite ? 'Unfavorite performer' : 'Favorite performer';
+
+    const updateFavoriteIcon = (isFavorite: boolean): void => {
+      favoriteIcon.innerHTML = isFavorite ? HEART_SVG_FILLED : HEART_SVG_OUTLINE;
+      favoriteIcon.style.color = isFavorite
+        ? THEME.colors.ratingHigh
+        : (this.isReelMode ? THEME.colors.textPrimary : THEME.colors.textSecondary);
+      favoriteIcon.setAttribute('aria-label', isFavorite ? 'Unfavorite performer' : 'Favorite performer');
+      favoriteIcon.title = isFavorite ? 'Unfavorite performer' : 'Favorite performer';
+    };
+
+    const updateFavoriteIconsInDocument = (isFavorite: boolean): void => {
+      updateFavoriteIcon(isFavorite);
+      const selector = `.performer-chip__favorite[data-performer-id="${performer.id}"]`;
+      const icons = document.querySelectorAll<HTMLElement>(selector);
+      for (const icon of icons) {
+        icon.innerHTML = isFavorite ? HEART_SVG_FILLED : HEART_SVG_OUTLINE;
+        icon.style.color = isFavorite
+          ? THEME.colors.ratingHigh
+          : (this.isReelMode ? THEME.colors.textPrimary : THEME.colors.textSecondary);
+        icon.setAttribute('aria-label', isFavorite ? 'Unfavorite performer' : 'Favorite performer');
+        icon.title = isFavorite ? 'Unfavorite performer' : 'Favorite performer';
+      }
+    };
+
+    let isTogglingFavorite = false;
+    const toggleFavorite = async (): Promise<void> => {
+      if (!this.api || isTogglingFavorite) {
+        if (!this.api) {
+          showToast('API not available.');
+        }
+        return;
+      }
+      isTogglingFavorite = true;
+      const nextFavorite = !(performer.favorite ?? BasePost.getCachedPerformerFavorite(performer.id) ?? false);
+      try {
+        await this.api.updatePerformerFavorite(performer.id, nextFavorite);
+        performer.favorite = nextFavorite;
+        BasePost.setCachedPerformerFavorite(performer.id, nextFavorite);
+        updateFavoriteIconsInDocument(nextFavorite);
+      } catch (error) {
+        console.error('BasePost: Failed to update performer favorite', error);
+        showToast('Failed to update performer favorite. Please try again.');
+      } finally {
+        isTogglingFavorite = false;
+      }
+    };
+
+    favoriteIcon.addEventListener('pointerdown', (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+    });
+
+    favoriteIcon.addEventListener('click', (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      void toggleFavorite();
+    });
+
+    favoriteIcon.addEventListener('keydown', (event) => {
+      if (event.key === 'Enter' || event.key === ' ') {
+        event.preventDefault();
+        event.stopPropagation();
+        void toggleFavorite();
+      }
+    });
+
+    chip.appendChild(favoriteIcon);
     
     // Hover effect
     chip.addEventListener('mouseenter', () => {
@@ -853,14 +983,6 @@ export abstract class BasePost {
 
     leftGroup.appendChild(nameLink);
 
-    if (performerData.favorite) {
-      const favoriteIcon = document.createElement('span');
-      favoriteIcon.innerHTML = HEART_SVG_FILLED;
-      favoriteIcon.style.display = 'inline-flex';
-      favoriteIcon.style.alignItems = 'center';
-      favoriteIcon.style.color = THEME.colors.ratingHigh;
-      leftGroup.appendChild(favoriteIcon);
-    }
 
     nameRow.appendChild(leftGroup);
 
@@ -1920,6 +2042,9 @@ export abstract class BasePost {
     if (options.performers?.length) {
       const performersSection = document.createElement('div');
       performersSection.className = 'video-post__performers';
+      if (options.performers.length === 2) {
+        performersSection.style.gap = '12px';
+      }
       this.appendPerformerChips(performersSection, options.performers);
       header.appendChild(performersSection);
     }

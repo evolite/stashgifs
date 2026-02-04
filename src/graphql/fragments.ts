@@ -22,6 +22,7 @@ export const SceneFields = `
     performers {
       id
       name
+      favorite
       image_path
     }
     tags {
@@ -243,4 +244,3 @@ export const VisualFileData = `
     }
   }
 `;
-

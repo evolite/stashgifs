@@ -496,7 +496,7 @@ export class SettingsPage {
     verifiedCheckmarksContainer.style.marginBottom = '16px';
 
     const verifiedCheckmarksLabel = document.createElement('span');
-    verifiedCheckmarksLabel.textContent = 'Show verified checkmarks';
+    verifiedCheckmarksLabel.textContent = 'Show favorite performers';
     verifiedCheckmarksLabel.style.color = THEME.colors.textSecondary;
     verifiedCheckmarksLabel.style.fontSize = THEME.typography.sizeBody;
     verifiedCheckmarksContainer.appendChild(verifiedCheckmarksLabel);

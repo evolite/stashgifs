@@ -43,6 +43,7 @@ export interface Performer {
   id: string;
   name: string;
   image_path?: string;
+  favorite?: boolean;
 }
 
 export interface Tag {

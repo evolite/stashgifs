@@ -120,3 +120,14 @@ export const IMAGE_INCREMENT_O = `
   }
 `;
 
+/**
+ * Update a performer
+ */
+export const PERFORMER_UPDATE = `
+  mutation PerformerUpdate($input: PerformerUpdateInput!) {
+    performerUpdate(input: $input) {
+      id
+      favorite
+    }
+  }
+`;

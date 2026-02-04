@@ -438,6 +438,9 @@ export class VideoPost extends BasePost {
     if (this.data.marker.scene.performers && this.data.marker.scene.performers.length > 0) {
       const performersSection = document.createElement('div');
       performersSection.className = 'video-post__performers';
+      if (this.data.marker.scene.performers.length === 2) {
+        performersSection.style.gap = '12px';
+      }
       for (const performer of this.data.marker.scene.performers) {
         const chip = this.createPerformerChip(performer);
         performersSection.appendChild(chip);

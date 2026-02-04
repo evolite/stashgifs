@@ -1715,6 +1715,28 @@ export class StashAPI {
   }
 
   /**
+   * Update performer favorite flag
+   */
+  async updatePerformerFavorite(performerId: string, favorite: boolean, signal?: AbortSignal): Promise<void> {
+    if (this.isAborted(signal)) return;
+
+    const variables = {
+      input: {
+        id: performerId,
+        favorite,
+      }
+    };
+
+    await this.gqlClient.mutate({
+      mutation: mutations.PERFORMER_UPDATE,
+      variables,
+      signal,
+    });
+
+    if (this.isAborted(signal)) return;
+  }
+
+  /**
    * Add a tag to a scene (kept for backwards compatibility)
    */
   async addTagToScene(sceneId: string, tagId: string, signal?: AbortSignal): Promise<void> {

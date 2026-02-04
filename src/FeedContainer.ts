@@ -4944,6 +4944,7 @@ export class FeedContainer {
         id: p.id,
         name: p.name,
         image_path: p.image_path,
+        favorite: p.favorite,
       })),
       visualFiles: graphqlImage.visual_files?.map(vf => ({
         path: vf.path,
