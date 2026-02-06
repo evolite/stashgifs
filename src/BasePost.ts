@@ -827,7 +827,7 @@ export abstract class BasePost {
   ): HTMLElement {
     const getFavoriteColor = (favorite: boolean): string => {
       if (favorite) {
-        return THEME.colors.ratingHigh;
+        return THEME.colors.accentPrimary;
       }
       return this.isReelMode ? THEME.colors.textPrimary : THEME.colors.textSecondary;
     };
@@ -2893,14 +2893,16 @@ export abstract class BasePost {
   protected updateHeartButton(button?: HTMLElement): void {
     const btn = button || this.heartButton;
     if (!btn) return;
+
+    const inactiveColor = this.isReelMode ? THEME.colors.textPrimary : THEME.colors.textSecondary;
     
     if (this.isFavorite) {
       btn.innerHTML = HEART_SVG_FILLED;
-      btn.style.color = THEME.colors.ratingHigh;
+      btn.style.color = THEME.colors.accentPrimary;
       btn.title = 'Remove from favorites';
     } else {
       btn.innerHTML = HEART_SVG_OUTLINE;
-      btn.style.color = '#ffffff';
+      btn.style.color = inactiveColor;
       btn.title = 'Add to favorites';
     }
 
