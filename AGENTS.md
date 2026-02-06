@@ -13,7 +13,7 @@
 - Build: `npm run build` (runs `scripts/generate-version.js` via prebuild)
 - Watch build: `npm run watch`
 - Type-check only: `npm run type-check`
-- Clean build artifacts: `npm run clean`
+- Clean build artifacts: `npm run clean` (removes `app/assets/*.js` and `.map`)
 - GraphQL codegen: `npm run codegen`
 - GraphQL codegen (watch): `npm run codegen:watch`
 - Lint: none configured
@@ -95,6 +95,7 @@
 - `src/graphql/`: generated GraphQL types/queries; avoid manual edits.
 - `stashgifs/app/`: packaged app assets.
 - `stashgifs/app/assets/`: build output; update only when intentional.
+- `app/assets/`: clean script target; may be empty in repo.
 - `src/version.ts` is generated during build; avoid manual edits.
 - `tsconfig.json` excludes `src/controllers`, `src/players`, `src/services`, `src/state`.
 

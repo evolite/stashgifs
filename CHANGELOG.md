@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [5.35.0] - 2026-02-06
+
+### Changed
+- Add verified performer badges and overlay favorites for cleaner chips. Add hover info tooltips and unify icon usage for a more consistent settings and playback UI.
+
 ## [5.34.0] - 2026-02-04
 
 ## [5.33.0] - 2026-02-04
