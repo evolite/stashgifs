@@ -213,7 +213,7 @@ export interface FindTagsExtendedResponse {
  */
 export interface FindPerformersResponse {
   findPerformers: {
-    performers: Array<{ id: string; name: string; image_path?: string }>;
+    performers: Array<{ id: string; name: string; image_path?: string; stash_ids?: Array<{ stash_id: string }> }>;
   };
 }
 
@@ -237,6 +237,7 @@ export interface PerformerExtended {
   eye_color?: string;
   country?: string;
   rating100?: number;
+  stash_ids?: Array<{ stash_id: string }>;
   tags?: Array<{ id: string; name: string }>;
 }
 
@@ -357,6 +358,7 @@ export interface Image {
     gender?: string;
     favorite?: boolean;
     image_path?: string;
+    stash_ids?: Array<{ stash_id: string }>;
   }>;
   visual_files?: Array<VisualFile>;
 }

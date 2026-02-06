@@ -44,6 +44,7 @@ export interface Performer {
   name: string;
   image_path?: string;
   favorite?: boolean;
+  stash_ids?: Array<{ stash_id: string }>;
 }
 
 export interface Tag {

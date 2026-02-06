@@ -3,6 +3,7 @@
  * Allows users to configure file types and image feed settings
  */
 
+import { INFO_SVG } from './icons.js';
 import { FeedSettings } from './types.js';
 import * as version from './version.js';
 import { THEME, THEME_DEFAULTS } from './utils.js';
@@ -33,7 +34,7 @@ export class SettingsPage {
     const infoButton = document.createElement('button');
     infoButton.type = 'button';
     infoButton.setAttribute('aria-label', 'Information');
-    infoButton.innerHTML = 'ℹ️';
+    infoButton.innerHTML = INFO_SVG;
     infoButton.style.background = 'transparent';
     infoButton.style.border = 'none';
     infoButton.style.color = THEME.colors.textMuted;
@@ -389,18 +390,50 @@ export class SettingsPage {
       },
     ];
 
-    const buildThemePresetRow = (labelText: string): { row: HTMLElement; select: HTMLSelectElement } => {
+    const buildInfoLabel = (labelText: string, tooltipText: string): HTMLElement => {
+      const labelContainer = document.createElement('div');
+      labelContainer.style.display = 'flex';
+      labelContainer.style.alignItems = 'center';
+
+      const label = document.createElement('span');
+      label.textContent = labelText;
+      label.style.color = THEME.colors.textSecondary;
+      label.style.fontSize = THEME.typography.sizeBody;
+      labelContainer.appendChild(label);
+
+      const infoButton = this.createInfoButton(tooltipText);
+      labelContainer.appendChild(infoButton);
+
+      return labelContainer;
+    };
+
+    const buildInputLabel = (labelText: string, tooltipText: string): { container: HTMLElement; label: HTMLLabelElement } => {
+      const container = document.createElement('div');
+      container.style.display = 'flex';
+      container.style.alignItems = 'center';
+      container.style.marginBottom = '8px';
+
+      const label = document.createElement('label');
+      label.textContent = labelText;
+      label.style.color = THEME.colors.textSecondary;
+      label.style.fontSize = THEME.typography.sizeBody;
+      label.style.fontWeight = THEME.typography.weightBodyStrong;
+      container.appendChild(label);
+
+      const infoButton = this.createInfoButton(tooltipText);
+      container.appendChild(infoButton);
+
+      return { container, label };
+    };
+
+    const buildThemePresetRow = (labelText: string, tooltipText: string): { row: HTMLElement; select: HTMLSelectElement } => {
       const row = document.createElement('div');
       row.style.display = 'flex';
       row.style.justifyContent = 'space-between';
       row.style.alignItems = 'center';
       row.style.marginBottom = '16px';
 
-      const label = document.createElement('span');
-      label.textContent = labelText;
-      label.style.color = THEME.colors.textSecondary;
-      label.style.fontSize = THEME.typography.sizeBody;
-      row.appendChild(label);
+      row.appendChild(buildInfoLabel(labelText, tooltipText));
 
       const select = document.createElement('select');
       select.style.minWidth = '200px';
@@ -430,18 +463,18 @@ export class SettingsPage {
       return { row, select };
     };
 
-    const buildThemeRow = (labelText: string, value: string): { row: HTMLElement; input: HTMLInputElement; valueLabel: HTMLElement } => {
+    const buildThemeRow = (
+      labelText: string,
+      value: string,
+      tooltipText: string
+    ): { row: HTMLElement; input: HTMLInputElement; valueLabel: HTMLElement } => {
       const row = document.createElement('div');
       row.style.display = 'flex';
       row.style.justifyContent = 'space-between';
       row.style.alignItems = 'center';
       row.style.marginBottom = '16px';
 
-      const label = document.createElement('span');
-      label.textContent = labelText;
-      label.style.color = THEME.colors.textSecondary;
-      label.style.fontSize = THEME.typography.sizeBody;
-      row.appendChild(label);
+      row.appendChild(buildInfoLabel(labelText, tooltipText));
 
       const control = document.createElement('div');
       control.style.display = 'flex';
@@ -476,12 +509,31 @@ export class SettingsPage {
     const secondaryValue = normalizeHexColor(this.settings.themeSecondary, THEME_DEFAULTS.backgroundSecondary);
     const accentValue = normalizeHexColor(this.settings.themeAccent, THEME_DEFAULTS.accentPrimary);
 
-    const presetRow = buildThemePresetRow('Theme preset');
+    const presetRow = buildThemePresetRow(
+      'Theme preset',
+      'Applies a predefined palette to background, surfaces, and accents.'
+    );
 
-    const backgroundRow = buildThemeRow('Background', backgroundValue);
-    const primaryRow = buildThemeRow('Primary', primaryValue);
-    const secondaryRow = buildThemeRow('Secondary', secondaryValue);
-    const accentRow = buildThemeRow('Accent', accentValue);
+    const backgroundRow = buildThemeRow(
+      'Background',
+      backgroundValue,
+      'Sets the main app background behind cards and panels.'
+    );
+    const primaryRow = buildThemeRow(
+      'Primary',
+      primaryValue,
+      'Sets the main card surface color.'
+    );
+    const secondaryRow = buildThemeRow(
+      'Secondary',
+      secondaryValue,
+      'Sets secondary surfaces like inputs and panels.'
+    );
+    const accentRow = buildThemeRow(
+      'Accent',
+      accentValue,
+      'Sets highlight color for icons and emphasis.'
+    );
 
     themeSection.appendChild(presetRow.row);
     themeSection.appendChild(backgroundRow.row);
@@ -495,11 +547,12 @@ export class SettingsPage {
     verifiedCheckmarksContainer.style.alignItems = 'center';
     verifiedCheckmarksContainer.style.marginBottom = '16px';
 
-    const verifiedCheckmarksLabel = document.createElement('span');
-    verifiedCheckmarksLabel.textContent = 'Show favorite performers';
-    verifiedCheckmarksLabel.style.color = THEME.colors.textSecondary;
-    verifiedCheckmarksLabel.style.fontSize = THEME.typography.sizeBody;
-    verifiedCheckmarksContainer.appendChild(verifiedCheckmarksLabel);
+    verifiedCheckmarksContainer.appendChild(
+      buildInfoLabel(
+        'Show verified performers',
+        'Shows a verified badge on performer chips when they have a Stash ID.'
+      )
+    );
 
     const { container: verifiedCheckmarksToggleContainer, input: verifiedCheckmarksToggle } = this.createToggleSwitch(
       this.settings.showVerifiedCheckmarks !== false,
@@ -657,11 +710,12 @@ export class SettingsPage {
     reelModeContainer.style.alignItems = 'center';
     reelModeContainer.style.marginBottom = '16px';
 
-    const reelModeLabel = document.createElement('span');
-    reelModeLabel.textContent = 'Reel mode (full-screen, swipe)';
-    reelModeLabel.style.color = THEME.colors.textSecondary;
-    reelModeLabel.style.fontSize = THEME.typography.sizeBody;
-    reelModeContainer.appendChild(reelModeLabel);
+    reelModeContainer.appendChild(
+      buildInfoLabel(
+        'Reel mode (full-screen, swipe)',
+        'Switches the feed to a full-screen, swipe-friendly layout.'
+      )
+    );
 
     const { container: reelModeToggleContainer, input: reelModeToggle } = this.createToggleSwitch(
       this.settings.reelMode === true,
@@ -683,11 +737,12 @@ export class SettingsPage {
     portraitContainer.style.alignItems = 'center';
     portraitContainer.style.marginBottom = '16px';
 
-    const portraitLabel = document.createElement('span');
-    portraitLabel.textContent = 'Portrait';
-    portraitLabel.style.color = THEME.colors.textSecondary;
-    portraitLabel.style.fontSize = THEME.typography.sizeBody;
-    portraitContainer.appendChild(portraitLabel);
+    portraitContainer.appendChild(
+      buildInfoLabel(
+        'Portrait',
+        'Include portrait-oriented content in the feed.'
+      )
+    );
 
     const { container: portraitToggleContainer, input: portraitToggle } = this.createToggleSwitch(
       portraitEnabled,
@@ -703,11 +758,12 @@ export class SettingsPage {
     landscapeContainer.style.alignItems = 'center';
     landscapeContainer.style.marginBottom = '16px';
 
-    const landscapeLabel = document.createElement('span');
-    landscapeLabel.textContent = 'Landscape';
-    landscapeLabel.style.color = THEME.colors.textSecondary;
-    landscapeLabel.style.fontSize = THEME.typography.sizeBody;
-    landscapeContainer.appendChild(landscapeLabel);
+    landscapeContainer.appendChild(
+      buildInfoLabel(
+        'Landscape',
+        'Include landscape-oriented content in the feed.'
+      )
+    );
 
     const { container: landscapeToggleContainer, input: landscapeToggle } = this.createToggleSwitch(
       landscapeEnabled,
@@ -720,14 +776,11 @@ export class SettingsPage {
     const excludedTagsContainer = document.createElement('div');
     excludedTagsContainer.style.marginBottom = '16px';
 
-    const excludedTagsLabel = document.createElement('label');
-    excludedTagsLabel.textContent = 'Exclude tags (comma-separated)';
-    excludedTagsLabel.style.display = 'block';
-    excludedTagsLabel.style.color = THEME.colors.textSecondary;
-    excludedTagsLabel.style.fontSize = THEME.typography.sizeBody;
-    excludedTagsLabel.style.marginBottom = '8px';
-    excludedTagsLabel.style.fontWeight = THEME.typography.weightBodyStrong;
-    excludedTagsContainer.appendChild(excludedTagsLabel);
+    const excludedTagsLabelRow = buildInputLabel(
+      'Exclude tags (comma-separated)',
+      'Hide any content that contains one of these tags.'
+    );
+    excludedTagsContainer.appendChild(excludedTagsLabelRow.container);
 
     const excludedTagsInput = document.createElement('input');
     excludedTagsInput.type = 'text';
@@ -789,11 +842,12 @@ export class SettingsPage {
     includeImagesContainer.style.alignItems = 'center';
     includeImagesContainer.style.marginBottom = '16px';
 
-    const includeImagesLabel = document.createElement('span');
-    includeImagesLabel.textContent = 'Include images in feed';
-    includeImagesLabel.style.color = THEME.colors.textSecondary;
-    includeImagesLabel.style.fontSize = THEME.typography.sizeBody;
-    includeImagesContainer.appendChild(includeImagesLabel);
+    includeImagesContainer.appendChild(
+      buildInfoLabel(
+        'Include images in feed',
+        'Adds images and image-video files to the feed alongside videos.'
+      )
+    );
 
     const { container: includeImagesToggleContainer, input: includeImagesToggle } = this.createToggleSwitch(
       this.settings.includeImagesInFeed !== false,
@@ -807,14 +861,11 @@ export class SettingsPage {
     const fileTypesContainer = document.createElement('div');
     fileTypesContainer.style.marginBottom = '16px';
 
-    const fileTypesLabel = document.createElement('label');
-    fileTypesLabel.textContent = 'File extensions (comma-separated)';
-    fileTypesLabel.style.display = 'block';
-    fileTypesLabel.style.color = THEME.colors.textSecondary;
-    fileTypesLabel.style.fontSize = THEME.typography.sizeBody;
-    fileTypesLabel.style.marginBottom = '8px';
-    fileTypesLabel.style.fontWeight = THEME.typography.weightBodyStrong;
-    fileTypesContainer.appendChild(fileTypesLabel);
+    const fileTypesLabelRow = buildInputLabel(
+      'File extensions (comma-separated)',
+      'Limit image feed items to these file extensions.'
+    );
+    fileTypesContainer.appendChild(fileTypesLabelRow.container);
 
     const fileTypesInput = document.createElement('input');
     fileTypesInput.type = 'text';
@@ -847,11 +898,12 @@ export class SettingsPage {
     imagesOnlyContainer.style.alignItems = 'center';
     imagesOnlyContainer.style.marginBottom = '16px';
 
-    const imagesOnlyLabel = document.createElement('span');
-    imagesOnlyLabel.textContent = 'Only load images (skip videos)';
-    imagesOnlyLabel.style.color = THEME.colors.textSecondary;
-    imagesOnlyLabel.style.fontSize = THEME.typography.sizeBody;
-    imagesOnlyContainer.appendChild(imagesOnlyLabel);
+    imagesOnlyContainer.appendChild(
+      buildInfoLabel(
+        'Only load images (skip videos)',
+        'Loads only image items; regular videos will be skipped.'
+      )
+    );
 
     const { container: imagesOnlyToggleContainer, input: imagesOnlyToggle } = this.createToggleSwitch(
       this.settings.imagesOnly === true,
@@ -905,11 +957,12 @@ export class SettingsPage {
     shortFormIncludeContainer.style.alignItems = 'center';
     shortFormIncludeContainer.style.marginBottom = '16px';
 
-    const shortFormIncludeLabel = document.createElement('span');
-    shortFormIncludeLabel.textContent = 'Include short-form videos in feed';
-    shortFormIncludeLabel.style.color = THEME.colors.textSecondary;
-    shortFormIncludeLabel.style.fontSize = THEME.typography.sizeBody;
-    shortFormIncludeContainer.appendChild(shortFormIncludeLabel);
+    shortFormIncludeContainer.appendChild(
+      buildInfoLabel(
+        'Include short-form videos in feed',
+        'Adds videos shorter than the max duration to the feed.'
+      )
+    );
 
     const { container: shortFormIncludeToggleContainer, input: shortFormIncludeToggle } = this.createToggleSwitch(
       this.settings.shortFormInHDMode !== false || this.settings.shortFormInNonHDMode !== false,
@@ -923,14 +976,11 @@ export class SettingsPage {
     const maxDurationContainer = document.createElement('div');
     maxDurationContainer.style.marginBottom = '16px';
 
-    const maxDurationLabel = document.createElement('label');
-    maxDurationLabel.textContent = 'Maximum duration (seconds)';
-    maxDurationLabel.style.display = 'block';
-    maxDurationLabel.style.color = THEME.colors.textSecondary;
-    maxDurationLabel.style.fontSize = THEME.typography.sizeBody;
-    maxDurationLabel.style.marginBottom = '8px';
-    maxDurationLabel.style.fontWeight = THEME.typography.weightBodyStrong;
-    maxDurationContainer.appendChild(maxDurationLabel);
+    const maxDurationLabelRow = buildInputLabel(
+      'Maximum duration (seconds)',
+      'Videos at or below this length are treated as short-form.'
+    );
+    maxDurationContainer.appendChild(maxDurationLabelRow.container);
 
     const maxDurationInput = document.createElement('input');
     maxDurationInput.type = 'number';
@@ -963,11 +1013,12 @@ export class SettingsPage {
     shortFormOnlyContainer.style.alignItems = 'center';
     shortFormOnlyContainer.style.marginBottom = '16px';
 
-    const shortFormOnlyLabel = document.createElement('span');
-    shortFormOnlyLabel.textContent = 'Only short-form videos (skip regular videos)';
-    shortFormOnlyLabel.style.color = THEME.colors.textSecondary;
-    shortFormOnlyLabel.style.fontSize = THEME.typography.sizeBody;
-    shortFormOnlyContainer.appendChild(shortFormOnlyLabel);
+    shortFormOnlyContainer.appendChild(
+      buildInfoLabel(
+        'Only short-form videos (skip regular videos)',
+        'Shows only short-form videos and skips regular-length videos.'
+      )
+    );
 
     const { container: shortFormOnlyToggleContainer, input: shortFormOnlyToggle } = this.createToggleSwitch(
       this.settings.shortFormOnly === true,

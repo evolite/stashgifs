@@ -4973,6 +4973,7 @@ export class FeedContainer {
         name: p.name,
         image_path: p.image_path,
         favorite: p.favorite,
+        stash_ids: p.stash_ids,
       })),
       visualFiles: graphqlImage.visual_files?.map(vf => ({
         path: vf.path,

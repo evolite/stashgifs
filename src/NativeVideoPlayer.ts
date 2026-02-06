@@ -1365,6 +1365,7 @@ export class NativeVideoPlayer {
     this.overlay.style.height = '80px';
     this.overlay.style.borderRadius = '50%';
     this.overlay.style.backgroundColor = 'rgba(0, 0, 0, 0.6)';
+    this.overlay.style.color = '#ffffff';
     this.overlay.style.display = 'flex';
     this.overlay.style.alignItems = 'center';
     this.overlay.style.justifyContent = 'center';
@@ -1373,7 +1374,7 @@ export class NativeVideoPlayer {
     // Start hidden - only show on hover
     this.overlay.style.opacity = '0';
     this.overlay.style.transition = 'opacity 0.3s ease-out';
-    this.overlay.innerHTML = '<svg viewBox="0 0 24 24" width="48" height="48" fill="white"><path d="M8 5v14l11-7z"/></svg>';
+    this.overlay.innerHTML = PLAY_BUTTON_SVG;
   }
 
   /**
@@ -1389,9 +1390,9 @@ export class NativeVideoPlayer {
     
     // Update icon based on play state
     if (isPlaying) {
-      this.overlay.innerHTML = '<svg viewBox="0 0 24 24" width="48" height="48" fill="white"><path d="M6 4h4v16H6V4zm8 0h4v16h-4V4z"/></svg>';
+      this.overlay.innerHTML = PAUSE_SVG;
     } else {
-      this.overlay.innerHTML = '<svg viewBox="0 0 24 24" width="48" height="48" fill="white"><path d="M8 5v14l11-7z"/></svg>';
+      this.overlay.innerHTML = PLAY_BUTTON_SVG;
     }
     
     // Show overlay
@@ -1429,7 +1430,7 @@ export class NativeVideoPlayer {
     // 3. Not scrolling on mobile
     if (isPaused && isReady && this.isHovered && (!isMobile || !this.isScrollingMobile)) {
       // Video is paused and ready, and user is hovering - show play icon
-      this.overlay.innerHTML = '<svg viewBox="0 0 24 24" width="48" height="48" fill="white"><path d="M8 5v14l11-7z"/></svg>';
+      this.overlay.innerHTML = PLAY_BUTTON_SVG;
       this.overlay.style.opacity = '1';
     } else {
       // Video is playing, not ready, not hovered, or scrolling on mobile - hide overlay

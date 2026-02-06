@@ -24,6 +24,9 @@ export const SceneFields = `
       name
       favorite
       image_path
+      stash_ids {
+        stash_id
+      }
     }
     tags {
       id
@@ -114,6 +117,9 @@ export const PerformerFields = `
     id
     name
     image_path
+    stash_ids {
+      stash_id
+    }
   }
 `;
 
@@ -139,6 +145,9 @@ export const PerformerFieldsExtended = `
     eye_color
     country
     rating100
+    stash_ids {
+      stash_id
+    }
     tags {
       id
       name
@@ -191,6 +200,9 @@ export const SlimImageData = `
       gender
       favorite
       image_path
+      stash_ids {
+        stash_id
+      }
     }
     visual_files {
       ...VisualFileData
