@@ -426,12 +426,18 @@ export abstract class BasePost {
 
     const footerElements = footer.querySelectorAll<HTMLElement>('a, span, button, div, p, h1, h2, h3, h4');
     for (const element of footerElements) {
+      if (element.closest('.rating-dialog')) {
+        continue;
+      }
       element.style.color = '#ffffff';
       element.style.textShadow = '0 2px 8px rgba(0, 0, 0, 0.65)';
     }
 
     const footerIcons = footer.querySelectorAll<SVGElement>('svg');
     for (const icon of footerIcons) {
+      if (icon.closest('.rating-dialog')) {
+        continue;
+      }
       icon.style.filter = 'drop-shadow(0 2px 6px rgba(0, 0, 0, 0.6))';
     }
 
