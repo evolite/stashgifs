@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [5.35.1] - 2026-02-06
+
+### Changed
+- Align favorite heart colors with the accent palette for clearer UI states.
+- Improve performer favorite toggles and autoplay setup readability. This keeps UI interactions consistent while clarifying favorite state handling.
+
 ## [5.35.0] - 2026-02-06
 
 ### Changed
