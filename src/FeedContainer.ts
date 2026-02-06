@@ -5713,7 +5713,7 @@ export class FeedContainer {
     const players: Array<{ markerId: string; player: NativeVideoPlayer }> = [];
     for (const marker of markers) {
       const post = this.posts.get(marker.id);
-      if (!post || !post.hasVideoSource()) continue;
+      if (!post?.hasVideoSource()) continue;
       const player = post.preload();
       if (!isNativeVideoPlayer(player)) continue;
       this.visibilityManager.registerPlayer(marker.id, player);

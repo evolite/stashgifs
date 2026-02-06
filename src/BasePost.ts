@@ -83,7 +83,7 @@ export abstract class BasePost {
   private hadTagOverlayBefore: boolean = false; // Track if tag overlay was showing before (for delay logic)
   private tagOverlayClickTime?: number; // Track when chip was clicked to prevent immediate re-show
 
-  private static favoritePerformerCache: Map<string, boolean> = new Map();
+  private static readonly favoritePerformerCache: Map<string, boolean> = new Map();
   private static favoriteCacheLoaded: boolean = false;
 
 
@@ -825,14 +825,19 @@ export abstract class BasePost {
     performer: { id: string; favorite?: boolean; name: string },
     isFavorite: boolean
   ): HTMLElement {
+    const getFavoriteColor = (favorite: boolean): string => {
+      if (favorite) {
+        return THEME.colors.ratingHigh;
+      }
+      return this.isReelMode ? THEME.colors.textPrimary : THEME.colors.textSecondary;
+    };
+
     const favoriteButton = document.createElement('button');
     favoriteButton.type = 'button';
     favoriteButton.className = 'performer-chip__favorite';
     favoriteButton.dataset.performerId = performer.id;
     this.applyIconButtonStyles(favoriteButton);
-    favoriteButton.style.color = isFavorite
-      ? THEME.colors.ratingHigh
-      : (this.isReelMode ? THEME.colors.textPrimary : THEME.colors.textSecondary);
+    favoriteButton.style.color = getFavoriteColor(isFavorite);
     favoriteButton.setAttribute('aria-label', isFavorite ? 'Unfavorite performer' : 'Favorite performer');
     favoriteButton.title = isFavorite ? 'Unfavorite performer' : 'Favorite performer';
 
@@ -846,9 +851,7 @@ export abstract class BasePost {
 
     const updateFavoriteIcon = (nextFavorite: boolean): void => {
       favoriteIcon.innerHTML = nextFavorite ? HEART_SVG_FILLED : HEART_SVG_OUTLINE;
-      favoriteButton.style.color = nextFavorite
-        ? THEME.colors.ratingHigh
-        : (this.isReelMode ? THEME.colors.textPrimary : THEME.colors.textSecondary);
+      favoriteButton.style.color = getFavoriteColor(nextFavorite);
       favoriteButton.setAttribute('aria-label', nextFavorite ? 'Unfavorite performer' : 'Favorite performer');
       favoriteButton.title = nextFavorite ? 'Unfavorite performer' : 'Favorite performer';
     };
@@ -862,9 +865,7 @@ export abstract class BasePost {
         if (icon) {
           icon.innerHTML = nextFavorite ? HEART_SVG_FILLED : HEART_SVG_OUTLINE;
         }
-        button.style.color = nextFavorite
-          ? THEME.colors.ratingHigh
-          : (this.isReelMode ? THEME.colors.textPrimary : THEME.colors.textSecondary);
+        button.style.color = getFavoriteColor(nextFavorite);
         button.setAttribute('aria-label', nextFavorite ? 'Unfavorite performer' : 'Favorite performer');
         button.title = nextFavorite ? 'Unfavorite performer' : 'Favorite performer';
       }
