@@ -2,68 +2,68 @@
 
 ## Repository overview
 - Project: StashGifs (TypeScript, DOM-driven UI)
-- Source: `src/` (ESM TypeScript)
-- Build output: `stashgifs/app/assets` (tsconfig outDir)
+- Source: `src/` (ESM TypeScript, browser-first)
+- Build output: `app/assets/` (tsconfig outDir)
 - Generated GraphQL types: `src/graphql/`
-- Generated version file: `src/version.ts` (from `scripts/generate-version.js`)
-- No Cursor or Copilot rules found in `.cursor/rules/`, `.cursorrules`, or `.github/copilot-instructions.md`
+- Generated version file: `src/version.ts` (via `scripts/generate-version.js`)
+- No Cursor or Copilot rules found in `.cursor/rules/`, `.cursorrules`, `.github/copilot-instructions.md`
 
 ## Commands (build/lint/test)
 - Install deps: `npm install`
-- Build: `npm run build` (runs `scripts/generate-version.js` via prebuild)
+- Build: `npm run build` (runs `scripts/generate-version.js` via `prebuild`)
 - Watch build: `npm run watch`
 - Type-check only: `npm run type-check`
 - Clean build artifacts: `npm run clean` (removes `app/assets/*.js` and `.map`)
 - GraphQL codegen: `npm run codegen`
 - GraphQL codegen (watch): `npm run codegen:watch`
-- Lint: none configured
+- Lint: none configured (no ESLint/Prettier)
 
 ### Tests
 - There is no test runner configured.
 - Single-test equivalent: `npx tsc --noEmit src/SomeFile.ts`
-- For UI changes, manually verify keyboard/focus flows.
+- For UI changes, do manual verification of keyboard/focus and touch flows.
 
 ## Code style guidelines
 ### Language & module system
-- TypeScript with ESM output (module ES2020).
+- TypeScript with ESM output (module `ES2020`).
 - Local imports include the `.js` extension (example: `./Foo.js`).
-- Prefer `import type` for types when practical.
-- Use `globalThis` for browser globals when practical.
-- Avoid `@ts-nocheck` unless there is no safer alternative.
+- Prefer `import type` for type-only imports.
+- Use `globalThis` when referencing globals.
+- Avoid `@ts-nocheck`; prefer targeted fixes.
+
+### Imports
+- Order: external libs, then local modules, then types.
+- Keep imports minimal; delete unused imports.
+- Prefer narrow imports from helpers/utils instead of barrel exports.
 
 ### Formatting
 - 2-space indentation.
-- Keep lines readable; follow existing wrapping patterns.
+- Follow existing wrapping and whitespace patterns.
 - Group related logic with blank lines.
-- Inline styles are common; keep style blocks compact and consistent.
-- Prefer template literals for multi-line `innerHTML`.
+- Use template literals for multi-line `innerHTML`.
+- Keep inline styles compact and consistent.
 
 ### Naming
 - Classes: `PascalCase`.
 - Methods/functions: `camelCase`.
 - Constants: `UPPER_SNAKE_CASE`.
 - Booleans: prefix with `is`, `has`, `should`, `can`.
-- DOM elements: name by role (`header`, `footer`, `buttonGroup`).
-- Handlers: use `onX`/`handleX`/`setX` patterns.
-
-### Imports
-- Order: external libs, then local modules, then types.
-- Avoid unused imports; keep imports minimal.
-- Prefer narrow imports from `utils`/`icons` instead of wildcard patterns.
+- DOM nodes: name by role (`header`, `footer`, `buttonGroup`).
+- Handlers: `onX`, `handleX`, `setX` naming patterns.
 
 ### Types & data handling
 - Use explicit types for public APIs and shared helpers.
-- Keep `string` ids consistent; parse to `number` only when required.
-- Favor `const` and `readonly` where values should not change.
+- Keep IDs as `string` unless numeric parsing is required.
+- Prefer `const` and `readonly` where values should not change.
 - Use `private`/`protected` on class fields to encode intent.
 - Use `??=` or guarded assignments for optional arrays.
 - Validate numeric parsing with `Number.isFinite`/`Number.isNaN`.
 
 ### Error handling
-- Use `try/catch` around API calls.
+- Wrap API calls in `try/catch`.
 - Log failures with `console.error`/`console.warn`.
 - Surface user feedback via `showToast`.
-- Return early when required dependencies (API, manager) are missing.
+- Return early when dependencies (API, manager) are missing.
 - Use `AbortController` to cancel in-flight requests when appropriate.
 
 ### DOM & UI
@@ -71,7 +71,7 @@
 - Use `renderBasePost` when building post structure.
 - Use `buildFooterContainer` for action rows.
 - Use `buildImageHeader` for image-based headers.
-- Reuse `applyIconButtonStyles` and `addHoverEffect` for button consistency.
+- Reuse `applyIconButtonStyles` and `addHoverEffect` for consistency.
 - Use `setupTouchHandlers` and `preventClickAfterTouch` for mobile.
 - Keep buttons at 44x44px minimum for touch targets.
 - Use `THEME` for colors, spacing, and typography.
@@ -86,33 +86,24 @@
 - Keep scroll/visibility handlers passive where possible.
 
 ### GraphQL
-- Generated types and documents live under `src/graphql`.
+- Generated types and documents live under `src/graphql/`.
 - Run `npm run codegen` after query/schema changes.
 - Prefer generated types for API responses.
+- Do not edit generated GraphQL output by hand.
 
 ## File/area notes
-- `src/`: main TS sources.
-- `src/graphql/`: generated GraphQL types/queries; avoid manual edits.
-- `stashgifs/app/`: packaged app assets.
-- `stashgifs/app/assets/`: build output; update only when intentional.
-- `app/assets/`: clean script target; may be empty in repo.
-- `src/version.ts` is generated during build; avoid manual edits.
-- `tsconfig.json` excludes `src/controllers`, `src/players`, `src/services`, `src/state`.
-
-## Repository layout
-- `scripts/`: build/version helpers.
+- `src/`: main TypeScript sources.
 - `src/utils/`: shared DOM helpers and touch utilities.
 - `src/graphql/`: generated GraphQL types/queries.
-- Root `package.json` defines scripts and tooling.
+- `scripts/`: build/version helpers.
+- `app/assets/`: build output; avoid manual edits.
+- `src/version.ts` is generated during build; avoid manual edits.
+- `tsconfig.json` excludes `src/controllers`, `src/players`, `src/services`, `src/state`.
 
 ## PR/commit hygiene
 - Keep changes focused to the feature/bug being addressed.
 - Prefer small, logical commits.
-
-## Agent tips
-- Default to `npm run type-check` for validation.
-- If changing UI layout, confirm dialogs/overlays remain accessible.
-- Preserve existing interaction patterns (hover, touch, keyboard).
+- Do not commit generated files unless explicitly requested.
 
 ## Accessibility
 - Provide `aria-label` and `title` for interactive icons.

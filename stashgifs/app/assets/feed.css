@@ -1451,6 +1451,30 @@
   -webkit-backdrop-filter: none !important;
 }
 
+/* Reel mode - hide scrollbars while keeping scroll */
+[data-reel-mode="true"] html,
+[data-reel-mode="true"] body {
+  height: 100%;
+  overflow: hidden;
+}
+
+[data-reel-mode="true"] html,
+[data-reel-mode="true"] body,
+[data-reel-mode="true"] .feed-scroll-container,
+[data-reel-mode="true"] * {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+[data-reel-mode="true"] html::-webkit-scrollbar,
+[data-reel-mode="true"] body::-webkit-scrollbar,
+[data-reel-mode="true"] .feed-scroll-container::-webkit-scrollbar,
+[data-reel-mode="true"] *::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+  display: none;
+}
+
 [data-reel-mode="true"] .performer-chip:hover,
 [data-reel-mode="true"] .tag-chip:hover {
   background: transparent !important;

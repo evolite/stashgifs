@@ -127,6 +127,7 @@ export class FeedContainer {
   private scrollVelocity: number = 0;
   private cleanupScrollTimeout?: ReturnType<typeof setTimeout>;
   private scrollHandler?: () => void;
+  private scrollEventTarget?: Window | HTMLElement;
   private visibilityChangeHandler?: () => void;
   private suggestionsClickOutsideHandler?: (event: Event) => void;
   private suggestionsTouchOutsideHandler?: (event: Event) => void;
@@ -149,6 +150,8 @@ export class FeedContainer {
   private cardSnapTouchStartHandler?: (e: TouchEvent) => void;
   private cardSnapTouchMoveHandler?: (e: TouchEvent) => void;
   private cardSnapTouchEndHandler?: (e: TouchEvent) => void;
+  private cardSnapEventTarget?: Window | HTMLElement;
+  private cardSnapScrollTarget?: Window | HTMLElement;
   private touchStartY: number = 0;
   private touchStartTime: number = 0;
   private isSnapping: boolean = false; // Prevent multiple snaps in progress
@@ -366,12 +369,70 @@ export class FeedContainer {
     return this.settings.reelMode === true;
   }
 
+  private getScrollEventTarget(): Window | HTMLElement {
+    return this.isReelModeEnabled() && this.scrollContainer
+      ? this.scrollContainer
+      : (globalThis as unknown as Window);
+  }
+
+  private getViewportTop(): number {
+    if (this.isReelModeEnabled() && this.scrollContainer) {
+      return this.scrollContainer.scrollTop;
+    }
+    return globalThis.scrollY || document.documentElement.scrollTop || 0;
+  }
+
+  private getViewportHeight(): number {
+    if (this.isReelModeEnabled() && this.scrollContainer) {
+      return this.scrollContainer.clientHeight;
+    }
+    return globalThis.innerHeight;
+  }
+
+  private getViewportRect(): { top: number; left: number; width: number; height: number } {
+    if (this.isReelModeEnabled() && this.scrollContainer) {
+      const rect = this.scrollContainer.getBoundingClientRect();
+      return { top: rect.top, left: rect.left, width: rect.width, height: rect.height };
+    }
+    return { top: 0, left: 0, width: globalThis.innerWidth, height: globalThis.innerHeight };
+  }
+
+  private getObserverRoot(): Element | null {
+    return this.isReelModeEnabled() && this.scrollContainer ? this.scrollContainer : null;
+  }
+
+  private getElementTop(rect: DOMRect): number {
+    if (this.isReelModeEnabled() && this.scrollContainer) {
+      const containerRect = this.scrollContainer.getBoundingClientRect();
+      return this.scrollContainer.scrollTop + rect.top - containerRect.top;
+    }
+    return this.getViewportTop() + rect.top;
+  }
+
+  private scrollToPosition(top: number, behavior: ScrollBehavior = 'auto'): void {
+    if (this.isReelModeEnabled() && this.scrollContainer) {
+      this.scrollContainer.scrollTo({ top, behavior });
+      return;
+    }
+    (globalThis as unknown as Window).scrollTo({ top, behavior });
+  }
+
+  private scrollToTop(): void {
+    this.scrollToPosition(0, 'auto');
+  }
+
   private applyReelModeLayout(): void {
     const isReelMode = this.isReelModeEnabled();
     this.applyReelRootStyles(isReelMode);
     this.applyReelContainerStyles(isReelMode);
     this.applyReelHeaderStyles(isReelMode);
     this.applyReelPostStyles(isReelMode);
+    if (this.visibilityManager) {
+      this.visibilityManager.setObserverRoot(isReelMode ? this.scrollContainer : null);
+    }
+    this.setupScrollHandler();
+    this.setupCardSnapping();
+    this.resetScrollObserver();
   }
 
   private refreshAutoplayAfterLayout(): void {
@@ -385,7 +446,22 @@ export class FeedContainer {
   }
 
   private applyReelRootStyles(isReelMode: boolean): void {
-    document.documentElement.style.scrollSnapType = isReelMode ? 'y mandatory' : '';
+    const root = document.documentElement;
+    const body = document.body;
+    root.style.scrollSnapType = '';
+    if (isReelMode) {
+      root.dataset.reelMode = 'true';
+      root.style.overflow = 'hidden';
+      if (body.dataset.scrollLock !== 'true') {
+        body.style.overflow = 'hidden';
+      }
+      return;
+    }
+    delete root.dataset.reelMode;
+    root.style.overflow = '';
+    if (body.dataset.scrollLock !== 'true') {
+      body.style.overflow = '';
+    }
   }
 
   private applyReelContainerStyles(isReelMode: boolean): void {
@@ -415,12 +491,19 @@ export class FeedContainer {
       return;
     }
 
+    const reelHeight = CSS.supports('height', '100svh') ? '100svh' : '100vh';
     this.scrollContainer.style.width = isReelMode ? '100vw' : '';
     this.scrollContainer.style.maxWidth = isReelMode ? '100vw' : '';
     this.scrollContainer.style.margin = isReelMode ? '0' : '';
     this.scrollContainer.style.marginLeft = isReelMode ? 'calc(50% - 50vw)' : '';
     this.scrollContainer.style.marginRight = isReelMode ? 'calc(50% - 50vw)' : '';
     this.scrollContainer.style.padding = isReelMode ? '0' : '';
+    this.scrollContainer.style.height = isReelMode ? reelHeight : '';
+    this.scrollContainer.style.minHeight = isReelMode ? reelHeight : '';
+    this.scrollContainer.style.overflowY = isReelMode ? 'auto' : '';
+    this.scrollContainer.style.overflowX = isReelMode ? 'hidden' : '';
+    this.scrollContainer.style.overscrollBehavior = isReelMode ? 'contain' : '';
+    this.scrollContainer.style.scrollSnapType = isReelMode ? 'y mandatory' : '';
   }
 
   private applyReelPostsLayout(isReelMode: boolean): void {
@@ -901,6 +984,7 @@ export class FeedContainer {
       debug: this.shouldEnableVisibilityDebug(),
       onHoverLoadRequest: (postId: string) => this.triggerVideoLoadOnHover(postId),
       isReelMode: this.settings.reelMode, // Pass reel mode state
+      root: this.settings.reelMode ? this.scrollContainer : null,
     });
 
     // Set HD mode state for more aggressive unloading
@@ -1362,10 +1446,7 @@ export class FeedContainer {
         updateSearchBarDisplay();
         this.currentFilters = { savedFilterId: filter.id, limit: FeedContainer.CONTENT_LOAD_LIMIT, offset: 0 };
         // Scroll to top (same approach as refreshFeed)
-        globalThis.scrollTo(0, 0);
-        if (this.scrollContainer) {
-          this.scrollContainer.scrollTop = 0;
-        }
+        this.scrollToTop();
         this.loadVideos(this.currentFilters, false).catch((e) => console.error('Apply saved filter failed', e));
       }));
     }
@@ -2754,10 +2835,7 @@ export class FeedContainer {
         updateSearchBarDisplay();
         await this.applyCurrentSearch();
         // Scroll to top (same approach as refreshFeed)
-        globalThis.scrollTo(0, 0);
-        if (this.scrollContainer) {
-          this.scrollContainer.scrollTop = 0;
-        }
+        this.scrollToTop();
       } catch (e: unknown) {
         if (!(e instanceof Error && e.name === 'AbortError')) {
           console.error('Apply filters failed', e);
@@ -3098,10 +3176,7 @@ export class FeedContainer {
     // Apply filters
     await this.applyFilters();
     // Scroll to top (same approach as refreshFeed)
-    globalThis.scrollTo(0, 0);
-    if (this.scrollContainer) {
-      this.scrollContainer.scrollTop = 0;
-    }
+    this.scrollToTop();
   }
 
   /**
@@ -3120,10 +3195,7 @@ export class FeedContainer {
     // Apply filters
     await this.applyFilters();
     // Scroll to top (same approach as refreshFeed)
-    globalThis.scrollTo(0, 0);
-    if (this.scrollContainer) {
-      this.scrollContainer.scrollTop = 0;
-    }
+    this.scrollToTop();
   }
 
   /**
@@ -3912,7 +3984,7 @@ export class FeedContainer {
           }
         }
       },
-      { rootMargin: '200px' }
+      { root: this.getObserverRoot(), rootMargin: '200px' }
     );
 
     observer.observe(postContainer);
@@ -3955,7 +4027,7 @@ export class FeedContainer {
           }
         }
       },
-      { rootMargin, threshold: 0 }
+      { root: this.getObserverRoot(), rootMargin, threshold: 0 }
     );
     
     this.loadObservers.set(image.id, loadObserver);
@@ -4141,10 +4213,7 @@ export class FeedContainer {
     }
     
     // Scroll to top
-    globalThis.scrollTo(0, 0);
-    if (this.scrollContainer) {
-      this.scrollContainer.scrollTop = 0;
-    }
+    this.scrollToTop();
     
     // Reset pagination state
     this.currentPage = 1;
@@ -5568,7 +5637,7 @@ export class FeedContainer {
           }
         }
       },
-      { rootMargin, threshold: 0 }
+      { root: this.getObserverRoot(), rootMargin, threshold: 0 }
     );
     
     this.loadObservers.set(marker.id, loadObserver);
@@ -5658,8 +5727,19 @@ export class FeedContainer {
       this.scrollContainer.appendChild(this.loadMoreTrigger);
     }
 
+    this.resetScrollObserver();
+  }
+
+  private resetScrollObserver(): void {
+    if (!this.loadMoreTrigger) {
+      return;
+    }
+
+    if (this.scrollObserver) {
+      this.scrollObserver.disconnect();
+    }
+
     // Use Intersection Observer to detect when trigger is visible
-    // Use document as root to work with window scrolling
     // Less aggressive on mobile to prevent loading too much content ahead
     const rootMargin = this.isMobileDevice ? '50px' : '200px';
     this.scrollObserver = new IntersectionObserver(
@@ -5673,15 +5753,13 @@ export class FeedContainer {
         }
       },
       {
-        root: null, // Use viewport (window) as root
-        rootMargin, // Start loading before reaching the trigger (less aggressive on mobile)
+        root: this.getObserverRoot(),
+        rootMargin,
         threshold: 0.1,
       }
     );
 
-    if (this.loadMoreTrigger) {
-      this.scrollObserver.observe(this.loadMoreTrigger);
-    }
+    this.scrollObserver.observe(this.loadMoreTrigger);
   }
 
   /**
@@ -5774,9 +5852,9 @@ export class FeedContainer {
         return 0;
       }
     }
-    const viewportHeight = globalThis.innerHeight;
-    const viewportTop = 0;
-    const viewportBottom = viewportHeight;
+    const viewport = this.getViewportRect();
+    const viewportTop = viewport.top;
+    const viewportBottom = viewport.top + viewport.height;
 
     // If element is above viewport
     if (rect.bottom < viewportTop) {
@@ -5928,14 +6006,13 @@ export class FeedContainer {
     
     const container = post.getContainer();
     const rect = container.getBoundingClientRect();
-    const viewportHeight = globalThis.innerHeight;
-    const viewportWidth = globalThis.innerWidth;
+    const viewport = this.getViewportRect();
     const margin = 500; // Consider posts within 500px as "near" viewport
     
-    return rect.bottom > -margin && 
-           rect.top < viewportHeight + margin &&
-           rect.right > -margin && 
-           rect.left < viewportWidth + margin;
+    return rect.bottom > viewport.top - margin && 
+           rect.top < viewport.top + viewport.height + margin &&
+           rect.right > viewport.left - margin && 
+           rect.left < viewport.left + viewport.width + margin;
   }
 
   /**
@@ -6092,14 +6169,14 @@ export class FeedContainer {
    * Calculate distance from viewport for each post
    */
   private calculatePostDistances(): Array<{ postId: string; distance: number; isVisible: boolean }> {
-    const viewportTop = globalThis.scrollY || globalThis.pageYOffset;
-    const viewportBottom = viewportTop + globalThis.innerHeight;
+    const viewportTop = this.getViewportTop();
+    const viewportBottom = viewportTop + this.getViewportHeight();
     const postsWithDistance: Array<{ postId: string; distance: number; isVisible: boolean }> = [];
     
     for (const [postId, post] of this.posts.entries()) {
       const container = post.getContainer();
       const rect = container.getBoundingClientRect();
-      const elementTop = viewportTop + rect.top;
+      const elementTop = this.getElementTop(rect);
       const elementBottom = elementTop + rect.height;
       
       const isVisible = elementBottom > viewportTop && elementTop < viewportBottom;
@@ -6276,8 +6353,8 @@ export class FeedContainer {
    * Extremely aggressive to prevent 8GB+ RAM usage
    */
   private aggressiveVideoUnload(): void {
-    const viewportTop = window.scrollY || window.pageYOffset;
-    const viewportBottom = viewportTop + window.innerHeight;
+    const viewportTop = this.getViewportTop();
+    const viewportBottom = viewportTop + this.getViewportHeight();
     const unloadDistance = 100;
     const maxLoadedVideos = this.useHDMode ? 2 : 3;
     
@@ -6317,7 +6394,7 @@ export class FeedContainer {
   ): boolean {
     const container = post.getContainer();
     const rect = container.getBoundingClientRect();
-    const elementTop = viewportTop + rect.top;
+    const elementTop = this.getElementTop(rect);
     const elementBottom = elementTop + rect.height;
     
     return elementBottom > viewportTop - margin && elementTop < viewportBottom + margin;
@@ -6545,7 +6622,7 @@ export class FeedContainer {
    * Handles header hide/show based on scroll direction and tracks scroll velocity
    */
   private setupScrollHandler(): void {
-    let lastScrollY = globalThis.scrollY;
+    let lastScrollY = this.getViewportTop();
     let isHeaderHidden = false;
     
     // Store reference to isHeaderHidden so we can access it from other methods (for debugging/extension)
@@ -6560,12 +6637,12 @@ export class FeedContainer {
     };
 
     // Initialize scroll tracking
-    this.lastScrollTop = globalThis.scrollY || document.documentElement.scrollTop;
+    this.lastScrollTop = this.getViewportTop();
     this.lastScrollTime = Date.now();
 
     const handleScroll = () => {
       const now = Date.now();
-      const currentScrollY = globalThis.scrollY || document.documentElement.scrollTop;
+      const currentScrollY = this.getViewportTop();
       const timeDelta = now - this.lastScrollTime;
 
       this.updateScrollVelocity(currentScrollY, timeDelta);
@@ -6583,8 +6660,14 @@ export class FeedContainer {
     };
 
     // Use passive listener for better performance
+    const previousHandler = this.scrollHandler;
+    const previousTarget = this.scrollEventTarget;
+    if (previousHandler && previousTarget) {
+      previousTarget.removeEventListener('scroll', previousHandler);
+    }
     this.scrollHandler = handleScroll;
-    globalThis.addEventListener('scroll', handleScroll, { passive: true });
+    this.scrollEventTarget = this.getScrollEventTarget();
+    this.scrollEventTarget.addEventListener('scroll', handleScroll, { passive: true });
 
     // Listen for page visibility changes to pause/resume preloading
     const handleVisibilityChange = () => this.handleVisibilityChange();
@@ -6679,10 +6762,12 @@ export class FeedContainer {
     };
 
     // Add event listeners
-    globalThis.addEventListener('wheel', this.cardSnapWheelHandler, { passive: false });
-    globalThis.addEventListener('touchstart', this.cardSnapTouchStartHandler, { passive: true });
-    globalThis.addEventListener('touchmove', this.cardSnapTouchMoveHandler, { passive: false });
-    globalThis.addEventListener('touchend', this.cardSnapTouchEndHandler, { passive: false });
+    const snapTarget = this.getScrollEventTarget();
+    this.cardSnapEventTarget = snapTarget;
+    snapTarget.addEventListener('wheel', this.cardSnapWheelHandler as EventListener, { passive: false });
+    snapTarget.addEventListener('touchstart', this.cardSnapTouchStartHandler as EventListener, { passive: true });
+    snapTarget.addEventListener('touchmove', this.cardSnapTouchMoveHandler as EventListener, { passive: false });
+    snapTarget.addEventListener('touchend', this.cardSnapTouchEndHandler as EventListener, { passive: false });
 
     if (this.settings.reelMode === true) {
       this.cardSnapScrollHandler = () => {
@@ -6710,7 +6795,8 @@ export class FeedContainer {
           }, 300);
         }, 200);
       };
-      globalThis.addEventListener('scroll', this.cardSnapScrollHandler, { passive: true });
+      this.cardSnapScrollTarget = this.getScrollEventTarget();
+      this.cardSnapScrollTarget.addEventListener('scroll', this.cardSnapScrollHandler as EventListener, { passive: true });
     }
   }
 
@@ -6718,26 +6804,28 @@ export class FeedContainer {
    * Clean up card snapping event listeners
    */
   private cleanupCardSnapping(): void {
-    if (this.cardSnapWheelHandler) {
-      globalThis.removeEventListener('wheel', this.cardSnapWheelHandler);
+    if (this.cardSnapWheelHandler && this.cardSnapEventTarget) {
+      this.cardSnapEventTarget.removeEventListener('wheel', this.cardSnapWheelHandler as EventListener);
       this.cardSnapWheelHandler = undefined;
     }
-    if (this.cardSnapTouchStartHandler) {
-      globalThis.removeEventListener('touchstart', this.cardSnapTouchStartHandler);
+    if (this.cardSnapTouchStartHandler && this.cardSnapEventTarget) {
+      this.cardSnapEventTarget.removeEventListener('touchstart', this.cardSnapTouchStartHandler as EventListener);
       this.cardSnapTouchStartHandler = undefined;
     }
-    if (this.cardSnapTouchMoveHandler) {
-      globalThis.removeEventListener('touchmove', this.cardSnapTouchMoveHandler);
+    if (this.cardSnapTouchMoveHandler && this.cardSnapEventTarget) {
+      this.cardSnapEventTarget.removeEventListener('touchmove', this.cardSnapTouchMoveHandler as EventListener);
       this.cardSnapTouchMoveHandler = undefined;
     }
-    if (this.cardSnapTouchEndHandler) {
-      globalThis.removeEventListener('touchend', this.cardSnapTouchEndHandler);
+    if (this.cardSnapTouchEndHandler && this.cardSnapEventTarget) {
+      this.cardSnapEventTarget.removeEventListener('touchend', this.cardSnapTouchEndHandler as EventListener);
       this.cardSnapTouchEndHandler = undefined;
     }
-    if (this.cardSnapScrollHandler) {
-      globalThis.removeEventListener('scroll', this.cardSnapScrollHandler);
+    if (this.cardSnapScrollHandler && this.cardSnapScrollTarget) {
+      this.cardSnapScrollTarget.removeEventListener('scroll', this.cardSnapScrollHandler as EventListener);
       this.cardSnapScrollHandler = undefined;
     }
+    this.cardSnapEventTarget = undefined;
+    this.cardSnapScrollTarget = undefined;
     if (this.snapThrottleTimeout) {
       clearTimeout(this.snapThrottleTimeout);
       this.snapThrottleTimeout = undefined;
@@ -6752,9 +6840,10 @@ export class FeedContainer {
     this.stopBackgroundPreloading();
     posterPreloader.cancelInflight();
 
-    if (this.scrollHandler) {
-      globalThis.removeEventListener('scroll', this.scrollHandler);
+    if (this.scrollHandler && this.scrollEventTarget) {
+      this.scrollEventTarget.removeEventListener('scroll', this.scrollHandler);
       this.scrollHandler = undefined;
+      this.scrollEventTarget = undefined;
     }
     if (this.visibilityChangeHandler) {
       document.removeEventListener('visibilitychange', this.visibilityChangeHandler);
@@ -6827,13 +6916,13 @@ export class FeedContainer {
       return null;
     }
 
-    const viewportCenter = globalThis.scrollY + globalThis.innerHeight / 2;
+    const viewportCenter = this.getViewportTop() + this.getViewportHeight() / 2;
     let closestCard: HTMLElement | null = null;
     let minDistance = Infinity;
 
     for (const card of cards) {
       const rect = card.getBoundingClientRect();
-      const cardCenter = globalThis.scrollY + rect.top + rect.height / 2;
+      const cardCenter = this.getElementTop(rect) + rect.height / 2;
       const distance = Math.abs(cardCenter - viewportCenter);
 
       if (distance < minDistance) {
@@ -6850,9 +6939,9 @@ export class FeedContainer {
    */
   private calculateCardCenterPosition(card: HTMLElement): number {
     const rect = card.getBoundingClientRect();
-    const cardTop = globalThis.scrollY + rect.top;
+    const cardTop = this.getElementTop(rect);
     const cardHeight = rect.height;
-    const viewportHeight = globalThis.innerHeight;
+    const viewportHeight = this.getViewportHeight();
     
     // Calculate position to center the card
     return cardTop + cardHeight / 2 - viewportHeight / 2;
@@ -6972,12 +7061,11 @@ export class FeedContainer {
     // IntersectionObserver might not have fired yet after snapping
     const container = post.getContainer();
     const rect = container.getBoundingClientRect();
-    const viewportHeight = globalThis.innerHeight;
-    const viewportWidth = globalThis.innerWidth;
-    const isActuallyVisible = rect.bottom > 0 && 
-                              rect.top < viewportHeight && 
-                              rect.right > 0 && 
-                              rect.left < viewportWidth;
+    const viewport = this.getViewportRect();
+    const isActuallyVisible = rect.bottom > viewport.top && 
+                              rect.top < viewport.top + viewport.height && 
+                              rect.right > viewport.left && 
+                              rect.left < viewport.left + viewport.width;
 
     // If element is actually visible but entry.isVisible is false, force update it
     if (isActuallyVisible && !entry.isVisible) {
@@ -7091,10 +7179,7 @@ export class FeedContainer {
     // Extract postId before scrolling
     const postId = this.getPostIdFromCard(card);
 
-    globalThis.scrollTo({
-      top: targetPosition,
-      behavior: 'smooth'
-    });
+    this.scrollToPosition(targetPosition, 'smooth');
 
     // After scroll animation completes, trigger autoplay and audio
     setTimeout(() => {
@@ -7146,7 +7231,11 @@ export class FeedContainer {
     if (body.dataset.scrollLock !== 'true') {
       return;
     }
-    body.style.overflow = '';
+    if (this.isReelModeEnabled()) {
+      body.style.overflow = 'hidden';
+    } else {
+      body.style.overflow = '';
+    }
     body.style.paddingRight = '';
     delete body.dataset.scrollLock;
   }

@@ -30,7 +30,7 @@ type VideoState = 'loading' | 'ready' | 'playing' | 'paused' | 'failed';
 type PlaybackOrigin = 'observer' | 'ready' | 'register' | 'retry';
 
 export class VisibilityManager {
-  private readonly observer: IntersectionObserver;
+  private observer: IntersectionObserver;
   private readonly entries: Map<string, VisibilityEntry>;
   private readonly videoStates: Map<string, VideoState>;
   private readonly visibilityStability: Map<string, number>; // timestamp when visibility last changed
@@ -45,6 +45,9 @@ export class VisibilityManager {
   private hoveredPostId?: string; // Track which post is currently hovered/touched
   private touchedPostId?: string; // Track which post is currently touched (separate from hover for mobile)
   private isHDMode: boolean = false; // Track HD mode for more aggressive unloading
+  private readonly manualPauseLocks: Set<string> = new Set();
+  private observerRoot: Element | null;
+  private scrollRoot?: HTMLElement | null;
   // Note: manuallyStartedVideos tracking moved to AudioManager for single source of truth
   // Cache for getBoundingClientRect results per frame to avoid layout thrashing
   private readonly rectCache: Map<HTMLElement, DOMRect> = new Map();
@@ -56,6 +59,7 @@ export class VisibilityManager {
     rootMargin: string;
     autoPlay: boolean;
     isReelMode?: boolean;
+    root?: Element | null;
   };
 
   constructor(options?: {
@@ -66,6 +70,7 @@ export class VisibilityManager {
     logger?: (event: string, payload?: Record<string, unknown>) => void;
     onHoverLoadRequest?: (postId: string) => void; // Callback to trigger video loading when hovered before loaded
     isReelMode?: boolean; // When true, autoplay works without hover requirement
+    root?: Element | null; // Optional root for IntersectionObserver and viewport checks
   }) {
     // On mobile, use larger rootMargin to start playing videos earlier
     const isMobile = isMobileDevice();
@@ -78,6 +83,7 @@ export class VisibilityManager {
       rootMargin: options?.rootMargin ?? defaultRootMargin,
       autoPlay: options?.autoPlay ?? false,
       isReelMode: options?.isReelMode ?? false,
+      root: options?.root ?? null,
     };
 
     this.entries = new Map();
@@ -94,13 +100,9 @@ export class VisibilityManager {
       getHoveredPostId: () => this.hoveredPostId
     });
 
-    this.observer = new IntersectionObserver(
-      (intersectionEntries) => this.handleIntersection(intersectionEntries),
-      {
-        threshold: this.options.threshold,
-        rootMargin: this.options.rootMargin,
-      }
-    );
+    this.observerRoot = this.options.root ?? null;
+    this.scrollRoot = this.observerRoot instanceof HTMLElement ? this.observerRoot : null;
+    this.observer = this.createObserver();
 
     // Track scroll velocity for adaptive hysteresis
     this.setupScrollTracking();
@@ -121,7 +123,7 @@ export class VisibilityManager {
       }
       
       const now = Date.now();
-      const scrollTop = globalThis.window.scrollY || document.documentElement.scrollTop;
+      const scrollTop = this.getScrollTop();
       const timeDelta = now - this.lastScrollTime;
       
       if (timeDelta > 0) {
@@ -138,7 +140,7 @@ export class VisibilityManager {
     };
     
     this.lastScrollTime = Date.now();
-    this.lastScrollTop = globalThis.window.scrollY || document.documentElement.scrollTop;
+    this.lastScrollTop = this.getScrollTop();
     this.scrollVelocityRafHandle = requestAnimationFrame(updateScrollVelocity);
     
     // Store cleanup function
@@ -149,6 +151,47 @@ export class VisibilityManager {
         this.scrollVelocityRafHandle = undefined;
       }
     };
+  }
+
+  private createObserver(): IntersectionObserver {
+    return new IntersectionObserver(
+      (intersectionEntries) => this.handleIntersection(intersectionEntries),
+      {
+        threshold: this.options.threshold,
+        rootMargin: this.options.rootMargin,
+        root: this.observerRoot ?? null,
+      }
+    );
+  }
+
+  private getScrollTop(): number {
+    if (this.scrollRoot) {
+      return this.scrollRoot.scrollTop;
+    }
+    return globalThis.window.scrollY || document.documentElement.scrollTop;
+  }
+
+  private getViewportRect(): { top: number; left: number; width: number; height: number } {
+    if (this.observerRoot) {
+      const rect = this.observerRoot.getBoundingClientRect();
+      return { top: rect.top, left: rect.left, width: rect.width, height: rect.height };
+    }
+    return { top: 0, left: 0, width: globalThis.window.innerWidth, height: globalThis.window.innerHeight };
+  }
+
+  setObserverRoot(root: Element | null): void {
+    if (this.observerRoot === root) {
+      return;
+    }
+    this.observerRoot = root;
+    this.scrollRoot = root instanceof HTMLElement ? root : null;
+
+    this.observer.disconnect();
+    this.observer = this.createObserver();
+    for (const entry of this.entries.values()) {
+      this.observer.observe(entry.element);
+    }
+    this.reevaluatePlayback();
   }
 
 
@@ -283,6 +326,7 @@ export class VisibilityManager {
       if (state.isPlaying) {
         this.videoStates.set(postId, 'playing');
         this.debugLog('state-playing', { postId });
+        this.manualPauseLocks.delete(postId);
         // Track if this was a manual play (not from hover)
         // If video is playing but wasn't triggered by hover, mark as manual
         if (!entry.pendingVisibilityPlay && this.hoveredPostId !== postId) {
@@ -294,6 +338,9 @@ export class VisibilityManager {
         // Remove from manually started set when paused - use AudioManager
         this.audioManager.unmarkManuallyStarted(postId);
         this.debugLog('state-paused', { postId });
+        if (!this.isHDMode && entry.isVisible && !entry.player?.isManuallyPaused()) {
+          this.manualPauseLocks.add(postId);
+        }
         
         // Manual video pause handled by normal autoplay logic
       }
@@ -449,14 +496,13 @@ export class VisibilityManager {
    */
   private isActuallyInViewport(element: HTMLElement): boolean {
     const rect = this.getCachedRect(element);
-    const viewportHeight = globalThis.window.innerHeight;
-    const viewportWidth = globalThis.window.innerWidth;
+    const viewport = this.getViewportRect();
     
     // Element is visible if any part intersects with the actual viewport
-    return rect.bottom > 0 && 
-           rect.top < viewportHeight && 
-           rect.right > 0 && 
-           rect.left < viewportWidth;
+    return rect.bottom > viewport.top && 
+           rect.top < viewport.top + viewport.height && 
+           rect.right > viewport.left && 
+           rect.left < viewport.left + viewport.width;
   }
 
   /**
@@ -506,8 +552,9 @@ export class VisibilityManager {
     // Find most centered visible video (like audio logic)
     let bestId: string | undefined;
     let bestScore = Number.POSITIVE_INFINITY;
-    const viewportCenterY = globalThis.window.innerHeight / 2;
-    const viewportCenterX = globalThis.window.innerWidth / 2;
+    const viewport = this.getViewportRect();
+    const viewportCenterY = viewport.top + viewport.height / 2;
+    const viewportCenterX = viewport.left + viewport.width / 2;
 
     for (const [postId, entry] of this.entries) {
       if (!entry.isVisible || !entry.player) continue;
@@ -515,8 +562,8 @@ export class VisibilityManager {
       const rect = this.getCachedRect(entry.element);
       
       // Only consider entries that are actually in viewport
-      if (rect.bottom < 0 || rect.top > globalThis.window.innerHeight) continue;
-      if (rect.right < 0 || rect.left > globalThis.window.innerWidth) continue;
+      if (rect.bottom < viewport.top || rect.top > viewport.top + viewport.height) continue;
+      if (rect.right < viewport.left || rect.left > viewport.left + viewport.width) continue;
       
       const centerY = rect.top + rect.height / 2;
       const centerX = rect.left + rect.width / 2;
@@ -763,6 +810,7 @@ export class VisibilityManager {
     }
     this.debugLog('visibility-exit', { postId });
     entry.pendingVisibilityPlay = false;
+    this.manualPauseLocks.delete(postId);
     this.pauseVideo(postId);
     
     // Clear manual pause flag when video becomes invisible
@@ -784,27 +832,26 @@ export class VisibilityManager {
     }
 
     const rect = this.getCachedRect(entry.element);
-    const viewportHeight = globalThis.window.innerHeight;
-    const viewportWidth = globalThis.window.innerWidth;
+    const viewport = this.getViewportRect();
     
     // Calculate distance from viewport
     let distanceFromViewport = 0;
     
     // Check if element is above viewport
-    if (rect.bottom < 0) {
-      distanceFromViewport = Math.abs(rect.bottom);
+    if (rect.bottom < viewport.top) {
+      distanceFromViewport = viewport.top - rect.bottom;
     }
     // Check if element is below viewport
-    else if (rect.top > viewportHeight) {
-      distanceFromViewport = rect.top - viewportHeight;
+    else if (rect.top > viewport.top + viewport.height) {
+      distanceFromViewport = rect.top - (viewport.top + viewport.height);
     }
     // Check if element is to the left of viewport
-    else if (rect.right < 0) {
-      distanceFromViewport = Math.abs(rect.right);
+    else if (rect.right < viewport.left) {
+      distanceFromViewport = viewport.left - rect.right;
     }
     // Check if element is to the right of viewport
-    else if (rect.left > viewportWidth) {
-      distanceFromViewport = rect.left - viewportWidth;
+    else if (rect.left > viewport.left + viewport.width) {
+      distanceFromViewport = rect.left - (viewport.left + viewport.width);
     }
     
     // Unload threshold to save RAM: more aggressive on mobile
@@ -846,6 +893,9 @@ export class VisibilityManager {
     }
     if (entry.player?.isManuallyPaused()) {
       return { canPlay: false, reason: 'manually-paused' };
+    }
+    if (this.manualPauseLocks.has(postId)) {
+      return { canPlay: false, reason: 'manual-lock' };
     }
     // In reel mode, allow autoplay even when other videos are hovered
     // This enables autoplay without hover requirement in reel/fullscreen mode
