@@ -42,7 +42,8 @@ export class ImageVideoPost extends BasePost {
   private hasFailedPermanently: boolean = false;
   private errorPlaceholder?: HTMLElement;
   private retryTimeoutId?: number;
-  private loadErrorCheckIntervalId?: ReturnType<typeof setInterval>;
+  private loadErrorCheckTimeoutId?: ReturnType<typeof setTimeout>;
+  private loadErrorHandler?: () => void;
   
   private readonly onCancelRequests?: () => void;
   private readonly onMuteToggle?: (isMuted: boolean) => void;
@@ -358,6 +359,8 @@ export class ImageVideoPost extends BasePost {
 
       this.isLoaded = true;
       this.hideMediaWhenReady(this.player, playerContainer);
+      this.scheduleLoadErrorCheck();
+      this.attachLoadErrorHandler();
     } catch (error) {
       console.error('ImageVideoPost: Failed to create HD video player', {
         error,
@@ -395,6 +398,8 @@ export class ImageVideoPost extends BasePost {
    */
   private async destroyCurrentPlayer(): Promise<void> {
     if (this.player) {
+      this.clearLoadErrorCheckTimeout();
+      this.detachLoadErrorHandler();
       this.player.destroy();
       this.player = undefined;
     }
@@ -447,10 +452,59 @@ export class ImageVideoPost extends BasePost {
       if (this.videoLoadingIndicator) {
         this.videoLoadingIndicator.style.display = 'none';
       }
+      this.clearLoadErrorCheckTimeout();
       videoElement.removeEventListener('canplay', handleCanPlay);
     };
 
     videoElement.addEventListener('canplay', handleCanPlay, { once: true });
+  }
+
+  private attachLoadErrorHandler(): void {
+    if (!this.player) {
+      return;
+    }
+    const videoElement = this.player.getVideoElement();
+    if (!videoElement) {
+      return;
+    }
+    this.detachLoadErrorHandler();
+    this.loadErrorHandler = () => this.checkForLoadError();
+    videoElement.addEventListener('error', this.loadErrorHandler, { once: true });
+  }
+
+  private detachLoadErrorHandler(): void {
+    if (!this.player || !this.loadErrorHandler) {
+      this.loadErrorHandler = undefined;
+      return;
+    }
+    const videoElement = this.player.getVideoElement();
+    if (videoElement) {
+      videoElement.removeEventListener('error', this.loadErrorHandler);
+    }
+    this.loadErrorHandler = undefined;
+  }
+
+  private clearLoadErrorCheckTimeout(): void {
+    if (this.loadErrorCheckTimeoutId) {
+      clearTimeout(this.loadErrorCheckTimeoutId);
+      this.loadErrorCheckTimeoutId = undefined;
+    }
+  }
+
+  private scheduleLoadErrorCheck(): void {
+    if (!this.player || this.hasFailedPermanently) {
+      return;
+    }
+    this.clearLoadErrorCheckTimeout();
+    const isMobile = isMobileDevice();
+    const delay = isMobile ? 20000 : 16000;
+    this.loadErrorCheckTimeoutId = setTimeout(() => {
+      if (!this.player || this.hasFailedPermanently) {
+        this.clearLoadErrorCheckTimeout();
+        return;
+      }
+      this.checkForLoadError();
+    }, delay);
   }
 
   /**
@@ -488,24 +542,13 @@ export class ImageVideoPost extends BasePost {
       this.isLoaded = true;
       this.hideMediaWhenReady(this.player, this.playerContainer);
 
+      this.scheduleLoadErrorCheck();
+      this.attachLoadErrorHandler();
+
       if (this.visibilityManager && this.data.image.id) {
         this.visibilityManager.registerPlayer(this.data.image.id, this.player);
       }
 
-      // Set up periodic error checking
-      if (this.loadErrorCheckIntervalId) {
-        clearInterval(this.loadErrorCheckIntervalId);
-      }
-      this.loadErrorCheckIntervalId = setInterval(() => {
-        if (!this.player || this.hasFailedPermanently) {
-          if (this.loadErrorCheckIntervalId) {
-            clearInterval(this.loadErrorCheckIntervalId);
-            this.loadErrorCheckIntervalId = undefined;
-          }
-          return;
-        }
-        this.checkForLoadError();
-      }, 3000);
     } catch (error) {
       console.error('ImageVideoPost: Failed to create video player', {
         error,
@@ -528,11 +571,13 @@ export class ImageVideoPost extends BasePost {
     if (!videoElement) return;
 
     if (videoElement.error) {
-      this.loadErrorCount++;
-      if (this.loadErrorCount >= 3) {
-        this.hasFailedPermanently = true;
-        this.showErrorPlaceholder();
-      }
+      this.loadErrorCount += 1;
+      this.hasFailedPermanently = true;
+      this.showErrorPlaceholder();
+      console.warn('ImageVideoPost: Video failed to load, showing placeholder', {
+        imageId: this.data.image.id,
+        error: videoElement.error?.message,
+      });
     }
   }
 
@@ -937,10 +982,8 @@ export class ImageVideoPost extends BasePost {
     }
 
     // Clean up timers
-    if (this.loadErrorCheckIntervalId) {
-      clearInterval(this.loadErrorCheckIntervalId);
-      this.loadErrorCheckIntervalId = undefined;
-    }
+    this.clearLoadErrorCheckTimeout();
+    this.detachLoadErrorHandler();
     if (this.retryTimeoutId) {
       clearTimeout(this.retryTimeoutId);
       this.retryTimeoutId = undefined;

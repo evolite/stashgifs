@@ -62,7 +62,8 @@ export class VideoPost extends BasePost {
   private hasFailedPermanently: boolean = false;
   private errorPlaceholder?: HTMLElement;
   private retryTimeoutId?: number;
-  private loadErrorCheckIntervalId?: ReturnType<typeof setInterval>;
+  private loadErrorCheckTimeoutId?: ReturnType<typeof setTimeout>;
+  private loadErrorHandler?: () => void;
   private readonly ratingSystemConfig?: { type?: string; starPrecision?: string } | null;
   private ratingControl?: RatingControl;
   
@@ -887,6 +888,9 @@ export class VideoPost extends BasePost {
     if (!this.player) {
       return;
     }
+
+    this.clearLoadErrorCheckTimeout();
+    this.detachLoadErrorHandler();
     
     // Clear the state change listener first to prevent it from firing after destroy
     // This is critical - the old player's listener might try to update visibility manager
@@ -1050,6 +1054,8 @@ export class VideoPost extends BasePost {
         void this.seekPlayerToStart(this.player, startTime);
       }
       this.hideMediaWhenReady(this.player, playerContainer);
+      this.scheduleLoadErrorCheck();
+      this.attachLoadErrorHandler();
     } catch (error) {
       console.error('VideoPost: Failed to create scene video player', {
         error,
@@ -1223,26 +1229,13 @@ export class VideoPost extends BasePost {
       this.isLoaded = true;
       this.hideMediaWhenReady(this.player, playerContainer);
 
+      this.scheduleLoadErrorCheck();
+      this.attachLoadErrorHandler();
+
       if (this.visibilityManager && this.data.marker.id) {
         this.visibilityManager.registerPlayer(this.data.marker.id, this.player);
       }
 
-      // Set up periodic error checking (every 3 seconds) to catch blocked requests
-      // Clear any existing interval first
-      if (this.loadErrorCheckIntervalId) {
-        clearInterval(this.loadErrorCheckIntervalId);
-      }
-      this.loadErrorCheckIntervalId = setInterval(() => {
-        if (!this.player || this.hasFailedPermanently) {
-          // Stop checking if player is gone or has failed permanently
-          if (this.loadErrorCheckIntervalId) {
-            clearInterval(this.loadErrorCheckIntervalId);
-            this.loadErrorCheckIntervalId = undefined;
-          }
-          return;
-        }
-        this.checkForLoadError();
-      }, 3000);
     } catch (error) {
       console.error('VideoPost: Failed to create video player', {
         error,
@@ -1387,6 +1380,7 @@ export class VideoPost extends BasePost {
       }
       revealed = true;
       cleanup();
+      this.clearLoadErrorCheckTimeout();
       const performHide = () => hideVisuals();
       requestFrame(() => requestFrame(() => performHide()));
     };
@@ -1417,6 +1411,54 @@ export class VideoPost extends BasePost {
           reveal();
         }
       });
+  }
+
+  private attachLoadErrorHandler(): void {
+    if (!this.player) {
+      return;
+    }
+    const videoElement = this.player.getVideoElement();
+    if (!videoElement) {
+      return;
+    }
+    this.detachLoadErrorHandler();
+    this.loadErrorHandler = () => this.checkForLoadError();
+    videoElement.addEventListener('error', this.loadErrorHandler, { once: true });
+  }
+
+  private detachLoadErrorHandler(): void {
+    if (!this.player || !this.loadErrorHandler) {
+      this.loadErrorHandler = undefined;
+      return;
+    }
+    const videoElement = this.player.getVideoElement();
+    if (videoElement) {
+      videoElement.removeEventListener('error', this.loadErrorHandler);
+    }
+    this.loadErrorHandler = undefined;
+  }
+
+  private clearLoadErrorCheckTimeout(): void {
+    if (this.loadErrorCheckTimeoutId) {
+      clearTimeout(this.loadErrorCheckTimeoutId);
+      this.loadErrorCheckTimeoutId = undefined;
+    }
+  }
+
+  private scheduleLoadErrorCheck(): void {
+    if (!this.player || this.hasFailedPermanently) {
+      return;
+    }
+    this.clearLoadErrorCheckTimeout();
+    const isMobile = isMobileDevice();
+    const delay = isMobile ? 20000 : 16000;
+    this.loadErrorCheckTimeoutId = setTimeout(() => {
+      if (!this.player || this.hasFailedPermanently) {
+        this.clearLoadErrorCheckTimeout();
+        return;
+      }
+      this.checkForLoadError();
+    }, delay);
   }
 
   /**
@@ -1545,6 +1587,8 @@ export class VideoPost extends BasePost {
 
     // Clear current player (this will properly clean up the video element and clear src)
     if (this.player) {
+      this.clearLoadErrorCheckTimeout();
+      this.detachLoadErrorHandler();
       this.player.destroy();
       this.player = undefined;
     }
@@ -2628,11 +2672,8 @@ export class VideoPost extends BasePost {
       this.retryTimeoutId = undefined;
     }
 
-    // Clear error check interval
-    if (this.loadErrorCheckIntervalId) {
-      clearInterval(this.loadErrorCheckIntervalId);
-      this.loadErrorCheckIntervalId = undefined;
-    }
+    this.clearLoadErrorCheckTimeout();
+    this.detachLoadErrorHandler();
 
     // Remove error placeholder if exists
     if (this.errorPlaceholder) {

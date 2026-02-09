@@ -77,7 +77,7 @@ type ContentType = 'marker' | 'shortform' | 'image';
 type PostType = VideoPost | ImagePost | ImageVideoPost;
 
 export class FeedContainer {
-  private static readonly CONTENT_LOAD_LIMIT: number = 4;
+  private static readonly CONTENT_LOAD_LIMIT: number = 8;
   private readonly container: HTMLElement;
   private scrollContainer: HTMLElement;
   private readonly api: StashAPI;
@@ -158,6 +158,14 @@ export class FeedContainer {
   private snapThrottleTimeout?: ReturnType<typeof setTimeout>;
   private cardSnapScrollHandler?: () => void;
   private cardSnapScrollTimeout?: ReturnType<typeof setTimeout>;
+  private mobileAutoplayUnlockHandler?: (event: Event) => void;
+  private readonly mobileAutoplayUnlockEvents: ReadonlyArray<string> = [
+    'touchstart',
+    'touchend',
+    'click',
+    'scroll',
+    'touchmove',
+  ];
 
   constructor(container: HTMLElement, api?: StashAPI, settings?: Partial<FeedSettings>) {
     this.container = container;
@@ -210,7 +218,7 @@ export class FeedContainer {
   private initializeDeviceConfiguration(): void {
     this.isMobileDevice = isMobileDevice();
     
-    // Extremely reduced to prevent 8GB+ RAM usage: max 2 on mobile, 2 on desktop
+    // Conservative defaults to prevent runaway RAM usage
     this.maxSimultaneousPreloads = 2;
 
     if (this.isMobileDevice) {
@@ -224,6 +232,19 @@ export class FeedContainer {
     } else {
       // Desktop: use default settings
       this.deviceCapabilities = detectDeviceCapabilities();
+      if (this.deviceCapabilities.availableRAM >= 4096) {
+        this.maxSimultaneousPreloads = 3;
+        this.settings.backgroundPreloadDelay = 60;
+        this.settings.backgroundPreloadFastScrollDelay = 150;
+      } else if (this.deviceCapabilities.availableRAM >= 3072) {
+        this.maxSimultaneousPreloads = 2;
+        this.settings.backgroundPreloadDelay = 80;
+        this.settings.backgroundPreloadFastScrollDelay = 200;
+      } else {
+        this.maxSimultaneousPreloads = 1;
+        this.settings.backgroundPreloadDelay = 120;
+        this.settings.backgroundPreloadFastScrollDelay = 300;
+      }
     }
     
     this.posts = new Map();
@@ -1012,11 +1033,12 @@ export class FeedContainer {
   private unlockMobileAutoplay(): void {
     const isMobile = isMobileDevice();
     if (!isMobile) return;
-    
+
     let unlocked = false;
     const unlock = async () => {
       if (unlocked) return;
       unlocked = true;
+      this.removeMobileAutoplayUnlockListeners();
       
       // Create a dummy video element to unlock autoplay
       const dummyVideo = document.createElement('video');
@@ -1055,12 +1077,22 @@ export class FeedContainer {
         }, 1000);
       }
     };
-    
+
     // Unlock on any user interaction
-    const events = ['touchstart', 'touchend', 'click', 'scroll', 'touchmove'];
-    for (const event of events) {
+    this.mobileAutoplayUnlockHandler = unlock;
+    for (const event of this.mobileAutoplayUnlockEvents) {
       document.addEventListener(event, unlock, { once: true, passive: true });
     }
+  }
+
+  private removeMobileAutoplayUnlockListeners(): void {
+    if (!this.mobileAutoplayUnlockHandler) {
+      return;
+    }
+    for (const event of this.mobileAutoplayUnlockEvents) {
+      document.removeEventListener(event, this.mobileAutoplayUnlockHandler);
+    }
+    this.mobileAutoplayUnlockHandler = undefined;
   }
 
   /**
@@ -4168,6 +4200,49 @@ export class FeedContainer {
 
     if (!append) {
       this.refreshAutoplayAfterLayout();
+      this.warmStartPreloads();
+    }
+
+    if (this.settings.backgroundPreloadEnabled && this.posts.size > 0) {
+      this.startBackgroundPreloading();
+    }
+  }
+
+  private warmStartPreloads(): void {
+    if (this.maxSimultaneousPreloads <= 0 || this.posts.size === 0) {
+      return;
+    }
+
+    const isReelMode = this.isReelModeEnabled();
+    const targetCount = isReelMode ? 3 : (this.isMobileDevice ? 1 : 2);
+    const availableSlots = Math.max(0, this.maxSimultaneousPreloads - this.currentlyPreloadingCount);
+    const preloadCount = Math.min(targetCount, availableSlots, this.postOrder.length);
+    if (preloadCount <= 0) {
+      return;
+    }
+
+    let preloaded = 0;
+    for (const postId of this.postOrder) {
+      if (preloaded >= preloadCount) {
+        break;
+      }
+      if (this.activePreloadPosts.has(postId)) {
+        continue;
+      }
+      const post = this.posts.get(postId);
+      if (!post || post.isPlayerLoaded() || !post.hasVideoSource()) {
+        continue;
+      }
+      try {
+        const player = post.preload();
+        if (isNativeVideoPlayer(player)) {
+          this.visibilityManager.registerPlayer(postId, player);
+          this.trackBackgroundPreload(postId, player);
+          preloaded += 1;
+        }
+      } catch (error) {
+        console.warn('Warm preload failed for post', postId, error);
+      }
     }
   }
 
@@ -6007,7 +6082,9 @@ export class FeedContainer {
     const container = post.getContainer();
     const rect = container.getBoundingClientRect();
     const viewport = this.getViewportRect();
-    const margin = 500; // Consider posts within 500px as "near" viewport
+    const margin = this.isReelModeEnabled()
+      ? (this.isMobileDevice ? 600 : 800)
+      : 500; // Consider posts near viewport
     
     return rect.bottom > viewport.top - margin && 
            rect.top < viewport.top + viewport.height + margin &&
@@ -6839,6 +6916,8 @@ export class FeedContainer {
   destroy(): void {
     this.stopBackgroundPreloading();
     posterPreloader.cancelInflight();
+
+    this.removeMobileAutoplayUnlockListeners();
 
     if (this.scrollHandler && this.scrollEventTarget) {
       this.scrollEventTarget.removeEventListener('scroll', this.scrollHandler);

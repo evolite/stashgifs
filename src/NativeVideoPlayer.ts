@@ -44,7 +44,11 @@ export class NativeVideoPlayer {
   private unloadRetryTimeout?: ReturnType<typeof setTimeout>;
   private readonly isHDMode: boolean = false; // Track if this is HD mode (affects mute button visibility)
   private posterImage?: HTMLImageElement; // Fallback poster image for mobile
+  private placeholderElement?: HTMLDivElement; // Neutral placeholder to avoid black screens
   private shouldExtractFirstFrame: boolean = false; // Track if we need to extract first frame as poster
+  private shouldShowPlaceholder: boolean = false;
+  private hasPoster: boolean = false;
+  private hasResolvedReady: boolean = false;
   // Store event handlers for proper cleanup
   private fullscreenChangeHandler?: () => void;
   private webkitFullscreenChangeHandler?: () => void;
@@ -61,6 +65,7 @@ export class NativeVideoPlayer {
   private waitingHandler?: () => void;
   private progressHandler?: () => void;
   private loadingIndicator?: HTMLElement; // Loading spinner indicator
+  private isLoading: boolean = false;
   // Overlay and touch handling
   private overlay?: HTMLElement; // Play/pause overlay
   private overlayTimeoutId?: ReturnType<typeof setTimeout>; // Timeout for overlay fade
@@ -79,6 +84,13 @@ export class NativeVideoPlayer {
   private scrollHandler?: () => void;
   private playerWrapper?: HTMLElement; // Store reference to player wrapper for hover handlers
   private readonly shouldShowLoadingIndicator: boolean;
+  private containerEnterHandler?: () => void;
+  private containerLeaveHandler?: (e: MouseEvent) => void;
+  private errorHandler?: (e: Event) => void;
+  private firstFrameTimeMs?: number;
+  private rebufferStartMs?: number;
+  private rebufferCount: number = 0;
+  private totalRebufferMs: number = 0;
 
   constructor(container: HTMLElement, videoUrl: string, options?: {
     autoplay?: boolean;
@@ -223,9 +235,8 @@ export class NativeVideoPlayer {
     this.videoElement.style.width = '100%';
     this.videoElement.style.height = '100%';
     
-    // On mobile, set video element to opacity 0 initially to prevent animated previews
-    // Video will fade in smoothly when playing event fires
-    if (isMobile) {
+    // Hide video surface until playback to avoid black frames
+    if (this.shouldHideVideoUntilPlaying(isMobile)) {
       this.videoElement.style.opacity = '0';
       this.videoElement.style.transition = 'opacity 0.3s ease-out';
     }
@@ -252,8 +263,11 @@ export class NativeVideoPlayer {
   }
 
   private applyPosterConfig(posterUrl: string | undefined, isMobile: boolean): void {
+    this.hasPoster = false;
+    this.shouldShowPlaceholder = isMobile;
     if (!posterUrl) {
       this.shouldExtractFirstFrame = true;
+      this.shouldShowPlaceholder = true;
       return;
     }
 
@@ -261,8 +275,11 @@ export class NativeVideoPlayer {
     if (!normalizedPosterUrl) {
       console.warn('NativeVideoPlayer: Invalid poster URL, skipping poster', { posterUrl });
       this.shouldExtractFirstFrame = true;
+      this.shouldShowPlaceholder = true;
       return;
     }
+
+    this.hasPoster = true;
 
     if (!isMobile) {
       this.videoElement.poster = normalizedPosterUrl;
@@ -321,9 +338,34 @@ export class NativeVideoPlayer {
     if (this.videoElement.preload === 'metadata' && isMobileDevice()) {
       // Only switch if on mobile and currently using metadata preload
       this.videoElement.preload = 'auto';
-      // Hide fallback poster when switching to auto preload
-      this.hidePosterFallback();
     }
+  }
+
+  private configureStartTime(startTime?: number): void {
+    const hasStart = typeof startTime === 'number' && Number.isFinite(startTime);
+    this.desiredStartTime = hasStart && startTime !== undefined ? Math.max(0, startTime) : undefined;
+    this.startTimeEnforced = false;
+  }
+
+  private applyStartTimeFromMetadata(): void {
+    if (!this.isVideoElementValid() || this.desiredStartTime === undefined) {
+      return;
+    }
+    if (this.videoElement.readyState < 1) {
+      return;
+    }
+    try {
+      this.videoElement.pause();
+      this.videoElement.currentTime = this.desiredStartTime;
+    } catch {
+      // Ignore seek errors
+    }
+    this.enforceStartTimePosition(1, false);
+    setTimeout(() => this.enforceStartTimePosition(1, false), 50);
+  }
+
+  private shouldHideVideoUntilPlaying(isMobile: boolean): boolean {
+    return isMobile || !this.hasPoster;
   }
 
   /**
@@ -366,6 +408,9 @@ export class NativeVideoPlayer {
     // Add error handler - if poster fails to load, extract first frame from video
     img.addEventListener('error', () => {
       console.warn('NativeVideoPlayer: Poster image failed to load, extracting first frame from video', { posterUrl });
+      this.shouldShowPlaceholder = true;
+      this.createPlaceholderLayer();
+      this.showPlaceholder();
       this.extractFirstFrameAsPoster();
     }, { once: true });
     
@@ -533,6 +578,80 @@ export class NativeVideoPlayer {
     this.posterImage.style.opacity = '1';
   }
 
+  private showPlaceholder(): void {
+    if (!this.placeholderElement) {
+      return;
+    }
+    this.placeholderElement.style.opacity = '1';
+  }
+
+  private hidePlaceholder(): void {
+    if (!this.placeholderElement) {
+      return;
+    }
+    this.placeholderElement.style.opacity = '0';
+  }
+
+  private createPlaceholderLayer(): void {
+    if (this.placeholderElement) {
+      return;
+    }
+
+    const placeholder = document.createElement('div');
+    placeholder.className = 'video-player__placeholder';
+    placeholder.style.position = 'absolute';
+    placeholder.style.top = '0';
+    placeholder.style.left = '0';
+    placeholder.style.width = '100%';
+    placeholder.style.height = '100%';
+    placeholder.style.background = 'var(--color-bg, #1F2A33)';
+    placeholder.style.zIndex = '0';
+    placeholder.style.opacity = '1';
+    placeholder.style.transition = 'opacity 0.3s ease-out';
+    placeholder.style.pointerEvents = 'none';
+
+    const playerWrapper = this.videoElement.parentElement;
+    if (playerWrapper) {
+      playerWrapper.insertBefore(placeholder, this.videoElement);
+    } else {
+      this.container.appendChild(placeholder);
+    }
+
+    this.placeholderElement = placeholder;
+  }
+
+  private ensureLoadingVisuals(): void {
+    if (!this.isVideoElementValid()) {
+      return;
+    }
+    if (this.shouldShowPlaceholder && !this.placeholderElement) {
+      this.createPlaceholderLayer();
+    }
+    this.showPosterFallback();
+    this.showPlaceholder();
+    if (this.shouldHideVideoUntilPlaying(isMobileDevice())) {
+      this.videoElement.style.opacity = '0';
+    }
+  }
+
+  private assignVideoSource(url: string, shouldLoad: boolean = false): boolean {
+    try {
+      if (shouldLoad) {
+        this.videoElement.pause();
+        this.videoElement.removeAttribute('src');
+      }
+      this.videoElement.src = url;
+      if (shouldLoad) {
+        this.videoElement.load();
+      }
+      this.setLoadingState(true);
+      return true;
+    } catch {
+      this.errorHandled = true;
+      return false;
+    }
+  }
+
   /**
    * Set video source for videos with startTime
    */
@@ -549,19 +668,13 @@ export class NativeVideoPlayer {
     this.videoElement.pause();
     
     // Now set src - this will trigger loading
-    try {
-      const normalizedVideoUrl = normalizeMediaUrl(videoUrl);
-      if (normalizedVideoUrl && isValidMediaUrl(normalizedVideoUrl)) {
-        this.videoElement.src = normalizedVideoUrl;
-        this.showLoadingIndicator();
-      } else {
-        // URL is invalid, don't set src to prevent error
-        this.errorHandled = true;
-        return false;
-      }
-    } catch {
-      // If setting src throws an error, mark as handled and return
+    const normalizedVideoUrl = normalizeMediaUrl(videoUrl);
+    if (!normalizedVideoUrl || !isValidMediaUrl(normalizedVideoUrl)) {
+      // URL is invalid, don't set src to prevent error
       this.errorHandled = true;
+      return false;
+    }
+    if (!this.assignVideoSource(normalizedVideoUrl)) {
       return false;
     }
     
@@ -576,20 +689,6 @@ export class NativeVideoPlayer {
       // Ignore - metadata not loaded yet, will be set in event handlers below
     }
     
-    // Use loadstart event to set currentTime as early as possible and ensure paused
-    const onLoadStart = () => {
-      // Ensure video is paused
-      this.videoElement.pause();
-      this.showLoadingIndicator(); // Show loading indicator on loadstart as backup
-      try {
-        if (this.videoElement.readyState >= 0) {
-          this.videoElement.currentTime = initialStartTime;
-        }
-      } catch {
-        // Ignore
-      }
-    };
-    this.videoElement.addEventListener('loadstart', onLoadStart, { once: true });
     return true;
   }
 
@@ -622,7 +721,10 @@ export class NativeVideoPlayer {
   private setupErrorHandlerAndTimeout(): void {
     // Add error handler (with guard to prevent loops)
     // Use capture phase to catch errors early and prevent browser logging
-    this.videoElement.addEventListener('error', (e) => {
+    if (this.errorHandler) {
+      this.videoElement.removeEventListener('error', this.errorHandler, true);
+    }
+    this.errorHandler = (e) => {
       // Prevent error handler from running multiple times
       if (this.errorHandled) {
         e.stopPropagation();
@@ -652,7 +754,8 @@ export class NativeVideoPlayer {
       this.errorHandled = true;
       this.hideLoadingIndicator();
       this.logVideoError(e, errorCode, errorMessage, isCodecError);
-    }, { once: true, capture: true }); // Use capture phase to catch errors early
+    };
+    this.videoElement.addEventListener('error', this.errorHandler, { capture: true });
     
     // Track load start time for timeout detection
     this.loadStartTime = Date.now();
@@ -703,15 +806,7 @@ export class NativeVideoPlayer {
     if (!normalized) return false;
     this.hasRetriedDecode = true;
     const retryUrl = addCacheBusting(normalized);
-    try {
-      this.videoElement.pause();
-      this.videoElement.removeAttribute('src');
-      this.videoElement.src = retryUrl;
-      this.videoElement.load();
-    } catch {
-      return false;
-    }
-    return true;
+    return this.assignVideoSource(retryUrl, true);
   }
 
   private logVideoError(
@@ -739,178 +834,6 @@ export class NativeVideoPlayer {
     });
   }
 
-  /**
-   * Setup ready handlers
-   */
-  private setupReadyHandlers(): void {
-    // Clear timeout when video successfully loads
-    const clearLoadTimeout = () => {
-      if (this.loadTimeoutId) {
-        clearTimeout(this.loadTimeoutId);
-        this.loadTimeoutId = undefined;
-      }
-    };
-    
-    // Resolve ready promise when video can play
-    // Don't show video yet - let VideoPost control visibility
-    const handleReady = () => {
-      // Keep video hidden until ready
-      // This prevents flash during transition
-      clearLoadTimeout();
-      this.hideLoadingIndicator();
-      this.resolveReady();
-    };
-    this.videoElement.addEventListener('loadeddata', handleReady, { once: true });
-    this.videoElement.addEventListener('canplay', handleReady, { once: true });
-    
-    // Also clear timeout on loadedmetadata (video has metadata)
-    this.videoElement.addEventListener('loadedmetadata', clearLoadTimeout, { once: true });
-    
-    // Extract first frame as poster if no poster URL was provided
-    if (this.shouldExtractFirstFrame) {
-      const extractFirstFrame = () => {
-        if (this.isVideoElementValid() && this.videoElement.readyState >= 1) {
-          this.extractFirstFrameAsPoster();
-        }
-      };
-      // Try to extract when metadata is loaded
-      this.videoElement.addEventListener('loadedmetadata', extractFirstFrame, { once: true });
-      // Also try when video can play (in case loadedmetadata fires too early)
-      this.videoElement.addEventListener('loadeddata', extractFirstFrame, { once: true });
-    }
-  }
-
-  /**
-   * Setup start time handlers if startTime is provided
-   */
-  private setupStartTimeHandlers(startTime?: number, aggressivePreload?: boolean): void {
-    // If a startTime is provided, ensure we seek to it as soon as metadata is available,
-    // and also attempt an immediate seek if already ready.
-    const hasStart = typeof startTime === 'number' && Number.isFinite(startTime);
-    this.desiredStartTime = hasStart && startTime !== undefined ? Math.max(0, startTime) : undefined;
-    this.startTimeEnforced = false;
-    
-    if (!hasStart || this.desiredStartTime === undefined) {
-      return;
-    }
-    
-    // Immediate attempt if metadata is already loaded
-    if (this.videoElement.readyState >= 1) {
-      this.trySeekToStartTime();
-    }
-    
-    // Ensure seek once metadata is loaded - do this early to prevent showing last frame
-    const onMeta = () => {
-      // Ensure video is paused to prevent auto-playing
-      this.videoElement.pause();
-      this.trySeekToStartTime();
-      
-      // Also check if video is positioned at the end or wrong position and seek immediately
-      // This prevents the browser from showing the last frame or starting at 0
-      // Check position immediately after trySeek() and also with a delayed check as backup
-      const checkAndSeek = () => {
-        this.enforceStartTimePosition(1, Boolean(aggressivePreload));
-      };
-      
-      // Check immediately
-      checkAndSeek();
-      
-      // Also check after a short delay as backup (in case seek didn't work immediately)
-      setTimeout(checkAndSeek, 50);
-      
-      // Keep preload as 'metadata'
-      // For non-HD videos with aggressivePreload, we can switch to 'auto' after seek completes
-      if (aggressivePreload) {
-        this.videoElement.preload = 'auto';
-      }
-    };
-    this.videoElement.addEventListener('loadedmetadata', onMeta, { once: true });
-    this.videoElement.addEventListener('canplay', onMeta, { once: true });
-    
-    // Also ensure seek when first frame loads - prevents showing last frame
-    // This catches cases where browser initially positions video at end or at 0
-    const onLoadedData = () => {
-      // Ensure video is paused to prevent auto-playing
-      this.videoElement.pause();
-      this.enforceStartTimePosition(2, Boolean(aggressivePreload));
-    };
-    this.videoElement.addEventListener('loadeddata', onLoadedData, { once: true });
-    
-    // On mobile, also enforce startTime in timeupdate to catch browsers that reset on play()
-    // Only enforce if we have a startTime > 0 and video is actually at the wrong position
-    const isMobile = isMobileDevice();
-    if (isMobile && this.desiredStartTime !== undefined && this.desiredStartTime > 0) {
-      const enforceStartTime = () => {
-        // Only enforce if we haven't successfully enforced yet, or if video reset to 0
-        if (this.videoElement.readyState >= 1 && !this.startTimeEnforced) {
-          const current = this.videoElement.currentTime;
-          const desired = this.desiredStartTime!;
-          const diff = Math.abs(current - desired);
-          
-          // Only seek if we're significantly off AND video is at 0 or very early
-          // This prevents interfering with normal playback
-          if (diff > 0.5 && current < 1) {
-            try {
-              this.videoElement.currentTime = desired;
-              this.startTimeEnforced = true;
-            } catch {
-              // Ignore seek errors
-            }
-          } else if (diff <= 0.1) {
-            // Once we're at or very close to startTime, mark as enforced and stop checking
-            this.startTimeEnforced = true;
-          }
-        }
-      };
-      // Use a throttled version to avoid excessive seeks
-      let lastEnforceTime = 0;
-      const throttledEnforce = () => {
-        // Stop enforcing once we're at the correct position
-        if (this.startTimeEnforced) {
-          return;
-        }
-        const now = Date.now();
-        if (now - lastEnforceTime > 200) { // Throttle to every 200ms
-          lastEnforceTime = now;
-          enforceStartTime();
-        }
-      };
-      this.videoElement.addEventListener('timeupdate', throttledEnforce);
-      
-      // Add persistent playing event listener to re-seek when video starts playing
-      // This catches cases where mobile browsers reset currentTime to 0 on play()
-      // Only fire once per play session
-      let playingSeekAttempted = false;
-      const onPlaying = () => {
-        if (this.desiredStartTime !== undefined && this.videoElement.readyState >= 1 && !playingSeekAttempted) {
-          const current = this.videoElement.currentTime;
-          const desired = this.desiredStartTime;
-          const diff = Math.abs(current - desired);
-          // If video is significantly off from desired start time (especially if at 0), seek to it
-          if (diff > 0.5 && current < 1) {
-            try {
-              this.videoElement.currentTime = desired;
-              this.startTimeEnforced = true;
-              playingSeekAttempted = true;
-            } catch {
-              // Ignore seek errors
-            }
-          } else if (diff <= 0.1) {
-            this.startTimeEnforced = true;
-            playingSeekAttempted = true;
-          }
-        }
-      };
-      this.videoElement.addEventListener('playing', onPlaying);
-      
-      // Reset playing seek flag when video pauses
-      const onPause = () => {
-        playingSeekAttempted = false;
-      };
-      this.videoElement.addEventListener('pause', onPause);
-    }
-  }
-
   private enforceStartTimePosition(minReadyState: number, allowAutoPreload: boolean): void {
     if (this.desiredStartTime === undefined || this.videoElement.readyState < minReadyState) {
       return;
@@ -933,9 +856,7 @@ export class NativeVideoPlayer {
       this.startTimeEnforced = true;
     }
 
-    if (allowAutoPreload) {
-      this.videoElement.preload = 'auto';
-    }
+    void allowAutoPreload;
   }
 
   /**
@@ -947,19 +868,13 @@ export class NativeVideoPlayer {
     this.videoElement.pause();
     
     // Set src - this will trigger loading
-    try {
-      const normalizedVideoUrl = normalizeMediaUrl(videoUrl);
-      if (normalizedVideoUrl && isValidMediaUrl(normalizedVideoUrl)) {
-        this.videoElement.src = normalizedVideoUrl;
-        this.showLoadingIndicator();
-      } else {
-        // URL is invalid, don't set src to prevent error
-        this.errorHandled = true;
-        return false;
-      }
-    } catch {
-      // If setting src throws an error, mark as handled and return
+    const normalizedVideoUrl = normalizeMediaUrl(videoUrl);
+    if (!normalizedVideoUrl || !isValidMediaUrl(normalizedVideoUrl)) {
+      // URL is invalid, don't set src to prevent error
       this.errorHandled = true;
+      return false;
+    }
+    if (!this.assignVideoSource(normalizedVideoUrl)) {
       return false;
     }
     
@@ -967,9 +882,6 @@ export class NativeVideoPlayer {
     this.videoElement.pause();
     
     // Show loading indicator on loadstart as backup
-    this.videoElement.addEventListener('loadstart', () => {
-      this.showLoadingIndicator();
-    }, { once: true });
     return true;
   }
 
@@ -1013,11 +925,7 @@ export class NativeVideoPlayer {
     // Setup error handler and load timeout
     this.setupErrorHandlerAndTimeout();
     
-    // Setup ready handlers
-    this.setupReadyHandlers();
-
-    // Setup start time handlers if needed
-    this.setupStartTimeHandlers(options?.startTime, options?.aggressivePreload);
+    this.configureStartTime(options?.startTime);
 
     if (this.videoElement.readyState >= 2) {
       this.resolveReady();
@@ -1057,6 +965,10 @@ export class NativeVideoPlayer {
     this.videoElement.style.backfaceVisibility = 'hidden';
     this.videoElement.style.perspective = '1000px';
     
+    if (this.shouldShowPlaceholder) {
+      this.createPlaceholderLayer();
+    }
+
     playerWrapper.appendChild(this.videoElement);
     
     // Create play/pause overlay
@@ -1138,11 +1050,20 @@ export class NativeVideoPlayer {
 
   private attachEventListeners(): void {
     // Video events
+    this.videoElement.addEventListener('loadstart', () => {
+      if (!this.isVideoElementValid()) return;
+      this.resetPlaybackMetrics();
+      this.loadStartTime = Date.now();
+      this.lastProgressTime = Date.now();
+      this.setLoadingState(true);
+    });
+
     this.videoElement.addEventListener('loadedmetadata', () => {
       if (!this.isVideoElementValid()) return;
       this.state.duration = this.videoElement.duration;
       this.progressBar.max = this.videoElement.duration.toString();
       this.updateTimeDisplay();
+      this.applyStartTimeFromMetadata();
       this.notifyStateChange();
     });
 
@@ -1186,6 +1107,8 @@ export class NativeVideoPlayer {
     // Handle stalled event (video stops loading)
     this.stalledHandler = () => {
       if (!this.isVideoElementValid()) return;
+      this.startRebuffering('stalled');
+      this.showLoadingIndicator();
       // Clear any existing stalled timeout
       if (this.stalledTimeoutId) {
         clearTimeout(this.stalledTimeoutId);
@@ -1208,6 +1131,8 @@ export class NativeVideoPlayer {
     // Handle waiting event (video is buffering)
     this.waitingHandler = () => {
       if (!this.isVideoElementValid()) return;
+      this.startRebuffering('waiting');
+      this.showLoadingIndicator();
       // Clear any existing waiting timeout
       if (this.waitingTimeoutId) {
         clearTimeout(this.waitingTimeoutId);
@@ -1243,13 +1168,24 @@ export class NativeVideoPlayer {
     // Update overlay when video becomes ready (but don't show unless hovered)
     const handleReady = () => {
       clearStalledWaitingTimeouts();
-      // Only update overlay state if already hovered - don't show on initial ready
+      if (this.loadTimeoutId) {
+        clearTimeout(this.loadTimeoutId);
+        this.loadTimeoutId = undefined;
+      }
+      if (!this.hasResolvedReady) {
+        this.hasResolvedReady = true;
+        this.resolveReady();
+      }
+      if (this.shouldExtractFirstFrame && this.videoElement.readyState >= 1) {
+        this.shouldExtractFirstFrame = false;
+        this.extractFirstFrameAsPoster();
+      }
       if (this.isHovered) {
         this.updateOverlayState();
       }
     };
-    this.videoElement.addEventListener('canplay', handleReady, { once: true });
-    this.videoElement.addEventListener('loadeddata', handleReady, { once: true });
+    this.videoElement.addEventListener('canplay', handleReady);
+    this.videoElement.addEventListener('loadeddata', handleReady);
 
     // Fullscreen change events (desktop and Android)
     // Store handlers for proper cleanup
@@ -1287,16 +1223,7 @@ export class NativeVideoPlayer {
       this.state.isPlaying = true;
       this.updatePlayButton();
       this.updateOverlayState();
-      
-      // On mobile, make video visible when play() is called to ensure audio works
-      // Some mobile browsers require video to be visible for audio playback
-      const isMobile = isMobileDevice();
-      if (isMobile) {
-        // Fade in video (opacity 0 → 1) when play() is called
-        // This ensures audio works on mobile while still preventing animated previews
-        this.videoElement.style.opacity = '1';
-      }
-      
+
       this.notifyStateChange();
     });
 
@@ -1304,13 +1231,28 @@ export class NativeVideoPlayer {
     // This ensures poster fades out smoothly when video is actually playing
     this.videoElement.addEventListener('playing', () => {
       if (!this.isVideoElementValid()) return;
-      
-      // On mobile, fade out poster when video is actually playing
-      const isMobile = isMobileDevice();
-      if (isMobile) {
-        // Fade out poster (opacity 1 → 0) when video starts rendering
-        this.hidePosterFallback();
+      this.recordFirstFrameIfNeeded();
+      this.endRebuffering();
+      this.hideLoadingIndicator();
+      if (this.desiredStartTime !== undefined && !this.startTimeEnforced) {
+        const current = this.videoElement.currentTime;
+        const diff = Math.abs(current - this.desiredStartTime);
+        if (diff > 0.5 && current < 1) {
+          try {
+            this.videoElement.currentTime = this.desiredStartTime;
+            this.startTimeEnforced = true;
+          } catch {
+            // Ignore seek errors
+          }
+        } else if (diff <= 0.1) {
+          this.startTimeEnforced = true;
+        }
       }
+      if (this.shouldHideVideoUntilPlaying(isMobileDevice())) {
+        this.videoElement.style.opacity = '1';
+      }
+      this.hidePosterFallback();
+      this.hidePlaceholder();
     });
 
     this.videoElement.addEventListener('pause', () => {
@@ -1321,6 +1263,7 @@ export class NativeVideoPlayer {
       
       // On pause, keep video visible to show current frame
       // No need to fade to poster - video frame is already visible
+      this.setLoadingState(this.videoElement.readyState < 2);
       
       this.notifyStateChange();
     });
@@ -1481,7 +1424,7 @@ export class NativeVideoPlayer {
    */
   private setupContainerHoverHandlers(): void {
     if (!this.playerWrapper) return;
-    
+
     const containerEnterHandler = () => {
       // Enable pointer-events when hovering over the container
       if (this.playerWrapper) {
@@ -1522,6 +1465,8 @@ export class NativeVideoPlayer {
     };
     
     // Attach to container to enable pointer-events when hovering over player area
+    this.containerEnterHandler = containerEnterHandler;
+    this.containerLeaveHandler = containerLeaveHandler;
     this.container.addEventListener('mouseenter', containerEnterHandler);
     this.container.addEventListener('mouseleave', containerLeaveHandler);
   }
@@ -1661,14 +1606,20 @@ export class NativeVideoPlayer {
   }
 
   private showLoadingIndicator(): void {
-    if (this.loadingIndicator) {
-      this.loadingIndicator.style.display = 'flex';
-    }
+    this.setLoadingState(true);
   }
 
   private hideLoadingIndicator(): void {
+    this.setLoadingState(false);
+  }
+
+  private setLoadingState(isLoading: boolean): void {
+    this.isLoading = isLoading;
     if (this.loadingIndicator) {
-      this.loadingIndicator.style.display = 'none';
+      this.loadingIndicator.style.display = isLoading ? 'flex' : 'none';
+    }
+    if (isLoading) {
+      this.ensureLoadingVisuals();
     }
   }
 
@@ -2227,6 +2178,7 @@ export class NativeVideoPlayer {
     
     // Wait for canplay event (faster than canplaythrough on mobile)
     return new Promise<void>((resolve, reject) => {
+      let checkInterval: ReturnType<typeof setInterval> | undefined;
       const timeout = setTimeout(() => {
         cleanup();
         // On mobile, be more lenient - accept lower readyState
@@ -2259,6 +2211,10 @@ export class NativeVideoPlayer {
       
       const cleanup = () => {
         clearTimeout(timeout);
+        if (checkInterval) {
+          clearInterval(checkInterval);
+          checkInterval = undefined;
+        }
         if (this.isVideoElementValid()) {
           try {
             this.videoElement.removeEventListener('canplay', onCanPlay);
@@ -2276,36 +2232,77 @@ export class NativeVideoPlayer {
       
       // Also check if it becomes ready while we're waiting (faster polling on mobile)
       const pollInterval = isMobile ? 50 : 100;
-      const checkInterval = setInterval(() => {
+      checkInterval = setInterval(() => {
         if (!this.isVideoElementValid()) {
-          clearInterval(checkInterval);
           cleanup();
           resolve();
           return;
         }
         if (this.videoElement.readyState >= minReadyState) {
-          clearInterval(checkInterval);
           cleanup();
           resolve();
         }
       }, pollInterval);
-      
-      // Clean up interval on timeout
-      setTimeout(() => clearInterval(checkInterval), timeoutMs);
     });
   }
 
-  /**
-   * Attempts to seek to the desired start time if the video is ready
-   */
-  private trySeekToStartTime(): void {
+  private resetPlaybackMetrics(): void {
+    this.firstFrameTimeMs = undefined;
+    this.rebufferStartMs = undefined;
+    this.rebufferCount = 0;
+    this.totalRebufferMs = 0;
+  }
+
+  private shouldLogPlaybackMetrics(): boolean {
     try {
-      if (this.videoElement.readyState >= 1 && this.desiredStartTime !== undefined) {
-        this.videoElement.currentTime = this.desiredStartTime;
-        this.startTimeEnforced = true;
-      }
+      return globalThis.localStorage?.getItem('stashgifs-video-metrics') === '1';
     } catch {
-      // Some browsers require metadata; handled by events below
+      return false;
+    }
+  }
+
+  private recordFirstFrameIfNeeded(): void {
+    if (this.firstFrameTimeMs !== undefined || this.loadStartTime === undefined) {
+      return;
+    }
+    this.firstFrameTimeMs = Date.now();
+    const ttffMs = this.firstFrameTimeMs - this.loadStartTime;
+    if (this.shouldLogPlaybackMetrics()) {
+      console.debug('NativeVideoPlayer: First frame rendered', {
+        src: this.videoElement.src,
+        ttffMs,
+      });
+    }
+  }
+
+  private startRebuffering(reason: 'waiting' | 'stalled'): void {
+    if (this.rebufferStartMs !== undefined) {
+      return;
+    }
+    this.rebufferStartMs = Date.now();
+    this.rebufferCount += 1;
+    if (this.shouldLogPlaybackMetrics()) {
+      console.debug('NativeVideoPlayer: Rebuffer start', {
+        src: this.videoElement.src,
+        reason,
+        count: this.rebufferCount,
+      });
+    }
+  }
+
+  private endRebuffering(): void {
+    if (this.rebufferStartMs === undefined) {
+      return;
+    }
+    const now = Date.now();
+    this.totalRebufferMs += now - this.rebufferStartMs;
+    this.rebufferStartMs = undefined;
+    if (this.shouldLogPlaybackMetrics()) {
+      console.debug('NativeVideoPlayer: Rebuffer end', {
+        src: this.videoElement.src,
+        totalRebufferMs: this.totalRebufferMs,
+        rebufferCount: this.rebufferCount,
+      });
     }
   }
 
@@ -2341,6 +2338,10 @@ export class NativeVideoPlayer {
   private removeVideoEventListeners(): void {
     if (this.videoElement && this.isVideoElementValid()) {
       try {
+        if (this.errorHandler) {
+          this.videoElement.removeEventListener('error', this.errorHandler, true);
+          this.errorHandler = undefined;
+        }
         if (this.stalledHandler) {
           this.videoElement.removeEventListener('stalled', this.stalledHandler);
           this.stalledHandler = undefined;
@@ -2616,66 +2617,6 @@ export class NativeVideoPlayer {
   }
 
   /**
-   * Re-setup start time handling for reload
-   */
-  private setupReloadStartTimeHandling(): void {
-    if (this.originalStartTime === undefined) {
-      return;
-    }
-    
-    const hasStart = typeof this.originalStartTime === 'number' && Number.isFinite(this.originalStartTime);
-    this.desiredStartTime = hasStart ? Math.max(0, this.originalStartTime) : undefined;
-    this.startTimeEnforced = false;
-
-    if (hasStart && this.desiredStartTime !== undefined) {
-      if (this.videoElement.readyState >= 1) {
-        this.trySeekToStartTime();
-      }
-
-      const onMeta = () => {
-        this.trySeekToStartTime();
-      };
-      this.videoElement.addEventListener('loadedmetadata', onMeta, { once: true });
-      this.videoElement.addEventListener('canplay', onMeta, { once: true });
-    }
-  }
-
-  /**
-   * Re-setup end time handling for reload
-   */
-  private setupReloadEndTimeHandling(): void {
-    if (this.originalEndTime === undefined || this.originalEndTime <= 0.25) {
-      return;
-    }
-    
-    this.videoElement.addEventListener('timeupdate', () => {
-      if (this.videoElement.currentTime >= this.originalEndTime!) {
-        this.videoElement.currentTime = 0;
-        if (!this.videoElement.paused) {
-          // Intentionally ignore play() errors - browser will handle autoplay restrictions
-          this.videoElement.play().catch(() => {
-            // Browser handles autoplay restrictions silently
-          });
-        }
-      }
-    });
-  }
-
-  /**
-   * Re-resolve ready promise for reload
-   */
-  private setupReloadReadyHandlers(): void {
-    this.readyPromise = new Promise<void>((resolve) => { this.readyResolver = resolve; });
-    const handleReady = () => this.resolveReady();
-    this.videoElement.addEventListener('loadeddata', handleReady, { once: true });
-    this.videoElement.addEventListener('canplay', handleReady, { once: true });
-
-    if (this.videoElement.readyState >= 2) {
-      this.resolveReady();
-    }
-  }
-
-  /**
    * Reload the video after being unloaded
    */
   reload(): void {
@@ -2690,20 +2631,33 @@ export class NativeVideoPlayer {
     const playerWrapper = this.findOrCreatePlayerWrapper();
     this.ensureElementsInWrapper(playerWrapper);
 
-    // Recreate video element with original URL and settings
-    this.videoElement.removeAttribute('src');
-    this.videoElement.src = this.originalVideoUrl;
-    this.videoElement.load();
-    this.isUnloaded = false;
     this.errorHandled = false;
     this.hasRetriedDecode = false;
-    this.startTimeEnforced = false;
-    this.desiredStartTime = this.originalStartTime;
+    this.hasResolvedReady = false;
 
-    // Re-setup handlers
-    this.setupReloadStartTimeHandling();
-    this.setupReloadEndTimeHandling();
-    this.setupReloadReadyHandlers();
+    if (this.loadTimeoutId) {
+      clearTimeout(this.loadTimeoutId);
+      this.loadTimeoutId = undefined;
+    }
+    if (this.stalledTimeoutId) {
+      clearTimeout(this.stalledTimeoutId);
+      this.stalledTimeoutId = undefined;
+    }
+    if (this.waitingTimeoutId) {
+      clearTimeout(this.waitingTimeoutId);
+      this.waitingTimeoutId = undefined;
+    }
+
+    this.setupErrorHandlerAndTimeout();
+
+    // Recreate video element with original URL and settings
+    this.assignVideoSource(this.originalVideoUrl, true);
+    this.isUnloaded = false;
+    this.readyPromise = new Promise<void>((resolve) => { this.readyResolver = resolve; });
+    this.configureStartTime(this.originalStartTime);
+    if (this.videoElement.readyState >= 1) {
+      this.applyStartTimeFromMetadata();
+    }
   }
 
   /**
@@ -2729,6 +2683,15 @@ export class NativeVideoPlayer {
     if (this.scrollHandler) {
       window.removeEventListener('scroll', this.scrollHandler);
       this.scrollHandler = undefined;
+    }
+
+    if (this.containerEnterHandler) {
+      this.container.removeEventListener('mouseenter', this.containerEnterHandler);
+      this.containerEnterHandler = undefined;
+    }
+    if (this.containerLeaveHandler) {
+      this.container.removeEventListener('mouseleave', this.containerLeaveHandler);
+      this.containerLeaveHandler = undefined;
     }
 
     // Clear scroll timeout
