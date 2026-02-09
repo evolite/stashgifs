@@ -8,7 +8,7 @@ import { NativeVideoPlayer } from './NativeVideoPlayer.js';
 import { FavoritesManager } from './FavoritesManager.js';
 import { StashAPI } from './StashAPI.js';
 import { VisibilityManager } from './VisibilityManager.js';
-import { calculateAspectRatio, getAspectRatioClass, isValidMediaUrl, showToast, toAbsoluteUrl, isMobileDevice, THEME } from './utils.js';
+import { calculateAspectRatio, getAspectRatioClass, normalizeMediaUrl, showToast, toAbsoluteUrl, isMobileDevice, THEME } from './utils.js';
 import { posterPreloader } from './PosterPreloader.js';
 import { HQ_SVG_OUTLINE, HQ_SVG_FILLED, EXTERNAL_LINK_SVG, MARKER_SVG, VOLUME_MUTED_SVG, VOLUME_UNMUTED_SVG } from './icons.js';
 import { BasePost } from './BasePost.js';
@@ -66,6 +66,8 @@ export class VideoPost extends BasePost {
   private loadErrorHandler?: () => void;
   private readonly ratingSystemConfig?: { type?: string; starPrecision?: string } | null;
   private ratingControl?: RatingControl;
+  private posterLayer?: HTMLElement;
+  private hasRenderedVideo: boolean = false;
   
   
   // Cached DOM elements
@@ -171,6 +173,26 @@ export class VideoPost extends BasePost {
     container.classList.add(aspectRatioClass);
 
 
+    // Poster layer (preview) to prevent black flashes
+    const posterUrl = this.isReelMode ? this.getPreviewPosterUrl() : undefined;
+    if (posterUrl) {
+      const posterLayer = document.createElement('div');
+      posterLayer.className = 'video-post__poster';
+      posterLayer.style.position = 'absolute';
+      posterLayer.style.inset = '0';
+      posterLayer.style.backgroundImage = `url("${posterUrl}")`;
+      posterLayer.style.backgroundColor = THEME.colors.backgroundSecondary;
+      posterLayer.style.backgroundSize = 'cover';
+      posterLayer.style.backgroundPosition = 'center';
+      posterLayer.style.backgroundRepeat = 'no-repeat';
+      posterLayer.style.opacity = '1';
+      posterLayer.style.transition = 'opacity 220ms ease';
+      posterLayer.style.zIndex = '2';
+      posterLayer.style.pointerEvents = 'none';
+      container.appendChild(posterLayer);
+      this.posterLayer = posterLayer;
+    }
+
     // Loading indicator for video
     const loading = document.createElement('div');
     loading.className = 'video-post__loading';
@@ -178,6 +200,7 @@ export class VideoPost extends BasePost {
     spinner.className = 'spinner';
     loading.appendChild(spinner);
     loading.style.display = this.isLoaded ? 'none' : 'flex';
+    loading.style.zIndex = '3';
     container.appendChild(loading);
     this.videoLoadingIndicator = loading;
 
@@ -326,6 +349,37 @@ export class VideoPost extends BasePost {
     const p = m?.scene?.paths?.screenshot;
     if (!p) return undefined;
     return this.buildUrlWithCacheBusting(p);
+  }
+
+  private getPreviewPosterUrl(): string | undefined {
+    const m = this.data.marker;
+    const markerId = m?.id;
+    if (markerId && typeof markerId === 'string' && markerId.startsWith('image-')) {
+      return this.getImageBasedMarkerPoster(m);
+    }
+    if (markerId && typeof markerId === 'string' && (markerId.startsWith('synthetic-') || markerId.startsWith('shortform-'))) {
+      return this.getSyntheticMarkerPoster(m);
+    }
+    const preview = m?.preview;
+    if (preview) {
+      return this.buildUrlWithCacheBusting(preview);
+    }
+    const scenePreview = m?.scene?.paths?.preview;
+    if (scenePreview) {
+      return this.buildUrlWithCacheBusting(scenePreview);
+    }
+    const sceneScreenshot = m?.scene?.paths?.screenshot;
+    if (sceneScreenshot) {
+      return this.buildUrlWithCacheBusting(sceneScreenshot);
+    }
+    return undefined;
+  }
+
+  private getPreferredPosterUrl(): string | undefined {
+    if (this.isReelMode) {
+      return this.getPreviewPosterUrl();
+    }
+    return this.getPosterUrl();
   }
 
   /**
@@ -1034,6 +1088,7 @@ export class VideoPost extends BasePost {
    */
   private async createSceneVideoPlayer(playerContainer: HTMLElement, sceneVideoUrl: string): Promise<void> {
     try {
+      this.hasRenderedVideo = false;
       const startTime = this.data.startTime ?? this.data.marker.seconds;
       
       this.player = new NativeVideoPlayer(playerContainer, sceneVideoUrl, {
@@ -1043,7 +1098,7 @@ export class VideoPost extends BasePost {
         endTime: this.data.endTime ?? this.data.marker.end_seconds,
         aggressivePreload: false, // HD videos use metadata preload
         isHDMode: true, // HD mode
-        posterUrl: this.getPosterUrl(),
+        posterUrl: this.getPreferredPosterUrl(),
         showLoadingIndicator: false,
         // onMuteToggle removed - using overlay button instead
       });
@@ -1108,7 +1163,8 @@ export class VideoPost extends BasePost {
       sceneVideoUrl = this.api.getVideoUrl(this.data.marker.scene);
     }
     
-    if (!sceneVideoUrl || !isValidMediaUrl(sceneVideoUrl)) {
+    const normalizedSceneVideoUrl = normalizeMediaUrl(sceneVideoUrl);
+    if (!normalizedSceneVideoUrl) {
       throw new Error('Scene video URL not available');
     }
 
@@ -1121,7 +1177,7 @@ export class VideoPost extends BasePost {
     const playerState = this.player?.getState();
     const wasPlaying = playerState?.isPlaying ?? false;
 
-    return { sceneVideoUrl, playerContainer, wasPlaying };
+    return { sceneVideoUrl: normalizedSceneVideoUrl, playerContainer, wasPlaying };
   }
 
   /**
@@ -1189,7 +1245,8 @@ export class VideoPost extends BasePost {
     }
 
     // Validate URL early before any other checks
-    if (!videoUrl || !isValidMediaUrl(videoUrl)) {
+    const normalizedVideoUrl = normalizeMediaUrl(videoUrl);
+    if (!normalizedVideoUrl) {
       console.warn('VideoPost: Invalid media URL, skipping player creation', { 
         videoUrl,
         markerId: this.data.marker.id,
@@ -1205,6 +1262,7 @@ export class VideoPost extends BasePost {
     }
 
     try {
+      this.hasRenderedVideo = false;
       // For non-HD videos, don't pass startTime (intentionally ignored like old version)
       // This allows browser to show first frame naturally
       // Only pass startTime for HD videos (when in HQ mode or explicitly upgrading)
@@ -1217,12 +1275,12 @@ export class VideoPost extends BasePost {
       // Marker previews can have audio, so respect global mute state
       const shouldBeMuted = this.getGlobalMuteState ? this.getGlobalMuteState() : true;
       
-      this.player = new NativeVideoPlayer(playerContainer, videoUrl, {
+      this.player = new NativeVideoPlayer(playerContainer, normalizedVideoUrl, {
         muted: shouldBeMuted,
         autoplay: false,
         startTime: finalStartTime,
         endTime: endTime ?? this.data.endTime ?? this.data.marker.end_seconds,
-        posterUrl: this.getPosterUrl(),
+        posterUrl: this.getPreferredPosterUrl(),
         showLoadingIndicator: false,
       });
 
@@ -1264,14 +1322,20 @@ export class VideoPost extends BasePost {
    * Return true if player has been instantiated
    */
   isPlayerLoaded(): boolean {
-    return this.isLoaded && !!this.player;
+    if (!this.isLoaded || !this.player) {
+      return false;
+    }
+    if ('getIsUnloaded' in this.player && this.player.getIsUnloaded()) {
+      return false;
+    }
+    return true;
   }
 
   /**
    * Return true if there is a valid source to preload
    */
   hasVideoSource(): boolean {
-    return !!this.data.videoUrl && isValidMediaUrl(this.data.videoUrl);
+    return !!normalizeMediaUrl(this.data.videoUrl);
   }
 
   /**
@@ -1283,10 +1347,23 @@ export class VideoPost extends BasePost {
       return undefined;
     }
 
+    if (this.player && this.player.getIsUnloaded()) {
+      this.player.reload();
+      this.isLoaded = true;
+      this.hasRenderedVideo = false;
+      this.showPosterLayer();
+      const container = this.playerContainer || this.container.querySelector('.video-post__player') as HTMLElement | null;
+      if (container) {
+        this.hideMediaWhenReady(this.player, container);
+      }
+      return this.player;
+    }
+
     // Show loading indicator when video starts loading
     if (this.videoLoadingIndicator && !this.isLoaded) {
       this.videoLoadingIndicator.style.display = 'flex';
     }
+    this.showPosterLayer();
 
     const player = this.loadPlayer(
       this.data.videoUrl!,
@@ -1358,6 +1435,7 @@ export class VideoPost extends BasePost {
           this.videoLoadingIndicator = undefined;
         }
       }
+      this.hidePosterLayer();
     };
 
     const scheduleTimeout = globalThis.window?.setTimeout.bind(globalThis.window) ?? setTimeout;
@@ -1383,6 +1461,7 @@ export class VideoPost extends BasePost {
       this.clearLoadErrorCheckTimeout();
       const performHide = () => hideVisuals();
       requestFrame(() => requestFrame(() => performHide()));
+      this.hasRenderedVideo = true;
     };
 
     const onLoadedData = () => reveal();
@@ -1411,6 +1490,23 @@ export class VideoPost extends BasePost {
           reveal();
         }
       });
+  }
+
+  private showPosterLayer(): void {
+    if (!this.posterLayer) {
+      return;
+    }
+    if (this.hasRenderedVideo) {
+      return;
+    }
+    this.posterLayer.style.opacity = '1';
+  }
+
+  private hidePosterLayer(): void {
+    if (!this.posterLayer) {
+      return;
+    }
+    this.posterLayer.style.opacity = '0';
   }
 
   private attachLoadErrorHandler(): void {

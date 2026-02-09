@@ -14,7 +14,7 @@ import { VisibilityManager } from './VisibilityManager.js';
 import { FavoritesManager } from './FavoritesManager.js';
 import { SettingsPage } from './SettingsPage.js';
 import { AudioManager, AudioPriority } from './AudioManager.js';
-import { debounce, isValidMediaUrl, normalizeMediaUrl, detectDeviceCapabilities, DeviceCapabilities, isStandaloneNavigator, isMobileDevice, getNetworkInfo, isSlowNetwork, isCellularConnection, detectVideoFromVisualFiles, isMp4File, getImageUrlForDisplay, THEME, THEME_DEFAULTS } from './utils.js';
+import { debounce, normalizeMediaUrl, detectDeviceCapabilities, DeviceCapabilities, isStandaloneNavigator, isMobileDevice, getNetworkInfo, isSlowNetwork, isCellularConnection, detectVideoFromVisualFiles, isMp4File, getImageUrlForDisplay, THEME, THEME_DEFAULTS } from './utils.js';
 import { posterPreloader } from './PosterPreloader.js';
 import { Image as GraphQLImage } from './graphql/types.js';
 import { HQ_SVG_OUTLINE, HQ_SVG_FILLED, RANDOM_SVG, SETTINGS_SVG, SHUFFLE_CHECK_SVG, STASHGIFS_LOGO_SVG } from './icons.js';
@@ -122,6 +122,8 @@ export class FeedContainer {
   private backgroundPreloadHandle?: number;
   private backgroundPreloadPriorityQueue: string[] = [];
   private readonly activePreloadPosts: Set<string> = new Set();
+  private readonly reelNextPreloadIds: Set<string> = new Set();
+  private reelPlaybackStarted: boolean = false;
   private lastScrollTop: number = 0;
   private lastScrollTime: number = 0;
   private scrollVelocity: number = 0;
@@ -137,6 +139,8 @@ export class FeedContainer {
   private savedFiltersLoaded: boolean = false;
   private activeSearchAbortController?: AbortController;
   private activeLoadVideosAbortController?: AbortController;
+  private nextPagePosterPrefetchAbortController?: AbortController;
+  private lastNextPagePosterPrefetchKey?: string;
   private skeletonLoaders: HTMLElement[] = [];
   private useHDMode: boolean = false;
   private globalMuteState: boolean = false; // Global mute state - all videos muted when true
@@ -159,6 +163,7 @@ export class FeedContainer {
   private cardSnapScrollHandler?: () => void;
   private cardSnapScrollTimeout?: ReturnType<typeof setTimeout>;
   private mobileAutoplayUnlockHandler?: (event: Event) => void;
+  private autoplayUnlockHandler?: (event: Event) => void;
   private readonly mobileAutoplayUnlockEvents: ReadonlyArray<string> = [
     'touchstart',
     'touchend',
@@ -207,6 +212,7 @@ export class FeedContainer {
     
     // Unlock autoplay on mobile after first user interaction
     this.unlockMobileAutoplay();
+    this.setupAutoplayUnlockHandlers();
 
     // Defer suggestion preload until after initial videos load to avoid competing for bandwidth
     // Will be triggered lazily when user opens filter dropdown or after initial load completes
@@ -418,8 +424,38 @@ export class FeedContainer {
     return { top: 0, left: 0, width: globalThis.innerWidth, height: globalThis.innerHeight };
   }
 
+  private isScrollContainerActive(): boolean {
+    if (!this.scrollContainer) {
+      return false;
+    }
+    return this.scrollContainer.scrollHeight > this.scrollContainer.clientHeight;
+  }
+
   private getObserverRoot(): Element | null {
-    return this.isReelModeEnabled() && this.scrollContainer ? this.scrollContainer : null;
+    if (this.scrollContainer && (this.isReelModeEnabled() || this.isScrollContainerActive())) {
+      return this.scrollContainer;
+    }
+    return null;
+  }
+
+  private parseRootMarginToPx(rootMargin: string): number {
+    const match = rootMargin.match(/-?\d+/);
+    if (!match) {
+      return 0;
+    }
+    const value = Number(match[0]);
+    if (!Number.isFinite(value)) {
+      return 0;
+    }
+    return Math.max(0, value);
+  }
+
+  private isElementWithinLazyLoadRange(element: HTMLElement, marginPx: number): boolean {
+    const rect = element.getBoundingClientRect();
+    const viewport = this.getViewportRect();
+    const elementTop = rect.top - viewport.top;
+    const elementBottom = rect.bottom - viewport.top;
+    return elementBottom >= -marginPx && elementTop <= viewport.height + marginPx;
   }
 
   private getElementTop(rect: DOMRect): number {
@@ -454,6 +490,15 @@ export class FeedContainer {
     this.setupScrollHandler();
     this.setupCardSnapping();
     this.resetScrollObserver();
+    this.refreshAutoplayAfterLayout();
+    if (this.settings.backgroundPreloadEnabled) {
+      this.startBackgroundPreloading();
+    }
+    if (isReelMode) {
+      this.warmStartPreloads();
+      this.ensureReelInitialCardLoaded();
+    }
+    this.ensureVisiblePostsLoaded();
   }
 
   private refreshAutoplayAfterLayout(): void {
@@ -1004,6 +1049,7 @@ export class FeedContainer {
       autoPlay: !this.useHDMode || this.settings.reelMode, // Enable autoplay in non-HD mode or reel mode
       debug: this.shouldEnableVisibilityDebug(),
       onHoverLoadRequest: (postId: string) => this.triggerVideoLoadOnHover(postId),
+      onPlaybackStarted: (postId: string) => this.handleReelPlaybackStarted(postId),
       isReelMode: this.settings.reelMode, // Pass reel mode state
       root: this.settings.reelMode ? this.scrollContainer : null,
     });
@@ -1083,6 +1129,35 @@ export class FeedContainer {
     for (const event of this.mobileAutoplayUnlockEvents) {
       document.addEventListener(event, unlock, { once: true, passive: true });
     }
+  }
+
+  private setupAutoplayUnlockHandlers(): void {
+    if (this.autoplayUnlockHandler) {
+      return;
+    }
+
+    const handler = () => {
+      if (!this.visibilityManager?.isAutoplayBlocked?.()) {
+        return;
+      }
+      this.visibilityManager.clearAutoplayBlocked();
+      this.visibilityManager.retryVisibleVideos();
+    };
+
+    this.autoplayUnlockHandler = handler;
+    for (const event of this.mobileAutoplayUnlockEvents) {
+      document.addEventListener(event, handler, { passive: true });
+    }
+  }
+
+  private removeAutoplayUnlockHandlers(): void {
+    if (!this.autoplayUnlockHandler) {
+      return;
+    }
+    for (const event of this.mobileAutoplayUnlockEvents) {
+      document.removeEventListener(event, this.autoplayUnlockHandler);
+    }
+    this.autoplayUnlockHandler = undefined;
   }
 
   private removeMobileAutoplayUnlockListeners(): void {
@@ -3895,7 +3970,7 @@ export class FeedContainer {
   private tryGetValidMediaUrl(path: string | undefined, baseUrl: string): string | undefined {
     if (!path) return undefined;
     const url = this.buildUrlFromPath(path, baseUrl);
-    return isValidMediaUrl(url) ? url : undefined;
+    return normalizeMediaUrl(url) ?? undefined;
   }
 
   /**
@@ -4064,6 +4139,9 @@ export class FeedContainer {
     
     this.loadObservers.set(image.id, loadObserver);
     loadObserver.observe(postContainer);
+    this.scheduleLazyLoadFallback(postContainer, rootMargin, () => {
+      this.loadImageVideoPost(post, image, signal);
+    }, signal);
   }
 
   /**
@@ -4076,24 +4154,7 @@ export class FeedContainer {
     loadObserver: IntersectionObserver,
     signal?: AbortSignal
   ): void {
-    if (signal?.aborted) {
-      loadObserver.disconnect();
-      this.loadObservers.delete(image.id);
-      return;
-    }
-    
-    const player = post.preload();
-    if (isNativeVideoPlayer(player)) {
-      // Register video players with visibility manager
-      this.visibilityManager.registerPlayer(image.id, player);
-    } else {
-      // Player creation failed - hide the post to avoid showing black screen
-      console.warn('FeedContainer: Player not created, hiding post', { imageId: image.id });
-      post.hidePost();
-    }
-    
-    loadObserver.disconnect();
-    this.loadObservers.delete(image.id);
+    this.loadImageVideoPost(post, image, signal, loadObserver);
   }
 
   /**
@@ -4107,6 +4168,7 @@ export class FeedContainer {
       if (this.postsContainer) {
         this.postsContainer.innerHTML = '';
       }
+      this.reelPlaybackStarted = false;
       this.markers = [];
       this.images = [];
       this.showSkeletonLoaders();
@@ -4166,11 +4228,60 @@ export class FeedContainer {
    * Prefetch poster images for markers
    */
   private prefetchPosters(markers: SceneMarker[], append: boolean, currentFilters: FilterOptions): void {
+    if (this.isReelModeEnabled() && !this.reelPlaybackStarted) {
+      return;
+    }
     try {
-      const prefetchCount = currentFilters.limit || FeedContainer.CONTENT_LOAD_LIMIT;
+      const baseCount = currentFilters.limit || FeedContainer.CONTENT_LOAD_LIMIT;
+      const prefetchCount = this.isReelModeEnabled() ? Math.min(2, baseCount) : baseCount;
       posterPreloader.prefetchForMarkers(markers, prefetchCount);
     } catch (e) {
       console.warn('Poster prefetch failed', e);
+    }
+  }
+
+  private async prefetchNextPagePosters(currentFilters: FilterOptions, shouldLoadMarkers: boolean): Promise<void> {
+    if (this.isReelModeEnabled() || !shouldLoadMarkers) {
+      return;
+    }
+    if (!this.hasMore) {
+      return;
+    }
+
+    const limit = this.markerPageSize || currentFilters.limit || FeedContainer.CONTENT_LOAD_LIMIT;
+    if (limit <= 0) {
+      return;
+    }
+
+    const nextOffset = this.markersLoadedCount;
+    const sortSeed = currentFilters.sortSeed ?? '';
+    const key = `${nextOffset}:${limit}:${sortSeed}`;
+    if (this.lastNextPagePosterPrefetchKey === key) {
+      return;
+    }
+
+    this.lastNextPagePosterPrefetchKey = key;
+    this.cancelNextPagePosterPrefetch();
+
+    const controller = new AbortController();
+    this.nextPagePosterPrefetchAbortController = controller;
+
+    try {
+      const result = await this.fetchMarkersForLoad(currentFilters, limit, nextOffset, controller.signal);
+      if (controller.signal.aborted) {
+        return;
+      }
+      if (result.markers.length > 0) {
+        posterPreloader.prefetchForMarkers(result.markers, limit);
+      }
+    } catch (e) {
+      if (!controller.signal.aborted) {
+        console.warn('Next page poster prefetch failed', e);
+      }
+    } finally {
+      if (this.nextPagePosterPrefetchAbortController === controller) {
+        this.nextPagePosterPrefetchAbortController = undefined;
+      }
     }
   }
 
@@ -4206,44 +4317,12 @@ export class FeedContainer {
     if (this.settings.backgroundPreloadEnabled && this.posts.size > 0) {
       this.startBackgroundPreloading();
     }
+
+    this.ensureVisiblePostsLoaded();
   }
 
   private warmStartPreloads(): void {
-    if (this.maxSimultaneousPreloads <= 0 || this.posts.size === 0) {
-      return;
-    }
-
-    const isReelMode = this.isReelModeEnabled();
-    const targetCount = isReelMode ? 3 : (this.isMobileDevice ? 1 : 2);
-    const availableSlots = Math.max(0, this.maxSimultaneousPreloads - this.currentlyPreloadingCount);
-    const preloadCount = Math.min(targetCount, availableSlots, this.postOrder.length);
-    if (preloadCount <= 0) {
-      return;
-    }
-
-    let preloaded = 0;
-    for (const postId of this.postOrder) {
-      if (preloaded >= preloadCount) {
-        break;
-      }
-      if (this.activePreloadPosts.has(postId)) {
-        continue;
-      }
-      const post = this.posts.get(postId);
-      if (!post || post.isPlayerLoaded() || !post.hasVideoSource()) {
-        continue;
-      }
-      try {
-        const player = post.preload();
-        if (isNativeVideoPlayer(player)) {
-          this.visibilityManager.registerPlayer(postId, player);
-          this.trackBackgroundPreload(postId, player);
-          preloaded += 1;
-        }
-      } catch (error) {
-        console.warn('Warm preload failed for post', postId, error);
-      }
-    }
+    return;
   }
 
   /**
@@ -4765,6 +4844,8 @@ export class FeedContainer {
         signal,
         page
       );
+
+      void this.prefetchNextPagePosters(currentFilters, shouldLoadMarkers);
     } catch (error: unknown) {
       this.handleLoadError(error, append);
     } finally {
@@ -5489,8 +5570,17 @@ export class FeedContainer {
       this.activeSearchAbortController.abort();
       this.activeSearchAbortController = undefined;
     }
+    this.cancelNextPagePosterPrefetch();
     // Also stop any loading videos
     this.stopLoadingVideos();
+  }
+
+  private cancelNextPagePosterPrefetch(): void {
+    if (this.nextPagePosterPrefetchAbortController) {
+      this.nextPagePosterPrefetchAbortController.abort();
+      this.nextPagePosterPrefetchAbortController = undefined;
+    }
+    this.lastNextPagePosterPrefetchKey = undefined;
   }
 
   /**
@@ -5556,7 +5646,8 @@ export class FeedContainer {
       ? this.api.getVideoUrl(marker.scene)
       : this.api.getMarkerVideoUrl(marker);
     
-    if (!isValidMediaUrl(selectedUrl)) {
+    const normalizedUrl = normalizeMediaUrl(selectedUrl);
+    if (!normalizedUrl) {
       console.warn('FeedContainer: Skipping post creation - no valid video URL', {
         markerId: marker.id,
         markerTitle: marker.title,
@@ -5565,7 +5656,7 @@ export class FeedContainer {
       return undefined;
     }
     
-    return selectedUrl;
+    return normalizedUrl;
   }
 
   /**
@@ -5717,6 +5808,9 @@ export class FeedContainer {
     
     this.loadObservers.set(marker.id, loadObserver);
     loadObserver.observe(postContainer);
+    this.scheduleLazyLoadFallback(postContainer, rootMargin, () => {
+      this.loadVideoPost(post, marker, signal);
+    }, signal);
   }
 
   /**
@@ -5729,24 +5823,110 @@ export class FeedContainer {
     loadObserver: IntersectionObserver,
     signal?: AbortSignal
   ): void {
-    if (signal?.aborted) {
-      loadObserver.disconnect();
+    if (this.isReelModeEnabled()) {
+      const reelWindow = this.getReelActiveWindowPostIds();
+      if (!reelWindow.has(marker.id)) {
+        return;
+      }
+    }
+    this.loadVideoPost(post, marker, signal, loadObserver);
+  }
+
+  private loadImageVideoPost(
+    post: ImageVideoPost,
+    image: Image,
+    signal?: AbortSignal,
+    loadObserver?: IntersectionObserver
+  ): void {
+    const container = post.getContainer();
+    if (this.isReelModeEnabled()) {
+      const reelWindow = this.getReelActiveWindowPostIds();
+      if (!reelWindow.has(image.id)) {
+        return;
+      }
+    }
+    if (signal?.aborted && !container.isConnected) {
+      loadObserver?.disconnect();
+      this.loadObservers.delete(image.id);
+      return;
+    }
+
+    if (post.isPlayerLoaded()) {
+      loadObserver?.disconnect();
+      this.loadObservers.delete(image.id);
+      return;
+    }
+
+    const player = post.preload();
+    if (isNativeVideoPlayer(player)) {
+      this.visibilityManager.registerPlayer(image.id, player);
+    } else {
+      console.warn('FeedContainer: Player not created, hiding post', { imageId: image.id });
+      post.hidePost();
+    }
+
+    loadObserver?.disconnect();
+    this.loadObservers.delete(image.id);
+  }
+
+  private loadVideoPost(
+    post: VideoPost,
+    marker: SceneMarker,
+    signal?: AbortSignal,
+    loadObserver?: IntersectionObserver
+  ): void {
+    const container = post.getContainer();
+    if (this.isReelModeEnabled()) {
+      const reelWindow = this.getReelActiveWindowPostIds();
+      if (!reelWindow.has(marker.id)) {
+        return;
+      }
+    }
+    if (signal?.aborted && !container.isConnected) {
+      loadObserver?.disconnect();
       this.loadObservers.delete(marker.id);
       return;
     }
-    
+
+    if (post.isPlayerLoaded()) {
+      loadObserver?.disconnect();
+      this.loadObservers.delete(marker.id);
+      return;
+    }
+
     const player = post.preload();
     if (isNativeVideoPlayer(player)) {
-      // Only register video players with visibility manager
       this.visibilityManager.registerPlayer(marker.id, player);
     } else {
-      // Player creation failed - hide the post to avoid showing black screen
       console.warn('FeedContainer: Player not created, hiding post', { markerId: marker.id });
       post.hidePost();
     }
-    
-    loadObserver.disconnect();
+
+    loadObserver?.disconnect();
     this.loadObservers.delete(marker.id);
+  }
+
+  private scheduleLazyLoadFallback(
+    postContainer: HTMLElement,
+    rootMargin: string,
+    loadHandler: () => void,
+    signal?: AbortSignal
+  ): void {
+    const marginPx = this.parseRootMarginToPx(rootMargin);
+    const check = () => {
+      if (signal?.aborted && !postContainer.isConnected) {
+        return;
+      }
+      if (!postContainer.isConnected) {
+        return;
+      }
+      if (this.isElementWithinLazyLoadRange(postContainer, marginPx)) {
+        loadHandler();
+      }
+    };
+
+    const requestFrame = globalThis.requestAnimationFrame?.bind(globalThis) ?? ((cb: FrameRequestCallback) => setTimeout(cb, 16));
+    requestFrame(() => requestFrame(check));
   }
 
 
@@ -5757,6 +5937,7 @@ export class FeedContainer {
     // Stop background preloading
     this.stopBackgroundPreloading();
     posterPreloader.cancelInflight();
+    this.cancelNextPagePosterPrefetch();
     
     for (const [postId, post] of this.posts.entries()) {
       if (this.visibilityManager) {
@@ -5767,6 +5948,8 @@ export class FeedContainer {
     this.posts.clear();
     this.postOrder = [];
     this.activePreloadPosts.clear();
+    this.reelNextPreloadIds.clear();
+    this.reelPlaybackStarted = false;
     this.backgroundPreloadPriorityQueue = [];
     this.currentlyPreloadingCount = 0;
     // Don't clear posts container - let browser handle cleanup naturally
@@ -5847,10 +6030,65 @@ export class FeedContainer {
     }
   }
 
+  private handleReelPlaybackStarted(postId: string): void {
+    if (!this.isReelModeEnabled()) {
+      return;
+    }
+    this.reelPlaybackStarted = true;
+    this.preloadNextReelPosts(postId);
+  }
+
+  private preloadNextReelPosts(currentPostId: string): void {
+    if (!this.isReelModeEnabled()) {
+      return;
+    }
+    const currentIndex = this.postOrder.indexOf(currentPostId);
+    if (currentIndex === -1) {
+      return;
+    }
+
+    const nextIndexes = [currentIndex + 1, currentIndex + 2];
+    for (const index of nextIndexes) {
+      if (index < 0 || index >= this.postOrder.length) {
+        continue;
+      }
+      const nextId = this.postOrder[index];
+      if (this.reelNextPreloadIds.has(nextId)) {
+        continue;
+      }
+      const post = this.posts.get(nextId);
+      if (!post || !(post instanceof VideoPost || post instanceof ImageVideoPost)) {
+        this.reelNextPreloadIds.add(nextId);
+        continue;
+      }
+      if (!post.hasVideoSource()) {
+        this.reelNextPreloadIds.add(nextId);
+        continue;
+      }
+      if (post.isPlayerLoaded()) {
+        this.reelNextPreloadIds.add(nextId);
+        continue;
+      }
+
+      try {
+        const player = post.preload();
+        if (isNativeVideoPlayer(player)) {
+          this.visibilityManager.registerPlayer(nextId, player);
+        }
+        this.reelNextPreloadIds.add(nextId);
+      } catch (error) {
+        console.warn('FeedContainer: Reel next preload failed', { postId: nextId, error });
+      }
+    }
+  }
+
   /**
    * Autoplay the first N posts by force-loading and playing them
    */
   private async autoplayInitial(count: number): Promise<void> {
+    if (!this.isReelModeEnabled()) {
+      return;
+    }
     const initial = this.markers.slice(0, Math.min(count, this.markers.length));
     const players = this.preloadInitialPlayers(initial);
     await new Promise((r) => setTimeout(r, 100));
@@ -5863,6 +6101,9 @@ export class FeedContainer {
   }
 
   private preloadInitialPlayers(markers: SceneMarker[]): Array<{ markerId: string; player: NativeVideoPlayer }> {
+    if (!this.isReelModeEnabled()) {
+      return [];
+    }
     const players: Array<{ markerId: string; player: NativeVideoPlayer }> = [];
     for (const marker of markers) {
       const post = this.posts.get(marker.id);
@@ -5879,8 +6120,8 @@ export class FeedContainer {
     const maxAttempts = 5;
     const attemptPlay = async (attempt: number): Promise<void> => {
       try {
-        await player.waitUntilCanPlay(5000);
-        await new Promise((r) => setTimeout(r, 100));
+        await player.waitForReady(1500);
+        await new Promise((r) => setTimeout(r, 50));
         await player.play();
       } catch (e) {
         console.warn(`Autoplay initial attempt ${attempt} failed for marker ${markerId}`, e);
@@ -6033,7 +6274,7 @@ export class FeedContainer {
   /**
    * Track an active background preload and decrement counters when ready or timed out
    */
-  private trackBackgroundPreload(postId: string, player: NativeVideoPlayer): void {
+  private trackBackgroundPreload(postId: string): void {
     if (this.activePreloadPosts.has(postId)) {
       return;
     }
@@ -6051,12 +6292,9 @@ export class FeedContainer {
     };
     const waitForReady = async (): Promise<void> => {
       try {
-        await Promise.race([
-          player.waitUntilCanPlay(3000).catch(() => undefined),
-          new Promise<void>((resolve) => {
-            scheduleTimeout(() => resolve(), readinessTimeout);
-          }),
-        ]);
+        await new Promise<void>((resolve) => {
+          scheduleTimeout(() => resolve(), readinessTimeout);
+        });
       } catch {
         // Ignore readiness errors – cleanup happens in finally
       } finally {
@@ -6161,7 +6399,7 @@ export class FeedContainer {
       if (isNativeVideoPlayer(player)) {
         // Only register video players with visibility manager
         this.visibilityManager.registerPlayer(postId, player);
-        this.trackBackgroundPreload(postId, player);
+        this.trackBackgroundPreload(postId);
       }
     } catch (error) {
       console.warn('Background preload failed for post', postId, error);
@@ -6181,29 +6419,7 @@ export class FeedContainer {
    * Start background preloading system
    */
   private startBackgroundPreloading(): void {
-    // Check if enabled
-    if (!this.settings.backgroundPreloadEnabled) {
-      return;
-    }
-
-    // Don't start if already active
-    if (this.backgroundPreloadActive) {
-      return;
-    }
-
-    // Don't start if no posts yet
-    if (this.posts.size === 0) {
-      return;
-    }
-
-    this.backgroundPreloadActive = true;
-    this.backgroundPreloadPriorityQueue = this.calculatePreloadPriority();
-
-    // Start preloading after a short delay
-    const delay = this.getPreloadDelay();
-    this.backgroundPreloadHandle = globalThis.setTimeout(() => {
-      this.preloadNextVideo();
-    }, delay) as unknown as number;
+    return;
   }
 
   /**
@@ -6424,6 +6640,46 @@ export class FeedContainer {
     }
   }
 
+  private ensureVisiblePostsLoaded(maxToLoad: number = 1): void {
+    if (this.posts.size === 0) {
+      return;
+    }
+
+    const viewport = this.getViewportRect();
+    let loaded = 0;
+
+    for (const postId of this.postOrder) {
+      if (loaded >= maxToLoad) {
+        break;
+      }
+      if (this.activePreloadPosts.has(postId)) {
+        continue;
+      }
+
+      const post = this.posts.get(postId);
+      if (!post || post.isPlayerLoaded() || !post.hasVideoSource()) {
+        continue;
+      }
+
+      const container = post.getContainer();
+      const rect = container.getBoundingClientRect();
+      const isVisible = rect.bottom > viewport.top && rect.top < viewport.top + viewport.height;
+      if (!isVisible) {
+        continue;
+      }
+
+      try {
+        const player = post.preload();
+        if (isNativeVideoPlayer(player)) {
+          this.visibilityManager.registerPlayer(postId, player);
+          loaded += 1;
+        }
+      } catch (error) {
+        console.warn('Visible preload failed for post', postId, error);
+      }
+    }
+  }
+
   /**
    * Aggressively unload videos that are not visible to free RAM
    * Unloads videos even if posts are still in memory
@@ -6477,6 +6733,34 @@ export class FeedContainer {
     return elementBottom > viewportTop - margin && elementTop < viewportBottom + margin;
   }
 
+  private getReelActiveWindowPostIds(): Set<string> {
+    const ids = new Set<string>();
+    if (!this.isReelModeEnabled()) {
+      return ids;
+    }
+    const closestCard = this.findCardClosestToCenter();
+    if (!closestCard) {
+      return ids;
+    }
+    const centerPostId = this.getPostIdFromCard(closestCard);
+    if (!centerPostId) {
+      return ids;
+    }
+    const centerIndex = this.postOrder.indexOf(centerPostId);
+    if (centerIndex === -1) {
+      ids.add(centerPostId);
+      return ids;
+    }
+    const offsets = [-2, -1, 0, 1, 2];
+    for (const offset of offsets) {
+      const index = centerIndex + offset;
+      if (index >= 0 && index < this.postOrder.length) {
+        ids.add(this.postOrder[index]);
+      }
+    }
+    return ids;
+  }
+
   /**
    * Unload videos that are far from the viewport
    */
@@ -6485,7 +6769,11 @@ export class FeedContainer {
     viewportBottom: number,
     unloadDistance: number
   ): void {
-    for (const [, post] of this.posts.entries()) {
+    const reelWindow = this.isReelModeEnabled() ? this.getReelActiveWindowPostIds() : null;
+    for (const [postId, post] of this.posts.entries()) {
+      if (reelWindow?.has(postId)) {
+        continue;
+      }
       if (this.isPostFarFromViewport(post, viewportTop, viewportBottom, unloadDistance)) {
         this.unloadPostVideo(post);
       }
@@ -6524,12 +6812,14 @@ export class FeedContainer {
     if (loadedVideoCount <= maxLoadedVideos) {
       return;
     }
-    
-    for (const [, post] of this.posts.entries()) {
+    const reelWindow = this.isReelModeEnabled() ? this.getReelActiveWindowPostIds() : null;
+    for (const [postId, post] of this.posts.entries()) {
       if (loadedVideoCount <= maxLoadedVideos) {
         break;
       }
-      
+      if (reelWindow?.has(postId)) {
+        continue;
+      }
       if (!this.isPostImmediatelyVisible(post, viewportTop, viewportBottom)) {
         const player = post.getPlayer();
         // Only unload video players (images don't need unloading)
@@ -6682,6 +6972,7 @@ export class FeedContainer {
     }
     this.cleanupScrollTimeout = setTimeout(() => {
       this.cleanupScrollTimeout = undefined;
+      this.ensureVisiblePostsLoaded();
       this.cleanupDistantPosts();
     }, 2000);
   }
@@ -6929,6 +7220,8 @@ export class FeedContainer {
       this.visibilityChangeHandler = undefined;
     }
 
+    this.removeAutoplayUnlockHandlers();
+
     if (this.suggestionsClickOutsideHandler) {
       document.removeEventListener('click', this.suggestionsClickOutsideHandler);
       this.suggestionsClickOutsideHandler = undefined;
@@ -7088,6 +7381,46 @@ export class FeedContainer {
     }
     
     return null;
+  }
+
+  private ensureReelInitialCardLoaded(): void {
+    if (!this.isReelModeEnabled()) {
+      return;
+    }
+
+    const closestCard = this.findCardClosestToCenter();
+    if (!closestCard) {
+      return;
+    }
+
+    const postId = this.getPostIdFromCard(closestCard);
+    if (!postId) {
+      return;
+    }
+
+    const post = this.posts.get(postId);
+    if (!post || post.isPlayerLoaded() || !post.hasVideoSource()) {
+      return;
+    }
+
+    try {
+      const player = post.preload();
+      if (isNativeVideoPlayer(player)) {
+        this.visibilityManager.registerPlayer(postId, player);
+        this.visibilityManager.observePost(post.getContainer(), postId);
+      }
+    } catch (error) {
+      console.warn('Reel initial preload failed for post', postId, error);
+    }
+
+    if (this.settings.autoPlay) {
+      this.triggerAutoplayForSnappedCard(postId).catch(() => {
+        // Ignore autoplay errors
+      });
+      setTimeout(() => {
+        this.requestAudioFocusForSnappedCard(postId);
+      }, 300);
+    }
   }
 
 

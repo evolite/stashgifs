@@ -40,6 +40,8 @@ export class VisibilityManager {
   private scrollVelocity: number = 0;
   private lastScrollTime: number = 0;
   private lastScrollTop: number = 0;
+  private lastScrollEventTime: number = 0;
+  private lastAudioFocusUpdate: number = 0;
   private readonly isMobileDevice: boolean;
   private readonly audioManager: AudioManager; // Centralized audio management
   private hoveredPostId?: string; // Track which post is currently hovered/touched
@@ -53,7 +55,9 @@ export class VisibilityManager {
   private readonly rectCache: Map<HTMLElement, DOMRect> = new Map();
   private rectCacheFrame: number = 0;
   private readonly onHoverLoadRequest?: (postId: string) => void; // Callback to trigger video loading on hover
+  private readonly onPlaybackStarted?: (postId: string) => void; // Callback when playback starts
   private scrollCleanup?: () => void; // Cleanup function for scroll velocity tracking
+  private autoplayBlocked: boolean = false;
   private readonly options: {
     threshold: number;
     rootMargin: string;
@@ -69,6 +73,7 @@ export class VisibilityManager {
     debug?: boolean;
     logger?: (event: string, payload?: Record<string, unknown>) => void;
     onHoverLoadRequest?: (postId: string) => void; // Callback to trigger video loading when hovered before loaded
+    onPlaybackStarted?: (postId: string) => void; // Callback when playback starts
     isReelMode?: boolean; // When true, autoplay works without hover requirement
     root?: Element | null; // Optional root for IntersectionObserver and viewport checks
   }) {
@@ -92,12 +97,14 @@ export class VisibilityManager {
     this.debugEnabled = options?.debug ?? this.detectDebugPreference();
     this.logger = options?.logger;
     this.onHoverLoadRequest = options?.onHoverLoadRequest;
+    this.onPlaybackStarted = options?.onPlaybackStarted;
 
     // Initialize AudioManager
     this.audioManager = new AudioManager(this.entries, {
       debug: this.debugEnabled,
       logger: this.logger,
-      getHoveredPostId: () => this.hoveredPostId
+      getHoveredPostId: () => this.hoveredPostId,
+      getIsReelMode: () => this.options.isReelMode ?? false,
     });
 
     this.observerRoot = this.options.root ?? null;
@@ -113,44 +120,89 @@ export class VisibilityManager {
    */
   private scrollVelocityRafHandle?: number;
   private scrollTrackingActive: boolean = false;
+  private scrollEventTarget?: HTMLElement | Window;
+  private scrollEventHandler?: () => void;
 
   private setupScrollTracking(): void {
     this.scrollTrackingActive = true;
-    
-    const updateScrollVelocity = () => {
-      if (!this.scrollTrackingActive) {
-        return; // Stop if deactivated
-      }
-      
-      const now = Date.now();
-      const scrollTop = this.getScrollTop();
-      const timeDelta = now - this.lastScrollTime;
-      
-      if (timeDelta > 0) {
-        const scrollDelta = Math.abs(scrollTop - this.lastScrollTop);
-        this.scrollVelocity = scrollDelta / timeDelta; // pixels per ms
-      }
-      
-      this.lastScrollTop = scrollTop;
-      this.lastScrollTime = now;
-
-      this.audioManager.updateAudioFocus();
-      
-      this.scrollVelocityRafHandle = requestAnimationFrame(updateScrollVelocity);
-    };
-    
-    this.lastScrollTime = Date.now();
-    this.lastScrollTop = this.getScrollTop();
-    this.scrollVelocityRafHandle = requestAnimationFrame(updateScrollVelocity);
-    
-    // Store cleanup function
-    this.scrollCleanup = () => {
-      this.scrollTrackingActive = false;
+    const requestFrame = globalThis.requestAnimationFrame?.bind(globalThis) ?? ((cb: FrameRequestCallback) => globalThis.setTimeout(cb, 16));
+    const cancelFrame = globalThis.cancelAnimationFrame?.bind(globalThis) ?? ((id: number) => globalThis.clearTimeout(id));
+    const stopLoop = () => {
       if (this.scrollVelocityRafHandle !== undefined) {
-        cancelAnimationFrame(this.scrollVelocityRafHandle);
+        cancelFrame(this.scrollVelocityRafHandle);
         this.scrollVelocityRafHandle = undefined;
       }
     };
+
+    const updateScrollVelocity = () => {
+      if (!this.scrollTrackingActive) {
+        stopLoop();
+        return;
+      }
+
+      const now = Date.now();
+      const scrollTop = this.getScrollTop();
+      const timeDelta = now - this.lastScrollTime;
+
+      if (timeDelta > 0) {
+        const scrollDelta = Math.abs(scrollTop - this.lastScrollTop);
+        this.scrollVelocity = scrollDelta / timeDelta;
+      }
+
+      this.lastScrollTop = scrollTop;
+      this.lastScrollTime = now;
+
+      if (now - this.lastAudioFocusUpdate > 120) {
+        this.audioManager.updateAudioFocus();
+        this.lastAudioFocusUpdate = now;
+      }
+
+      if (now - this.lastScrollEventTime > 140) {
+        this.audioManager.updateAudioFocus();
+        stopLoop();
+        return;
+      }
+
+      this.scrollVelocityRafHandle = requestFrame(updateScrollVelocity);
+    };
+
+    const handleScroll = () => {
+      this.lastScrollEventTime = Date.now();
+      if (this.scrollVelocityRafHandle === undefined) {
+        this.lastScrollTime = this.lastScrollEventTime;
+        this.lastScrollTop = this.getScrollTop();
+        this.scrollVelocityRafHandle = requestFrame(updateScrollVelocity);
+      }
+    };
+
+    this.scrollEventHandler = handleScroll;
+    this.updateScrollTrackingTarget();
+
+    this.scrollCleanup = () => {
+      this.scrollTrackingActive = false;
+      stopLoop();
+      if (this.scrollEventTarget && this.scrollEventHandler) {
+        this.scrollEventTarget.removeEventListener('scroll', this.scrollEventHandler);
+      }
+      this.scrollEventTarget = undefined;
+      this.scrollEventHandler = undefined;
+    };
+  }
+
+  private updateScrollTrackingTarget(): void {
+    if (!this.scrollEventHandler) {
+      return;
+    }
+    if (this.scrollEventTarget) {
+      this.scrollEventTarget.removeEventListener('scroll', this.scrollEventHandler);
+    }
+    const target = this.scrollRoot ?? globalThis.window;
+    if (!target) {
+      this.scrollEventTarget = undefined;
+      return;
+    }
+    this.scrollEventTarget = target;
+    this.scrollEventTarget.addEventListener('scroll', this.scrollEventHandler, { passive: true });
   }
 
   private createObserver(): IntersectionObserver {
@@ -185,6 +237,10 @@ export class VisibilityManager {
     }
     this.observerRoot = root;
     this.scrollRoot = root instanceof HTMLElement ? root : null;
+
+    if (this.scrollTrackingActive) {
+      this.updateScrollTrackingTarget();
+    }
 
     this.observer.disconnect();
     this.observer = this.createObserver();
@@ -419,7 +475,7 @@ export class VisibilityManager {
     try {
       const isMobile = isMobileDevice();
       const timeout = isMobile ? 500 : 2000;
-      await player.waitUntilCanPlay(timeout);
+      await player.waitForReady(timeout);
       this.videoStates.set(postId, 'ready');
       this.debugLog('player-ready', { postId });
     } catch (error) {
@@ -538,8 +594,8 @@ export class VisibilityManager {
   setReelMode(enabled: boolean): void {
     this.options.isReelMode = !!enabled;
     // Re-evaluate playback if reel mode is enabled to trigger autoplay
-    if (this.options.isReelMode && this.options.autoPlay) {
-      this.reevaluatePlayback();
+    if (this.options.autoPlay) {
+      this.refreshVisibilityAndAutoplay();
     }
   }
 
@@ -973,6 +1029,11 @@ export class VisibilityManager {
       return;
     }
 
+    if (this.autoplayBlocked) {
+      this.debugLog('play-skipped-autoplay-blocked', { postId, origin });
+      return;
+    }
+
     const player = entry.player;
     const isMobile = isMobileDevice();
 
@@ -1027,11 +1088,9 @@ export class VisibilityManager {
     // But ensure video is muted for autoplay compatibility
     const timeout = isMobile ? 500 : 2000;
     
-    // On mobile, ensure video is muted before attempting play (required for autoplay)
-    if (isMobile) {
-      player.setMuted(true);
-    }
-    await player.waitUntilCanPlay(timeout);
+    // Ensure video is muted before attempting play (required for autoplay policies)
+    player.setMuted(true);
+    await player.waitForReady(timeout);
     if (!entry.isVisible) {
       throw new Error('Not visible');
     }
@@ -1046,6 +1105,10 @@ export class VisibilityManager {
     
     this.videoStates.set(postId, 'playing');
     this.debugLog('play-success', { postId, origin, attempt });
+
+    if (this.onPlaybackStarted) {
+      this.onPlaybackStarted(postId);
+    }
     
     // After play succeeds, notify AudioManager first
     // Check if this was a manual play (user clicked/tapped)
@@ -1098,6 +1161,13 @@ export class VisibilityManager {
     isMobile: boolean
   ): void {
     this.debugLog('play-failed', { postId, attempt, error });
+
+    if (error instanceof DOMException && error.name === 'NotAllowedError') {
+      this.autoplayBlocked = true;
+      entry.pendingVisibilityPlay = true;
+      this.debugLog('play-blocked-autoplay', { postId, attempt });
+      return;
+    }
     
     const errorType = this.detectErrorType(error, entry);
     
@@ -1120,6 +1190,14 @@ export class VisibilityManager {
 
     const delay = this.computeRetryDelay(isMobile, attempt);
     this.schedulePlaybackRetry(postId, attempt + 1, delay);
+  }
+
+  isAutoplayBlocked(): boolean {
+    return this.autoplayBlocked;
+  }
+
+  clearAutoplayBlocked(): void {
+    this.autoplayBlocked = false;
   }
 
   /**
