@@ -95,6 +95,47 @@ export function debounce<T extends (...args: never[]) => unknown>(
   }) as T;
 }
 
+const windowScrollSubscribers = new Set<() => void>();
+let windowScrollRafId: number | undefined;
+let windowScrollListenerAttached = false;
+const windowScrollListener = () => {
+  if (windowScrollRafId !== undefined) {
+    return;
+  }
+  const requestFrame = globalThis.requestAnimationFrame?.bind(globalThis) ?? ((cb: FrameRequestCallback) => globalThis.setTimeout(cb, 16));
+  windowScrollRafId = requestFrame(() => {
+    windowScrollRafId = undefined;
+    const handlers = Array.from(windowScrollSubscribers);
+    for (const handler of handlers) {
+      try {
+        handler();
+      } catch (error) {
+        console.error('Window scroll handler failed', error);
+      }
+    }
+  });
+};
+
+export function subscribeWindowScroll(handler: () => void): () => void {
+  windowScrollSubscribers.add(handler);
+  if (!windowScrollListenerAttached && typeof globalThis.addEventListener === 'function') {
+    globalThis.addEventListener('scroll', windowScrollListener, { passive: true });
+    windowScrollListenerAttached = true;
+  }
+  return () => {
+    windowScrollSubscribers.delete(handler);
+    if (windowScrollSubscribers.size === 0 && windowScrollListenerAttached && typeof globalThis.removeEventListener === 'function') {
+      globalThis.removeEventListener('scroll', windowScrollListener);
+      windowScrollListenerAttached = false;
+      if (windowScrollRafId !== undefined) {
+        const cancelFrame = globalThis.cancelAnimationFrame?.bind(globalThis) ?? ((id: number) => globalThis.clearTimeout(id));
+        cancelFrame(windowScrollRafId);
+        windowScrollRafId = undefined;
+      }
+    }
+  };
+}
+
 /**
  * Format duration in seconds to HH:MM:SS or MM:SS
  */
@@ -138,74 +179,6 @@ export function getAspectRatioClass(aspectRatio: number): string {
  * Create a unique ID
  */
 // Removed unused generateId helper
-
-/**
- * Check if URL is app root or origin
- */
-function isAppRootOrOrigin(absolute: string, appRoot: string, appRootNoSlash: string): boolean {
-  if (absolute === globalThis.location.origin) return true;
-  if (absolute === appRoot || absolute === appRootNoSlash) return true;
-  return false;
-}
-
-/**
- * Check if URL starts with app root and has no additional path
- */
-function isAppRootPath(absolute: string, appRoot: string, appRootNoSlash: string): boolean {
-  if (!absolute.startsWith(appRoot) && !absolute.startsWith(appRootNoSlash)) return false;
-  const remainingPath = absolute.replace(appRoot, '').replace(appRootNoSlash, '');
-  return !remainingPath || remainingPath.length === 0 || remainingPath === '/';
-}
-
-/**
- * Check if URL appears to be a valid media file
- */
-function hasValidMediaIndicators(absolute: string): boolean {
-  const hasQueryParams = absolute.includes('?');
-  const hasFileExtension = /\.(mp4|webm|ogg|mov|avi|mkv|m3u8|ts|mpd)(\?|$|\/)/i.test(absolute);
-  
-  if (hasQueryParams || hasFileExtension) return true;
-  
-  // Allow streaming paths that might not have extensions (e.g., HLS playlists)
-  return /\/stream|\/video|\/media|\/play/i.test(absolute);
-}
-
-/**
- * Basic media URL sanity check to avoid assigning the app root as a video src
- */
-export function isValidMediaUrl(url?: string): boolean {
-  // Check for undefined, null, or empty string
-  if (!url || typeof url !== 'string') return false;
-  
-  // Check for whitespace-only strings
-  const trimmed = url.trim();
-  if (trimmed.length === 0) return false;
-  
-  try {
-    const absolute = trimmed.startsWith('http') ? trimmed : `${globalThis.location.origin}${trimmed}`;
-    const appRoot = `${globalThis.location.origin}/plugin/stashgifs/assets/app/`;
-    const appRootNoSlash = `${globalThis.location.origin}/plugin/stashgifs/assets/app`;
-    
-    // Reject if URL equals origin or app root (with or without trailing slash)
-    if (isAppRootOrOrigin(absolute, appRoot, appRootNoSlash)) return false;
-    
-    // Reject URLs that start with app root path (more robust check)
-    if (isAppRootPath(absolute, appRoot, appRootNoSlash)) return false;
-    
-    // Reject URLs that end with just a slash (directory paths, not files)
-    if (absolute.endsWith('/') && absolute !== `${globalThis.location.origin}/`) return false;
-    
-    // Very short paths are suspicious (must have at least some path content)
-    if (absolute.length < globalThis.location.origin.length + 4) return false;
-    
-    // Check if URL appears to be a file path (has extension or query params)
-    if (!hasValidMediaIndicators(absolute)) return false;
-    
-    return true;
-  } catch {
-    return false;
-  }
-}
 
 /**
  * Show a toast notification
@@ -807,7 +780,7 @@ function buildFullUrl(path: string, baseUrl: string): string {
 function tryGetUrlFromPath(path: string | undefined | null, baseUrl: string): string | undefined {
   if (!path) return undefined;
   const url = buildFullUrl(path, baseUrl);
-  return isValidMediaUrl(url) ? url : undefined;
+  return normalizeMediaUrl(url) ?? undefined;
 }
 
 /**

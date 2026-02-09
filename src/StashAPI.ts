@@ -4,7 +4,7 @@
  */
 
 import { Scene, SceneMarker, FilterOptions } from './types.js';
-import { isValidMediaUrl } from './utils.js';
+import { normalizeMediaUrl } from './utils.js';
 import * as queries from './graphql/queries.js';
 import * as mutations from './graphql/mutations.js';
 import {
@@ -1300,11 +1300,12 @@ export class StashAPI {
     }
     
     const url = this.buildUrl(stream);
-    if (!isValidMediaUrl(url)) {
+    const normalizedUrl = normalizeMediaUrl(url);
+    if (!normalizedUrl) {
       return this.getVideoUrl(marker.scene);
     }
     
-    return this.addCacheBusting(url);
+    return this.addCacheBusting(normalizedUrl);
   }
 
   /**
@@ -1349,8 +1350,9 @@ export class StashAPI {
 
   private buildAndValidateUrl(path: string): string | undefined {
     const url = this.buildUrl(path);
-    if (!isValidMediaUrl(url)) return undefined;
-    return this.addCacheBusting(url);
+    const normalizedUrl = normalizeMediaUrl(url);
+    if (!normalizedUrl) return undefined;
+    return this.addCacheBusting(normalizedUrl);
   }
 
   /**

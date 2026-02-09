@@ -6,7 +6,7 @@
 import { FavoritesManager } from './FavoritesManager.js';
 import { StashAPI } from './StashAPI.js';
 import { VisibilityManager } from './VisibilityManager.js';
-import { normalizeMediaUrl, showToast, isMobileDevice, THEME } from './utils.js';
+import { normalizeMediaUrl, showToast, isMobileDevice, THEME, subscribeWindowScroll } from './utils.js';
 import { ADD_TAG_SVG, HEART_SVG_OUTLINE, HEART_SVG_FILLED, OCOUNT_SVG, EXTERNAL_LINK_SVG, STAR_SVG, STAR_SVG_OUTLINE, VERIFIED_SVG } from './icons.js';
 import { setupTouchHandlers, preventClickAfterTouch } from './utils/touchHandlers.js';
 import { PerformerExtended } from './graphql/types.js';
@@ -73,6 +73,7 @@ export abstract class BasePost {
   private performerOverlayAbortController?: AbortController;
   private hadOverlayBefore: boolean = false; // Track if overlay was showing before (for delay logic)
   private performerOverlayScrollHandler?: () => void;
+  private performerOverlayScrollCleanup?: () => void;
   private performerOverlayClickTime?: number; // Track when chip was clicked to prevent immediate re-show
   // Tag overlay properties
   private tagOverlay?: HTMLElement;
@@ -141,10 +142,11 @@ export abstract class BasePost {
   }
 
   destroy(): void {
-    if (this.performerOverlayScrollHandler) {
-      globalThis.removeEventListener('scroll', this.performerOverlayScrollHandler);
-      this.performerOverlayScrollHandler = undefined;
+    if (this.performerOverlayScrollCleanup) {
+      this.performerOverlayScrollCleanup();
+      this.performerOverlayScrollCleanup = undefined;
     }
+    this.performerOverlayScrollHandler = undefined;
 
     if (this.performerOverlayAbortController) {
       this.performerOverlayAbortController.abort();
@@ -586,7 +588,7 @@ export abstract class BasePost {
       }
     };
     
-    globalThis.addEventListener('scroll', this.performerOverlayScrollHandler, { passive: true });
+    this.performerOverlayScrollCleanup = subscribeWindowScroll(this.performerOverlayScrollHandler);
   }
 
   /**

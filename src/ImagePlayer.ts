@@ -3,7 +3,7 @@
  * Displays GIFs, static images, and looping videos with support for looping and fullscreen
  */
 
-import { addCacheBusting, normalizeMediaUrl, setupLoopingVideoElement, THEME } from './utils.js';
+import { addCacheBusting, normalizeMediaUrl, setupLoopingVideoElement, THEME, subscribeWindowScroll } from './utils.js';
 
 export class ImagePlayer {
   private readonly container: HTMLElement;
@@ -17,6 +17,7 @@ export class ImagePlayer {
   private loadingIndicator?: HTMLElement;
   private wrapper?: HTMLElement;
   private errorMessage?: HTMLElement;
+  private interactionScrollCleanup?: () => void;
 
   constructor(container: HTMLElement, imageUrl: string, options?: {
     isGif?: boolean;
@@ -274,13 +275,16 @@ export class ImagePlayer {
       tryPlayOnInteraction();
     };
 
-    globalThis.addEventListener('scroll', handleScroll, { passive: true });
+    this.interactionScrollCleanup = subscribeWindowScroll(handleScroll);
     globalThis.addEventListener('touchstart', handleInteraction, { passive: true, once: true });
     globalThis.addEventListener('click', handleInteraction, { once: true });
 
     // Store cleanup
     (this.videoElement as any).__interactionCleanup = () => {
-      globalThis.removeEventListener('scroll', handleScroll);
+      if (this.interactionScrollCleanup) {
+        this.interactionScrollCleanup();
+        this.interactionScrollCleanup = undefined;
+      }
       globalThis.removeEventListener('touchstart', handleInteraction);
       globalThis.removeEventListener('click', handleInteraction);
       if (scrollTimeout) clearTimeout(scrollTimeout);

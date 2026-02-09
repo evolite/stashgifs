@@ -26,12 +26,14 @@ export class AudioManager {
   private currentAudioOwner?: string;
   private ownerPriority: AudioPriority = AudioPriority.NONE;
   private hoveredPostId?: string;
+  private lastAudiblePostId?: string;
   private readonly manuallyStartedVideos: Set<string> = new Set();
   private readonly entries: Map<string, VisibilityEntry>;
   private globalMuteState: boolean = true; // Global mute state - all videos muted when true (default: muted)
   private readonly debugEnabled: boolean = false;
   private readonly logger?: (event: string, payload?: Record<string, unknown>) => void;
   private readonly getHoveredPostId?: () => string | undefined;
+  private readonly getIsReelMode?: () => boolean;
 
   constructor(
     entries: Map<string, VisibilityEntry>,
@@ -39,12 +41,14 @@ export class AudioManager {
       debug?: boolean;
       logger?: (event: string, payload?: Record<string, unknown>) => void;
       getHoveredPostId?: () => string | undefined;
+      getIsReelMode?: () => boolean;
     }
   ) {
     this.entries = entries;
     this.debugEnabled = options?.debug ?? false;
     this.logger = options?.logger;
     this.getHoveredPostId = options?.getHoveredPostId;
+    this.getIsReelMode = options?.getIsReelMode;
   }
 
   /**
@@ -101,6 +105,10 @@ export class AudioManager {
    * Update audio focus based on current priority system
    */
   updateAudioFocus(): void {
+    if (this.isDesktopNonReelMode()) {
+      this.applyDesktopNonReelAudioFocus();
+      return;
+    }
     // Priority 1: Hovered video (highest priority)
     const hoveredId = this.getHoveredPostId ? this.getHoveredPostId() : this.hoveredPostId;
     if (hoveredId) {
@@ -128,6 +136,43 @@ export class AudioManager {
     }
 
     // No eligible video - release audio
+    this.setAudioOwner(undefined, AudioPriority.NONE);
+  }
+
+  private isDesktopNonReelMode(): boolean {
+    if (isMobileDevice()) {
+      return false;
+    }
+    return !(this.getIsReelMode?.() ?? false);
+  }
+
+  private getLastAudibleCandidate(): string | undefined {
+    if (!this.lastAudiblePostId) {
+      return undefined;
+    }
+    const entry = this.entries.get(this.lastAudiblePostId);
+    if (entry?.player && entry.isVisible && entry.player.isPlaying()) {
+      return this.lastAudiblePostId;
+    }
+    return undefined;
+  }
+
+  private applyDesktopNonReelAudioFocus(): void {
+    const hoveredId = this.getHoveredPostId ? this.getHoveredPostId() : this.hoveredPostId;
+    if (hoveredId) {
+      const entry = this.entries.get(hoveredId);
+      if (entry?.player && entry.isVisible && entry.player.isPlaying()) {
+        this.setAudioOwner(hoveredId, AudioPriority.HOVER);
+        return;
+      }
+    }
+
+    const lastAudible = this.getLastAudibleCandidate();
+    if (lastAudible) {
+      this.setAudioOwner(lastAudible, AudioPriority.MANUAL);
+      return;
+    }
+
     this.setAudioOwner(undefined, AudioPriority.NONE);
   }
 
@@ -180,6 +225,9 @@ export class AudioManager {
 
     this.currentAudioOwner = postId;
     this.ownerPriority = priority;
+    if (postId && priority !== AudioPriority.NONE) {
+      this.lastAudiblePostId = postId;
+    }
 
     this.applyMuteState();
     
@@ -381,6 +429,9 @@ export class AudioManager {
     // If video became invisible and it was the audio owner, release
     if (!isVisible && this.currentAudioOwner === postId) {
       this.releaseAudioFocus(postId);
+      if (this.lastAudiblePostId === postId) {
+        this.lastAudiblePostId = undefined;
+      }
       return;
     }
     // Re-evaluate audio focus when video becomes visible
@@ -407,12 +458,7 @@ export class AudioManager {
   onHoverLeave(postId: string): void {
     if (this.hoveredPostId === postId) {
       this.hoveredPostId = undefined;
-
-      if (this.currentAudioOwner === postId) {
-        this.releaseAudioFocus(postId);
-      } else {
-        this.updateAudioFocus();
-      }
+      this.updateAudioFocus();
     }
   }
 
@@ -465,4 +511,3 @@ export class AudioManager {
     }
   }
 }
-

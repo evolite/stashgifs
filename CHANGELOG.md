@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [5.36.0] - 2026-02-09
+
+### Changed
+- Improve reel mode preload pacing
+- Reliabilit pass
+
 ## [5.35.3] - 2026-02-08
 
 ## [5.35.2] - 2026-02-08
