@@ -17,9 +17,5 @@ Install it via Stash's plugin system using the `index.yml` file. - https://raw.g
 
 Settings can be configured via the settings button in the header, including image display preferences, file type filters, themes and scrolling behavior.
 
-## Credits
-
-Inspired by [Stash TV](https://discourse.stashapp.cc/t/stash-tv/3627). Thanks for the idea!
-
 ## AI Usage
 Large parts of this codebase is Vibe coded, and quality tested with SonarQube.
