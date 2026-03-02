@@ -12,11 +12,10 @@ Install it via Stash's plugin system using the `index.yml` file. - https://raw.g
 - **Filtering** - Narrow down content by performers, tags, or use your saved Stash filters to find exactly what you're looking for.
 - **Interactions** - Favorite content with a tap, add tags to content, rate scenes and images. Each post links back to the full scene in Stash.
 - **Random scene player** - Shuffle mode picks random scenes and random start times, so you can discover content you might have missed.
-- **HD mode** - Upgrade any post to high-quality playback with audio support. Perfect for when you want to see and hear the full scene.
 - **Image feed** - Browse images, gifs and and web videos from your library. Supports various formats like mp4, webm, and m4v.
 - **Mobile-friendly** - Touch-optimized interface that works great on phones and tablets. Optional snap-to-cards scrolling for a more controlled browsing experience.
 
-Settings can be configured via the settings button in the header, including image display preferences, file type filters, and scrolling behavior.
+Settings can be configured via the settings button in the header, including image display preferences, file type filters, themes and scrolling behavior.
 
 ## Credits
 
