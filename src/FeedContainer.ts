@@ -47,6 +47,8 @@ const DEFAULT_SETTINGS: FeedSettings = {
   themeAccent: THEME_DEFAULTS.accentPrimary,
   showVerifiedCheckmarks: true,
   excludedTagNames: [],
+  imagesInGalleryOnly: false,
+  galleryIds: [],
 };
 
 /**
@@ -2549,6 +2551,7 @@ export class FeedContainer {
     this.settingsPage = new SettingsPage(
       this.settingsContainer,
       this.settings,
+      (signal) => this.api.findGalleries(signal),
       (newSettings) => {
         const previousShowVerified = this.settings.showVerifiedCheckmarks;
         const previousExcludedTags = this.normalizeExcludedTagNames(this.settings.excludedTagNames ?? []);
@@ -2591,6 +2594,8 @@ export class FeedContainer {
           newSettings.shortFormInNonHDMode !== undefined ||
           newSettings.shortFormMaxDuration !== undefined ||
           newSettings.shortFormOnly !== undefined ||
+          newSettings.imagesInGalleryOnly !== undefined ||
+          newSettings.galleryIds !== undefined ||
           orientationFilterChanged ||
           reelModeChanged ||
           excludedTagsChanged
@@ -5145,6 +5150,9 @@ export class FeedContainer {
           ? { orientationFilter: filters.orientationFilter }
           : {}),
         ...(filters.sortSeed ? { sortSeed: filters.sortSeed } : {}),
+        ...(this.settings.imagesInGalleryOnly
+          ? { imagesInGalleryOnly: true, galleryIds: this.settings.galleryIds ?? [] }
+          : {}),
       };
 
       const { images: graphQLImages, totalCount, sortSeed } = await this.api.findImages(

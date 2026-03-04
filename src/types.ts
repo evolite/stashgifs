@@ -119,6 +119,8 @@ export interface FeedSettings {
   themeAccent?: string; // Accent color for highlights
   showVerifiedCheckmarks?: boolean; // Toggle verified checkmark badges
   excludedTagNames?: string[]; // Tags to exclude from feed (names)
+  imagesInGalleryOnly?: boolean; // When true, only show images that belong to a gallery
+  galleryIds?: string[]; // Gallery IDs to filter to; empty = any gallery (NOT_NULL)
 }
 
 export interface VideoPostData {

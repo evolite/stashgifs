@@ -130,7 +130,30 @@ export interface ImageFilterInput {
     value: string[];
     modifier: FilterModifier;
   };
+  galleries?: {
+    value: string[];
+    modifier: 'NOT_NULL' | 'IS_NULL' | 'INCLUDES' | 'EXCLUDES';
+  };
   [key: string]: unknown; // Allow additional filter properties
+}
+
+/**
+ * Gallery type
+ */
+export interface Gallery {
+  id: string;
+  title?: string;
+  folder?: { path?: string };
+}
+
+/**
+ * FindGalleries response
+ */
+export interface FindGalleriesResponse {
+  findGalleries?: {
+    count: number;
+    galleries: Gallery[];
+  };
 }
 
 // ============================================================================

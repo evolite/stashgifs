@@ -11,17 +11,20 @@ import { THEME, THEME_DEFAULTS } from './utils.js';
 export class SettingsPage {
   private readonly container: HTMLElement;
   private readonly settings: FeedSettings;
+  private readonly findGalleries?: (signal?: AbortSignal) => Promise<Array<{ id: string; title?: string; folder?: { path?: string } }>>;
   private readonly onSave?: (settings: Partial<FeedSettings>) => void;
   private readonly onClose?: () => void;
 
   constructor(
     container: HTMLElement,
     settings: FeedSettings,
+    findGalleries?: (signal?: AbortSignal) => Promise<Array<{ id: string; title?: string; folder?: { path?: string } }>>,
     onSave?: (settings: Partial<FeedSettings>) => void,
     onClose?: () => void
   ) {
     this.container = container;
     this.settings = settings;
+    this.findGalleries = findGalleries;
     this.onSave = onSave;
     this.onClose = onClose;
     this.render();
@@ -919,6 +922,219 @@ export class SettingsPage {
 
     imageSection.appendChild(imagesOnlyContainer);
 
+    // Gallery Images Only toggle
+    const galleryOnlyContainer = document.createElement('div');
+    galleryOnlyContainer.style.display = 'flex';
+    galleryOnlyContainer.style.justifyContent = 'space-between';
+    galleryOnlyContainer.style.alignItems = 'center';
+    galleryOnlyContainer.style.marginBottom = '16px';
+
+    galleryOnlyContainer.appendChild(
+      buildInfoLabel(
+        'Gallery images only',
+        'Only show images that belong to a Stash gallery.'
+      )
+    );
+
+    const { container: galleryOnlyToggleContainer, input: galleryOnlyToggle } = this.createToggleSwitch(
+      this.settings.imagesInGalleryOnly === true,
+      (checked) => {
+        gallerySelectorWrapper.style.display = checked ? 'block' : 'none';
+        this.saveSettings();
+      }
+    );
+    galleryOnlyContainer.appendChild(galleryOnlyToggleContainer);
+    imageSection.appendChild(galleryOnlyContainer);
+
+    // Gallery selector (shown when toggle is on)
+    const gallerySelectorWrapper = document.createElement('div');
+    gallerySelectorWrapper.style.display = this.settings.imagesInGalleryOnly ? 'block' : 'none';
+    gallerySelectorWrapper.style.marginBottom = '16px';
+
+    // Chip container — styled like a text input
+    const galleryChipContainer = document.createElement('div');
+    galleryChipContainer.style.display = 'flex';
+    galleryChipContainer.style.flexWrap = 'wrap';
+    galleryChipContainer.style.gap = '4px';
+    galleryChipContainer.style.padding = '6px 8px';
+    galleryChipContainer.style.border = `1px solid ${THEME.colors.border}`;
+    galleryChipContainer.style.borderRadius = THEME.radius.button;
+    galleryChipContainer.style.backgroundColor = THEME.colors.surface;
+    galleryChipContainer.style.cursor = 'text';
+    galleryChipContainer.style.minHeight = '38px';
+    galleryChipContainer.style.alignItems = 'center';
+    galleryChipContainer.style.boxSizing = 'border-box';
+    galleryChipContainer.style.width = '100%';
+
+    // Search input inside chip container
+    const gallerySearchInput = document.createElement('input');
+    gallerySearchInput.type = 'text';
+    gallerySearchInput.placeholder = 'Add gallery...';
+    gallerySearchInput.style.border = 'none';
+    gallerySearchInput.style.outline = 'none';
+    gallerySearchInput.style.background = 'transparent';
+    gallerySearchInput.style.color = THEME.colors.textPrimary;
+    gallerySearchInput.style.fontSize = THEME.typography.sizeBody;
+    gallerySearchInput.style.flex = '1';
+    gallerySearchInput.style.minWidth = '120px';
+    gallerySearchInput.style.padding = '2px 4px';
+    galleryChipContainer.appendChild(gallerySearchInput);
+
+    gallerySelectorWrapper.appendChild(galleryChipContainer);
+    imageSection.appendChild(gallerySelectorWrapper);
+
+    // Dropdown — fixed positioned, appended to modal overlay to escape overflow clipping
+    const galleryDropdown = document.createElement('div');
+    galleryDropdown.style.position = 'fixed';
+    galleryDropdown.style.zIndex = '10002';
+    galleryDropdown.style.backgroundColor = THEME.colors.surface;
+    galleryDropdown.style.border = `1px solid ${THEME.colors.border}`;
+    galleryDropdown.style.borderRadius = THEME.radius.button;
+    galleryDropdown.style.maxHeight = '200px';
+    galleryDropdown.style.overflowY = 'auto';
+    galleryDropdown.style.display = 'none';
+    galleryDropdown.style.boxShadow = '0 4px 12px rgba(0,0,0,0.3)';
+    this.container.appendChild(galleryDropdown);
+
+    // State
+    const selectedGalleryIds = new Set<string>(this.settings.galleryIds ?? []);
+    let allGalleries: Array<{ id: string; title?: string; folder?: { path?: string } }> = [];
+
+    const getLabel = (id: string): string => {
+      const g = allGalleries.find(g => g.id === id);
+      return g ? (g.title || g.folder?.path || g.id) : id;
+    };
+
+    const renderChips = () => {
+      [...galleryChipContainer.children].forEach(child => {
+        if (child !== gallerySearchInput) child.remove();
+      });
+      for (const id of selectedGalleryIds) {
+        const chip = document.createElement('span');
+        chip.style.display = 'inline-flex';
+        chip.style.alignItems = 'center';
+        chip.style.gap = '4px';
+        chip.style.padding = '2px 8px';
+        chip.style.borderRadius = THEME.radius.tag;
+        chip.style.backgroundColor = THEME.colors.accentPrimary;
+        chip.style.color = THEME.colors.textPrimary;
+        chip.style.fontSize = THEME.typography.sizeMeta;
+        chip.style.fontWeight = THEME.typography.weightBodyStrong;
+        chip.style.whiteSpace = 'nowrap';
+
+        const label = document.createElement('span');
+        label.textContent = getLabel(id);
+        chip.appendChild(label);
+
+        const removeBtn = document.createElement('span');
+        removeBtn.textContent = '×';
+        removeBtn.style.cursor = 'pointer';
+        removeBtn.style.lineHeight = '1';
+        removeBtn.style.fontWeight = 'bold';
+        removeBtn.addEventListener('mousedown', (e) => {
+          e.preventDefault();
+          selectedGalleryIds.delete(id);
+          renderChips();
+          renderDropdown(gallerySearchInput.value);
+          this.saveSettings();
+        });
+        chip.appendChild(removeBtn);
+
+        galleryChipContainer.insertBefore(chip, gallerySearchInput);
+      }
+    };
+
+    const positionDropdown = () => {
+      const rect = galleryChipContainer.getBoundingClientRect();
+      galleryDropdown.style.top = `${rect.bottom + 4}px`;
+      galleryDropdown.style.left = `${rect.left}px`;
+      galleryDropdown.style.width = `${rect.width}px`;
+    };
+
+    const renderDropdown = (filter: string) => {
+      galleryDropdown.innerHTML = '';
+      const filtered = allGalleries.filter(g => {
+        if (selectedGalleryIds.has(g.id)) return false;
+        if (!filter) return true;
+        const label = g.title || g.folder?.path || g.id;
+        return label.toLowerCase().includes(filter.toLowerCase());
+      });
+
+      if (filtered.length === 0) {
+        const empty = document.createElement('div');
+        empty.textContent = allGalleries.length === 0 ? 'Loading...' : 'No matching galleries';
+        empty.style.padding = '8px 12px';
+        empty.style.color = THEME.colors.textMuted;
+        empty.style.fontSize = THEME.typography.sizeBody;
+        galleryDropdown.appendChild(empty);
+        return;
+      }
+
+      for (const gallery of filtered) {
+        const item = document.createElement('div');
+        item.textContent = gallery.title || gallery.folder?.path || gallery.id;
+        item.style.padding = '8px 12px';
+        item.style.cursor = 'pointer';
+        item.style.fontSize = THEME.typography.sizeBody;
+        item.style.color = THEME.colors.textPrimary;
+        item.addEventListener('mouseenter', () => { item.style.backgroundColor = THEME.colors.surfaceHover; });
+        item.addEventListener('mouseleave', () => { item.style.backgroundColor = ''; });
+        item.addEventListener('mousedown', (e) => {
+          e.preventDefault();
+          selectedGalleryIds.add(gallery.id);
+          gallerySearchInput.value = '';
+          renderChips();
+          renderDropdown('');
+          positionDropdown();
+          this.saveSettings();
+        });
+        galleryDropdown.appendChild(item);
+      }
+    };
+
+    galleryChipContainer.addEventListener('click', () => gallerySearchInput.focus());
+
+    gallerySearchInput.addEventListener('focus', () => {
+      positionDropdown();
+      galleryDropdown.style.display = 'block';
+      renderDropdown(gallerySearchInput.value);
+    });
+
+    gallerySearchInput.addEventListener('blur', () => {
+      setTimeout(() => { galleryDropdown.style.display = 'none'; }, 150);
+    });
+
+    gallerySearchInput.addEventListener('input', () => {
+      renderDropdown(gallerySearchInput.value);
+      positionDropdown();
+    });
+
+    gallerySearchInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Backspace' && gallerySearchInput.value === '' && selectedGalleryIds.size > 0) {
+        const arr = [...selectedGalleryIds];
+        const last = arr[arr.length - 1];
+        selectedGalleryIds.delete(last);
+        renderChips();
+        renderDropdown('');
+        this.saveSettings();
+      }
+    });
+
+    renderChips();
+
+    if (this.findGalleries) {
+      this.findGalleries().then((galleries) => {
+        allGalleries = galleries;
+        renderChips();
+      }).catch(() => {
+        // allGalleries stays empty; search will show "No matching galleries"
+      });
+    }
+
+    // Store references for saveSettings
+    (this as any).galleryOnlyToggle = galleryOnlyToggle;
+    (this as any).gallerySelectedIds = selectedGalleryIds;
+
     generalContent.appendChild(imageSection);
 
     // Short Form Content Settings Section
@@ -1198,6 +1414,9 @@ export class SettingsPage {
       : selectedOrientations;
 
 
+    const galleryOnlyToggle = (this as any).galleryOnlyToggle as HTMLInputElement | undefined;
+    const gallerySelectedIds = (this as any).gallerySelectedIds as Set<string> | undefined;
+
     const newSettings: Partial<FeedSettings> = {
       includeImagesInFeed: includeImagesToggle.checked,
       enabledFileTypes: extensions.length > 0 ? extensions : ['.jpg', '.png', '.gif', '.mp4', '.m4v', '.webm'],
@@ -1215,6 +1434,8 @@ export class SettingsPage {
       themeAccent: themeAccentInput.value,
       showVerifiedCheckmarks: showVerifiedCheckmarksToggle.checked,
       excludedTagNames,
+      imagesInGalleryOnly: galleryOnlyToggle?.checked ?? false,
+      galleryIds: gallerySelectedIds ? [...gallerySelectedIds] : [],
     };
 
     // Notify parent to update settings and reload feed if needed

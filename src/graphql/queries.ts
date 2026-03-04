@@ -218,6 +218,24 @@ export const FIND_SCENE_MARKER_TAGS = `
 `;
 
 /**
+ * Find galleries
+ */
+export const FIND_GALLERIES = `
+  query FindGalleries($filter: FindFilterType) {
+    findGalleries(filter: $filter) {
+      count
+      galleries {
+        id
+        title
+        folder {
+          path
+        }
+      }
+    }
+  }
+`;
+
+/**
  * Find images with filtering
  */
 export const FIND_IMAGES = `

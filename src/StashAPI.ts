@@ -22,6 +22,8 @@ import {
   PerformerExtended,
   FindSceneResponse,
   FindImagesResponse,
+  FindGalleriesResponse,
+  Gallery,
   GetSavedMarkerFiltersResponse,
   GetSavedFilterResponse,
   CheckTagsHaveMarkersResponse,
@@ -2015,6 +2017,28 @@ export class StashAPI {
   }
 
   /**
+   * Find all galleries (for gallery selector in settings)
+   * @param signal Optional abort signal
+   * @returns Array of galleries with id, title, and folder path
+   */
+  async findGalleries(signal?: AbortSignal): Promise<Gallery[]> {
+    if (this.isAborted(signal)) return [];
+    try {
+      const result = await this.gqlClient.query<FindGalleriesResponse>({
+        query: queries.FIND_GALLERIES,
+        variables: { filter: { per_page: -1, sort: 'title', direction: 'ASC' } },
+        signal,
+      });
+      if (this.isAborted(signal)) return [];
+      return result.data?.findGalleries?.galleries ?? [];
+    } catch (error: unknown) {
+      if (isAbortError(error) || this.isAborted(signal)) return [];
+      this.logError('findGalleries', error);
+      return [];
+    }
+  }
+
+  /**
    * Create a new scene marker
    * @param sceneId Scene ID
    * @param seconds Start time in seconds
@@ -2204,6 +2228,8 @@ export class StashAPI {
       excludedTagIds?: string[];
       orientationFilter?: ImageOrientation[];
       sortSeed?: string;
+      imagesInGalleryOnly?: boolean;
+      galleryIds?: string[];
     },
     limit: number = 40,
     offset: number = 0,
@@ -2256,6 +2282,14 @@ export class StashAPI {
     if (imageOrientations.length > 0) {
       imageFilter.orientation = {
         value: imageOrientations.length === 1 ? imageOrientations[0] : imageOrientations
+      };
+    }
+
+    if (filters?.imagesInGalleryOnly) {
+      const ids = filters.galleryIds ?? [];
+      imageFilter.galleries = {
+        value: ids,
+        modifier: ids.length > 0 ? 'INCLUDES' : 'NOT_NULL',
       };
     }
 
