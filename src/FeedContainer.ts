@@ -82,7 +82,6 @@ type PostType = VideoPost | ImagePost | ImageVideoPost;
 export class FeedContainer {
   private static readonly CONTENT_LOAD_LIMIT: number = 8;
   private static readonly SEEN_IDS_KEY = 'stashgifs-seen-ids';
-  private static readonly SEEN_IDS_MIN_UNSEEN = 3;
   private readonly container: HTMLElement;
   private scrollContainer: HTMLElement;
   private readonly api: StashAPI;
@@ -110,6 +109,7 @@ export class FeedContainer {
   private selectedPerformerId?: number;
   private selectedPerformerName?: string;
   private hasMore: boolean = true;
+  private seenSkipCount = 0;
   private currentPage: number = 1;
   private scrollObserver?: IntersectionObserver;
   private loadMoreTrigger?: HTMLElement;
@@ -934,15 +934,29 @@ export class FeedContainer {
     }
   }
 
+  private deferAutoAdvance(retries = 5): void {
+    if (retries <= 0) return;
+    requestAnimationFrame(() => {
+      if (!this.isLoading) {
+        if (this.hasMore) void this.loadVideos(undefined, true);
+      } else {
+        this.deferAutoAdvance(retries - 1);
+      }
+    });
+  }
+
   private filterSeenContent(
-    content: Array<{ type: 'marker' | 'image'; data: SceneMarker | Image; date?: string }>
+    content: Array<{ type: 'marker' | 'image'; data: SceneMarker | Image; date?: string }>,
+    append: boolean
   ): Array<{ type: 'marker' | 'image'; data: SceneMarker | Image; date?: string }> {
     const maxSeen = this.settings.seenHistorySize ?? 500;
     if (maxSeen === 0) return content;
     const seen = this.getSeenSet();
     if (seen.size === 0) return content;
     const unseen = content.filter(item => !seen.has((item.data as { id: string }).id));
-    return unseen.length >= FeedContainer.SEEN_IDS_MIN_UNSEEN ? unseen : content;
+    // Scroll: strict — never show seen content
+    // Initial load: fall back to showing all if pool exhausted
+    return (!append && unseen.length === 0) ? content : unseen;
   }
 
   /**
@@ -4734,7 +4748,7 @@ export class FeedContainer {
     const { markerCount, shortFormCount, imageCount } = counts;
     
     // Merge regular markers, short-form markers, and images, then filter seen items
-    const mergedContent = this.filterSeenContent(this.mergeMarkersShortFormAndImages(markers, shortFormMarkers, images));
+    const mergedContent = this.filterSeenContent(this.mergeMarkersShortFormAndImages(markers, shortFormMarkers, images), append);
 
     const expectedLimit = currentFilters.limit || FeedContainer.CONTENT_LOAD_LIMIT;
     
@@ -4882,6 +4896,16 @@ export class FeedContainer {
         append,
         shouldLoadMarkers
       });
+
+      const totalUnfiltered = markers.length + shortFormMarkers.length + images.length;
+      if (totalUnfiltered > 0 && mergedContent.length === 0 && append && this.seenSkipCount < 10) {
+        this.seenSkipCount++;
+        this.deferAutoAdvance();
+        return;
+      }
+      if (mergedContent.length > 0) {
+        this.seenSkipCount = 0;
+      }
 
       const allMarkers = [...markers, ...shortFormMarkers];
       await this.renderAndFinalizeContent(
