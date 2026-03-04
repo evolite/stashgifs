@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [5.38.0] - 2026-03-04
+
+### Changed
+- Fix seen items re-appearing during scroll
+- Add recency bias: seen-ID ring buffer to hide previously viewed content
+
 ## [5.37.0] - 2026-03-04
 
 ### Changed
