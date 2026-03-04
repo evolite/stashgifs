@@ -49,6 +49,7 @@ const DEFAULT_SETTINGS: FeedSettings = {
   excludedTagNames: [],
   imagesInGalleryOnly: false,
   galleryIds: [],
+  seenHistorySize: 500,
 };
 
 /**
@@ -80,6 +81,8 @@ type PostType = VideoPost | ImagePost | ImageVideoPost;
 
 export class FeedContainer {
   private static readonly CONTENT_LOAD_LIMIT: number = 8;
+  private static readonly SEEN_IDS_KEY = 'stashgifs-seen-ids';
+  private static readonly SEEN_IDS_MIN_UNSEEN = 3;
   private readonly container: HTMLElement;
   private scrollContainer: HTMLElement;
   private readonly api: StashAPI;
@@ -902,6 +905,44 @@ export class FeedContainer {
     }
 
     return images.filter((image) => !this.shouldExcludeTags(image.tags));
+  }
+
+  private getSeenSet(): Set<string> {
+    const maxSeen = this.settings.seenHistorySize ?? 500;
+    if (maxSeen === 0) return new Set();
+    try {
+      const raw = localStorage.getItem(FeedContainer.SEEN_IDS_KEY);
+      return raw ? new Set(JSON.parse(raw) as string[]) : new Set();
+    } catch {
+      return new Set();
+    }
+  }
+
+  private markItemSeen(id: string): void {
+    const maxSeen = this.settings.seenHistorySize ?? 500;
+    if (maxSeen === 0) return;
+    try {
+      const raw = localStorage.getItem(FeedContainer.SEEN_IDS_KEY);
+      const ids: string[] = raw ? JSON.parse(raw) as string[] : [];
+      const idx = ids.indexOf(id);
+      if (idx !== -1) ids.splice(idx, 1);
+      ids.push(id);
+      if (ids.length > maxSeen) ids.splice(0, ids.length - maxSeen);
+      localStorage.setItem(FeedContainer.SEEN_IDS_KEY, JSON.stringify(ids));
+    } catch {
+      // ignore localStorage errors
+    }
+  }
+
+  private filterSeenContent(
+    content: Array<{ type: 'marker' | 'image'; data: SceneMarker | Image; date?: string }>
+  ): Array<{ type: 'marker' | 'image'; data: SceneMarker | Image; date?: string }> {
+    const maxSeen = this.settings.seenHistorySize ?? 500;
+    if (maxSeen === 0) return content;
+    const seen = this.getSeenSet();
+    if (seen.size === 0) return content;
+    const unseen = content.filter(item => !seen.has((item.data as { id: string }).id));
+    return unseen.length >= FeedContainer.SEEN_IDS_MIN_UNSEEN ? unseen : content;
   }
 
   /**
@@ -3777,10 +3818,13 @@ export class FeedContainer {
     fragment: DocumentFragment | null,
     signal?: AbortSignal
   ): Promise<{ fragment: DocumentFragment; postContainer: HTMLElement | null }> {
-    if (item.type === 'marker') {
-      return this.processMarkerForRender(item.data as SceneMarker, fragment, signal);
+    const result = item.type === 'marker'
+      ? await this.processMarkerForRender(item.data as SceneMarker, fragment, signal)
+      : await this.processImageForRender(item.data as Image, fragment, signal);
+    if (result.postContainer) {
+      this.markItemSeen((item.data as { id: string }).id);
     }
-    return this.processImageForRender(item.data as Image, fragment, signal);
+    return result;
   }
 
   private flushFragment(
@@ -4689,8 +4733,8 @@ export class FeedContainer {
     const { markers, shortFormMarkers, images } = content;
     const { markerCount, shortFormCount, imageCount } = counts;
     
-    // Merge regular markers, short-form markers, and images
-    const mergedContent = this.mergeMarkersShortFormAndImages(markers, shortFormMarkers, images);
+    // Merge regular markers, short-form markers, and images, then filter seen items
+    const mergedContent = this.filterSeenContent(this.mergeMarkersShortFormAndImages(markers, shortFormMarkers, images));
 
     const expectedLimit = currentFilters.limit || FeedContainer.CONTENT_LOAD_LIMIT;
     

@@ -807,6 +807,40 @@ export class SettingsPage {
     });
 
     layoutSection.appendChild(excludedTagsContainer);
+
+    const seenHistoryContainer = document.createElement('div');
+    seenHistoryContainer.style.marginBottom = '16px';
+
+    const seenHistoryLabelRow = buildInputLabel(
+      'Seen history size (0 = disabled)',
+      'Tracks up to this many recently seen items and hides them from the feed.\nSet to 0 to disable. Default: 500.'
+    );
+    seenHistoryContainer.appendChild(seenHistoryLabelRow.container);
+
+    const seenHistorySizeInput = document.createElement('input');
+    seenHistorySizeInput.type = 'number';
+    seenHistorySizeInput.value = String(this.settings.seenHistorySize ?? 500);
+    seenHistorySizeInput.min = '0';
+    seenHistorySizeInput.max = '2000';
+    seenHistorySizeInput.style.width = '100%';
+    seenHistorySizeInput.style.padding = '12px';
+    seenHistorySizeInput.style.borderRadius = THEME.radius.button;
+    seenHistorySizeInput.style.border = `1px solid ${THEME.colors.border}`;
+    seenHistorySizeInput.style.backgroundColor = THEME.colors.surface;
+    seenHistorySizeInput.style.color = THEME.colors.textPrimary;
+    seenHistorySizeInput.style.fontSize = THEME.typography.sizeBody;
+    seenHistorySizeInput.style.boxSizing = 'border-box';
+    seenHistorySizeInput.addEventListener('input', () => {
+      clearTimeout((seenHistorySizeInput as any).saveTimeout);
+      (seenHistorySizeInput as any).saveTimeout = setTimeout(() => {
+        this.saveSettings();
+      }, 500);
+    });
+    seenHistoryContainer.appendChild(seenHistorySizeInput);
+
+    layoutSection.appendChild(seenHistoryContainer);
+    (this as any).seenHistorySizeInput = seenHistorySizeInput;
+
     generalContent.appendChild(layoutSection);
 
     // Image Feed Settings Section
@@ -1380,11 +1414,13 @@ export class SettingsPage {
     const showVerifiedCheckmarksToggle = (this as any).showVerifiedCheckmarksToggle as HTMLInputElement | undefined;
     const excludedTagsInput = (this as any).excludedTagsInput as HTMLInputElement | undefined;
 
-    if (!fileTypesInput || !maxDurationInput || !includeImagesToggle || !imagesOnlyToggle || 
+    const seenHistorySizeInput = (this as any).seenHistorySizeInput as HTMLInputElement | undefined;
+
+    if (!fileTypesInput || !maxDurationInput || !includeImagesToggle || !imagesOnlyToggle ||
         !shortFormIncludeToggle || !shortFormOnlyToggle || !reelModeToggle ||
         !portraitToggle || !landscapeToggle ||
         !themeBackgroundInput || !themePrimaryInput || !themeSecondaryInput || !themeAccentInput ||
-        !showVerifiedCheckmarksToggle || !excludedTagsInput) {
+        !showVerifiedCheckmarksToggle || !excludedTagsInput || !seenHistorySizeInput) {
       return; // Settings not fully initialized yet
     }
 
@@ -1436,6 +1472,7 @@ export class SettingsPage {
       excludedTagNames,
       imagesInGalleryOnly: galleryOnlyToggle?.checked ?? false,
       galleryIds: gallerySelectedIds ? [...gallerySelectedIds] : [],
+      seenHistorySize: Math.max(0, Math.min(2000, Number.parseInt(seenHistorySizeInput.value, 10) || 0)),
     };
 
     // Notify parent to update settings and reload feed if needed

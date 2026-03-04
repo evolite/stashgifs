@@ -121,6 +121,7 @@ export interface FeedSettings {
   excludedTagNames?: string[]; // Tags to exclude from feed (names)
   imagesInGalleryOnly?: boolean; // When true, only show images that belong to a gallery
   galleryIds?: string[]; // Gallery IDs to filter to; empty = any gallery (NOT_NULL)
+  seenHistorySize?: number; // Max IDs tracked in seen ring buffer (0 = disabled, default 500)
 }
 
 export interface VideoPostData {
