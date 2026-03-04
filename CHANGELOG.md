@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [5.37.0] - 2026-03-04
+
+### Changed
+- Replace gallery multi-select with chip input dropdown
+- Remove credits section from README
+- Enhance settings section in README
+
 ## [5.36.0] - 2026-02-09
 
 ### Changed
