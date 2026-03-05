@@ -6,15 +6,19 @@
 
 import { NativeVideoPlayer } from './NativeVideoPlayer.js';
 import { isMobileDevice, THEME } from './utils.js';
-import { HQ_SVG_OUTLINE, HQ_SVG_FILLED } from './icons.js';
+import { HQ_SVG_OUTLINE, HQ_SVG_FILLED, VOLUME_MUTED_SVG, VOLUME_UNMUTED_SVG } from './icons.js';
 import { BasePost } from './BasePost.js';
 import { FavoritesManager } from './FavoritesManager.js';
 import { StashAPI } from './StashAPI.js';
 import { VisibilityManager } from './VisibilityManager.js';
+import { setupTouchHandlers, preventClickAfterTouch } from './utils/touchHandlers.js';
 
 export abstract class VideoPostBase extends BasePost {
   protected isHQMode: boolean = false;
   protected loadErrorCount: number = 0;
+  protected muteOverlayButton?: HTMLElement;
+  protected onMuteToggle?: (isMuted: boolean) => void;
+  protected getGlobalMuteState?: () => boolean;
   protected hasFailedPermanently: boolean = false;
   protected errorPlaceholder?: HTMLElement;
   protected retryTimeoutId?: number;
@@ -187,5 +191,75 @@ export abstract class VideoPostBase extends BasePost {
           reveal();
         }
       });
+  }
+
+  protected createMuteOverlayButton(): HTMLElement {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'video-post__mute-overlay';
+    button.setAttribute('aria-label', 'Toggle mute');
+
+    this.applyIconButtonStyles(button);
+    button.style.color = THEME.colors.textPrimary;
+    button.style.padding = '0';
+    button.style.width = '44px';
+    button.style.height = '44px';
+    button.style.minWidth = '44px';
+    button.style.minHeight = '44px';
+    button.style.touchAction = 'manipulation';
+
+    const handleMuteToggle = (e: Event) => {
+      e.preventDefault();
+      e.stopPropagation();
+      e.stopImmediatePropagation();
+      if (this.onMuteToggle && this.getGlobalMuteState) {
+        const currentState = this.getGlobalMuteState();
+        this.onMuteToggle(!currentState);
+      }
+    };
+
+    button.addEventListener('click', handleMuteToggle);
+
+    const isMobile = isMobileDevice();
+    if (isMobile) {
+      setupTouchHandlers(button, {
+        onTap: (e) => {
+          handleMuteToggle(e);
+        },
+        preventDefault: true,
+        stopPropagation: true,
+        stopImmediatePropagation: true,
+      });
+      preventClickAfterTouch(button);
+    }
+
+    this.muteOverlayButton = button;
+    this.updateMuteOverlayButton();
+
+    return button;
+  }
+
+  updateMuteOverlayButton(): void {
+    const btn = this.muteOverlayButton;
+    if (!btn || !this.getGlobalMuteState) return;
+
+    const isMuted = this.getGlobalMuteState();
+    if (isMuted) {
+      btn.innerHTML = VOLUME_MUTED_SVG;
+      btn.setAttribute('aria-label', 'Unmute');
+    } else {
+      btn.innerHTML = VOLUME_UNMUTED_SVG;
+      btn.setAttribute('aria-label', 'Mute');
+    }
+
+    // Always active by default; subclasses may override via applyMuteButtonHQState
+    btn.style.opacity = '1';
+    btn.style.pointerEvents = 'auto';
+    this.applyMuteButtonHQState(btn);
+  }
+
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  protected applyMuteButtonHQState(_btn: HTMLElement): void {
+    // No-op by default (VideoPost always keeps mute button active)
   }
 }

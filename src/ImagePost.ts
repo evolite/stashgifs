@@ -10,8 +10,7 @@ import { StashAPI } from './StashAPI.js';
 import { VisibilityManager } from './VisibilityManager.js';
 import { getAspectRatioClass, showToast, detectVideoFromVisualFiles, getImageUrlForDisplay } from './utils.js';
 import { BasePost } from './BasePost.js';
-import type { AddTagDialogState } from './BasePost.js';
-import { resolveImageFavoriteTagId, toggleImageFavorite, adjustImageDialogPosition } from './utils/imagePostUtils.js';
+import { toggleImageFavorite } from './utils/imagePostUtils.js';
 import { RatingControl } from './RatingControl.js';
 
 // Constants
@@ -28,11 +27,7 @@ export class ImagePost extends BasePost {
   
   private playerContainer?: HTMLElement;
   private footer?: HTMLElement;
-  private buttonGroup?: HTMLElement;
-  
-  // Add tag dialog state
-  private readonly addTagDialogState: AddTagDialogState = { isOpen: false };
-  
+
   private readonly ratingSystemConfig?: { type?: string; starPrecision?: string } | null;
   private ratingControl?: RatingControl;
   
@@ -304,24 +299,6 @@ export class ImagePost extends BasePost {
     return this.data.image.tags;
   }
 
-  /**
-   * Open add tag dialog
-   */
-  protected openAddTagDialog(): void {
-    this.openAddTagDialogBase({
-      state: this.addTagDialogState,
-      buttonGroup: this.buttonGroup,
-      onSearch: (searchTerm) => {
-        void this.searchTagsForSelect(this.addTagDialogState, searchTerm);
-      },
-      onSubmit: () => {
-        void this.addTagToImage();
-      },
-      onAdjustPosition: (dialog) => adjustImageDialogPosition(dialog, this.container, this.buttonGroup),
-      focusAfterClose: this.addTagButton
-    });
-  }
-
   protected async removeTagAction(tagId: string, tagName: string): Promise<boolean> {
     return this.removeTagShared(tagId, tagName, {
       getCurrentTags: () => this.data.image.tags || [],
@@ -340,13 +317,6 @@ export class ImagePost extends BasePost {
       itemType: 'image',
       logPrefix: 'ImagePost'
     });
-  }
-
-  /**
-   * Add tag to image
-   */
-  private async addTagToImage(): Promise<void> {
-    await this.addTagToImageShared(this.addTagDialogState, this.addTagButton);
   }
 
   /**

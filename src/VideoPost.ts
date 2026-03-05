@@ -10,9 +10,8 @@ import { StashAPI } from './StashAPI.js';
 import { VisibilityManager } from './VisibilityManager.js';
 import { calculateAspectRatio, getAspectRatioClass, normalizeMediaUrl, showToast, toAbsoluteUrl, isMobileDevice, THEME } from './utils.js';
 import { posterPreloader } from './PosterPreloader.js';
-import { EXTERNAL_LINK_SVG, MARKER_SVG, VOLUME_MUTED_SVG, VOLUME_UNMUTED_SVG } from './icons.js';
+import { EXTERNAL_LINK_SVG, MARKER_SVG } from './icons.js';
 import { VideoPostBase } from './VideoPostBase.js';
-import { setupTouchHandlers, preventClickAfterTouch } from './utils/touchHandlers.js';
 import { RatingControl } from './RatingControl.js';
 
 // Constants for magic numbers and strings
@@ -63,14 +62,10 @@ export class VideoPost extends VideoPostBase {
   // Cached DOM elements
   private playerContainer?: HTMLElement;
   private footer?: HTMLElement;
-  private buttonGroup?: HTMLElement;
 
   private readonly onCancelRequests?: () => void; // Callback to cancel pending requests
-  private readonly onMuteToggle?: (isMuted: boolean) => void; // Callback for mute toggle
-  private readonly getGlobalMuteState?: () => boolean; // Callback to get global mute state
 
   private readonly useShuffleMode: boolean = false;
-  private muteOverlayButton?: HTMLElement; // Overlay mute button
 
   constructor(
     container: HTMLElement, 
@@ -195,85 +190,6 @@ export class VideoPost extends VideoPostBase {
     this.videoLoadingIndicator = loading;
 
     return container;
-  }
-
-  /**
-   * Create mute button for footer
-   */
-  private createMuteOverlayButton(): HTMLElement {
-    const button = document.createElement('button');
-    button.type = 'button';
-    button.className = 'video-post__mute-overlay';
-    button.setAttribute('aria-label', 'Toggle mute');
-    
-    // Style to match other footer buttons
-    this.applyIconButtonStyles(button);
-    button.style.color = THEME.colors.textPrimary;
-    button.style.padding = '0';
-    button.style.width = '44px';
-    button.style.height = '44px';
-    button.style.minWidth = '44px';
-    button.style.minHeight = '44px';
-    // Prevent double-tap zoom on mobile and improve touch responsiveness
-    button.style.touchAction = 'manipulation';
-    
-    // Handle mute toggle
-    const handleMuteToggle = (e: Event) => {
-      e.preventDefault();
-      e.stopPropagation();
-      e.stopImmediatePropagation(); // Prevent any other handlers from running
-      if (this.onMuteToggle && this.getGlobalMuteState) {
-        const currentState = this.getGlobalMuteState();
-        this.onMuteToggle(!currentState);
-      }
-    };
-    
-    // Click handler (desktop)
-    button.addEventListener('click', handleMuteToggle);
-    
-    // Touch handler (mobile) - use unified touch handler utility
-    const isMobile = isMobileDevice();
-    if (isMobile) {
-      setupTouchHandlers(button, {
-        onTap: (e) => {
-          handleMuteToggle(e);
-        },
-        preventDefault: true,
-        stopPropagation: true,
-        stopImmediatePropagation: true,
-      });
-      
-      // Prevent click event from firing after touch to avoid double-firing
-      preventClickAfterTouch(button);
-    }
-    
-    this.muteOverlayButton = button;
-    
-    // Update button appearance based on global mute state
-    this.updateMuteOverlayButton();
-    
-    return button;
-  }
-
-  /**
-   * Update mute overlay button appearance based on global mute state
-   */
-  updateMuteOverlayButton(): void {
-    const btn = this.muteOverlayButton;
-    if (!btn || !this.getGlobalMuteState) return;
-    
-    const isMuted = this.getGlobalMuteState();
-    if (isMuted) {
-      btn.innerHTML = VOLUME_MUTED_SVG;
-      btn.setAttribute('aria-label', 'Unmute');
-    } else {
-      btn.innerHTML = VOLUME_UNMUTED_SVG;
-      btn.setAttribute('aria-label', 'Mute');
-    }
-    
-    // Always keep mute button active (marker previews can have audio)
-    btn.style.opacity = '1';
-    btn.style.pointerEvents = 'auto';
   }
 
   /**

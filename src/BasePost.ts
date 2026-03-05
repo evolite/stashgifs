@@ -9,6 +9,7 @@ import { VisibilityManager } from './VisibilityManager.js';
 import { normalizeMediaUrl, showToast, isMobileDevice, THEME, subscribeWindowScroll } from './utils.js';
 import { ADD_TAG_SVG, HEART_SVG_OUTLINE, HEART_SVG_FILLED, OCOUNT_SVG, EXTERNAL_LINK_SVG, STAR_SVG, STAR_SVG_OUTLINE, VERIFIED_SVG } from './icons.js';
 import { setupTouchHandlers, preventClickAfterTouch } from './utils/touchHandlers.js';
+import { adjustImageDialogPosition } from './utils/imagePostUtils.js';
 import { PerformerExtended } from './graphql/types.js';
 import { Performer, Tag } from './types.js';
 
@@ -59,6 +60,8 @@ export abstract class BasePost {
   protected readonly onTagChipClick?: (tagId: number, tagName: string) => void | Promise<void>;
   protected addTagButton?: HTMLElement;
   protected heartButton?: HTMLElement;
+  protected buttonGroup?: HTMLElement;
+  protected addTagDialogState: AddTagDialogState = { isOpen: false };
   protected isFavorite: boolean = false;
   protected isTogglingFavorite: boolean = false;
   protected oCountButton?: HTMLElement;
@@ -2620,9 +2623,27 @@ export abstract class BasePost {
   }
 
   /**
-   * Abstract method to open add tag dialog - must be implemented by subclasses
+   * Open add tag dialog for image-based posts (ImagePost and ImageVideoPost).
+   * VideoPost overrides this with its own marker dialog.
    */
-  protected abstract openAddTagDialog(): void;
+  protected openAddTagDialog(): void {
+    this.openAddTagDialogBase({
+      state: this.addTagDialogState,
+      buttonGroup: this.buttonGroup,
+      onSearch: (searchTerm) => {
+        void this.searchTagsForSelect(this.addTagDialogState, searchTerm);
+      },
+      onSubmit: () => {
+        void this.addTagToImage();
+      },
+      onAdjustPosition: (dialog) => adjustImageDialogPosition(dialog, this.container, this.buttonGroup),
+      focusAfterClose: this.addTagButton
+    });
+  }
+
+  private async addTagToImage(): Promise<void> {
+    await this.addTagToImageShared(this.addTagDialogState, this.addTagButton);
+  }
 
   /**
    * Abstract method to perform favorite toggle action - must be implemented by subclasses

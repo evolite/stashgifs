@@ -8,12 +8,9 @@ import { NativeVideoPlayer } from './NativeVideoPlayer.js';
 import { FavoritesManager } from './FavoritesManager.js';
 import { StashAPI } from './StashAPI.js';
 import { VisibilityManager } from './VisibilityManager.js';
-import { calculateAspectRatio, getAspectRatioClass, normalizeMediaUrl, showToast, toAbsoluteUrl, isMobileDevice, THEME } from './utils.js';
-import { VOLUME_MUTED_SVG, VOLUME_UNMUTED_SVG } from './icons.js';
+import { calculateAspectRatio, getAspectRatioClass, normalizeMediaUrl, showToast, toAbsoluteUrl, THEME } from './utils.js';
 import { VideoPostBase } from './VideoPostBase.js';
-import type { AddTagDialogState } from './BasePost.js';
-import { toggleImageFavorite, adjustImageDialogPosition } from './utils/imagePostUtils.js';
-import { setupTouchHandlers, preventClickAfterTouch } from './utils/touchHandlers.js';
+import { toggleImageFavorite } from './utils/imagePostUtils.js';
 import { RatingControl } from './RatingControl.js';
 
 // Constants
@@ -39,17 +36,10 @@ export class ImageVideoPost extends VideoPostBase {
   private hqButton?: HTMLElement;
 
   private readonly onCancelRequests?: () => void;
-  private readonly onMuteToggle?: (isMuted: boolean) => void;
-  private readonly getGlobalMuteState?: () => boolean;
-  
+
   private playerContainer?: HTMLElement;
   private footer?: HTMLElement;
-  private buttonGroup?: HTMLElement;
-  private muteOverlayButton?: HTMLElement;
-  
-  // Add tag dialog state
-  private readonly addTagDialogState: AddTagDialogState = { isOpen: false };
-  
+
   private readonly ratingSystemConfig?: { type?: string; starPrecision?: string } | null;
   private ratingControl?: RatingControl;
 
@@ -595,24 +585,6 @@ export class ImageVideoPost extends VideoPostBase {
     this.data.image.o_counter = newOCount;
   }
 
-  /**
-   * Open add tag dialog
-   */
-  protected openAddTagDialog(): void {
-    this.openAddTagDialogBase({
-      state: this.addTagDialogState,
-      buttonGroup: this.buttonGroup,
-      onSearch: (searchTerm) => {
-        void this.searchTagsForSelect(this.addTagDialogState, searchTerm);
-      },
-      onSubmit: () => {
-        void this.addTagToImage();
-      },
-      onAdjustPosition: (dialog) => adjustImageDialogPosition(dialog, this.container, this.buttonGroup),
-      focusAfterClose: this.addTagButton
-    });
-  }
-
   protected async removeTagAction(tagId: string, tagName: string): Promise<boolean> {
     return this.removeTagShared(tagId, tagName, {
       getCurrentTags: () => this.data.image.tags || [],
@@ -634,13 +606,6 @@ export class ImageVideoPost extends VideoPostBase {
   }
 
   /**
-   * Add tag to image
-   */
-  private async addTagToImage(): Promise<void> {
-    await this.addTagToImageShared(this.addTagDialogState, this.addTagButton);
-  }
-
-  /**
    * Refresh header to show updated tags
    */
   protected refreshHeader(): void {
@@ -653,80 +618,9 @@ export class ImageVideoPost extends VideoPostBase {
   }
 
   /**
-   * Create mute button for footer
+   * Gray out mute button when not in HQ mode (image videos don't have audio in preview)
    */
-  private createMuteOverlayButton(): HTMLElement {
-    const button = document.createElement('button');
-    button.type = 'button';
-    button.className = 'video-post__mute-overlay';
-    button.setAttribute('aria-label', 'Toggle mute');
-    
-    // Style to match other footer buttons
-    this.applyIconButtonStyles(button);
-    button.style.color = THEME.colors.textPrimary;
-    button.style.padding = '0';
-    button.style.width = '44px';
-    button.style.height = '44px';
-    button.style.minWidth = '44px';
-    button.style.minHeight = '44px';
-    // Prevent double-tap zoom on mobile and improve touch responsiveness
-    button.style.touchAction = 'manipulation';
-    
-    // Handle mute toggle
-    const handleMuteToggle = (e: Event) => {
-      e.preventDefault();
-      e.stopPropagation();
-      e.stopImmediatePropagation(); // Prevent any other handlers from running
-      if (this.onMuteToggle && this.getGlobalMuteState) {
-        const currentState = this.getGlobalMuteState();
-        this.onMuteToggle(!currentState);
-      }
-    };
-    
-    // Click handler (desktop)
-    button.addEventListener('click', handleMuteToggle);
-    
-    // Touch handler (mobile) - use unified touch handler utility
-    const isMobile = isMobileDevice();
-    if (isMobile) {
-      setupTouchHandlers(button, {
-        onTap: (e) => {
-          handleMuteToggle(e);
-        },
-        preventDefault: true,
-        stopPropagation: true,
-        stopImmediatePropagation: true,
-      });
-      
-      // Prevent click event from firing after touch to avoid double-firing
-      preventClickAfterTouch(button);
-    }
-    
-    this.muteOverlayButton = button;
-    
-    // Update button appearance based on global mute state
-    this.updateMuteOverlayButton();
-    
-    return button;
-  }
-
-  /**
-   * Update mute overlay button appearance based on global mute state
-   */
-  updateMuteOverlayButton(): void {
-    const btn = this.muteOverlayButton;
-    if (!btn || !this.getGlobalMuteState) return;
-    
-    const isMuted = this.getGlobalMuteState();
-    if (isMuted) {
-      btn.innerHTML = VOLUME_MUTED_SVG;
-      btn.setAttribute('aria-label', 'Unmute');
-    } else {
-      btn.innerHTML = VOLUME_UNMUTED_SVG;
-      btn.setAttribute('aria-label', 'Mute');
-    }
-    
-    // Gray out the button when not in HQ mode
+  protected applyMuteButtonHQState(btn: HTMLElement): void {
     if (this.isHQMode) {
       btn.style.opacity = '1';
       btn.style.pointerEvents = 'auto';
