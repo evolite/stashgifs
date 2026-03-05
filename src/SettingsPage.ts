@@ -1083,7 +1083,7 @@ export class SettingsPage {
         });
         chip.appendChild(removeBtn);
 
-        galleryChipContainer.insertBefore(chip, gallerySearchInput);
+        gallerySearchInput.before(chip);
       }
     };
 

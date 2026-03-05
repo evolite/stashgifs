@@ -1003,7 +1003,7 @@ export class ImageVideoPost extends BasePost {
     if (!videoUrl) {
       return undefined;
     }
-    if (this.player && this.player.getIsUnloaded()) {
+    if (this.player?.getIsUnloaded()) {
       this.player.reload();
       this.isLoaded = true;
       this.hasRenderedVideo = false;

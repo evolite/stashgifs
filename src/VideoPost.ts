@@ -1347,7 +1347,7 @@ export class VideoPost extends BasePost {
       return undefined;
     }
 
-    if (this.player && this.player.getIsUnloaded()) {
+    if (this.player?.getIsUnloaded()) {
       this.player.reload();
       this.isLoaded = true;
       this.hasRenderedVideo = false;

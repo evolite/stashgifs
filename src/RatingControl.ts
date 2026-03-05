@@ -329,6 +329,14 @@ export class RatingControl {
     }
   }
 
+  private focusRatingButton(button: HTMLElement): void {
+    try {
+      button.focus({ preventScroll: true });
+    } catch {
+      button.focus();
+    }
+  }
+
   private openRatingDialog(): void {
     if (!this.ratingDialog || this.isRatingDialogOpen) return;
     this.isRatingDialogOpen = true;
@@ -352,30 +360,18 @@ export class RatingControl {
       this.hoveredPreviewValue = this.ratingValue;
       this.updateRatingStarButtons(true);
 
-      if (this.ratingStarButtons.length >= starIndex) {
-        const targetButton = this.ratingStarButtons[starIndex - 1];
-        if (targetButton) {
-          try {
-            targetButton.focus({ preventScroll: true });
-          } catch {
-            targetButton.focus();
-          }
-        }
+      const targetButton = this.ratingStarButtons[starIndex - 1];
+      if (targetButton) {
+        this.focusRatingButton(targetButton);
       }
     } else {
       this.hoveredStarIndex = undefined;
       this.hoveredPreviewValue = undefined;
       this.updateRatingStarButtons();
 
-      if (this.ratingStarButtons.length > 0) {
-        const firstButton = this.ratingStarButtons[0];
-        if (firstButton) {
-          try {
-            firstButton.focus({ preventScroll: true });
-          } catch {
-            firstButton.focus();
-          }
-        }
+      const firstButton = this.ratingStarButtons[0];
+      if (firstButton) {
+        this.focusRatingButton(firstButton);
       }
     }
   }

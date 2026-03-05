@@ -876,7 +876,7 @@ export class NativeVideoPlayer {
     });
   }
 
-  private enforceStartTimePosition(minReadyState: number, allowAutoPreload: boolean): void {
+  private enforceStartTimePosition(minReadyState: number, _allowAutoPreload: boolean): void {
     if (this.desiredStartTime === undefined || this.videoElement.readyState < minReadyState) {
       return;
     }
@@ -898,7 +898,6 @@ export class NativeVideoPlayer {
       this.startTimeEnforced = true;
     }
 
-    void allowAutoPreload;
   }
 
   /**
@@ -1793,7 +1792,7 @@ export class NativeVideoPlayer {
     if (errorName === 'NotAllowedError') {
       throw err;
     }
-    if (errorName === 'AbortError' || (errorMessage && errorMessage.includes('aborted'))) {
+    if (errorName === 'AbortError' || errorMessage?.includes('aborted')) {
       return;
     }
     const isLoadFailure = this.hasLoadError();
@@ -2306,8 +2305,8 @@ export class NativeVideoPlayer {
       clearTimeout(this.posterExtractionTimeoutId);
       this.posterExtractionTimeoutId = undefined;
     }
-    if (this.posterExtractionIdleId !== undefined && 'cancelIdleCallback' in window) {
-      (window as Window & { cancelIdleCallback?: (id: number) => void }).cancelIdleCallback?.(this.posterExtractionIdleId);
+    if (this.posterExtractionIdleId !== undefined && 'cancelIdleCallback' in globalThis) {
+      (globalThis as unknown as Window & { cancelIdleCallback?: (id: number) => void }).cancelIdleCallback?.(this.posterExtractionIdleId);
       this.posterExtractionIdleId = undefined;
     }
   }
@@ -2323,8 +2322,8 @@ export class NativeVideoPlayer {
       this.extractFirstFrameAsPoster();
     };
 
-    if ('requestIdleCallback' in window) {
-      this.posterExtractionIdleId = (window as Window & { requestIdleCallback?: (callback: () => void, options?: { timeout: number }) => number }).requestIdleCallback?.(
+    if ('requestIdleCallback' in globalThis) {
+      this.posterExtractionIdleId = (globalThis as unknown as Window & { requestIdleCallback?: (callback: () => void, options?: { timeout: number }) => number }).requestIdleCallback?.(
         run,
         { timeout: 1500 }
       );
@@ -2751,6 +2750,39 @@ export class NativeVideoPlayer {
     this.container.addEventListener('keydown', this.containerKeydownHandler);
   }
 
+  private handleViewportIntersectionEntry(entry: IntersectionObserverEntry): void {
+    if (!this.isVideoElementValid()) {
+      return;
+    }
+    if (entry.isIntersecting) {
+      if (this.viewportUnloadTimeoutId) {
+        clearTimeout(this.viewportUnloadTimeoutId);
+        this.viewportUnloadTimeoutId = undefined;
+      }
+      if (this.videoElement.preload === 'none') {
+        this.videoElement.preload = isMobileDevice() ? 'metadata' : 'auto';
+      }
+      if (this.isUnloaded) {
+        this.reload();
+      }
+      return;
+    }
+
+    if (this.state.isPlaying) {
+      return;
+    }
+
+    if (this.viewportUnloadTimeoutId) {
+      clearTimeout(this.viewportUnloadTimeoutId);
+    }
+    this.viewportUnloadTimeoutId = setTimeout(() => {
+      if (!this.isVideoElementValid()) return;
+      if (this.state.isPlaying) return;
+      this.videoElement.preload = 'none';
+      this.unload();
+    }, 1500);
+  }
+
   private setupViewportObserver(): void {
     if (typeof IntersectionObserver === 'undefined') {
       return;
@@ -2758,36 +2790,7 @@ export class NativeVideoPlayer {
 
     this.viewportObserver = new IntersectionObserver((entries) => {
       for (const entry of entries) {
-        if (!this.isVideoElementValid()) {
-          continue;
-        }
-        if (entry.isIntersecting) {
-          if (this.viewportUnloadTimeoutId) {
-            clearTimeout(this.viewportUnloadTimeoutId);
-            this.viewportUnloadTimeoutId = undefined;
-          }
-          if (this.videoElement.preload === 'none') {
-            this.videoElement.preload = isMobileDevice() ? 'metadata' : 'auto';
-          }
-          if (this.isUnloaded) {
-            this.reload();
-          }
-          continue;
-        }
-
-        if (this.state.isPlaying) {
-          continue;
-        }
-
-        if (this.viewportUnloadTimeoutId) {
-          clearTimeout(this.viewportUnloadTimeoutId);
-        }
-        this.viewportUnloadTimeoutId = setTimeout(() => {
-          if (!this.isVideoElementValid()) return;
-          if (this.state.isPlaying) return;
-          this.videoElement.preload = 'none';
-          this.unload();
-        }, 1500);
+        this.handleViewportIntersectionEntry(entry);
       }
     }, { rootMargin: '200px 0px', threshold: 0.01 });
 
@@ -2806,10 +2809,7 @@ export class NativeVideoPlayer {
     }
   }
 
-  destroy(): void {
-    this.clearTimeoutsAndIntervals();
-    this.removeVideoEventListeners();
-
+  private cleanupEventHandlers(): void {
     // Remove hover handlers from video element
     if (this.isVideoElementValid() && this.hoverEnterHandler && this.hoverLeaveHandler) {
       this.videoElement.removeEventListener('mouseenter', this.hoverEnterHandler);
@@ -2842,6 +2842,17 @@ export class NativeVideoPlayer {
       this.viewportObserver = undefined;
     }
 
+    if (this.visibilityChangeHandler) {
+      document.removeEventListener('visibilitychange', this.visibilityChangeHandler);
+      this.visibilityChangeHandler = undefined;
+    }
+    if (this.pageHideHandler) {
+      window.removeEventListener('pagehide', this.pageHideHandler);
+      this.pageHideHandler = undefined;
+    }
+  }
+
+  private cleanupTimers(): void {
     // Clear scroll timeout
     if (this.scrollTimeoutId) {
       clearTimeout(this.scrollTimeoutId);
@@ -2853,20 +2864,18 @@ export class NativeVideoPlayer {
       this.unloadRetryTimeout = undefined;
     }
 
-    if (this.visibilityChangeHandler) {
-      document.removeEventListener('visibilitychange', this.visibilityChangeHandler);
-      this.visibilityChangeHandler = undefined;
-    }
-    if (this.pageHideHandler) {
-      window.removeEventListener('pagehide', this.pageHideHandler);
-      this.pageHideHandler = undefined;
-    }
-
     if (this.videoFrameCallbackId !== undefined) {
       const video = this.videoElement as HTMLVideoElement & { cancelVideoFrameCallback?: (id: number) => void };
       video.cancelVideoFrameCallback?.(this.videoFrameCallbackId);
       this.videoFrameCallbackId = undefined;
     }
+  }
+
+  destroy(): void {
+    this.clearTimeoutsAndIntervals();
+    this.removeVideoEventListeners();
+    this.cleanupEventHandlers();
+    this.cleanupTimers();
 
     // Clean up touch handlers
     if (this.touchHandlerCleanup) {

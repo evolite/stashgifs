@@ -2212,6 +2212,58 @@ export class StashAPI {
     return String.raw`(?i)\.(${extensions.join('|')})$`;
   }
 
+  private buildImageFilter(
+    regexPattern: string,
+    filters?: {
+      performerIds?: number[];
+      tagIds?: string[];
+      excludedTagIds?: string[];
+      orientationFilter?: ImageOrientation[];
+      imagesInGalleryOnly?: boolean;
+      galleryIds?: string[];
+    }
+  ): ImageFilterInput {
+    const imageFilter: ImageFilterInput = {
+      path: {
+        value: regexPattern,
+        modifier: 'MATCHES_REGEX',
+      },
+    };
+
+    if (filters?.performerIds && filters.performerIds.length > 0) {
+      imageFilter.performers = {
+        value: filters.performerIds,
+        modifier: 'INCLUDES',
+      };
+    }
+
+    const excludedTagIds = filters?.excludedTagIds ?? [];
+    if ((filters?.tagIds && filters.tagIds.length > 0) || excludedTagIds.length > 0) {
+      imageFilter.tags = {
+        value: filters?.tagIds ?? [],
+        modifier: 'INCLUDES',
+      };
+      (imageFilter.tags as { excludes?: string[] }).excludes = excludedTagIds;
+    }
+
+    const imageOrientations = this.resolveOrientationEnumValues(filters);
+    if (imageOrientations.length > 0) {
+      imageFilter.orientation = {
+        value: imageOrientations.length === 1 ? imageOrientations[0] : imageOrientations,
+      };
+    }
+
+    if (filters?.imagesInGalleryOnly) {
+      const ids = filters.galleryIds ?? [];
+      imageFilter.galleries = {
+        value: ids,
+        modifier: ids.length > 0 ? 'INCLUDES' : 'NOT_NULL',
+      };
+    }
+
+    return imageFilter;
+  }
+
   /**
    * Find images with filtering by file extension, performers, and tags
    * @param fileExtensions Array of file extensions (e.g., ['.gif', '.webm'])
@@ -2250,48 +2302,7 @@ export class StashAPI {
 
     // Build regex pattern from file extensions
     const regexPattern = this.buildPathRegex(fileExtensions);
-    
-    // Build image filter
-    const imageFilter: ImageFilterInput = {
-      path: {
-        value: regexPattern,
-        modifier: 'MATCHES_REGEX',
-      },
-    };
-
-    // Add performer filter if provided
-    if (filters?.performerIds && filters.performerIds.length > 0) {
-      imageFilter.performers = {
-        value: filters.performerIds,
-        modifier: 'INCLUDES',
-      };
-    }
-
-    const excludedTagIds = filters?.excludedTagIds ?? [];
-
-    // Add tag filter if provided
-    if ((filters?.tagIds && filters.tagIds.length > 0) || excludedTagIds.length > 0) {
-      imageFilter.tags = {
-        value: filters?.tagIds ?? [],
-        modifier: 'INCLUDES',
-      };
-      (imageFilter.tags as { excludes?: string[] }).excludes = excludedTagIds;
-    }
-
-    const imageOrientations = this.resolveOrientationEnumValues(filters);
-    if (imageOrientations.length > 0) {
-      imageFilter.orientation = {
-        value: imageOrientations.length === 1 ? imageOrientations[0] : imageOrientations
-      };
-    }
-
-    if (filters?.imagesInGalleryOnly) {
-      const ids = filters.galleryIds ?? [];
-      imageFilter.galleries = {
-        value: ids,
-        modifier: ids.length > 0 ? 'INCLUDES' : 'NOT_NULL',
-      };
-    }
+    const imageFilter = this.buildImageFilter(regexPattern, filters);
 
     // Reuse existing sort seed for pagination, or generate new one for first page
     const sortSeed = filters?.sortSeed || generateRandomSortSeed();

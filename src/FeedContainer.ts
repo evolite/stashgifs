@@ -444,7 +444,7 @@ export class FeedContainer {
   }
 
   private parseRootMarginToPx(rootMargin: string): number {
-    const match = rootMargin.match(/-?\d+/);
+    const match = /-?\d+/.exec(rootMargin);
     if (!match) {
       return 0;
     }
@@ -937,10 +937,10 @@ export class FeedContainer {
   private deferAutoAdvance(retries = 5): void {
     if (retries <= 0) return;
     requestAnimationFrame(() => {
-      if (!this.isLoading) {
-        if (this.hasMore) void this.loadVideos(undefined, true);
-      } else {
+      if (this.isLoading) {
         this.deferAutoAdvance(retries - 1);
+      } else {
+        if (this.hasMore) void this.loadVideos(undefined, true);
       }
     });
   }
@@ -1138,47 +1138,49 @@ export class FeedContainer {
     if (!isMobile) return;
 
     let unlocked = false;
-    const unlock = async () => {
-      if (unlocked) return;
-      unlocked = true;
-      this.removeMobileAutoplayUnlockListeners();
-      
-      // Create a dummy video element to unlock autoplay
-      const dummyVideo = document.createElement('video');
-      dummyVideo.muted = true;
-      dummyVideo.playsInline = true;
-      dummyVideo.setAttribute('playsinline', 'true');
-      dummyVideo.setAttribute('webkit-playsinline', 'true');
-      dummyVideo.style.display = 'none';
-      dummyVideo.style.width = '1px';
-      dummyVideo.style.height = '1px';
-      dummyVideo.style.position = 'absolute';
-      dummyVideo.style.opacity = '0';
-      dummyVideo.style.pointerEvents = 'none';
-      
-      // Use a data URL for a minimal video (1x1 transparent pixel)
-      // This is just to unlock autoplay capability
-      dummyVideo.src = 'data:video/mp4;base64,AAAAIGZ0eXBpc29tAAACAGlzb21pc28yYXZjMW1wNDEAAAAIZnJlZQAAAbxtZGF0AAACrgYF//+q3EXpvebZSLeWLNgg2SPu73gyNjQgLSBjb3JlIDE1MiByMjg1NCBlOWE1OTAzIC0gSC4yNjQvTVBFRy00IEFWQyBjb2RlYyAtIENvcHlsZWZ0IDIwMDMtMjAxNyAtIGh0dHA6Ly93d3cudmlkZW9sYW4ub3JnL3gyNjQuaHRtbCAtIG9wdGlvbnM6IGNhYmFjPTEgcmVmPTMgZGVibG9jaz0xOjA6MCBhbmFseXNlPTB4MzoweDExMyBtZT1oZXggc3VibWU9NyBwc3k9MSBwc3lfcmQ9MS4wMDowLjAwIG1peGVkX3JlZj0xIG1lX3JhbmdlPTE2IGNocm9tYV9tZT0xIHRyZWxsaXM9MSA4eDhkY3Q9MSBjcW09MCBkZWFkem9uZT0yMSwxMSBmYXN0X3Bza2lwPTEgY2hyb21hX3FwX29mZnNldD0tMiB0aHJlYWRzPTEgbG9va2FoZWFkX3RocmVhZHM9MSBzbGljZWRfdGhyZWFkcz0wIG5yPTAgZGVjaW1hdGU9MSBpbnRlcmxhY2VkPTAgYmx1cmF5X2NvbXBhdD0wIGNvbnN0cmFpbmVkX2ludHJhPTAgYmZyYW1lcz0zIGJfcHlyYW1pZD0yIGJfYWRhcHQ9MSBiX2JpYXM9MCBkaXJlY3Q9MSB3ZWlnaHRiPTEgb3Blbl9nb3A9MCB3ZWlnaHRwPTIga2V5aW50PTI1MCBrZXlpbnRfbWluPTI1IHNjZW5lY3V0PTQwIGludHJhX3JlZnJlc2g9MCByY19sb29rYWhlYWQ9NDAgcmM9Y3JmIG1idHJlZT0xIGNyZj0yMy4wIHFjb21wPTAuNjAgcXBtaW49MCBxcG1heD02OSBxcHN0ZXA9NCBpcF9yYXRpbz0xLjQwIGFxPTA6';
-      
-      document.body.appendChild(dummyVideo);
-      
-      try {
-        // Try to play the dummy video to unlock autoplay
-        await dummyVideo.play();
-        
-        // Try to play all currently visible videos
-        setTimeout(() => {
-          this.visibilityManager.retryVisibleVideos();
-        }, 100);
-      } catch (e) {
-        // Autoplay unlock failed, user will need to interact
-        console.debug('Autoplay unlock failed, user will need to interact', e);
-      } finally {
-        // Clean up after a short delay
-        setTimeout(() => {
-          dummyVideo.remove();
-        }, 1000);
-      }
+    const unlock = () => {
+      void (async () => {
+        if (unlocked) return;
+        unlocked = true;
+        this.removeMobileAutoplayUnlockListeners();
+
+        // Create a dummy video element to unlock autoplay
+        const dummyVideo = document.createElement('video');
+        dummyVideo.muted = true;
+        dummyVideo.playsInline = true;
+        dummyVideo.setAttribute('playsinline', 'true');
+        dummyVideo.setAttribute('webkit-playsinline', 'true');
+        dummyVideo.style.display = 'none';
+        dummyVideo.style.width = '1px';
+        dummyVideo.style.height = '1px';
+        dummyVideo.style.position = 'absolute';
+        dummyVideo.style.opacity = '0';
+        dummyVideo.style.pointerEvents = 'none';
+
+        // Use a data URL for a minimal video (1x1 transparent pixel)
+        // This is just to unlock autoplay capability
+        dummyVideo.src = 'data:video/mp4;base64,AAAAIGZ0eXBpc29tAAACAGlzb21pc28yYXZjMW1wNDEAAAAIZnJlZQAAAbxtZGF0AAACrgYF//+q3EXpvebZSLeWLNgg2SPu73gyNjQgLSBjb3JlIDE1MiByMjg1NCBlOWE1OTAzIC0gSC4yNjQvTVBFRy00IEFWQyBjb2RlYyAtIENvcHlsZWZ0IDIwMDMtMjAxNyAtIGh0dHA6Ly93d3cudmlkZW9sYW4ub3JnL3gyNjQuaHRtbCAtIG9wdGlvbnM6IGNhYmFjPTEgcmVmPTMgZGVibG9jaz0xOjA6MCBhbmFseXNlPTB4MzoweDExMyBtZT1oZXggc3VibWU9NyBwc3k9MSBwc3lfcmQ9MS4wMDowLjAwIG1peGVkX3JlZj0xIG1lX3JhbmdlPTE2IGNocm9tYV9tZT0xIHRyZWxsaXM9MSA4eDhkY3Q9MSBjcW09MCBkZWFkem9uZT0yMSwxMSBmYXN0X3Bza2lwPTEgY2hyb21hX3FwX29mZnNldD0tMiB0aHJlYWRzPTEgbG9va2FoZWFkX3RocmVhZHM9MSBzbGljZWRfdGhyZWFkcz0wIG5yPTAgZGVjaW1hdGU9MSBpbnRlcmxhY2VkPTAgYmx1cmF5X2NvbXBhdD0wIGNvbnN0cmFpbmVkX2ludHJhPTAgYmZyYW1lcz0zIGJfcHlyYW1pZD0yIGJfYWRhcHQ9MSBiX2JpYXM9MCBkaXJlY3Q9MSB3ZWlnaHRiPTEgb3Blbl9nb3A9MCB3ZWlnaHRwPTIga2V5aW50PTI1MCBrZXlpbnRfbWluPTI1IHNjZW5lY3V0PTQwIGludHJhX3JlZnJlc2g9MCByY19sb29rYWhlYWQ9NDAgcmM9Y3JmIG1idHJlZT0xIGNyZj0yMy4wIHFjb21wPTAuNjAgcXBtaW49MCBxcG1heD02OSBxcHN0ZXA9NCBpcF9yYXRpbz0xLjQwIGFxPTA6';
+
+        document.body.appendChild(dummyVideo);
+
+        try {
+          // Try to play the dummy video to unlock autoplay
+          await dummyVideo.play();
+
+          // Try to play all currently visible videos
+          setTimeout(() => {
+            this.visibilityManager.retryVisibleVideos();
+          }, 100);
+        } catch (e) {
+          // Autoplay unlock failed, user will need to interact
+          console.debug('Autoplay unlock failed, user will need to interact', e);
+        } finally {
+          // Clean up after a short delay
+          setTimeout(() => {
+            dummyVideo.remove();
+          }, 1000);
+        }
+      })();
     };
 
     // Unlock on any user interaction
@@ -6114,6 +6116,37 @@ export class FeedContainer {
     this.preloadNextReelPosts(postId);
   }
 
+  private shouldSkipReelPreload(post: PostType | undefined, nextId: string): boolean {
+    if (this.reelNextPreloadIds.has(nextId)) {
+      return true;
+    }
+    if (!post || !(post instanceof VideoPost || post instanceof ImageVideoPost)) {
+      this.reelNextPreloadIds.add(nextId);
+      return true;
+    }
+    if (!post.hasVideoSource()) {
+      this.reelNextPreloadIds.add(nextId);
+      return true;
+    }
+    if (post.isPlayerLoaded()) {
+      this.reelNextPreloadIds.add(nextId);
+      return true;
+    }
+    return false;
+  }
+
+  private tryPreloadReelPost(nextId: string, post: VideoPost | ImageVideoPost): void {
+    try {
+      const player = post.preload();
+      if (isNativeVideoPlayer(player)) {
+        this.visibilityManager.registerPlayer(nextId, player);
+      }
+      this.reelNextPreloadIds.add(nextId);
+    } catch (error) {
+      console.warn('FeedContainer: Reel next preload failed', { postId: nextId, error });
+    }
+  }
+
   private preloadNextReelPosts(currentPostId: string): void {
     if (!this.isReelModeEnabled()) {
       return;
@@ -6129,32 +6162,11 @@ export class FeedContainer {
         continue;
       }
       const nextId = this.postOrder[index];
-      if (this.reelNextPreloadIds.has(nextId)) {
-        continue;
-      }
       const post = this.posts.get(nextId);
-      if (!post || !(post instanceof VideoPost || post instanceof ImageVideoPost)) {
-        this.reelNextPreloadIds.add(nextId);
+      if (this.shouldSkipReelPreload(post, nextId)) {
         continue;
       }
-      if (!post.hasVideoSource()) {
-        this.reelNextPreloadIds.add(nextId);
-        continue;
-      }
-      if (post.isPlayerLoaded()) {
-        this.reelNextPreloadIds.add(nextId);
-        continue;
-      }
-
-      try {
-        const player = post.preload();
-        if (isNativeVideoPlayer(player)) {
-          this.visibilityManager.registerPlayer(nextId, player);
-        }
-        this.reelNextPreloadIds.add(nextId);
-      } catch (error) {
-        console.warn('FeedContainer: Reel next preload failed', { postId: nextId, error });
-      }
+      this.tryPreloadReelPost(nextId, post as VideoPost | ImageVideoPost);
     }
   }
 
@@ -6396,9 +6408,12 @@ export class FeedContainer {
     const container = post.getContainer();
     const rect = container.getBoundingClientRect();
     const viewport = this.getViewportRect();
-    const margin = this.isReelModeEnabled()
-      ? (this.isMobileDevice ? 600 : 800)
-      : 500; // Consider posts near viewport
+    let margin: number;
+    if (this.isReelModeEnabled()) {
+      margin = this.isMobileDevice ? 600 : 800;
+    } else {
+      margin = 500; // Consider posts near viewport
+    }
     
     return rect.bottom > viewport.top - margin && 
            rect.top < viewport.top + viewport.height + margin &&
