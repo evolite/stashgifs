@@ -2,7 +2,6 @@
 
 [![Quality Gate Status](https://sonarcloud.io/api/project_badges/measure?project=evolite_stashgifs&metric=alert_status)](https://sonarcloud.io/summary/new_code?id=evolite_stashgifs)
 [![Duplicated Lines (%)](https://sonarcloud.io/api/project_badges/measure?project=evolite_stashgifs&metric=duplicated_lines_density)](https://sonarcloud.io/summary/new_code?id=evolite_stashgifs)
-[![Bugs](https://sonarcloud.io/api/project_badges/measure?project=evolite_stashgifs&metric=bugs)](https://sonarcloud.io/summary/new_code?id=evolite_stashgifs)
 ![TypeScript](https://img.shields.io/badge/TypeScript-5.x-3178C6?logo=typescript&logoColor=white)
 
 A hobby project that turns your stash into an endless scroll of looping content.
