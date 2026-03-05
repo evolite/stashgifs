@@ -22,5 +22,6 @@ Install it via Stash's plugin system using the `index.yml` file. - https://raw.g
 
 Settings can be configured via the settings button in the header, including image display preferences, file type filters, themes and scrolling behavior.
 
-## AI Usage
-Large parts of this codebase is Vibe coded, and quality tested with SonarQube.
+## AI Usage Disclaimer
+Large parts of this codebase is Vibe coded
+Quality validated using SonarQubes Static Code Analyzer.
