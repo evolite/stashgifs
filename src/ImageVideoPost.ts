@@ -9,9 +9,10 @@ import { FavoritesManager } from './FavoritesManager.js';
 import { StashAPI } from './StashAPI.js';
 import { VisibilityManager } from './VisibilityManager.js';
 import { calculateAspectRatio, getAspectRatioClass, normalizeMediaUrl, showToast, toAbsoluteUrl, isMobileDevice, THEME } from './utils.js';
-import { HQ_SVG_OUTLINE, HQ_SVG_FILLED, VOLUME_MUTED_SVG, VOLUME_UNMUTED_SVG } from './icons.js';
-import { BasePost } from './BasePost.js';
+import { VOLUME_MUTED_SVG, VOLUME_UNMUTED_SVG } from './icons.js';
+import { VideoPostBase } from './VideoPostBase.js';
 import type { AddTagDialogState } from './BasePost.js';
+import { toggleImageFavorite, adjustImageDialogPosition } from './utils/imagePostUtils.js';
 import { setupTouchHandlers, preventClickAfterTouch } from './utils/touchHandlers.js';
 import { RatingControl } from './RatingControl.js';
 
@@ -31,22 +32,12 @@ interface ImageVideoPostOptions {
   reelMode?: boolean;
 }
 
-export class ImageVideoPost extends BasePost {
+export class ImageVideoPost extends VideoPostBase {
   protected readonly data: ImageVideoPostData;
   private player?: NativeVideoPlayer;
   private isLoaded: boolean = false;
   private hqButton?: HTMLElement;
-  private isHQMode: boolean = false;
-  private videoLoadingIndicator?: HTMLElement;
-  private loadErrorCount: number = 0;
-  private hasFailedPermanently: boolean = false;
-  private errorPlaceholder?: HTMLElement;
-  private retryTimeoutId?: number;
-  private loadErrorCheckTimeoutId?: ReturnType<typeof setTimeout>;
-  private loadErrorHandler?: () => void;
-  private posterLayer?: HTMLElement;
-  private hasRenderedVideo: boolean = false;
-  
+
   private readonly onCancelRequests?: () => void;
   private readonly onMuteToggle?: (isMuted: boolean) => void;
   private readonly getGlobalMuteState?: () => boolean;
@@ -281,21 +272,6 @@ export class ImageVideoPost extends BasePost {
   }
 
   /**
-   * Update HQ button appearance based on mode
-   */
-  private updateHQButton(button: HTMLElement): void {
-    if (this.isHQMode) {
-      button.innerHTML = HQ_SVG_FILLED;
-      button.style.color = THEME.colors.accentPrimary;
-      button.title = 'HD video loaded';
-    } else {
-      button.innerHTML = HQ_SVG_OUTLINE;
-      button.style.color = THEME.colors.textSecondary;
-      button.title = 'Load HD video';
-    }
-  }
-
-  /**
    * Programmatically set HQ mode (used when feed-level HD is enabled)
    */
   public setHQMode(isHQ: boolean): void {
@@ -467,125 +443,6 @@ export class ImageVideoPost extends BasePost {
   }
 
   /**
-   * Hide media when ready (for autoplay)
-   */
-  private hideMediaWhenReady(player: NativeVideoPlayer, container: HTMLElement): void {
-    const loading = container.querySelector<HTMLElement>('.video-post__loading');
-    const videoElement = player.getVideoElement();
-    if (!videoElement) return;
-
-    const hideVisuals = () => {
-      if (loading) {
-        loading.style.display = 'none';
-        if (this.videoLoadingIndicator) {
-          this.videoLoadingIndicator = undefined;
-        }
-      }
-      this.hidePosterLayer();
-    };
-
-    const scheduleTimeout = globalThis.window?.setTimeout.bind(globalThis.window) ?? setTimeout;
-    const clearScheduledTimeout = globalThis.window?.clearTimeout.bind(globalThis.window) ?? clearTimeout;
-    const requestFrame = globalThis.window?.requestAnimationFrame?.bind(globalThis.window) ?? ((cb: FrameRequestCallback) => setTimeout(cb, 16));
-
-    let revealed = false;
-
-    const cleanup = () => {
-      videoElement.removeEventListener('loadeddata', onLoadedData);
-      videoElement.removeEventListener('playing', onPlaying);
-      videoElement.removeEventListener('timeupdate', onTimeUpdate);
-      clearScheduledTimeout(fallbackHandle);
-    };
-
-    const reveal = () => {
-      if (revealed) {
-        return;
-      }
-      revealed = true;
-      cleanup();
-      this.clearLoadErrorCheckTimeout();
-      const performHide = () => hideVisuals();
-      requestFrame(() => requestFrame(() => performHide()));
-      this.hasRenderedVideo = true;
-    };
-
-    const onLoadedData = () => reveal();
-    const onPlaying = () => reveal();
-    const onTimeUpdate = () => {
-      if (videoElement.currentTime > 0 || videoElement.readyState >= 2) {
-        reveal();
-      }
-    };
-
-    videoElement.addEventListener('loadeddata', onLoadedData, { once: true });
-    videoElement.addEventListener('playing', onPlaying, { once: true });
-    videoElement.addEventListener('timeupdate', onTimeUpdate);
-
-    const fallbackHandle = scheduleTimeout(() => reveal(), 6000);
-
-    player.waitForReady(4000)
-      .catch((error) => {
-        console.warn('ImageVideoPost: Player ready wait timed out', {
-          error,
-          imageId: this.data.image.id,
-        });
-      })
-      .finally(() => {
-        if (videoElement.readyState >= 2) {
-          reveal();
-        }
-      });
-  }
-
-  private attachLoadErrorHandler(): void {
-    if (!this.player) {
-      return;
-    }
-    const videoElement = this.player.getVideoElement();
-    if (!videoElement) {
-      return;
-    }
-    this.detachLoadErrorHandler();
-    this.loadErrorHandler = () => this.checkForLoadError();
-    videoElement.addEventListener('error', this.loadErrorHandler, { once: true });
-  }
-
-  private detachLoadErrorHandler(): void {
-    if (!this.player || !this.loadErrorHandler) {
-      this.loadErrorHandler = undefined;
-      return;
-    }
-    const videoElement = this.player.getVideoElement();
-    if (videoElement) {
-      videoElement.removeEventListener('error', this.loadErrorHandler);
-    }
-    this.loadErrorHandler = undefined;
-  }
-
-  private clearLoadErrorCheckTimeout(): void {
-    if (this.loadErrorCheckTimeoutId) {
-      clearTimeout(this.loadErrorCheckTimeoutId);
-      this.loadErrorCheckTimeoutId = undefined;
-    }
-  }
-
-  private scheduleLoadErrorCheck(): void {
-    if (!this.player || this.hasFailedPermanently) {
-      return;
-    }
-    this.clearLoadErrorCheckTimeout();
-    const isMobile = isMobileDevice();
-    const delay = isMobile ? 20000 : 16000;
-    this.loadErrorCheckTimeoutId = setTimeout(() => {
-      if (!this.player || this.hasFailedPermanently) {
-        this.clearLoadErrorCheckTimeout();
-        return;
-      }
-      this.checkForLoadError();
-    }, delay);
-  }
-
-  /**
    * Load the video player
    */
   loadPlayer(videoUrl: string): NativeVideoPlayer | undefined {
@@ -643,7 +500,7 @@ export class ImageVideoPost extends BasePost {
   /**
    * Check for load errors
    */
-  private checkForLoadError(): void {
+  protected checkForLoadError(): void {
     if (!this.player) return;
     
     const videoElement = this.player.getVideoElement();
@@ -699,50 +556,17 @@ export class ImageVideoPost extends BasePost {
       console.error('ImageVideoPost: No API available for toggleFavorite');
       return;
     }
-    
     try {
-      const favoriteTagId = await this.resolveFavoriteTagId(true);
-      if (!favoriteTagId) {
-        throw new Error('Favorite tag unavailable');
-      }
-
-      const currentTags = this.data.image.tags ? [...this.data.image.tags] : [];
-      this.data.image.tags ??= [];
-      const hasFavoriteTag =
-        currentTags.some((tag) => tag.id === favoriteTagId || tag.name === FAVORITE_TAG_NAME) || this.isFavorite;
-      const shouldFavorite = !hasFavoriteTag;
-
-      const existingTagIds = Array.from(
-        new Set(
-          currentTags
-            .map((tag) => tag.id)
-            .filter((id): id is string => typeof id === 'string' && id.length > 0)
-        )
+      const result = await toggleImageFavorite(
+        this.data.image.id,
+        this.data.image.tags,
+        this.api,
+        this.favoritesManager,
+        this.isFavorite,
+        FAVORITE_TAG_NAME,
       );
-
-      let nextTagIds: string[];
-      if (shouldFavorite) {
-        nextTagIds = existingTagIds.includes(favoriteTagId)
-          ? existingTagIds
-          : [...existingTagIds, favoriteTagId];
-      } else {
-        nextTagIds = existingTagIds.filter((id) => id !== favoriteTagId);
-      }
-
-      await this.api.updateImageTags(this.data.image.id, nextTagIds);
-
-      if (shouldFavorite) {
-        const alreadyPresent = currentTags.some((tag) => tag.id === favoriteTagId || tag.name === FAVORITE_TAG_NAME);
-        if (!alreadyPresent) {
-          this.data.image.tags = [...currentTags, { id: favoriteTagId, name: FAVORITE_TAG_NAME }];
-        }
-      } else {
-        this.data.image.tags = currentTags.filter(
-          (tag) => tag.id !== favoriteTagId && tag.name !== FAVORITE_TAG_NAME
-        );
-      }
-
-      this.isFavorite = shouldFavorite;
+      this.data.image.tags = result.newTags as typeof this.data.image.tags;
+      this.isFavorite = result.newIsFavorite;
       this.updateHeartButton();
     } catch (error) {
       console.error('ImageVideoPost: Failed to toggle favorite', error);
@@ -757,28 +581,6 @@ export class ImageVideoPost extends BasePost {
    */
   protected getFavoriteTagSource(): Array<{ name: string }> | undefined {
     return this.data.image.tags;
-  }
-
-  private async resolveFavoriteTagId(createIfMissing: boolean): Promise<string | null> {
-    if (this.favoritesManager && createIfMissing) {
-      return this.favoritesManager.getFavoriteTagId();
-    }
-
-    if (!this.api) {
-      return null;
-    }
-
-    const existingTag = await this.api.findTagByName(FAVORITE_TAG_NAME);
-    if (existingTag) {
-      return existingTag.id;
-    }
-
-    if (!createIfMissing) {
-      return null;
-    }
-
-    const newTag = await this.api.createTag(FAVORITE_TAG_NAME);
-    return newTag?.id ?? null;
   }
 
   /**
@@ -806,7 +608,7 @@ export class ImageVideoPost extends BasePost {
       onSubmit: () => {
         void this.addTagToImage();
       },
-      onAdjustPosition: (dialog) => this.adjustDialogPosition(dialog),
+      onAdjustPosition: (dialog) => adjustImageDialogPosition(dialog, this.container, this.buttonGroup),
       focusAfterClose: this.addTagButton
     });
   }
@@ -848,40 +650,6 @@ export class ImageVideoPost extends BasePost {
       header.replaceWith(newHeader);
       this.applyReelModeLayoutIfNeeded(newHeader);
     }
-  }
-
-  /**
-   * Adjust dialog position to keep it within card boundaries
-   */
-  private adjustDialogPosition(dialog: HTMLElement): void {
-    if (!dialog || !this.container) return;
-
-    const dialogRect = dialog.getBoundingClientRect();
-    const dialogWidth = dialogRect.width;
-    
-    const cardContainer = this.container.closest('.video-post, .image-post');
-    if (!cardContainer) return;
-    
-    const cardRect = cardContainer.getBoundingClientRect();
-    const buttonGroupRect = this.buttonGroup?.getBoundingClientRect();
-    if (!buttonGroupRect) return;
-    
-    const buttonCenterX = buttonGroupRect.left + buttonGroupRect.width / 2 - cardRect.left;
-    const dialogHalfWidth = dialogWidth / 2;
-    
-    const minLeft = dialogHalfWidth + 16;
-    const maxLeft = cardRect.width - dialogHalfWidth - 16;
-    
-    let desiredLeft = buttonCenterX;
-    let offsetX = 0;
-    if (desiredLeft < minLeft) {
-      offsetX = minLeft - buttonCenterX;
-    } else if (desiredLeft > maxLeft) {
-      offsetX = maxLeft - buttonCenterX;
-    }
-    
-    dialog.style.left = '50%';
-    dialog.style.transform = `translateX(calc(-50% + ${offsetX}px)) translateY(0) scale(1)`;
   }
 
   /**
@@ -975,6 +743,14 @@ export class ImageVideoPost extends BasePost {
     return this.player;
   }
 
+  protected getEntityLogId(): string {
+    return this.data.image.id;
+  }
+
+  protected getHQButtonOffLabel(): string {
+    return 'Load HD video';
+  }
+
   /**
    * Return true if player has been instantiated
    */
@@ -1008,7 +784,7 @@ export class ImageVideoPost extends BasePost {
       this.isLoaded = true;
       this.hasRenderedVideo = false;
       this.showPosterLayer();
-      const container = this.playerContainer || this.container.querySelector('.video-post__player') as HTMLElement | null;
+      const container = this.playerContainer || this.container.querySelector<HTMLElement>('.video-post__player');
       if (container) {
         this.hideMediaWhenReady(this.player, container);
       }
@@ -1016,23 +792,6 @@ export class ImageVideoPost extends BasePost {
     }
     this.showPosterLayer();
     return this.loadPlayer(videoUrl);
-  }
-
-  private showPosterLayer(): void {
-    if (!this.posterLayer) {
-      return;
-    }
-    if (this.hasRenderedVideo) {
-      return;
-    }
-    this.posterLayer.style.opacity = '1';
-  }
-
-  private hidePosterLayer(): void {
-    if (!this.posterLayer) {
-      return;
-    }
-    this.posterLayer.style.opacity = '0';
   }
 
   /**

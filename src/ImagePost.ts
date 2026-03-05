@@ -11,6 +11,7 @@ import { VisibilityManager } from './VisibilityManager.js';
 import { getAspectRatioClass, showToast, detectVideoFromVisualFiles, getImageUrlForDisplay } from './utils.js';
 import { BasePost } from './BasePost.js';
 import type { AddTagDialogState } from './BasePost.js';
+import { resolveImageFavoriteTagId, toggleImageFavorite, adjustImageDialogPosition } from './utils/imagePostUtils.js';
 import { RatingControl } from './RatingControl.js';
 
 // Constants
@@ -276,90 +277,31 @@ export class ImagePost extends BasePost {
       console.error('ImagePost: No API available for toggleFavorite');
       return;
     }
-    
     try {
-      const favoriteTagId = await this.resolveFavoriteTagId(true);
-      if (!favoriteTagId) {
-        throw new Error('Favorite tag unavailable');
-      }
-
-      const currentTags = this.data.image.tags ? [...this.data.image.tags] : [];
-      this.data.image.tags ??= [];
-      const hasFavoriteTag =
-        currentTags.some((tag) => tag.id === favoriteTagId || tag.name === FAVORITE_TAG_NAME) || this.isFavorite;
-      const shouldFavorite = !hasFavoriteTag;
-
-      const existingTagIds = Array.from(
-        new Set(
-          currentTags
-            .map((tag) => tag.id)
-            .filter(Boolean)
-        )
+      const result = await toggleImageFavorite(
+        this.data.image.id,
+        this.data.image.tags,
+        this.api,
+        this.favoritesManager,
+        this.isFavorite,
+        FAVORITE_TAG_NAME,
       );
-
-      let nextTagIds: string[];
-      if (shouldFavorite) {
-        nextTagIds = existingTagIds.includes(favoriteTagId)
-          ? existingTagIds
-          : [...existingTagIds, favoriteTagId];
-      } else {
-        nextTagIds = existingTagIds.filter((id) => id !== favoriteTagId);
-      }
-
-      // Image ID is already a string
-      await this.api.updateImageTags(this.data.image.id, nextTagIds);
-
-      if (shouldFavorite) {
-        const alreadyPresent = currentTags.some((tag) => tag.id === favoriteTagId || tag.name === FAVORITE_TAG_NAME);
-        if (!alreadyPresent) {
-          this.data.image.tags = [...currentTags, { id: favoriteTagId, name: FAVORITE_TAG_NAME }];
-        }
-      } else {
-        this.data.image.tags = currentTags.filter(
-          (tag) => tag.id !== favoriteTagId && tag.name !== FAVORITE_TAG_NAME
-        );
-      }
-
-      this.isFavorite = shouldFavorite;
+      this.data.image.tags = result.newTags as typeof this.data.image.tags;
+      this.isFavorite = result.newIsFavorite;
       this.updateHeartButton();
     } catch (error) {
       console.error('ImagePost: Failed to toggle favorite', error);
       showToast('Failed to update favorite');
-      // Revert UI state on error
       this.isFavorite = !this.isFavorite;
       this.updateHeartButton();
     }
   }
-
-
 
   /**
    * Get favorite tag source for ImagePost
    */
   protected getFavoriteTagSource(): Array<{ name: string }> | undefined {
     return this.data.image.tags;
-  }
-
-  private async resolveFavoriteTagId(createIfMissing: boolean): Promise<string | null> {
-    if (this.favoritesManager && createIfMissing) {
-      return this.favoritesManager.getFavoriteTagId();
-    }
-
-    if (!this.api) {
-      return null;
-    }
-
-    const existingTag = await this.api.findTagByName(FAVORITE_TAG_NAME);
-    if (existingTag) {
-      return existingTag.id;
-    }
-
-    if (!createIfMissing) {
-      return null;
-    }
-
-    const newTag = await this.api.createTag(FAVORITE_TAG_NAME);
-    return newTag?.id ?? null;
   }
 
   /**
@@ -375,7 +317,7 @@ export class ImagePost extends BasePost {
       onSubmit: () => {
         void this.addTagToImage();
       },
-      onAdjustPosition: (dialog) => this.adjustDialogPosition(dialog),
+      onAdjustPosition: (dialog) => adjustImageDialogPosition(dialog, this.container, this.buttonGroup),
       focusAfterClose: this.addTagButton
     });
   }
@@ -463,49 +405,6 @@ export class ImagePost extends BasePost {
    */
   getContainer(): HTMLElement {
     return this.container;
-  }
-
-  /**
-   * Adjust dialog position to keep it within card boundaries
-   */
-  private adjustDialogPosition(dialog: HTMLElement): void {
-    if (!dialog || !this.container) return;
-
-    // Get dialog dimensions
-    const dialogRect = dialog.getBoundingClientRect();
-    const dialogWidth = dialogRect.width;
-    
-    // Find the card container (the post container)
-    const cardContainer = this.container.closest('.video-post, .image-post');
-    if (!cardContainer) return;
-    
-    const cardRect = cardContainer.getBoundingClientRect();
-    const buttonGroupRect = this.buttonGroup?.getBoundingClientRect();
-    if (!buttonGroupRect) return;
-    
-    // Calculate button center position relative to card
-    const buttonCenterX = buttonGroupRect.left + buttonGroupRect.width / 2 - cardRect.left;
-    const dialogHalfWidth = dialogWidth / 2;
-    
-    // Calculate min and max left positions to keep dialog within card
-    const minLeft = dialogHalfWidth + 16; // 16px padding from left edge
-    const maxLeft = cardRect.width - dialogHalfWidth - 16; // 16px padding from right edge
-    
-    // Calculate desired left position (centered on button)
-    let desiredLeft = buttonCenterX;
-    
-    // Calculate offset needed to keep dialog within boundaries
-    // Keep left at 50% and use transform offset instead
-    let offsetX = 0;
-    if (desiredLeft < minLeft) {
-      offsetX = minLeft - buttonCenterX;
-    } else if (desiredLeft > maxLeft) {
-      offsetX = maxLeft - buttonCenterX;
-    }
-    
-    // Update dialog position using transform offset instead of changing left
-    dialog.style.left = '50%';
-    dialog.style.transform = `translateX(calc(-50% + ${offsetX}px)) translateY(0) scale(1)`;
   }
 
   /**

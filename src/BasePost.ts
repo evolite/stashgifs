@@ -1085,58 +1085,12 @@ export abstract class BasePost {
     }
 
     if (onRemove) {
-      const removeButton = document.createElement('button');
-      removeButton.type = 'button';
-      removeButton.textContent = '✕';
-      removeButton.setAttribute('aria-label', 'Remove performer');
-      removeButton.title = 'Remove performer';
-      removeButton.style.width = '24px';
-      removeButton.style.height = '24px';
-      removeButton.style.borderRadius = '50%';
-      removeButton.style.border = 'none';
-      removeButton.style.background = 'rgba(232, 92, 92, 0.12)';
-      removeButton.style.color = '#E85C5C';
-      removeButton.style.fontSize = '12px';
-      removeButton.style.fontWeight = THEME.typography.weightBodyStrong;
-      removeButton.style.cursor = 'pointer';
-      removeButton.style.display = 'inline-flex';
-      removeButton.style.alignItems = 'center';
-      removeButton.style.justifyContent = 'center';
-      removeButton.style.lineHeight = '1';
-      removeButton.style.flexShrink = '0';
-      removeButton.style.transition = 'background 0.2s ease, opacity 0.2s ease';
-
-      removeButton.addEventListener('mouseenter', () => {
-        removeButton.style.background = 'rgba(232, 92, 92, 0.2)';
-      });
-      removeButton.addEventListener('mouseleave', () => {
-        removeButton.style.background = 'rgba(232, 92, 92, 0.12)';
-      });
-
-      removeButton.addEventListener('click', async (event) => {
-        event.preventDefault();
-        event.stopPropagation();
-        if (removeButton.disabled) return;
-        removeButton.disabled = true;
-        removeButton.textContent = '…';
-        removeButton.style.opacity = '0.7';
-
-        try {
-          const removed = await onRemove();
-          if (removed) {
-            this.hidePerformerOverlay(true);
-            return;
-          }
-        } catch (error) {
-          console.error('Failed to remove performer', error);
-          showToast('Failed to remove performer. Please try again.');
-        } finally {
-          removeButton.disabled = false;
-          removeButton.textContent = '✕';
-          removeButton.style.opacity = '1';
-        }
-      });
-
+      const removeButton = this.createOverlayRemoveButton(
+        'Remove performer',
+        onRemove,
+        () => this.hidePerformerOverlay(true),
+        'performer',
+      );
       rightGroup.appendChild(removeButton);
     }
 
@@ -1376,6 +1330,70 @@ export abstract class BasePost {
     detailsSection.style.borderTop = `1px solid ${THEME.colors.border}`;
     detailsSection.textContent = performerData.details;
     return detailsSection;
+  }
+
+  /**
+   * Create a styled remove button for overlay cards (performer or tag).
+   */
+  private createOverlayRemoveButton(
+    ariaLabel: string,
+    onRemove: () => Promise<boolean>,
+    onHide: () => void,
+    entityLabel: string,
+  ): HTMLButtonElement {
+    const removeButton = document.createElement('button');
+    removeButton.type = 'button';
+    removeButton.textContent = '✕';
+    removeButton.setAttribute('aria-label', ariaLabel);
+    removeButton.title = ariaLabel;
+    removeButton.style.width = '24px';
+    removeButton.style.height = '24px';
+    removeButton.style.borderRadius = '50%';
+    removeButton.style.border = 'none';
+    removeButton.style.background = 'rgba(232, 92, 92, 0.12)';
+    removeButton.style.color = '#E85C5C';
+    removeButton.style.fontSize = '12px';
+    removeButton.style.fontWeight = THEME.typography.weightBodyStrong;
+    removeButton.style.cursor = 'pointer';
+    removeButton.style.display = 'inline-flex';
+    removeButton.style.alignItems = 'center';
+    removeButton.style.justifyContent = 'center';
+    removeButton.style.lineHeight = '1';
+    removeButton.style.flexShrink = '0';
+    removeButton.style.transition = 'background 0.2s ease, opacity 0.2s ease';
+
+    removeButton.addEventListener('mouseenter', () => {
+      removeButton.style.background = 'rgba(232, 92, 92, 0.2)';
+    });
+    removeButton.addEventListener('mouseleave', () => {
+      removeButton.style.background = 'rgba(232, 92, 92, 0.12)';
+    });
+
+    removeButton.addEventListener('click', async (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      if (removeButton.disabled) return;
+      removeButton.disabled = true;
+      removeButton.textContent = '…';
+      removeButton.style.opacity = '0.7';
+
+      try {
+        const removed = await onRemove();
+        if (removed) {
+          onHide();
+          return;
+        }
+      } catch (error) {
+        console.error(`Failed to remove ${entityLabel}`, error);
+        showToast(`Failed to remove ${entityLabel}. Please try again.`);
+      } finally {
+        removeButton.disabled = false;
+        removeButton.textContent = '✕';
+        removeButton.style.opacity = '1';
+      }
+    });
+
+    return removeButton;
   }
 
   /**
@@ -1803,59 +1821,12 @@ export abstract class BasePost {
 
     if (onRemove) {
       nameRow.style.justifyContent = 'space-between';
-
-      const removeButton = document.createElement('button');
-      removeButton.type = 'button';
-      removeButton.textContent = '✕';
-      removeButton.setAttribute('aria-label', 'Remove tag');
-      removeButton.title = 'Remove tag';
-      removeButton.style.width = '24px';
-      removeButton.style.height = '24px';
-      removeButton.style.borderRadius = '50%';
-      removeButton.style.border = 'none';
-      removeButton.style.background = 'rgba(232, 92, 92, 0.12)';
-      removeButton.style.color = '#E85C5C';
-      removeButton.style.fontSize = '12px';
-      removeButton.style.fontWeight = THEME.typography.weightBodyStrong;
-      removeButton.style.cursor = 'pointer';
-      removeButton.style.display = 'inline-flex';
-      removeButton.style.alignItems = 'center';
-      removeButton.style.justifyContent = 'center';
-      removeButton.style.lineHeight = '1';
-      removeButton.style.flexShrink = '0';
-      removeButton.style.transition = 'background 0.2s ease, opacity 0.2s ease';
-
-      removeButton.addEventListener('mouseenter', () => {
-        removeButton.style.background = 'rgba(232, 92, 92, 0.2)';
-      });
-      removeButton.addEventListener('mouseleave', () => {
-        removeButton.style.background = 'rgba(232, 92, 92, 0.12)';
-      });
-
-      removeButton.addEventListener('click', async (event) => {
-        event.preventDefault();
-        event.stopPropagation();
-        if (removeButton.disabled) return;
-        removeButton.disabled = true;
-        removeButton.textContent = '…';
-        removeButton.style.opacity = '0.7';
-
-        try {
-          const removed = await onRemove();
-          if (removed) {
-            this.hideTagOverlay(true);
-            return;
-          }
-        } catch (error) {
-          console.error('Failed to remove tag', error);
-          showToast('Failed to remove tag. Please try again.');
-        } finally {
-          removeButton.disabled = false;
-          removeButton.textContent = '✕';
-          removeButton.style.opacity = '1';
-        }
-      });
-
+      const removeButton = this.createOverlayRemoveButton(
+        'Remove tag',
+        onRemove,
+        () => this.hideTagOverlay(true),
+        'tag',
+      );
       nameRow.appendChild(removeButton);
     }
 

@@ -10,8 +10,8 @@ import { StashAPI } from './StashAPI.js';
 import { VisibilityManager } from './VisibilityManager.js';
 import { calculateAspectRatio, getAspectRatioClass, normalizeMediaUrl, showToast, toAbsoluteUrl, isMobileDevice, THEME } from './utils.js';
 import { posterPreloader } from './PosterPreloader.js';
-import { HQ_SVG_OUTLINE, HQ_SVG_FILLED, EXTERNAL_LINK_SVG, MARKER_SVG, VOLUME_MUTED_SVG, VOLUME_UNMUTED_SVG } from './icons.js';
-import { BasePost } from './BasePost.js';
+import { EXTERNAL_LINK_SVG, MARKER_SVG, VOLUME_MUTED_SVG, VOLUME_UNMUTED_SVG } from './icons.js';
+import { VideoPostBase } from './VideoPostBase.js';
 import { setupTouchHandlers, preventClickAfterTouch } from './utils/touchHandlers.js';
 import { RatingControl } from './RatingControl.js';
 
@@ -36,14 +36,13 @@ interface VideoPostOptions {
   reelMode?: boolean;
 }
 
-export class VideoPost extends BasePost {
+export class VideoPost extends VideoPostBase {
   protected readonly data: VideoPostData;
   private player?: NativeVideoPlayer;
   private isLoaded: boolean = false;
   private markerButton?: HTMLElement;
   private hqButton?: HTMLElement;
   private playButton?: HTMLElement;
-  private isHQMode: boolean = false;
   private markerDialog?: HTMLElement;
   private markerDialogInput?: HTMLInputElement;
   private markerDialogSuggestions?: HTMLElement;
@@ -57,17 +56,8 @@ export class VideoPost extends BasePost {
   private tagSearchLoadingTimer?: ReturnType<typeof setTimeout>;
   private isTagSearchLoading: boolean = false;
   private hasCreatedMarker: boolean = false; // Track if marker has been created for this scene
-  private videoLoadingIndicator?: HTMLElement;
-  private loadErrorCount: number = 0;
-  private hasFailedPermanently: boolean = false;
-  private errorPlaceholder?: HTMLElement;
-  private retryTimeoutId?: number;
-  private loadErrorCheckTimeoutId?: ReturnType<typeof setTimeout>;
-  private loadErrorHandler?: () => void;
   private readonly ratingSystemConfig?: { type?: string; starPrecision?: string } | null;
   private ratingControl?: RatingControl;
-  private posterLayer?: HTMLElement;
-  private hasRenderedVideo: boolean = false;
   
   
   // Cached DOM elements
@@ -893,20 +883,6 @@ export class VideoPost extends BasePost {
     return hqBtn;
   }
 
-  /**
-   * Update HQ button appearance based on mode
-   */
-  private updateHQButton(button: HTMLElement): void {
-    if (this.isHQMode) {
-      button.innerHTML = HQ_SVG_FILLED;
-      button.style.color = THEME.colors.accentPrimary;
-      button.title = 'HD video loaded';
-    } else {
-      button.innerHTML = HQ_SVG_OUTLINE;
-      button.style.color = THEME.colors.textSecondary;
-      button.title = 'Load HD video with audio';
-    }
-  }
 
   /**
    * Create rating section with dialog
@@ -1352,7 +1328,7 @@ export class VideoPost extends BasePost {
       this.isLoaded = true;
       this.hasRenderedVideo = false;
       this.showPosterLayer();
-      const container = this.playerContainer || this.container.querySelector('.video-post__player') as HTMLElement | null;
+      const container = this.playerContainer || this.container.querySelector<HTMLElement>('.video-post__player');
       if (container) {
         this.hideMediaWhenReady(this.player, container);
       }
@@ -1413,148 +1389,20 @@ export class VideoPost extends BasePost {
     return this.player;
   }
 
+  protected getEntityLogId(): string {
+    return this.data.marker.id;
+  }
+
+  protected getHQButtonOffLabel(): string {
+    return 'Load HD video with audio';
+  }
+
   /**
    * Hide the entire post (used when video fails to load permanently)
    */
   hidePost(): void {
     this.container.style.display = 'none';
     this.hasFailedPermanently = true;
-  }
-
-  /**
-   * Keep loading visible until the native player reports it can render frames.
-   */
-  private hideMediaWhenReady(player: NativeVideoPlayer, container: HTMLElement): void {
-    const loading = container.querySelector<HTMLElement>('.video-post__loading');
-
-    const hideVisuals = () => {
-      if (loading) {
-        loading.style.display = 'none';
-        // Mark video as ready
-        if (this.videoLoadingIndicator) {
-          this.videoLoadingIndicator = undefined;
-        }
-      }
-      this.hidePosterLayer();
-    };
-
-    const scheduleTimeout = globalThis.window?.setTimeout.bind(globalThis.window) ?? setTimeout;
-    const clearScheduledTimeout = globalThis.window?.clearTimeout.bind(globalThis.window) ?? clearTimeout;
-    const requestFrame = globalThis.window?.requestAnimationFrame?.bind(globalThis.window) ?? ((cb: FrameRequestCallback) => setTimeout(cb, 16));
-
-    const videoElement = player.getVideoElement();
-    let revealed = false;
-
-    const cleanup = () => {
-      videoElement.removeEventListener('loadeddata', onLoadedData);
-      videoElement.removeEventListener('playing', onPlaying);
-      videoElement.removeEventListener('timeupdate', onTimeUpdate);
-      clearScheduledTimeout(fallbackHandle);
-    };
-
-    const reveal = () => {
-      if (revealed) {
-        return;
-      }
-      revealed = true;
-      cleanup();
-      this.clearLoadErrorCheckTimeout();
-      const performHide = () => hideVisuals();
-      requestFrame(() => requestFrame(() => performHide()));
-      this.hasRenderedVideo = true;
-    };
-
-    const onLoadedData = () => reveal();
-    const onPlaying = () => reveal();
-    const onTimeUpdate = () => {
-      if (videoElement.currentTime > 0 || videoElement.readyState >= 2) {
-        reveal();
-      }
-    };
-
-    videoElement.addEventListener('loadeddata', onLoadedData, { once: true });
-    videoElement.addEventListener('playing', onPlaying, { once: true });
-    videoElement.addEventListener('timeupdate', onTimeUpdate);
-
-    const fallbackHandle = scheduleTimeout(() => reveal(), 6000);
-
-    player.waitForReady(4000)
-      .catch((error) => {
-        console.warn('VideoPost: Player ready wait timed out', {
-          error,
-          markerId: this.data.marker.id,
-        });
-      })
-      .finally(() => {
-        if (videoElement.readyState >= 2) {
-          reveal();
-        }
-      });
-  }
-
-  private showPosterLayer(): void {
-    if (!this.posterLayer) {
-      return;
-    }
-    if (this.hasRenderedVideo) {
-      return;
-    }
-    this.posterLayer.style.opacity = '1';
-  }
-
-  private hidePosterLayer(): void {
-    if (!this.posterLayer) {
-      return;
-    }
-    this.posterLayer.style.opacity = '0';
-  }
-
-  private attachLoadErrorHandler(): void {
-    if (!this.player) {
-      return;
-    }
-    const videoElement = this.player.getVideoElement();
-    if (!videoElement) {
-      return;
-    }
-    this.detachLoadErrorHandler();
-    this.loadErrorHandler = () => this.checkForLoadError();
-    videoElement.addEventListener('error', this.loadErrorHandler, { once: true });
-  }
-
-  private detachLoadErrorHandler(): void {
-    if (!this.player || !this.loadErrorHandler) {
-      this.loadErrorHandler = undefined;
-      return;
-    }
-    const videoElement = this.player.getVideoElement();
-    if (videoElement) {
-      videoElement.removeEventListener('error', this.loadErrorHandler);
-    }
-    this.loadErrorHandler = undefined;
-  }
-
-  private clearLoadErrorCheckTimeout(): void {
-    if (this.loadErrorCheckTimeoutId) {
-      clearTimeout(this.loadErrorCheckTimeoutId);
-      this.loadErrorCheckTimeoutId = undefined;
-    }
-  }
-
-  private scheduleLoadErrorCheck(): void {
-    if (!this.player || this.hasFailedPermanently) {
-      return;
-    }
-    this.clearLoadErrorCheckTimeout();
-    const isMobile = isMobileDevice();
-    const delay = isMobile ? 20000 : 16000;
-    this.loadErrorCheckTimeoutId = setTimeout(() => {
-      if (!this.player || this.hasFailedPermanently) {
-        this.clearLoadErrorCheckTimeout();
-        return;
-      }
-      this.checkForLoadError();
-    }, delay);
   }
 
   /**

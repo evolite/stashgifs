@@ -939,8 +939,8 @@ export class FeedContainer {
     requestAnimationFrame(() => {
       if (this.isLoading) {
         this.deferAutoAdvance(retries - 1);
-      } else {
-        if (this.hasMore) void this.loadVideos(undefined, true);
+      } else if (this.hasMore) {
+        void this.loadVideos(undefined, true);
       }
     });
   }
