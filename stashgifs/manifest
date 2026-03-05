@@ -2,8 +2,8 @@ id: stashgifs
 name: StashGifs
 metadata:
   description: Social Media style browsing experience
-version: 5.38.1
-date: "2026-03-05 09:56:27"
+version: 5.38.3
+date: "2026-03-05 15:22:10"
 requires: []
 source_repository: https://raw.githubusercontent.com/evolite/stashgifs/refs/heads/master/index.yml
 files:
@@ -43,12 +43,16 @@ files:
 - app\assets\types.js.map
 - app\assets\utils.js
 - app\assets\utils.js.map
+- app\assets\utils\imagePostUtils.js
+- app\assets\utils\imagePostUtils.js.map
 - app\assets\utils\touchHandlers.js
 - app\assets\utils\touchHandlers.js.map
 - app\assets\version.js
 - app\assets\version.js.map
 - app\assets\VideoPost.js
 - app\assets\VideoPost.js.map
+- app\assets\VideoPostBase.js
+- app\assets\VideoPostBase.js.map
 - app\assets\VisibilityManager.js
 - app\assets\VisibilityManager.js.map
 - app\assets\PosterPreloader.js
