@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [5.38.1] - 2026-03-05
+
+### Changed
+- Fix toggle off-state contrast and restructure Settings tabs
+
 ## [5.38.0] - 2026-03-04
 
 ### Changed
