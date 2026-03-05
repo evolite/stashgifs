@@ -148,7 +148,7 @@ export class SettingsPage {
     slider.style.left = '0';
     slider.style.right = '0';
     slider.style.bottom = '0';
-    slider.style.backgroundColor = checked ? THEME.colors.success : THEME.colors.backgroundSecondary;
+    slider.style.backgroundColor = checked ? THEME.colors.success : THEME.colors.border;
     slider.style.transition = 'background-color 0.3s ease';
     slider.style.borderRadius = '28px';
     slider.style.cursor = 'pointer';
@@ -167,7 +167,7 @@ export class SettingsPage {
 
     const updateVisualState = () => {
       const isChecked = input.checked;
-      slider.style.backgroundColor = isChecked ? THEME.colors.success : THEME.colors.backgroundSecondary;
+      slider.style.backgroundColor = isChecked ? THEME.colors.success : THEME.colors.border;
       thumb.style.left = isChecked ? '26px' : '3px';
     };
 
@@ -273,8 +273,8 @@ export class SettingsPage {
       const button = document.createElement('button');
       button.type = 'button';
       button.textContent = label;
-      button.style.padding = '0 14px';
-      button.style.height = '34px';
+      button.style.padding = '0 18px';
+      button.style.height = '38px';
       button.style.borderRadius = THEME.radius.button;
       button.style.border = `1px solid ${THEME.colors.border}`;
       button.style.background = THEME.colors.backgroundSecondary;
@@ -290,9 +290,11 @@ export class SettingsPage {
       return button;
     };
 
-    const generalTabButton = createTabButton('General');
+    const layoutTabButton = createTabButton('Layout');
+    const contentTabButton = createTabButton('Content');
     const themeTabButton = createTabButton('Theme');
-    tabBar.appendChild(generalTabButton);
+    tabBar.appendChild(layoutTabButton);
+    tabBar.appendChild(contentTabButton);
     tabBar.appendChild(themeTabButton);
     modal.appendChild(tabBar);
 
@@ -302,29 +304,37 @@ export class SettingsPage {
     contentWrapper.style.paddingRight = '4px';
     contentWrapper.style.marginRight = '-4px';
 
-    const generalContent = document.createElement('div');
+    const layoutContent = document.createElement('div');
+    const contentTabContent = document.createElement('div');
+    contentTabContent.style.display = 'none';
     const themeContent = document.createElement('div');
     themeContent.style.display = 'none';
 
-    const setActiveTab = (active: 'general' | 'theme') => {
-      const isGeneral = active === 'general';
-      generalContent.style.display = isGeneral ? 'block' : 'none';
-      themeContent.style.display = isGeneral ? 'none' : 'block';
+    const setActiveTab = (active: 'layout' | 'content' | 'theme') => {
+      layoutContent.style.display     = active === 'layout'  ? 'block' : 'none';
+      contentTabContent.style.display = active === 'content' ? 'block' : 'none';
+      themeContent.style.display      = active === 'theme'   ? 'block' : 'none';
 
-      generalTabButton.style.background = isGeneral ? THEME.colors.surfaceHover : THEME.colors.backgroundSecondary;
-      generalTabButton.style.color = isGeneral ? THEME.colors.textPrimary : THEME.colors.textSecondary;
-      generalTabButton.style.borderColor = isGeneral ? THEME.colors.accentPrimary : THEME.colors.border;
-
-      themeTabButton.style.background = isGeneral ? THEME.colors.backgroundSecondary : THEME.colors.surfaceHover;
-      themeTabButton.style.color = isGeneral ? THEME.colors.textSecondary : THEME.colors.textPrimary;
-      themeTabButton.style.borderColor = isGeneral ? THEME.colors.border : THEME.colors.accentPrimary;
+      const tabs = [
+        { btn: layoutTabButton,  key: 'layout'  },
+        { btn: contentTabButton, key: 'content' },
+        { btn: themeTabButton,   key: 'theme'   },
+      ];
+      for (const { btn, key } of tabs) {
+        const on = active === key;
+        btn.style.background  = on ? THEME.colors.accentPrimary        : THEME.colors.backgroundSecondary;
+        btn.style.color       = on ? THEME.colors.textPrimary          : THEME.colors.textSecondary;
+        btn.style.borderColor = on ? THEME.colors.accentPrimary        : THEME.colors.border;
+      }
     };
 
-    generalTabButton.addEventListener('click', () => setActiveTab('general'));
-    themeTabButton.addEventListener('click', () => setActiveTab('theme'));
-    setActiveTab('general');
+    layoutTabButton.addEventListener('click',  () => setActiveTab('layout'));
+    contentTabButton.addEventListener('click', () => setActiveTab('content'));
+    themeTabButton.addEventListener('click',   () => setActiveTab('theme'));
+    setActiveTab('layout');
 
-    contentWrapper.appendChild(generalContent);
+    contentWrapper.appendChild(layoutContent);
+    contentWrapper.appendChild(contentTabContent);
     contentWrapper.appendChild(themeContent);
     modal.appendChild(contentWrapper);
 
@@ -715,7 +725,7 @@ export class SettingsPage {
 
     reelModeContainer.appendChild(
       buildInfoLabel(
-        'Reel mode (full-screen, swipe)',
+        'Reel Mode',
         'Switches the feed to a full-screen, swipe-friendly layout.'
       )
     );
@@ -780,7 +790,7 @@ export class SettingsPage {
     excludedTagsContainer.style.marginBottom = '16px';
 
     const excludedTagsLabelRow = buildInputLabel(
-      'Exclude tags (comma-separated)',
+      'Excluded Tags',
       'Hide any content that contains one of these tags.'
     );
     excludedTagsContainer.appendChild(excludedTagsLabelRow.container);
@@ -812,7 +822,7 @@ export class SettingsPage {
     seenHistoryContainer.style.marginBottom = '16px';
 
     const seenHistoryLabelRow = buildInputLabel(
-      'Seen history size (0 = disabled)',
+      'Recency Bias',
       'Tracks up to this many recently seen items and hides them from the feed.\nSet to 0 to disable. Default: 500.'
     );
     seenHistoryContainer.appendChild(seenHistoryLabelRow.container);
@@ -841,7 +851,7 @@ export class SettingsPage {
     layoutSection.appendChild(seenHistoryContainer);
     (this as any).seenHistorySizeInput = seenHistorySizeInput;
 
-    generalContent.appendChild(layoutSection);
+    layoutContent.appendChild(layoutSection);
 
     // Image Feed Settings Section
     const imageSection = document.createElement('div');
@@ -881,7 +891,7 @@ export class SettingsPage {
 
     includeImagesContainer.appendChild(
       buildInfoLabel(
-        'Include images in feed',
+        'Enable Image Feed',
         'Adds images and image-video files to the feed alongside videos.'
       )
     );
@@ -899,7 +909,7 @@ export class SettingsPage {
     fileTypesContainer.style.marginBottom = '16px';
 
     const fileTypesLabelRow = buildInputLabel(
-      'File extensions (comma-separated)',
+      'Allowed File Types',
       'Limit image feed items to these file extensions.'
     );
     fileTypesContainer.appendChild(fileTypesLabelRow.container);
@@ -937,7 +947,7 @@ export class SettingsPage {
 
     imagesOnlyContainer.appendChild(
       buildInfoLabel(
-        'Only load images (skip videos)',
+        'Images Only',
         'Loads only image items; regular videos will be skipped.'
       )
     );
@@ -954,8 +964,6 @@ export class SettingsPage {
     );
     imagesOnlyContainer.appendChild(imagesOnlyToggleContainer);
 
-    imageSection.appendChild(imagesOnlyContainer);
-
     // Gallery Images Only toggle
     const galleryOnlyContainer = document.createElement('div');
     galleryOnlyContainer.style.display = 'flex';
@@ -965,7 +973,7 @@ export class SettingsPage {
 
     galleryOnlyContainer.appendChild(
       buildInfoLabel(
-        'Gallery images only',
+        'Gallery Images Only',
         'Only show images that belong to a Stash gallery.'
       )
     );
@@ -1016,6 +1024,7 @@ export class SettingsPage {
 
     gallerySelectorWrapper.appendChild(galleryChipContainer);
     imageSection.appendChild(gallerySelectorWrapper);
+    imageSection.appendChild(imagesOnlyContainer);
 
     // Dropdown — fixed positioned, appended to modal overlay to escape overflow clipping
     const galleryDropdown = document.createElement('div');
@@ -1169,7 +1178,7 @@ export class SettingsPage {
     (this as any).galleryOnlyToggle = galleryOnlyToggle;
     (this as any).gallerySelectedIds = selectedGalleryIds;
 
-    generalContent.appendChild(imageSection);
+    contentTabContent.appendChild(imageSection);
 
     // Short Form Content Settings Section
     const shortFormSection = document.createElement('div');
@@ -1209,7 +1218,7 @@ export class SettingsPage {
 
     shortFormIncludeContainer.appendChild(
       buildInfoLabel(
-        'Include short-form videos in feed',
+        'Enable Short-Form Videos',
         'Adds videos shorter than the max duration to the feed.'
       )
     );
@@ -1227,7 +1236,7 @@ export class SettingsPage {
     maxDurationContainer.style.marginBottom = '16px';
 
     const maxDurationLabelRow = buildInputLabel(
-      'Maximum duration (seconds)',
+      'Max Duration (seconds)',
       'Videos at or below this length are treated as short-form.'
     );
     maxDurationContainer.appendChild(maxDurationLabelRow.container);
@@ -1265,7 +1274,7 @@ export class SettingsPage {
 
     shortFormOnlyContainer.appendChild(
       buildInfoLabel(
-        'Only short-form videos (skip regular videos)',
+        'Short-Form Only',
         'Shows only short-form videos and skips regular-length videos.'
       )
     );
@@ -1284,7 +1293,7 @@ export class SettingsPage {
 
     shortFormSection.appendChild(shortFormOnlyContainer);
 
-    generalContent.appendChild(shortFormSection);
+    contentTabContent.appendChild(shortFormSection);
 
 
     // Version footer
@@ -1356,7 +1365,7 @@ export class SettingsPage {
     );
     versionFooter.appendChild(supportLinks);
 
-    generalContent.appendChild(versionFooter);
+    layoutContent.appendChild(versionFooter);
 
     // Store references to inputs for saveSettings method
     (this as any).fileTypesInput = fileTypesInput;
