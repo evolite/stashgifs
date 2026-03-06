@@ -10,7 +10,6 @@ import { StashAPI } from './StashAPI.js';
 import { VisibilityManager } from './VisibilityManager.js';
 import { getAspectRatioClass, showToast, detectVideoFromVisualFiles, getImageUrlForDisplay } from './utils.js';
 import { BasePost } from './BasePost.js';
-import { toggleImageFavorite } from './utils/imagePostUtils.js';
 import { RatingControl } from './RatingControl.js';
 
 // Constants
@@ -260,35 +259,6 @@ export class ImagePost extends BasePost {
       } else {
         this.oCountButton.style.paddingRight = `${OCOUNT_DEFAULT_PADDING}px`;
       }
-    }
-  }
-
-  /**
-   * Toggle favorite status
-   * Note: Images use tags for favorites, similar to markers
-   */
-  private async toggleFavorite(): Promise<void> {
-    if (!this.api) {
-      console.error('ImagePost: No API available for toggleFavorite');
-      return;
-    }
-    try {
-      const result = await toggleImageFavorite(
-        this.data.image.id,
-        this.data.image.tags,
-        this.api,
-        this.favoritesManager,
-        this.isFavorite,
-        FAVORITE_TAG_NAME,
-      );
-      this.data.image.tags = result.newTags as typeof this.data.image.tags;
-      this.isFavorite = result.newIsFavorite;
-      this.updateHeartButton();
-    } catch (error) {
-      console.error('ImagePost: Failed to toggle favorite', error);
-      showToast('Failed to update favorite');
-      this.isFavorite = !this.isFavorite;
-      this.updateHeartButton();
     }
   }
 

@@ -10,7 +10,6 @@ import { StashAPI } from './StashAPI.js';
 import { VisibilityManager } from './VisibilityManager.js';
 import { calculateAspectRatio, getAspectRatioClass, normalizeMediaUrl, showToast, toAbsoluteUrl, THEME } from './utils.js';
 import { VideoPostBase } from './VideoPostBase.js';
-import { toggleImageFavorite } from './utils/imagePostUtils.js';
 import { RatingControl } from './RatingControl.js';
 
 // Constants
@@ -536,34 +535,6 @@ export class ImageVideoPost extends VideoPostBase {
   protected async toggleFavoriteAction(): Promise<boolean> {
     await this.toggleFavorite();
     return this.isFavorite;
-  }
-
-  /**
-   * Toggle favorite status
-   */
-  private async toggleFavorite(): Promise<void> {
-    if (!this.api) {
-      console.error('ImageVideoPost: No API available for toggleFavorite');
-      return;
-    }
-    try {
-      const result = await toggleImageFavorite(
-        this.data.image.id,
-        this.data.image.tags,
-        this.api,
-        this.favoritesManager,
-        this.isFavorite,
-        FAVORITE_TAG_NAME,
-      );
-      this.data.image.tags = result.newTags as typeof this.data.image.tags;
-      this.isFavorite = result.newIsFavorite;
-      this.updateHeartButton();
-    } catch (error) {
-      console.error('ImageVideoPost: Failed to toggle favorite', error);
-      showToast('Failed to update favorite');
-      this.isFavorite = !this.isFavorite;
-      this.updateHeartButton();
-    }
   }
 
   /**

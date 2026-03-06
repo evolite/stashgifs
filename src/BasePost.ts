@@ -9,7 +9,7 @@ import { VisibilityManager } from './VisibilityManager.js';
 import { normalizeMediaUrl, showToast, isMobileDevice, THEME, subscribeWindowScroll } from './utils.js';
 import { ADD_TAG_SVG, HEART_SVG_OUTLINE, HEART_SVG_FILLED, OCOUNT_SVG, EXTERNAL_LINK_SVG, STAR_SVG, STAR_SVG_OUTLINE, VERIFIED_SVG } from './icons.js';
 import { setupTouchHandlers, preventClickAfterTouch } from './utils/touchHandlers.js';
-import { adjustImageDialogPosition } from './utils/imagePostUtils.js';
+import { adjustImageDialogPosition, toggleImageFavorite } from './utils/imagePostUtils.js';
 import { PerformerExtended } from './graphql/types.js';
 import { Performer, Tag } from './types.js';
 
@@ -2907,6 +2907,31 @@ export abstract class BasePost {
 
     if (this.isReelMode) {
       btn.style.filter = 'drop-shadow(0 2px 6px rgba(0, 0, 0, 0.6))';
+    }
+  }
+
+  protected async toggleFavorite(): Promise<void> {
+    if (!this.api) {
+      console.error('BasePost: No API available for toggleFavorite');
+      return;
+    }
+    try {
+      const result = await toggleImageFavorite(
+        this.data.image.id,
+        this.data.image.tags,
+        this.api,
+        this.favoritesManager,
+        this.isFavorite,
+        'StashGifs Favorite',
+      );
+      this.data.image.tags = result.newTags as typeof this.data.image.tags;
+      this.isFavorite = result.newIsFavorite;
+      this.updateHeartButton();
+    } catch (error) {
+      console.error('BasePost: Failed to toggle favorite', error);
+      showToast('Failed to update favorite');
+      this.isFavorite = !this.isFavorite;
+      this.updateHeartButton();
     }
   }
 

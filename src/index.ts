@@ -43,9 +43,9 @@ function toRgba(hex: string, alpha: number): string {
 
 function darkenHex(hex: string, fraction: number): string {
   const value = hex.replace('#', '');
-  const r = Math.round(parseInt(value.slice(0, 2), 16) * (1 - fraction));
-  const g = Math.round(parseInt(value.slice(2, 4), 16) * (1 - fraction));
-  const b = Math.round(parseInt(value.slice(4, 6), 16) * (1 - fraction));
+  const r = Math.round(Number.parseInt(value.slice(0, 2), 16) * (1 - fraction));
+  const g = Math.round(Number.parseInt(value.slice(2, 4), 16) * (1 - fraction));
+  const b = Math.round(Number.parseInt(value.slice(4, 6), 16) * (1 - fraction));
   return `#${r.toString(16).padStart(2, '0')}${g.toString(16).padStart(2, '0')}${b.toString(16).padStart(2, '0')}`;
 }
 
