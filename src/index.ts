@@ -41,6 +41,14 @@ function toRgba(hex: string, alpha: number): string {
   return `rgba(${r}, ${g}, ${b}, ${alpha})`;
 }
 
+function darkenHex(hex: string, fraction: number): string {
+  const value = hex.replace('#', '');
+  const r = Math.round(parseInt(value.slice(0, 2), 16) * (1 - fraction));
+  const g = Math.round(parseInt(value.slice(2, 4), 16) * (1 - fraction));
+  const b = Math.round(parseInt(value.slice(4, 6), 16) * (1 - fraction));
+  return `#${r.toString(16).padStart(2, '0')}${g.toString(16).padStart(2, '0')}${b.toString(16).padStart(2, '0')}`;
+}
+
 function loadThemeEarly(settings: Partial<FeedSettings>): void {
   try {
     const normalizeHexColor = (value: string | undefined, fallback: string): string => {
@@ -61,15 +69,13 @@ function loadThemeEarly(settings: Partial<FeedSettings>): void {
     root.style.setProperty('--color-surface-secondary', secondary);
     root.style.setProperty('--color-bg-overlay', toRgba(background, 0.96));
     root.style.setProperty('--color-accent', accent);
-    root.style.setProperty('--color-accent-strong', accent);
+    root.style.setProperty('--color-accent-strong', darkenHex(accent, 0.15));
     root.style.setProperty('--color-accent-weak', toRgba(accent, 0.18));
     root.style.setProperty('--color-accent-weaker', toRgba(accent, 0.1));
     root.style.setProperty('--color-text-primary', '#E6EEF4');
     root.style.setProperty('--color-text-secondary', '#B4C0C9');
     root.style.setProperty('--color-text-muted', '#8A99A6');
 
-    document.documentElement.style.backgroundColor = background;
-    document.body.style.backgroundColor = background;
     document.documentElement.dataset.stashgifsThemeReady = 'true';
   } catch (error) {
     console.warn('Failed to load theme early', error);
@@ -116,8 +122,6 @@ function init(): void {
 
   loadFonts();
   const savedSettings = getSavedSettings();
-  // Load theme early to prevent color flash
-  loadThemeEarly(savedSettings);
   
   // Check if we should scroll to top after reload
   if (sessionStorage.getItem('stashgifs-scroll-to-top') === 'true') {
@@ -192,7 +196,11 @@ function init(): void {
   }
 }
 
-// Wait for DOM to be ready
+// Apply theme immediately at script load — before any event listener fires.
+// document.documentElement is always available; localStorage is synchronous.
+loadThemeEarly(getSavedSettings());
+
+// Wait for DOM to be ready for the rest
 if (document.readyState === 'loading') {
   document.addEventListener('DOMContentLoaded', init);
 } else {
