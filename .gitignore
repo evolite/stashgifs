@@ -25,3 +25,10 @@ stashgifs.zip.sha256
 
 # Local tooling
 opencode.json
+
+# AI tooling / local docs
+AGENTS.md
+codegen.yml
+stashapp_arch.md
+.claude/
+.opencode/
