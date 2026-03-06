@@ -2,51 +2,86 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta http-equiv="X-UA-Compatible" content="IE=edge" />
-    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=2, viewport-fit=cover" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=2, viewport-fit=cover" />
     <meta name="mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-title" content="StashGifs">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <link rel="shortcut icon" href="favicon.svg" />
     <link rel="apple-touch-icon" href="apple-touch-icon.svg" />
-    <meta name="theme-color" content="#1F2A33" />
+    <meta name="theme-color" content="#000000" />
     <link rel="manifest" crossorigin="use-credentials" href="manifest.json" />
     <title>StashGifs | Stash</title>
     <!-- Seems to be required to make the Dark Reader extension detect the site as having a dark mode -->
     <meta name="color-scheme" content="light dark" />
     <style>
       :root {
-        --color-bg: #1F2A33;
-        --color-surface: #2C3B46;
-        --color-surface-secondary: #24323C;
-        --color-separator: #3A4A55;
-        --color-accent: #4FA3D1;
+        --color-bg: #000000;
+        --color-surface: #000000;
+        --color-surface-secondary: #000000;
+        --color-separator: #000000;
+        --color-accent: #000000;
       }
-      html, body { background-color: var(--color-bg); margin: 0; padding: 0; }
+      html { visibility: hidden; }
+      html, body { background-color: #000000; margin: 0; padding: 0; }
     </style>
-    <!-- Feed UI -->
+    <!-- Feed UI: placed before the inline script so the script runs only after feed.css is render-blocking-loaded, preventing FOUC -->
     <link rel="stylesheet" href="./assets/feed.css">
+    <script>
+      (function () {
+        var r = document.documentElement;
+        try {
+          var s = localStorage.getItem('stashgifs-settings');
+          if (s) {
+            var settings = JSON.parse(s);
+            function normalizeHex(v, fb) {
+              if (!v) return fb;
+              var t = v.trim();
+              var n = t.charAt(0) === '#' ? t : '#' + t;
+              return /^#[0-9a-fA-F]{6}$/.test(n) ? n.toUpperCase() : fb;
+            }
+            function toRgba(hex, alpha) {
+              var v = hex.replace('#', '');
+              return 'rgba(' + parseInt(v.slice(0, 2), 16) + ', ' + parseInt(v.slice(2, 4), 16) + ', ' + parseInt(v.slice(4, 6), 16) + ', ' + alpha + ')';
+            }
+            function darkenHex(hex, f) {
+              var v = hex.replace('#', '');
+              var r = Math.round(parseInt(v.slice(0, 2), 16) * (1 - f));
+              var g = Math.round(parseInt(v.slice(2, 4), 16) * (1 - f));
+              var b = Math.round(parseInt(v.slice(4, 6), 16) * (1 - f));
+              return '#' + r.toString(16).padStart(2, '0') + g.toString(16).padStart(2, '0') + b.toString(16).padStart(2, '0');
+            }
+            var bg      = normalizeHex(settings.themeBackground, '#000000');
+            var primary = normalizeHex(settings.themePrimary,    '#000000');
+            var second  = normalizeHex(settings.themeSecondary,  '#000000');
+            var accent  = normalizeHex(settings.themeAccent,     '#000000');
+            r.style.setProperty('--color-bg',              bg);
+            r.style.setProperty('--color-surface',         primary);
+            r.style.setProperty('--color-surface-secondary', second);
+            r.style.setProperty('--color-bg-overlay',      toRgba(bg, 0.96));
+            r.style.setProperty('--color-accent',          accent);
+            r.style.setProperty('--color-accent-strong',   darkenHex(accent, 0.15));
+            r.style.setProperty('--color-accent-weak',     toRgba(accent, 0.18));
+            r.style.setProperty('--color-accent-weaker',   toRgba(accent, 0.1));
+            r.style.setProperty('--color-text-primary',    '#E6EEF4');
+            r.style.setProperty('--color-text-secondary',  '#B4C0C9');
+            r.style.setProperty('--color-text-muted',      '#8A99A6');
+            r.style.setProperty('--color-separator',       '#3A4A55');
+            r.style.backgroundColor = bg;
+            var tm = document.querySelector('meta[name="theme-color"]');
+            if (tm) tm.setAttribute('content', bg);
+            r.dataset.stashgifsThemeReady = 'true';
+          }
+        } catch (e) {}
+        r.style.visibility = 'visible';
+      })();
+    </script>
+    <link rel="modulepreload" href="./assets/index.js">
     <script type="module" src="./assets/index.js"></script>
   </head>
   <body>
     <div id="app" class="feed-container">
       <div class="feed-scroll-container">
-        <!-- Clean header without skeleton -->
-        <div class="feed-header-bar" style="position: sticky; top: 0; width: 100%; max-width: 824px; margin-left: auto; margin-right: auto; height: 56px; z-index: 1001; display: flex; align-items: center; justify-content: flex-start; padding: 8px 12px; box-sizing: border-box; transition: transform 0.24s var(--ease-spring, ease), opacity 0.24s var(--ease-spring, ease); transform: translateY(0);">
-          <div style="display: grid; grid-template-columns: auto 1fr; align-items: center; gap: 12px; width: 100%; height: 100%; max-width: 800px; margin-left: 0; margin-right: 0; box-sizing: border-box; flex: 1 1 auto;">
-            <!-- Logo -->
-            <div style="display: inline-flex; align-items: center; height: 36px; padding: 0 12px; border-radius: 6px; border: 1px solid var(--color-separator); background: var(--color-surface-secondary); cursor: pointer; transition: background 0.2s ease, border-color 0.2s ease, opacity 0.2s ease;">
-              <div style="font-weight: 700; letter-spacing: 0.6px; color: var(--color-accent); font-size: 14px; line-height: 1.2; text-transform: uppercase; user-select: none; transition: opacity 0.2s ease;">stashgifs</div>
-            </div>
-            <!-- Search bar -->
-            <div style="position: relative; width: 100%; min-width: 0; max-width: 100%; overflow: hidden; box-sizing: border-box; margin-right: 0;">
-              <div style="width: 100%; height: 36px; border-radius: 6px; border: 1px solid var(--color-separator); background: var(--color-surface-secondary); position: relative; overflow: hidden;">
-                <!-- Search input will be added by JavaScript -->
-              </div>
-            </div>
-          </div>
-        </div>
         <div class="feed-posts">
           <!-- Content will be loaded by JavaScript -->
         </div>

@@ -373,7 +373,7 @@ export class FeedContainer {
     root.style.setProperty('--color-surface-secondary', secondary);
     root.style.setProperty('--color-bg-overlay', THEME.colors.overlay);
     root.style.setProperty('--color-accent', accent);
-    root.style.setProperty('--color-accent-strong', accent);
+    root.style.setProperty('--color-accent-strong', this.darkenHex(accent, 0.15));
     root.style.setProperty('--color-accent-weak', this.toRgba(accent, 0.18));
     root.style.setProperty('--color-accent-weaker', this.toRgba(accent, 0.1));
 
@@ -742,6 +742,14 @@ export class FeedContainer {
     const g = Number.parseInt(normalized.slice(3, 5), 16);
     const b = Number.parseInt(normalized.slice(5, 7), 16);
     return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+  }
+
+  private darkenHex(hex: string, fraction: number): string {
+    const value = hex.replace('#', '');
+    const r = Math.round(parseInt(value.slice(0, 2), 16) * (1 - fraction));
+    const g = Math.round(parseInt(value.slice(2, 4), 16) * (1 - fraction));
+    const b = Math.round(parseInt(value.slice(4, 6), 16) * (1 - fraction));
+    return `#${r.toString(16).padStart(2, '0')}${g.toString(16).padStart(2, '0')}${b.toString(16).padStart(2, '0')}`;
   }
 
   /**

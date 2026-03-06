@@ -2,7 +2,7 @@
   name: StashGifs
   metadata:
     description: Social Media style browsing experience
-  version: 5.38.3
-  date: "2026-03-05 15:22:13"
-  path: https://github.com/evolite/stashgifs/releases/download/v5.38.3/stashgifs.zip
-  sha256: fd1f5396c0c4ed9abc81e123f52d188c7b82e4ee6b75af7369b2dbd9959f2ba0
+  version: 5.38.4
+  date: "2026-03-06 10:04:46"
+  path: https://github.com/evolite/stashgifs/releases/download/v5.38.4/stashgifs.zip
+  sha256: bfaf8fc4bda4f8d16f9457bc0d13cf48e66b0ed8542d8ca7e86bb4455d0d8df3

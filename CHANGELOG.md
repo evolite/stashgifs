@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [5.38.4] - 2026-03-06
+
+### Changed
+- Fix blue flash: remove backgroundColor override in loadThemeEarly
+- Remove Bugs badge from README
+- Update AI Usage section in README
+
 ## [5.38.3] - 2026-03-05
 
 ## [5.38.2] - 2026-03-05

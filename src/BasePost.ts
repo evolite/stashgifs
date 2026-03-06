@@ -123,7 +123,6 @@ export abstract class BasePost {
     this.container.dataset.postId = config.postId;
     this.container.style.position = 'relative';
     this.container.style.backgroundColor = THEME.colors.surface;
-    this.container.style.border = `1px solid ${THEME.colors.border}`;
     this.container.style.borderRadius = THEME.radius.card;
     this.container.style.color = THEME.colors.textPrimary;
     this.container.style.fontFamily = THEME.typography.fontFamily;
