@@ -10,10 +10,8 @@ import { StashAPI } from './StashAPI.js';
 import { VisibilityManager } from './VisibilityManager.js';
 import { getAspectRatioClass, showToast, detectVideoFromVisualFiles, getImageUrlForDisplay } from './utils.js';
 import { BasePost } from './BasePost.js';
-import { RatingControl } from './RatingControl.js';
 
 // Constants
-const FAVORITE_TAG_NAME = 'StashGifs Favorite';
 const OCOUNT_DIGIT_WIDTH_PX = 8; // Approximate pixels per digit for 14px font
 const OCOUNT_MIN_WIDTH_PX = 14;
 const OCOUNT_THREE_DIGIT_PADDING = 10;
@@ -27,8 +25,6 @@ export class ImagePost extends BasePost {
   private playerContainer?: HTMLElement;
   private footer?: HTMLElement;
 
-  private readonly ratingSystemConfig?: { type?: string; starPrecision?: string } | null;
-  private ratingControl?: RatingControl;
   
 
   constructor(
@@ -122,17 +118,6 @@ export class ImagePost extends BasePost {
         ? this.data.image.width / this.data.image.height
         : undefined);
     return imageAspectRatio;
-  }
-
-  /**
-   * Create header with performer and tag chips
-   */
-  protected createHeader(): HTMLElement {
-    return this.buildImageHeader({
-      performers: this.data.image.performers,
-      tags: this.data.image.tags,
-      favoriteTagName: FAVORITE_TAG_NAME
-    });
   }
 
   /**
@@ -300,32 +285,6 @@ export class ImagePost extends BasePost {
   }
 
   /**
-   * Create rating section with dialog
-   */
-  private createRatingSection(): HTMLElement {
-    if (!this.ratingControl) {
-      const api = this.api;
-      this.ratingControl = new RatingControl({
-        container: this.container,
-        subjectLabel: 'image',
-        ratingSystemConfig: this.ratingSystemConfig,
-        buildRatingDisplayButton: (options) => this.buildRatingDisplayButton(options),
-        createRatingStarIcon: () => this.createRatingStarIcon(),
-        getRating100: () => this.data.image.rating100,
-        onUpdateRating100: (value) => {
-          this.data.image.rating100 = value;
-        },
-        onSaveRating10: api
-          ? (rating10) => api.updateImageRating(this.data.image.id, rating10)
-          : undefined,
-        onToast: (message) => showToast(message)
-      });
-    }
-
-    return this.ratingControl.render();
-  }
-
-  /**
    * Destroy the post
    */
   destroy(): void {
@@ -348,7 +307,6 @@ export class ImagePost extends BasePost {
       this.player.destroy();
       this.player = undefined;
     }
-    this.ratingControl?.destroy();
     this.isLoaded = false;
     super.destroy();
     // Remove the entire container from the DOM so stale cards don't linger

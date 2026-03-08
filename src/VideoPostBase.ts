@@ -14,6 +14,7 @@ import { VisibilityManager } from './VisibilityManager.js';
 import { setupTouchHandlers, preventClickAfterTouch } from './utils/touchHandlers.js';
 
 export abstract class VideoPostBase extends BasePost {
+  protected isLoaded: boolean = false;
   protected isHQMode: boolean = false;
   protected loadErrorCount: number = 0;
   protected muteOverlayButton?: HTMLElement;
@@ -280,5 +281,16 @@ export abstract class VideoPostBase extends BasePost {
     posterLayer.style.pointerEvents = 'none';
     container.appendChild(posterLayer);
     this.posterLayer = posterLayer;
+  }
+
+  isPlayerLoaded(): boolean {
+    const player = this.getPlayer();
+    if (!this.isLoaded || !player) {
+      return false;
+    }
+    if ('getIsUnloaded' in player && player.getIsUnloaded()) {
+      return false;
+    }
+    return true;
   }
 }

@@ -10,10 +10,6 @@ import { StashAPI } from './StashAPI.js';
 import { VisibilityManager } from './VisibilityManager.js';
 import { calculateAspectRatio, getAspectRatioClass, normalizeMediaUrl, showToast, toAbsoluteUrl, THEME } from './utils.js';
 import { VideoPostBase } from './VideoPostBase.js';
-import { RatingControl } from './RatingControl.js';
-
-// Constants
-const FAVORITE_TAG_NAME = 'StashGifs Favorite';
 interface ImageVideoPostOptions {
   onMuteToggle?: (isMuted: boolean) => void;
   getGlobalMuteState?: () => boolean;
@@ -31,16 +27,12 @@ interface ImageVideoPostOptions {
 export class ImageVideoPost extends VideoPostBase {
   protected readonly data: ImageVideoPostData;
   private player?: NativeVideoPlayer;
-  private isLoaded: boolean = false;
   private hqButton?: HTMLElement;
 
   private readonly onCancelRequests?: () => void;
 
   private playerContainer?: HTMLElement;
   private footer?: HTMLElement;
-
-  private readonly ratingSystemConfig?: { type?: string; starPrecision?: string } | null;
-  private ratingControl?: RatingControl;
 
   constructor(
     container: HTMLElement,
@@ -91,17 +83,6 @@ export class ImageVideoPost extends VideoPostBase {
     if (this.isReelMode) {
       this.applyReelModeLayout({ header, playerContainer, footer });
     }
-  }
-
-  /**
-   * Create header with performer and tag chips
-   */
-  protected createHeader(): HTMLElement {
-    return this.buildImageHeader({
-      performers: this.data.image.performers,
-      tags: this.data.image.tags,
-      favoriteTagName: FAVORITE_TAG_NAME
-    });
   }
 
   /**
@@ -553,19 +534,6 @@ export class ImageVideoPost extends VideoPostBase {
   }
 
   /**
-   * Return true if player has been instantiated
-   */
-  isPlayerLoaded(): boolean {
-    if (!this.isLoaded || !this.player) {
-      return false;
-    }
-    if ('getIsUnloaded' in this.player && this.player.getIsUnloaded()) {
-      return false;
-    }
-    return true;
-  }
-
-  /**
    * Return true if video source is available
    */
   hasVideoSource(): boolean {
@@ -603,34 +571,6 @@ export class ImageVideoPost extends VideoPostBase {
   }
 
   /**
-   * Create rating section with dialog
-   */
-  private createRatingSection(): HTMLElement {
-    if (!this.ratingControl) {
-      const api = this.api;
-      this.ratingControl = new RatingControl({
-        container: this.container,
-        subjectLabel: 'image',
-        ratingSystemConfig: this.ratingSystemConfig,
-        buildRatingDisplayButton: (options) => this.buildRatingDisplayButton(options),
-        createRatingStarIcon: () => this.createRatingStarIcon(),
-        getRating100: () => this.data.image.rating100,
-        onUpdateRating100: (value) => {
-          this.data.image.rating100 = value;
-        },
-        onSaveRating10: api
-          ? (rating10) => api.updateImageRating(this.data.image.id, rating10)
-          : undefined,
-        onToast: (message) => showToast(message)
-      });
-    }
-
-    return this.ratingControl.render();
-  }
-
-
-
-  /**
    * Get the container element
    */
   getContainer(): HTMLElement {
@@ -663,7 +603,6 @@ export class ImageVideoPost extends VideoPostBase {
       this.retryTimeoutId = undefined;
     }
 
-    this.ratingControl?.destroy();
     if (this.addTagDialogState.autocompleteDebounceTimer) {
       clearTimeout(this.addTagDialogState.autocompleteDebounceTimer);
       this.addTagDialogState.autocompleteDebounceTimer = undefined;

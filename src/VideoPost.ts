@@ -38,7 +38,6 @@ interface VideoPostOptions {
 export class VideoPost extends VideoPostBase {
   protected readonly data: VideoPostData;
   private player?: NativeVideoPlayer;
-  private isLoaded: boolean = false;
   private markerButton?: HTMLElement;
   private hqButton?: HTMLElement;
   private playButton?: HTMLElement;
@@ -55,8 +54,6 @@ export class VideoPost extends VideoPostBase {
   private tagSearchLoadingTimer?: ReturnType<typeof setTimeout>;
   private isTagSearchLoading: boolean = false;
   private hasCreatedMarker: boolean = false; // Track if marker has been created for this scene
-  private readonly ratingSystemConfig?: { type?: string; starPrecision?: string } | null;
-  private ratingControl?: RatingControl;
   
   
   // Cached DOM elements
@@ -772,9 +769,9 @@ export class VideoPost extends VideoPostBase {
 
 
   /**
-   * Create rating section with dialog
+   * Create rating section with dialog (scene-based override)
    */
-  private createRatingSection(): HTMLElement {
+  protected createRatingSection(): HTMLElement {
     if (!this.ratingControl) {
       const api = this.api;
       this.ratingControl = new RatingControl({
@@ -1179,19 +1176,6 @@ export class VideoPost extends VideoPostBase {
       this.updateHQButton(this.hqButton);
     }
     this.updateMuteOverlayButton();
-  }
-
-  /**
-   * Return true if player has been instantiated
-   */
-  isPlayerLoaded(): boolean {
-    if (!this.isLoaded || !this.player) {
-      return false;
-    }
-    if ('getIsUnloaded' in this.player && this.player.getIsUnloaded()) {
-      return false;
-    }
-    return true;
   }
 
   /**
@@ -2518,8 +2502,6 @@ export class VideoPost extends VideoPostBase {
       this.player.destroy();
       this.player = undefined;
     }
-
-    this.ratingControl?.destroy();
 
     super.destroy();
     // Remove container from DOM

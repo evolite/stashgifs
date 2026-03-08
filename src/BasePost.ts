@@ -7,6 +7,7 @@ import { FavoritesManager } from './FavoritesManager.js';
 import { StashAPI } from './StashAPI.js';
 import { VisibilityManager } from './VisibilityManager.js';
 import { normalizeMediaUrl, showToast, isMobileDevice, THEME, subscribeWindowScroll } from './utils.js';
+import { RatingControl } from './RatingControl.js';
 import { ADD_TAG_SVG, HEART_SVG_OUTLINE, HEART_SVG_FILLED, OCOUNT_SVG, EXTERNAL_LINK_SVG, STAR_SVG, STAR_SVG_OUTLINE, VERIFIED_SVG } from './icons.js';
 import { setupTouchHandlers, preventClickAfterTouch } from './utils/touchHandlers.js';
 import { adjustImageDialogPosition, toggleImageFavorite } from './utils/imagePostUtils.js';
@@ -39,15 +40,23 @@ export interface AddTagDialogState {
  * Contains shared functionality to reduce code duplication
  */
 export abstract class BasePost {
+  private static readonly FAVORITE_TAG_NAME = 'StashGifs Favorite';
+
   /**
    * Abstract property for post data (must be implemented by subclasses)
    */
   protected abstract data: any;
 
   /**
-   * Abstract method to create the header element (must be implemented by subclasses)
+   * Default header for image-based posts. VideoPost overrides with scene-specific header.
    */
-  protected abstract createHeader(): HTMLElement;
+  protected createHeader(): HTMLElement {
+    return this.buildImageHeader({
+      performers: this.data.image.performers,
+      tags: this.data.image.tags,
+      favoriteTagName: BasePost.FAVORITE_TAG_NAME
+    });
+  }
 
   protected refreshHeader(): void {
     const header = this.container.querySelector('.video-post__header');
@@ -71,6 +80,8 @@ export abstract class BasePost {
   protected heartButton?: HTMLElement;
   protected buttonGroup?: HTMLElement;
   protected addTagDialogState: AddTagDialogState = { isOpen: false };
+  protected ratingSystemConfig?: { type?: string; starPrecision?: string } | null;
+  protected ratingControl?: RatingControl;
   protected isFavorite: boolean = false;
   protected isTogglingFavorite: boolean = false;
   protected oCountButton?: HTMLElement;
@@ -198,6 +209,8 @@ export abstract class BasePost {
       this.removeHoverEffect(button);
     }
     this.hoverHandlers.clear();
+    this.ratingControl?.destroy();
+    this.ratingControl = undefined;
   }
 
   private static loadFavoritePerformerCache(): void {
@@ -2150,6 +2163,32 @@ export abstract class BasePost {
     }
 
     return header;
+  }
+
+  /**
+   * Default rating section for image-based posts. VideoPost overrides with scene-specific version.
+   */
+  protected createRatingSection(): HTMLElement {
+    if (!this.ratingControl) {
+      const api = this.api;
+      this.ratingControl = new RatingControl({
+        container: this.container,
+        subjectLabel: 'image',
+        ratingSystemConfig: this.ratingSystemConfig,
+        buildRatingDisplayButton: (options) => this.buildRatingDisplayButton(options),
+        createRatingStarIcon: () => this.createRatingStarIcon(),
+        getRating100: () => this.data.image.rating100,
+        onUpdateRating100: (value) => {
+          this.data.image.rating100 = value;
+        },
+        onSaveRating10: api
+          ? (rating10) => api.updateImageRating(this.data.image.id, rating10)
+          : undefined,
+        onToast: (message) => showToast(message)
+      });
+    }
+
+    return this.ratingControl.render();
   }
 
   private appendPerformerChips(chips: HTMLElement, performers: Performer[]): void {
