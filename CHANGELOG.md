@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [5.38.6] - 2026-03-08\n\n### Changed\n- Extract createHQButton/setHQMode to VideoPostBase; fix unused imports
+- Extract processItemForRender shared helper in FeedContainer
+- Further reduce new-code duplication toward <2%
+- Reduce code duplication below 2% on new code
+- Fix S7773 parseInt issues and extract toggleFavorite to BasePost
+- Untrack .debug/ and stashgifs/ build output
+- Remove local AI tooling files from git tracking
+- Update README.md\n
+
 ## [5.38.4] - 2026-03-06
 
 ### Changed
