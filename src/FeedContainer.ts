@@ -3726,6 +3726,23 @@ export class FeedContainer {
   }
 
   /**
+   * Shared helper: create a post container and append it to a fragment
+   */
+  private async processItemForRender(
+    createContainer: () => Promise<HTMLElement | null>,
+    fragment: DocumentFragment | null
+  ): Promise<{ fragment: DocumentFragment; postContainer: HTMLElement | null }> {
+    const postContainer = await createContainer();
+    const currentFragment = fragment ?? document.createDocumentFragment();
+
+    if (postContainer) {
+      currentFragment.appendChild(postContainer);
+    }
+
+    return { fragment: currentFragment, postContainer };
+  }
+
+  /**
    * Process a single marker and add to fragment
    */
   private async processMarkerForRender(
@@ -3736,15 +3753,7 @@ export class FeedContainer {
     if (!marker) {
       return { fragment: fragment ?? document.createDocumentFragment(), postContainer: null };
     }
-
-    const postContainer = await this.createPost(marker, signal);
-    const currentFragment = fragment ?? document.createDocumentFragment();
-    
-    if (postContainer) {
-      currentFragment.appendChild(postContainer);
-    }
-
-    return { fragment: currentFragment, postContainer };
+    return this.processItemForRender(() => this.createPost(marker, signal), fragment);
   }
 
   /**
@@ -3870,15 +3879,7 @@ export class FeedContainer {
     if (!image) {
       return { fragment: fragment ?? document.createDocumentFragment(), postContainer: null };
     }
-
-    const postContainer = await this.createPostFromImage(image, signal);
-    const currentFragment = fragment ?? document.createDocumentFragment();
-    
-    if (postContainer) {
-      currentFragment.appendChild(postContainer);
-    }
-
-    return { fragment: currentFragment, postContainer };
+    return this.processItemForRender(() => this.createPostFromImage(image, signal), fragment);
   }
 
   /**
