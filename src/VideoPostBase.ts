@@ -5,7 +5,7 @@
  */
 
 import { NativeVideoPlayer } from './NativeVideoPlayer.js';
-import { isMobileDevice, THEME } from './utils.js';
+import { isMobileDevice, THEME, showToast } from './utils.js';
 import { HQ_SVG_OUTLINE, HQ_SVG_FILLED, VOLUME_MUTED_SVG, VOLUME_UNMUTED_SVG } from './icons.js';
 import { BasePost } from './BasePost.js';
 import { FavoritesManager } from './FavoritesManager.js';
@@ -17,6 +17,7 @@ export abstract class VideoPostBase extends BasePost {
   protected isLoaded: boolean = false;
   protected isHQMode: boolean = false;
   protected loadErrorCount: number = 0;
+  protected hqButton?: HTMLElement;
   protected muteOverlayButton?: HTMLElement;
   protected onMuteToggle?: (isMuted: boolean) => void;
   protected getGlobalMuteState?: () => boolean;
@@ -281,6 +282,58 @@ export abstract class VideoPostBase extends BasePost {
     posterLayer.style.pointerEvents = 'none';
     container.appendChild(posterLayer);
     this.posterLayer = posterLayer;
+  }
+
+  protected abstract getHQAriaLabel(): string;
+  protected abstract getHQTitle(): string;
+  protected abstract performHQUpgrade(): Promise<void>;
+
+  protected createHQButton(): HTMLElement {
+    const hqBtn = document.createElement('button');
+    hqBtn.className = 'icon-btn icon-btn--hq';
+    hqBtn.type = 'button';
+    hqBtn.setAttribute('aria-label', this.getHQAriaLabel());
+    hqBtn.title = this.getHQTitle();
+    this.applyIconButtonStyles(hqBtn);
+    hqBtn.style.padding = '0';
+
+    this.updateHQButton(hqBtn);
+    this.hqButton = hqBtn;
+
+    const clickHandler = async (e: Event) => {
+      e.preventDefault();
+      e.stopPropagation();
+
+      if (!this.api || this.isHQMode) return;
+
+      hqBtn.disabled = true;
+      hqBtn.style.opacity = '0.5';
+
+      try {
+        await this.performHQUpgrade();
+        this.isHQMode = true;
+        this.updateHQButton(hqBtn);
+        this.updateMuteOverlayButton();
+      } catch (error) {
+        console.error('Failed to load high-quality video', error);
+        showToast('Failed to load high-quality video. Please try again.');
+      } finally {
+        hqBtn.disabled = false;
+        hqBtn.style.opacity = '1';
+      }
+    };
+
+    hqBtn.addEventListener('click', clickHandler);
+    this.addHoverEffect(hqBtn);
+    return hqBtn;
+  }
+
+  public setHQMode(isHQ: boolean): void {
+    this.isHQMode = isHQ;
+    if (this.hqButton) {
+      this.updateHQButton(this.hqButton);
+    }
+    this.updateMuteOverlayButton();
   }
 
   isPlayerLoaded(): boolean {

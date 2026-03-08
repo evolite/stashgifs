@@ -8,7 +8,7 @@ import { NativeVideoPlayer } from './NativeVideoPlayer.js';
 import { FavoritesManager } from './FavoritesManager.js';
 import { StashAPI } from './StashAPI.js';
 import { VisibilityManager } from './VisibilityManager.js';
-import { calculateAspectRatio, getAspectRatioClass, normalizeMediaUrl, showToast, toAbsoluteUrl, THEME } from './utils.js';
+import { calculateAspectRatio, getAspectRatioClass, normalizeMediaUrl, toAbsoluteUrl, THEME } from './utils.js';
 import { VideoPostBase } from './VideoPostBase.js';
 interface ImageVideoPostOptions {
   onMuteToggle?: (isMuted: boolean) => void;
@@ -27,8 +27,6 @@ interface ImageVideoPostOptions {
 export class ImageVideoPost extends VideoPostBase {
   protected readonly data: ImageVideoPostData;
   private player?: NativeVideoPlayer;
-  private hqButton?: HTMLElement;
-
   private readonly onCancelRequests?: () => void;
 
   private playerContainer?: HTMLElement;
@@ -181,59 +179,23 @@ export class ImageVideoPost extends VideoPostBase {
     return footer;
   }
 
-  /**
-   * Create HQ button
-   */
-  private createHQButton(): HTMLElement {
-    const hqBtn = document.createElement('button');
-    hqBtn.className = 'icon-btn icon-btn--hq';
-    hqBtn.type = 'button';
-    hqBtn.setAttribute('aria-label', 'Load high-quality video with audio');
-    hqBtn.title = 'Load HD video';
-    this.applyIconButtonStyles(hqBtn);
-    hqBtn.style.padding = '0';
+  protected getHQAriaLabel(): string {
+    return 'Load high-quality video with audio';
+  }
 
-    this.updateHQButton(hqBtn);
-    this.hqButton = hqBtn;
+  protected getHQTitle(): string {
+    return 'Load HD video';
+  }
 
-    const clickHandler = async (e: Event) => {
-      e.preventDefault();
-      e.stopPropagation();
-      
-      if (!this.api || this.isHQMode) return;
-
-      hqBtn.disabled = true;
-      hqBtn.style.opacity = '0.5';
-
-      try {
-        await this.upgradeToHDVideo();
-        this.isHQMode = true;
-        this.updateHQButton(hqBtn);
-        this.updateMuteOverlayButton();
-      } catch (error) {
-        console.error('Failed to upgrade to HD video', error);
-        showToast('Failed to load high-quality video. Please try again.');
-      } finally {
-        hqBtn.disabled = false;
-        hqBtn.style.opacity = '1';
-      }
-    };
-
-    hqBtn.addEventListener('click', clickHandler);
-    this.addHoverEffect(hqBtn);
-    return hqBtn;
+  protected async performHQUpgrade(): Promise<void> {
+    await this.upgradeToHDVideo();
   }
 
   /**
-   * Programmatically set HQ mode (used when feed-level HD is enabled)
+   * Programmatically set HQ mode — also applies mute state to the player
    */
-  public setHQMode(isHQ: boolean): void {
-    this.isHQMode = isHQ;
-    if (this.hqButton) {
-      this.updateHQButton(this.hqButton);
-    }
-    this.updateMuteOverlayButton();
-    // Apply mute state to player if it exists
+  public override setHQMode(isHQ: boolean): void {
+    super.setHQMode(isHQ);
     if (this.player && this.getGlobalMuteState) {
       const shouldBeMuted = this.getGlobalMuteState();
       this.player.setMuted(shouldBeMuted);

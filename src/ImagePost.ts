@@ -8,7 +8,7 @@ import { ImagePlayer } from './ImagePlayer.js';
 import { FavoritesManager } from './FavoritesManager.js';
 import { StashAPI } from './StashAPI.js';
 import { VisibilityManager } from './VisibilityManager.js';
-import { getAspectRatioClass, showToast, detectVideoFromVisualFiles, getImageUrlForDisplay } from './utils.js';
+import { getAspectRatioClass, detectVideoFromVisualFiles, getImageUrlForDisplay } from './utils.js';
 import { BasePost } from './BasePost.js';
 
 // Constants

@@ -39,7 +39,6 @@ export class VideoPost extends VideoPostBase {
   protected readonly data: VideoPostData;
   private player?: NativeVideoPlayer;
   private markerButton?: HTMLElement;
-  private hqButton?: HTMLElement;
   private playButton?: HTMLElement;
   private markerDialog?: HTMLElement;
   private markerDialogInput?: HTMLInputElement;
@@ -711,62 +710,17 @@ export class VideoPost extends VideoPostBase {
     this.data.marker.scene.o_counter = result.count;
   }
 
-  /**
-   * Create HQ button
-   */
-  private createHQButton(): HTMLElement {
-    const hqBtn = document.createElement('button');
-    hqBtn.className = 'icon-btn icon-btn--hq';
-    hqBtn.type = 'button';
-    hqBtn.setAttribute('aria-label', 'Load high-quality scene video with audio');
-    hqBtn.title = 'Load HD marker';
-    this.applyIconButtonStyles(hqBtn);
-    hqBtn.style.padding = '0';
-
-    this.updateHQButton(hqBtn);
-    this.hqButton = hqBtn;
-
-    const clickHandler = async (e: Event) => {
-      e.preventDefault();
-      e.stopPropagation();
-      
-      if (!this.api || this.isHQMode) return;
-
-      hqBtn.disabled = true;
-      hqBtn.style.opacity = '0.5';
-
-      try {
-        await this.upgradeToSceneVideo();
-        this.isHQMode = true;
-        this.updateHQButton(hqBtn);
-        this.updateMuteOverlayButton();
-      } catch (error) {
-        console.error('Failed to upgrade to scene video', error);
-        // Log more details about the error
-        if (error instanceof Error) {
-          console.error('Error details:', {
-            message: error.message,
-            stack: error.stack,
-            name: error.name,
-          });
-        } else if (error instanceof DOMException) {
-          console.error('DOMException details:', {
-            name: error.name,
-            message: error.message,
-          });
-        }
-        showToast('Failed to load high-quality video. Please try again.');
-      } finally {
-        hqBtn.disabled = false;
-        hqBtn.style.opacity = '1';
-      }
-    };
-
-    hqBtn.addEventListener('click', clickHandler);
-    this.addHoverEffect(hqBtn);
-    return hqBtn;
+  protected getHQAriaLabel(): string {
+    return 'Load high-quality scene video with audio';
   }
 
+  protected getHQTitle(): string {
+    return 'Load HD marker';
+  }
+
+  protected async performHQUpgrade(): Promise<void> {
+    await this.upgradeToSceneVideo();
+  }
 
   /**
    * Create rating section with dialog (scene-based override)
@@ -1165,17 +1119,6 @@ export class VideoPost extends VideoPostBase {
     }
 
     return this.player;
-  }
-
-  /**
-   * Programmatically set HQ mode (used when feed-level HD is enabled)
-   */
-  public setHQMode(isHQ: boolean): void {
-    this.isHQMode = isHQ;
-    if (this.hqButton) {
-      this.updateHQButton(this.hqButton);
-    }
-    this.updateMuteOverlayButton();
   }
 
   /**
