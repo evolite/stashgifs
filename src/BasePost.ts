@@ -45,9 +45,18 @@ export abstract class BasePost {
   protected abstract data: any;
 
   /**
-   * Abstract method to refresh header (must be implemented by subclasses)
+   * Abstract method to create the header element (must be implemented by subclasses)
    */
-  protected abstract refreshHeader(): void;
+  protected abstract createHeader(): HTMLElement;
+
+  protected refreshHeader(): void {
+    const header = this.container.querySelector('.video-post__header');
+    if (header) {
+      const newHeader = this.createHeader();
+      header.replaceWith(newHeader);
+      this.applyReelModeLayoutIfNeeded(newHeader);
+    }
+  }
 
   // @ts-nocheck
   // eslint-disable @typescript-eslint/no-explicit-any
@@ -2645,9 +2654,13 @@ export abstract class BasePost {
   }
 
   /**
-   * Abstract method to perform favorite toggle action - must be implemented by subclasses
+   * Default favorite toggle action - calls toggleFavorite and returns isFavorite.
+   * VideoPost overrides this with its own implementation.
    */
-  protected abstract toggleFavoriteAction(): Promise<boolean>;
+  protected async toggleFavoriteAction(): Promise<boolean> {
+    await this.toggleFavorite();
+    return this.isFavorite;
+  }
 
   /**
    * Abstract method to increment O-count - must be implemented by subclasses
@@ -2655,9 +2668,18 @@ export abstract class BasePost {
   protected abstract incrementOCountAction(): Promise<void>;
 
   /**
-   * Abstract method to remove a tag from the current post
+   * Default tag removal action for image-based posts.
+   * VideoPost overrides this with its own implementation.
    */
-  protected abstract removeTagAction(tagId: string, tagName: string): Promise<boolean>;
+  protected async removeTagAction(tagId: string, tagName: string): Promise<boolean> {
+    return this.removeTagShared(tagId, tagName, {
+      getCurrentTags: () => this.data.image.tags || [],
+      apiCall: (nextTagIds) => this.api!.updateImageTags(this.data.image.id, nextTagIds),
+      updateLocalTags: (remainingTags) => { this.data.image.tags = remainingTags as any[]; },
+      entityType: 'image',
+      logPrefix: this.constructor.name
+    });
+  }
 
   /**
    * Shared helper for removing a tag from an image
@@ -2792,15 +2814,26 @@ export abstract class BasePost {
   }
 
   /**
-   * Abstract method to remove a performer from the current post
+   * Default performer removal action for image-based posts.
+   * VideoPost overrides this with its own implementation.
    */
-  protected abstract removePerformerAction(performerId: string, performerName: string): Promise<boolean>;
+  protected async removePerformerAction(performerId: string, performerName: string): Promise<boolean> {
+    return this.removePerformerShared(performerId, performerName, {
+      performers: this.data.image.performers,
+      itemId: this.data.image.id,
+      apiMethod: (id, performerIds) => this.api!.updateImagePerformers(id, performerIds),
+      itemType: 'image',
+      logPrefix: this.constructor.name
+    });
+  }
 
   /**
-   * Abstract method to get favorite tag source - must be implemented by subclasses
-   * Returns the tags array to check for favorite tag
+   * Default favorite tag source - returns image tags.
+   * VideoPost overrides this with its own implementation.
    */
-  protected abstract getFavoriteTagSource(): Array<{ name: string }> | undefined;
+  protected getFavoriteTagSource(): Array<{ name: string }> | undefined {
+    return this.data.image.tags;
+  }
 
   /**
    * Optional method to update local tags after favorite toggle - only VideoPost implements this

@@ -96,7 +96,7 @@ export class ImageVideoPost extends VideoPostBase {
   /**
    * Create header with performer and tag chips
    */
-  private createHeader(): HTMLElement {
+  protected createHeader(): HTMLElement {
     return this.buildImageHeader({
       performers: this.data.image.performers,
       tags: this.data.image.tags,
@@ -138,24 +138,7 @@ export class ImageVideoPost extends VideoPostBase {
     container.classList.add(aspectRatioClass);
 
     // Poster layer (preview) to prevent black flashes
-    const posterUrl = this.isReelMode ? this.getPosterUrl() : undefined;
-    if (posterUrl) {
-      const posterLayer = document.createElement('div');
-      posterLayer.className = 'video-post__poster';
-      posterLayer.style.position = 'absolute';
-      posterLayer.style.inset = '0';
-      posterLayer.style.backgroundImage = `url("${posterUrl}")`;
-      posterLayer.style.backgroundColor = THEME.colors.backgroundSecondary;
-      posterLayer.style.backgroundSize = 'cover';
-      posterLayer.style.backgroundPosition = 'center';
-      posterLayer.style.backgroundRepeat = 'no-repeat';
-      posterLayer.style.opacity = '1';
-      posterLayer.style.transition = 'opacity 220ms ease';
-      posterLayer.style.zIndex = '2';
-      posterLayer.style.pointerEvents = 'none';
-      container.appendChild(posterLayer);
-      this.posterLayer = posterLayer;
-    }
+    this.appendPosterLayer(container, this.isReelMode ? this.getPosterUrl() : undefined);
 
     // Loading indicator for video
     const loading = document.createElement('div');
@@ -530,21 +513,6 @@ export class ImageVideoPost extends VideoPostBase {
   }
 
   /**
-   * Perform favorite toggle action for ImageVideoPost
-   */
-  protected async toggleFavoriteAction(): Promise<boolean> {
-    await this.toggleFavorite();
-    return this.isFavorite;
-  }
-
-  /**
-   * Get favorite tag source for ImageVideoPost
-   */
-  protected getFavoriteTagSource(): Array<{ name: string }> | undefined {
-    return this.data.image.tags;
-  }
-
-  /**
    * Perform O-count increment action for ImageVideoPost
    */
   protected async incrementOCountAction(): Promise<void> {
@@ -554,38 +522,6 @@ export class ImageVideoPost extends VideoPostBase {
     const newOCount = await this.api.incrementImageOCount(this.data.image.id);
     this.oCount = newOCount;
     this.data.image.o_counter = newOCount;
-  }
-
-  protected async removeTagAction(tagId: string, tagName: string): Promise<boolean> {
-    return this.removeTagShared(tagId, tagName, {
-      getCurrentTags: () => this.data.image.tags || [],
-      apiCall: (nextTagIds) => this.api!.updateImageTags(this.data.image.id, nextTagIds),
-      updateLocalTags: (remainingTags) => { this.data.image.tags = remainingTags as any[]; },
-      entityType: 'image',
-      logPrefix: 'ImageVideoPost'
-    });
-  }
-
-  protected async removePerformerAction(performerId: string, performerName: string): Promise<boolean> {
-    return this.removePerformerShared(performerId, performerName, {
-      performers: this.data.image.performers,
-      itemId: this.data.image.id,
-      apiMethod: (id, performerIds) => this.api!.updateImagePerformers(id, performerIds),
-      itemType: 'image',
-      logPrefix: 'ImageVideoPost'
-    });
-  }
-
-  /**
-   * Refresh header to show updated tags
-   */
-  protected refreshHeader(): void {
-    const header = this.container.querySelector('.video-post__header');
-    if (header) {
-      const newHeader = this.createHeader();
-      header.replaceWith(newHeader);
-      this.applyReelModeLayoutIfNeeded(newHeader);
-    }
   }
 
   /**

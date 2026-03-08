@@ -127,7 +127,7 @@ export class ImagePost extends BasePost {
   /**
    * Create header with performer and tag chips
    */
-  private createHeader(): HTMLElement {
+  protected createHeader(): HTMLElement {
     return this.buildImageHeader({
       performers: this.data.image.performers,
       tags: this.data.image.tags,
@@ -233,15 +233,6 @@ export class ImagePost extends BasePost {
 
 
   /**
-   * Perform favorite toggle action for ImagePost
-   */
-  protected async toggleFavoriteAction(): Promise<boolean> {
-    await this.toggleFavorite();
-    return this.isFavorite;
-  }
-
-
-  /**
    * Perform O-count increment action for ImagePost
    */
   protected async incrementOCountAction(): Promise<void> {
@@ -259,45 +250,6 @@ export class ImagePost extends BasePost {
       } else {
         this.oCountButton.style.paddingRight = `${OCOUNT_DEFAULT_PADDING}px`;
       }
-    }
-  }
-
-  /**
-   * Get favorite tag source for ImagePost
-   */
-  protected getFavoriteTagSource(): Array<{ name: string }> | undefined {
-    return this.data.image.tags;
-  }
-
-  protected async removeTagAction(tagId: string, tagName: string): Promise<boolean> {
-    return this.removeTagShared(tagId, tagName, {
-      getCurrentTags: () => this.data.image.tags || [],
-      apiCall: (nextTagIds) => this.api!.updateImageTags(this.data.image.id, nextTagIds),
-      updateLocalTags: (remainingTags) => { this.data.image.tags = remainingTags as any[]; },
-      entityType: 'image',
-      logPrefix: 'ImagePost'
-    });
-  }
-
-  protected async removePerformerAction(performerId: string, performerName: string): Promise<boolean> {
-    return this.removePerformerShared(performerId, performerName, {
-      performers: this.data.image.performers,
-      itemId: this.data.image.id,
-      apiMethod: (id, performerIds) => this.api!.updateImagePerformers(id, performerIds),
-      itemType: 'image',
-      logPrefix: 'ImagePost'
-    });
-  }
-
-  /**
-   * Refresh header to show updated tags
-   */
-  protected refreshHeader(): void {
-    const header = this.container.querySelector('.video-post__header');
-    if (header) {
-      const newHeader = this.createHeader();
-      header.replaceWith(newHeader);
-      this.applyReelModeLayoutIfNeeded(newHeader);
     }
   }
 

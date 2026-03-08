@@ -262,4 +262,23 @@ export abstract class VideoPostBase extends BasePost {
   protected applyMuteButtonHQState(_btn: HTMLElement): void {
     // No-op by default (VideoPost always keeps mute button active)
   }
+
+  protected appendPosterLayer(container: HTMLElement, posterUrl: string | undefined): void {
+    if (!posterUrl) return;
+    const posterLayer = document.createElement('div');
+    posterLayer.className = 'video-post__poster';
+    posterLayer.style.position = 'absolute';
+    posterLayer.style.inset = '0';
+    posterLayer.style.backgroundImage = `url("${posterUrl}")`;
+    posterLayer.style.backgroundColor = THEME.colors.backgroundSecondary;
+    posterLayer.style.backgroundSize = 'cover';
+    posterLayer.style.backgroundPosition = 'center';
+    posterLayer.style.backgroundRepeat = 'no-repeat';
+    posterLayer.style.opacity = '1';
+    posterLayer.style.transition = 'opacity 220ms ease';
+    posterLayer.style.zIndex = '2';
+    posterLayer.style.pointerEvents = 'none';
+    container.appendChild(posterLayer);
+    this.posterLayer = posterLayer;
+  }
 }

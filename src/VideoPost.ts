@@ -159,24 +159,7 @@ export class VideoPost extends VideoPostBase {
 
 
     // Poster layer (preview) to prevent black flashes
-    const posterUrl = this.isReelMode ? this.getPreviewPosterUrl() : undefined;
-    if (posterUrl) {
-      const posterLayer = document.createElement('div');
-      posterLayer.className = 'video-post__poster';
-      posterLayer.style.position = 'absolute';
-      posterLayer.style.inset = '0';
-      posterLayer.style.backgroundImage = `url("${posterUrl}")`;
-      posterLayer.style.backgroundColor = THEME.colors.backgroundSecondary;
-      posterLayer.style.backgroundSize = 'cover';
-      posterLayer.style.backgroundPosition = 'center';
-      posterLayer.style.backgroundRepeat = 'no-repeat';
-      posterLayer.style.opacity = '1';
-      posterLayer.style.transition = 'opacity 220ms ease';
-      posterLayer.style.zIndex = '2';
-      posterLayer.style.pointerEvents = 'none';
-      container.appendChild(posterLayer);
-      this.posterLayer = posterLayer;
-    }
+    this.appendPosterLayer(container, this.isReelMode ? this.getPreviewPosterUrl() : undefined);
 
     // Loading indicator for video
     const loading = document.createElement('div');
@@ -289,21 +272,9 @@ export class VideoPost extends VideoPostBase {
   }
 
   /**
-   * Refresh the header to show updated tag chips (e.g., after creating a marker)
-   */
-  protected refreshHeader(): void {
-    const header = this.container.querySelector('.video-post__header');
-    if (header) {
-      const newHeader = this.createHeader();
-      header.replaceWith(newHeader);
-      this.applyReelModeLayoutIfNeeded(newHeader);
-    }
-  }
-
-  /**
    * Create header with performer and tag chips
    */
-  private createHeader(): HTMLElement {
+  protected createHeader(): HTMLElement {
     const header = document.createElement('div');
     header.className = 'video-post__header';
     header.style.padding = '8px 16px';
