@@ -44,6 +44,7 @@ export interface Performer {
   name: string;
   image_path?: string;
   favorite?: boolean;
+  birthdate?: string;
   stash_ids?: Array<{ stash_id: string }>;
 }
 
@@ -118,6 +119,7 @@ export interface FeedSettings {
   themeSecondary?: string; // Secondary surface color for inputs/panels
   themeAccent?: string; // Accent color for highlights
   showVerifiedCheckmarks?: boolean; // Toggle verified checkmark badges
+  showProductionAge?: boolean; // Show performer age at production next to name
   excludedTagNames?: string[]; // Tags to exclude from feed (names)
   imagesInGalleryOnly?: boolean; // When true, only show images that belong to a gallery
   galleryIds?: string[]; // Gallery IDs to filter to; empty = any gallery (NOT_NULL)

@@ -37,6 +37,7 @@ export class ImagePost extends BasePost {
       onPerformerChipClick?: (performerId: number, performerName: string) => void;
       onTagChipClick?: (tagId: number, tagName: string) => void;
       showVerifiedCheckmarks?: boolean;
+      showProductionAge?: boolean;
       onLoadFullVideo?: () => void;
       ratingSystemConfig?: { type?: string; starPrecision?: string } | null;
       reelMode?: boolean;
@@ -49,7 +50,8 @@ export class ImagePost extends BasePost {
       options?.visibilityManager,
       options?.onPerformerChipClick,
       options?.onTagChipClick,
-      options?.showVerifiedCheckmarks
+      options?.showVerifiedCheckmarks,
+      options?.showProductionAge
     );
     this.data = data;
     this.oCount = this.data.image.o_counter || 0;
@@ -220,6 +222,10 @@ export class ImagePost extends BasePost {
   /**
    * Perform O-count increment action for ImagePost
    */
+  protected getProductionDate(): string | undefined {
+    return this.data.image.date;
+  }
+
   protected async incrementOCountAction(): Promise<void> {
     if (!this.api) {
       throw new Error('API not available');

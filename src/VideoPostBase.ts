@@ -37,9 +37,10 @@ export abstract class VideoPostBase extends BasePost {
     visibilityManager?: VisibilityManager,
     onPerformerChipClick?: (performerId: number, performerName: string) => void,
     onTagChipClick?: (tagId: number, tagName: string) => void,
-    showVerifiedCheckmarks?: boolean
+    showVerifiedCheckmarks?: boolean,
+    showProductionAge?: boolean
   ) {
-    super(container, favoritesManager, api, visibilityManager, onPerformerChipClick, onTagChipClick, showVerifiedCheckmarks);
+    super(container, favoritesManager, api, visibilityManager, onPerformerChipClick, onTagChipClick, showVerifiedCheckmarks, showProductionAge);
   }
 
   protected abstract getPlayer(): NativeVideoPlayer | undefined;

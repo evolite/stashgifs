@@ -29,6 +29,7 @@ interface VideoPostOptions {
   onPerformerChipClick?: (performerId: number, performerName: string) => void;
   onTagChipClick?: (tagId: number, tagName: string) => void;
   showVerifiedCheckmarks?: boolean;
+  showProductionAge?: boolean;
   useShuffleMode?: boolean;
   onCancelRequests?: () => void;
   ratingSystemConfig?: { type?: string; starPrecision?: string } | null; // Rating system configuration
@@ -75,7 +76,8 @@ export class VideoPost extends VideoPostBase {
       options.visibilityManager,
       options.onPerformerChipClick,
       options.onTagChipClick,
-      options.showVerifiedCheckmarks
+      options.showVerifiedCheckmarks,
+      options.showProductionAge
     );
     this.data = data;
     this.useShuffleMode = options.useShuffleMode || false;
@@ -708,6 +710,10 @@ export class VideoPost extends VideoPostBase {
     const result = await this.api.incrementOCount(this.data.marker.scene.id);
     this.oCount = result.count;
     this.data.marker.scene.o_counter = result.count;
+  }
+
+  protected getProductionDate(): string | undefined {
+    return this.data.marker.scene.date;
   }
 
   protected getHQAriaLabel(): string {

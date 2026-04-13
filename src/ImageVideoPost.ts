@@ -19,6 +19,7 @@ interface ImageVideoPostOptions {
   onPerformerChipClick?: (performerId: number, performerName: string) => void;
   onTagChipClick?: (tagId: number, tagName: string) => void;
   showVerifiedCheckmarks?: boolean;
+  showProductionAge?: boolean;
   onCancelRequests?: () => void;
   ratingSystemConfig?: { type?: string; starPrecision?: string } | null;
   reelMode?: boolean;
@@ -44,7 +45,8 @@ export class ImageVideoPost extends VideoPostBase {
       options?.visibilityManager,
       options?.onPerformerChipClick,
       options?.onTagChipClick,
-      options?.showVerifiedCheckmarks
+      options?.showVerifiedCheckmarks,
+      options?.showProductionAge
     );
     this.data = data;
     this.oCount = this.data.image.o_counter || 0;
@@ -458,6 +460,10 @@ export class ImageVideoPost extends VideoPostBase {
   /**
    * Perform O-count increment action for ImageVideoPost
    */
+  protected getProductionDate(): string | undefined {
+    return this.data.image.date;
+  }
+
   protected async incrementOCountAction(): Promise<void> {
     if (!this.api) {
       throw new Error('API not available');

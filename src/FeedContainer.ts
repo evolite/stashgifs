@@ -46,6 +46,7 @@ const DEFAULT_SETTINGS: FeedSettings = {
   themeSecondary: THEME_DEFAULTS.backgroundSecondary,
   themeAccent: THEME_DEFAULTS.accentPrimary,
   showVerifiedCheckmarks: true,
+  showProductionAge: false,
   excludedTagNames: [],
   imagesInGalleryOnly: false,
   galleryIds: [],
@@ -2619,6 +2620,7 @@ export class FeedContainer {
       (signal) => this.api.findGalleries(signal),
       (newSettings) => {
         const previousShowVerified = this.settings.showVerifiedCheckmarks;
+        const previousShowProductionAge = this.settings.showProductionAge;
         const previousExcludedTags = this.normalizeExcludedTagNames(this.settings.excludedTagNames ?? []);
         const previousOrientation = this.normalizeOrientationFilter(this.settings.orientationFilter ?? []);
         // Update settings by merging with current settings
@@ -2633,6 +2635,8 @@ export class FeedContainer {
         const excludedTagsChanged = !this.areExcludedTagNamesEqual(previousExcludedTags, nextExcludedTags);
         const showVerifiedChanged = newSettings.showVerifiedCheckmarks !== undefined
           && updatedSettings.showVerifiedCheckmarks !== previousShowVerified;
+        const showProductionAgeChanged = newSettings.showProductionAge !== undefined
+          && updatedSettings.showProductionAge !== previousShowProductionAge;
         const orientationFilterChanged = newSettings.orientationFilter !== undefined
           && !this.areOrientationFiltersEqual(previousOrientation, nextOrientation);
         // Update card snapping if setting changed
@@ -2648,6 +2652,11 @@ export class FeedContainer {
         if (showVerifiedChanged) {
           for (const post of this.posts.values()) {
             post.setShowVerifiedCheckmarks?.(updatedSettings.showVerifiedCheckmarks !== false);
+          }
+        }
+        if (showProductionAgeChanged) {
+          for (const post of this.posts.values()) {
+            post.setShowProductionAge?.(updatedSettings.showProductionAge === true);
           }
         }
         // Reload feed if images or short-form settings changed
@@ -3971,6 +3980,7 @@ export class FeedContainer {
         onPerformerChipClick: (performerId, performerName) => { void this.handlePerformerChipClick(performerId, performerName); },
         onTagChipClick: (tagId, tagName) => { void this.handleTagChipClick(tagId, tagName); },
         showVerifiedCheckmarks: this.settings.showVerifiedCheckmarks !== false,
+        showProductionAge: this.settings.showProductionAge === true,
         onCancelRequests: () => this.cancelAllPendingRequests(),
         onMuteToggle: (isMuted: boolean) => this.setGlobalMuteState(isMuted),
         getGlobalMuteState: () => this.getGlobalMuteState(),
@@ -4132,6 +4142,7 @@ export class FeedContainer {
         onPerformerChipClick: (performerId, performerName) => { void this.handlePerformerChipClick(performerId, performerName); },
         onTagChipClick: (tagId, tagName) => { void this.handleTagChipClick(tagId, tagName); },
         showVerifiedCheckmarks: this.settings.showVerifiedCheckmarks !== false,
+        showProductionAge: this.settings.showProductionAge === true,
         onLoadFullVideo: undefined,
         ratingSystemConfig: this.ratingSystemConfig,
         reelMode: this.settings.reelMode === true
@@ -5808,6 +5819,7 @@ export class FeedContainer {
         onPerformerChipClick: (performerId, performerName) => { void this.handlePerformerChipClick(performerId, performerName); },
         onTagChipClick: (tagId, tagName) => { void this.handleTagChipClick(tagId, tagName); },
         showVerifiedCheckmarks: this.settings.showVerifiedCheckmarks !== false,
+        showProductionAge: this.settings.showProductionAge === true,
         useShuffleMode: this.shuffleMode > 0,
         onCancelRequests: () => this.cancelAllPendingRequests(),
         onMuteToggle: (isMuted: boolean) => this.setGlobalMuteState(isMuted),
@@ -7986,6 +7998,7 @@ export class FeedContainer {
     const reelModeChanged = newSettings.reelMode !== undefined;
     const previousExcludedTags = this.normalizeExcludedTagNames(this.settings.excludedTagNames ?? []);
     const previousShowVerified = this.settings.showVerifiedCheckmarks;
+    const previousShowProductionAge = this.settings.showProductionAge;
     const previousOrientation = this.normalizeOrientationFilter(this.settings.orientationFilter ?? []);
     this.settings = { ...this.settings, ...newSettings };
     const nextExcludedTags = this.normalizeExcludedTagNames(this.settings.excludedTagNames ?? []);
@@ -7993,6 +8006,8 @@ export class FeedContainer {
     const excludedTagsChanged = !this.areExcludedTagNamesEqual(previousExcludedTags, nextExcludedTags);
     const showVerifiedChanged = newSettings.showVerifiedCheckmarks !== undefined
       && this.settings.showVerifiedCheckmarks !== previousShowVerified;
+    const showProductionAgeChanged = newSettings.showProductionAge !== undefined
+      && this.settings.showProductionAge !== previousShowProductionAge;
     const orientationFilterChanged = newSettings.orientationFilter !== undefined
       && !this.areOrientationFiltersEqual(previousOrientation, nextOrientation);
     if (reelModeChanged || newSettings.snapToCards !== undefined) {
@@ -8012,6 +8027,12 @@ export class FeedContainer {
     if (showVerifiedChanged) {
       for (const post of this.posts.values()) {
         post.setShowVerifiedCheckmarks?.(this.settings.showVerifiedCheckmarks !== false);
+      }
+    }
+
+    if (showProductionAgeChanged) {
+      for (const post of this.posts.values()) {
+        post.setShowProductionAge?.(this.settings.showProductionAge === true);
       }
     }
 

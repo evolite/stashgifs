@@ -554,26 +554,6 @@ export class SettingsPage {
     themeSection.appendChild(secondaryRow.row);
     themeSection.appendChild(accentRow.row);
 
-    const verifiedCheckmarksContainer = document.createElement('div');
-    verifiedCheckmarksContainer.style.display = 'flex';
-    verifiedCheckmarksContainer.style.justifyContent = 'space-between';
-    verifiedCheckmarksContainer.style.alignItems = 'center';
-    verifiedCheckmarksContainer.style.marginBottom = '16px';
-
-    verifiedCheckmarksContainer.appendChild(
-      buildInfoLabel(
-        'Show verified performers',
-        'Shows a verified badge on performer chips when they have a Stash ID.'
-      )
-    );
-
-    const { container: verifiedCheckmarksToggleContainer, input: verifiedCheckmarksToggle } = this.createToggleSwitch(
-      this.settings.showVerifiedCheckmarks !== false,
-      () => this.saveSettings()
-    );
-    verifiedCheckmarksContainer.appendChild(verifiedCheckmarksToggleContainer);
-    themeSection.appendChild(verifiedCheckmarksContainer);
-
     const updateThemeLabel = (input: HTMLInputElement, label: HTMLElement) => {
       label.textContent = input.value.toUpperCase();
     };
@@ -697,7 +677,6 @@ export class SettingsPage {
     (this as any).themePrimaryInput = primaryRow.input;
     (this as any).themeSecondaryInput = secondaryRow.input;
     (this as any).themeAccentInput = accentRow.input;
-    (this as any).showVerifiedCheckmarksToggle = verifiedCheckmarksToggle;
 
     themeContent.appendChild(themeSection);
 
@@ -850,6 +829,49 @@ export class SettingsPage {
 
     layoutSection.appendChild(seenHistoryContainer);
     (this as any).seenHistorySizeInput = seenHistorySizeInput;
+
+    const verifiedCheckmarksContainer = document.createElement('div');
+    verifiedCheckmarksContainer.style.display = 'flex';
+    verifiedCheckmarksContainer.style.justifyContent = 'space-between';
+    verifiedCheckmarksContainer.style.alignItems = 'center';
+    verifiedCheckmarksContainer.style.marginBottom = '16px';
+
+    verifiedCheckmarksContainer.appendChild(
+      buildInfoLabel(
+        'Display Verified Badge',
+        'Shows a verified badge on performer chips when they have a Stash ID.'
+      )
+    );
+
+    const { container: verifiedCheckmarksToggleContainer, input: verifiedCheckmarksToggle } = this.createToggleSwitch(
+      this.settings.showVerifiedCheckmarks !== false,
+      () => this.saveSettings()
+    );
+    verifiedCheckmarksContainer.appendChild(verifiedCheckmarksToggleContainer);
+    layoutSection.appendChild(verifiedCheckmarksContainer);
+    (this as any).showVerifiedCheckmarksToggle = verifiedCheckmarksToggle;
+
+    const productionAgeContainer = document.createElement('div');
+    productionAgeContainer.style.display = 'flex';
+    productionAgeContainer.style.justifyContent = 'space-between';
+    productionAgeContainer.style.alignItems = 'center';
+    productionAgeContainer.style.marginBottom = '16px';
+
+    productionAgeContainer.appendChild(
+      buildInfoLabel(
+        'Show Production Age',
+        'Shows the performer\'s age at the time of the scene or image next to their name.'
+      )
+    );
+
+    const { container: productionAgeToggleContainer, input: productionAgeToggle } = this.createToggleSwitch(
+      this.settings.showProductionAge === true,
+      () => this.saveSettings()
+    );
+    productionAgeContainer.appendChild(productionAgeToggleContainer);
+
+    layoutSection.appendChild(productionAgeContainer);
+    (this as any).showProductionAgeToggle = productionAgeToggle;
 
     layoutContent.appendChild(layoutSection);
 
@@ -1421,6 +1443,7 @@ export class SettingsPage {
     const themeSecondaryInput = (this as any).themeSecondaryInput as HTMLInputElement | undefined;
     const themeAccentInput = (this as any).themeAccentInput as HTMLInputElement | undefined;
     const showVerifiedCheckmarksToggle = (this as any).showVerifiedCheckmarksToggle as HTMLInputElement | undefined;
+    const showProductionAgeToggle = (this as any).showProductionAgeToggle as HTMLInputElement | undefined;
     const excludedTagsInput = (this as any).excludedTagsInput as HTMLInputElement | undefined;
 
     const seenHistorySizeInput = (this as any).seenHistorySizeInput as HTMLInputElement | undefined;
@@ -1429,7 +1452,7 @@ export class SettingsPage {
         !shortFormIncludeToggle || !shortFormOnlyToggle || !reelModeToggle ||
         !portraitToggle || !landscapeToggle ||
         !themeBackgroundInput || !themePrimaryInput || !themeSecondaryInput || !themeAccentInput ||
-        !showVerifiedCheckmarksToggle || !excludedTagsInput || !seenHistorySizeInput) {
+        !showVerifiedCheckmarksToggle || !showProductionAgeToggle || !excludedTagsInput || !seenHistorySizeInput) {
       return; // Settings not fully initialized yet
     }
 
@@ -1478,6 +1501,7 @@ export class SettingsPage {
       themeSecondary: themeSecondaryInput.value,
       themeAccent: themeAccentInput.value,
       showVerifiedCheckmarks: showVerifiedCheckmarksToggle.checked,
+      showProductionAge: showProductionAgeToggle.checked,
       excludedTagNames,
       imagesInGalleryOnly: galleryOnlyToggle?.checked ?? false,
       galleryIds: gallerySelectedIds ? [...gallerySelectedIds] : [],

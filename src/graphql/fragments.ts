@@ -24,6 +24,7 @@ export const SceneFields = `
       name
       favorite
       image_path
+      birthdate
       stash_ids {
         stash_id
       }
@@ -200,6 +201,7 @@ export const SlimImageData = `
       gender
       favorite
       image_path
+      birthdate
       stash_ids {
         stash_id
       }

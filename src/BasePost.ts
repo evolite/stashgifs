@@ -88,6 +88,7 @@ export abstract class BasePost {
   protected oCount: number = 0;
   protected isReelMode: boolean = false;
   protected showVerifiedCheckmarks: boolean = true;
+  protected showProductionAge: boolean = false;
   // Performer overlay properties
   private performerOverlay?: HTMLElement;
   private performerOverlayTimeout?: number;
@@ -118,7 +119,8 @@ export abstract class BasePost {
     visibilityManager?: VisibilityManager,
     onPerformerChipClick?: (performerId: number, performerName: string) => void | Promise<void>,
     onTagChipClick?: (tagId: number, tagName: string) => void | Promise<void>,
-    showVerifiedCheckmarks?: boolean
+    showVerifiedCheckmarks?: boolean,
+    showProductionAge?: boolean
   ) {
     this.container = container;
     this.favoritesManager = favoritesManager;
@@ -127,6 +129,7 @@ export abstract class BasePost {
     this.onPerformerChipClick = onPerformerChipClick;
     this.onTagChipClick = onTagChipClick;
     this.showVerifiedCheckmarks = showVerifiedCheckmarks !== false;
+    this.showProductionAge = showProductionAge === true;
     
     // Setup scroll listener to hide overlay when scrolling
     this.setupPerformerOverlayScrollListener();
@@ -545,6 +548,14 @@ export abstract class BasePost {
     }
   }
 
+  public setShowProductionAge(show: boolean): void {
+    this.showProductionAge = show;
+    const ageLabels = this.container.querySelectorAll<HTMLElement>('.performer-chip__age');
+    for (const label of ageLabels) {
+      label.style.display = show ? 'inline' : 'none';
+    }
+  }
+
   protected buildFooterContainer(): {
     footer: HTMLElement;
     info: HTMLElement;
@@ -696,7 +707,7 @@ export abstract class BasePost {
   /**
    * Create a performer chip element
    */
-  protected createPerformerChip(performer: { id: string; name: string; image_path?: string; favorite?: boolean; stash_ids?: Array<{ stash_id: string }> }): HTMLElement {
+  protected createPerformerChip(performer: { id: string; name: string; image_path?: string; favorite?: boolean; birthdate?: string; stash_ids?: Array<{ stash_id: string }> }): HTMLElement {
     const chip = this.buildPerformerChipBase(performer);
     chip.dataset.performerId = performer.id;
     const handleClick = (event?: Event): void => {
@@ -713,6 +724,22 @@ export abstract class BasePost {
     this.bindPerformerChipInteractions(chip, performer, handleClick);
     chip.appendChild(this.buildPerformerImage(performer));
     chip.appendChild(document.createTextNode(performer.name));
+
+    if (performer.birthdate) {
+      const productionDate = this.getProductionDate();
+      const birthDate = new Date(performer.birthdate);
+      const referenceDate = productionDate ? new Date(productionDate) : new Date();
+      const age = Math.floor((referenceDate.getTime() - birthDate.getTime()) / (365.25 * 24 * 60 * 60 * 1000));
+      const ageSpan = document.createElement('span');
+      ageSpan.className = 'performer-chip__age';
+      ageSpan.textContent = `(${age})`;
+      ageSpan.style.fontSize = 'inherit';
+      ageSpan.style.fontFamily = 'inherit';
+      ageSpan.style.opacity = '0.6';
+      ageSpan.style.marginLeft = '-4px';
+      ageSpan.style.display = this.showProductionAge ? 'inline' : 'none';
+      chip.appendChild(ageSpan);
+    }
 
     if (this.hasPerformerStashId(performer)) {
       const verifiedBadge = this.buildVerifiedBadge();
@@ -1176,12 +1203,16 @@ export abstract class BasePost {
    */
   private addBasicInfoMetadata(
     metadata: Array<{ label: string; value: string | undefined; isIcon?: boolean }>,
-    performerData: PerformerExtended
+    performerData: PerformerExtended,
+    productionDate?: string
   ): void {
     if (performerData.birthdate) {
       const birthDate = new Date(performerData.birthdate);
-      const age = Math.floor((Date.now() - birthDate.getTime()) / (365.25 * 24 * 60 * 60 * 1000));
-      metadata.push({ label: 'Age', value: `${age} years` });
+      const referenceDate = productionDate ? new Date(productionDate) : new Date();
+      const age = Math.floor((referenceDate.getTime() - birthDate.getTime()) / (365.25 * 24 * 60 * 60 * 1000));
+      const label = productionDate ? 'Production Age' : 'Age';
+      metadata.push({ label, value: `${age}` });
+      metadata.push({ label: 'Birthdate', value: performerData.birthdate });
     }
     if (performerData.gender) {
       const genderIcon = this.getGenderIcon(performerData.gender);
@@ -1238,7 +1269,7 @@ export abstract class BasePost {
   private buildPerformerMetadata(performerData: PerformerExtended): Array<{ label: string; value: string | undefined; isIcon?: boolean }> {
     const metadata: Array<{ label: string; value: string | undefined; isIcon?: boolean }> = [];
 
-    this.addBasicInfoMetadata(metadata, performerData);
+    this.addBasicInfoMetadata(metadata, performerData, this.getProductionDate());
     this.addPhysicalAttributesMetadata(metadata, performerData);
     this.addRatingMetadata(metadata, performerData);
 
@@ -2705,6 +2736,11 @@ export abstract class BasePost {
    * Abstract method to increment O-count - must be implemented by subclasses
    */
   protected abstract incrementOCountAction(): Promise<void>;
+
+  /**
+   * Get the production date of the scene/image for age-at-production calculation.
+   */
+  protected abstract getProductionDate(): string | undefined;
 
   /**
    * Default tag removal action for image-based posts.
