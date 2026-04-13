@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [5.39.1] - 2026-04-13\n\n### Changed\n- Release v5.39.0\n
+
 ## [5.39.0] - 2026-04-13\n
 
 ## [5.38.6] - 2026-03-08\n\n### Changed\n- Extract createHQButton/setHQMode to VideoPostBase; fix unused imports

@@ -4800,7 +4800,7 @@ export class FeedContainer {
       pagination: {
         offset,
         expectedLimit,
-        totalContentLength: mergedContent.length
+        totalContentLength: markers.length + shortFormMarkers.length + images.length
       },
       shouldLoadMarkers,
       append
@@ -4921,6 +4921,7 @@ export class FeedContainer {
 
       const totalUnfiltered = markers.length + shortFormMarkers.length + images.length;
       if (totalUnfiltered > 0 && mergedContent.length === 0 && append && this.seenSkipCount < 10) {
+        this.currentPage = page;
         this.seenSkipCount++;
         this.deferAutoAdvance();
         return;
