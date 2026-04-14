@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [5.39.2] - 2026-04-14\n\n### Changed\n- Add configurable content limit setting (default 5000)
+- Release v5.39.0\n
+
 ## [5.39.1] - 2026-04-13\n\n### Changed\n- Release v5.39.0\n
 
 ## [5.39.0] - 2026-04-13\n
