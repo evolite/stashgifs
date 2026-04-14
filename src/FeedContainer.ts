@@ -51,6 +51,7 @@ const DEFAULT_SETTINGS: FeedSettings = {
   imagesInGalleryOnly: false,
   galleryIds: [],
   seenHistorySize: 500,
+  contentLimit: 5000,
 };
 
 /**
@@ -185,6 +186,7 @@ export class FeedContainer {
     // If no settings passed, load from localStorage
     const loadedSettings = settings && Object.keys(settings).length > 0 ? settings : this.loadSettingsFromStorage();
     this.settings = { ...DEFAULT_SETTINGS, ...loadedSettings };
+    this.api.maxContentLimit = this.settings.contentLimit ?? 5000;
     // Initialize properties that will be set in methods
     this.scrollContainer = null!; // Will be set in initializeContainers
     this.visibilityManager = null!; // Will be set in initializeManagers
@@ -2626,6 +2628,7 @@ export class FeedContainer {
         // Update settings by merging with current settings
         const updatedSettings = { ...this.settings, ...newSettings };
         this.settings = updatedSettings;
+        this.api.maxContentLimit = updatedSettings.contentLimit ?? 5000;
         // Save updated settings to localStorage
         this.saveSettingsToStorage(updatedSettings);
         this.applyThemeSettings(updatedSettings);
@@ -2670,6 +2673,7 @@ export class FeedContainer {
           newSettings.shortFormOnly !== undefined ||
           newSettings.imagesInGalleryOnly !== undefined ||
           newSettings.galleryIds !== undefined ||
+          newSettings.contentLimit !== undefined ||
           orientationFilterChanged ||
           reelModeChanged ||
           excludedTagsChanged

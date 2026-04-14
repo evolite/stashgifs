@@ -830,6 +830,40 @@ export class SettingsPage {
     layoutSection.appendChild(seenHistoryContainer);
     (this as any).seenHistorySizeInput = seenHistorySizeInput;
 
+    // Content Limit
+    const contentLimitContainer = document.createElement('div');
+    contentLimitContainer.style.marginBottom = '16px';
+
+    const contentLimitLabelRow = buildInputLabel(
+      'Content Limit',
+      'Maximum items per content type to paginate through.\nLower values improve performance for large libraries. Default: 5000.'
+    );
+    contentLimitContainer.appendChild(contentLimitLabelRow.container);
+
+    const contentLimitInput = document.createElement('input');
+    contentLimitInput.type = 'number';
+    contentLimitInput.value = String(this.settings.contentLimit ?? 5000);
+    contentLimitInput.min = '100';
+    contentLimitInput.max = '50000';
+    contentLimitInput.style.width = '100%';
+    contentLimitInput.style.padding = '12px';
+    contentLimitInput.style.borderRadius = THEME.radius.button;
+    contentLimitInput.style.border = `1px solid ${THEME.colors.border}`;
+    contentLimitInput.style.backgroundColor = THEME.colors.surface;
+    contentLimitInput.style.color = THEME.colors.textPrimary;
+    contentLimitInput.style.fontSize = THEME.typography.sizeBody;
+    contentLimitInput.style.boxSizing = 'border-box';
+    contentLimitInput.addEventListener('input', () => {
+      clearTimeout((contentLimitInput as any).saveTimeout);
+      (contentLimitInput as any).saveTimeout = setTimeout(() => {
+        this.saveSettings();
+      }, 500);
+    });
+    contentLimitContainer.appendChild(contentLimitInput);
+
+    layoutSection.appendChild(contentLimitContainer);
+    (this as any).contentLimitInput = contentLimitInput;
+
     const verifiedCheckmarksContainer = document.createElement('div');
     verifiedCheckmarksContainer.style.display = 'flex';
     verifiedCheckmarksContainer.style.justifyContent = 'space-between';
@@ -1447,12 +1481,14 @@ export class SettingsPage {
     const excludedTagsInput = (this as any).excludedTagsInput as HTMLInputElement | undefined;
 
     const seenHistorySizeInput = (this as any).seenHistorySizeInput as HTMLInputElement | undefined;
+    const contentLimitInput = (this as any).contentLimitInput as HTMLInputElement | undefined;
 
     if (!fileTypesInput || !maxDurationInput || !includeImagesToggle || !imagesOnlyToggle ||
         !shortFormIncludeToggle || !shortFormOnlyToggle || !reelModeToggle ||
         !portraitToggle || !landscapeToggle ||
         !themeBackgroundInput || !themePrimaryInput || !themeSecondaryInput || !themeAccentInput ||
-        !showVerifiedCheckmarksToggle || !showProductionAgeToggle || !excludedTagsInput || !seenHistorySizeInput) {
+        !showVerifiedCheckmarksToggle || !showProductionAgeToggle || !excludedTagsInput || !seenHistorySizeInput ||
+        !contentLimitInput) {
       return; // Settings not fully initialized yet
     }
 
@@ -1506,6 +1542,7 @@ export class SettingsPage {
       imagesInGalleryOnly: galleryOnlyToggle?.checked ?? false,
       galleryIds: gallerySelectedIds ? [...gallerySelectedIds] : [],
       seenHistorySize: Math.max(0, Math.min(2000, Number.parseInt(seenHistorySizeInput.value, 10) || 0)),
+      contentLimit: Math.max(100, Math.min(50000, Number.parseInt(contentLimitInput.value, 10) || 5000)),
     };
 
     // Notify parent to update settings and reload feed if needed

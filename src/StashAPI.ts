@@ -87,6 +87,12 @@ export class StashAPI {
   private static readonly SHORT_FORM_SCENES_PER_PAGE = 24; // Number of scenes to fetch per page for short-form content
   private static readonly MAX_PAGE_FALLBACK = 100; // Fallback max page when count query fails
   private static readonly MAX_MARKERS_PER_SCENE_FOR_SHUFFLE = 5; // Maximum markers per scene in shuffle mode
+  private static readonly DEFAULT_CONTENT_LIMIT = 5000; // Default cap for users with extreme amounts
+  private _maxContentLimit = StashAPI.DEFAULT_CONTENT_LIMIT;
+
+  set maxContentLimit(value: number) {
+    this._maxContentLimit = value > 0 ? value : StashAPI.DEFAULT_CONTENT_LIMIT;
+  }
 
   constructor(baseUrl?: string, apiKey?: string) {
     // Get from globalThis if available (Stash plugin context)
@@ -586,7 +592,7 @@ export class StashAPI {
       
       if (this.isAborted(signal)) return 1;
       
-      const totalCount = countResult.data?.findSceneMarkers?.count || 0;
+      const totalCount = Math.min(countResult.data?.findSceneMarkers?.count || 0, this._maxContentLimit);
       if (totalCount > 0) {
         const totalPages = Math.ceil(totalCount / limit);
         return Math.floor(Math.random() * totalPages) + 1;
@@ -922,7 +928,7 @@ export class StashAPI {
     
     const responseData = result.data?.findSceneMarkers;
     let markers = responseData?.scene_markers || [];
-    const totalCount = responseData?.count ?? 0;
+    const totalCount = Math.min(responseData?.count ?? 0, this._maxContentLimit);
     
     // Retry if we have a count but no markers (can happen due to race conditions or data inconsistencies)
     if (totalCount > 0 && markers.length === 0) {
@@ -1180,7 +1186,7 @@ export class StashAPI {
       
       if (this.isAborted(signal)) return { maxPage: 0, totalCount: 0 };
       
-      totalCount = countResult.data?.findScenes?.count || 0;
+      totalCount = Math.min(countResult.data?.findScenes?.count || 0, this._maxContentLimit);
       
       if (totalCount > 0) {
         maxPage = Math.max(1, Math.ceil(totalCount / scenesPerPage));
@@ -2330,7 +2336,7 @@ export class StashAPI {
       if (this.isAborted(signal)) return { images: [], totalCount: 0, sortSeed: generateRandomSortSeed() };
 
       const images = result.data?.findImages?.images || [];
-      const totalCount = result.data?.findImages?.count ?? 0;
+      const totalCount = Math.min(result.data?.findImages?.count ?? 0, this._maxContentLimit);
 
       return { images, totalCount, sortSeed };
     } catch (e: unknown) {

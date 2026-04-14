@@ -124,6 +124,7 @@ export interface FeedSettings {
   imagesInGalleryOnly?: boolean; // When true, only show images that belong to a gallery
   galleryIds?: string[]; // Gallery IDs to filter to; empty = any gallery (NOT_NULL)
   seenHistorySize?: number; // Max IDs tracked in seen ring buffer (0 = disabled, default 500)
+  contentLimit?: number; // Max items per content type to paginate through (default 5000)
 }
 
 export interface VideoPostData {
