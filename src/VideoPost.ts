@@ -69,16 +69,7 @@ export class VideoPost extends VideoPostBase {
     data: VideoPostData,
     options: VideoPostOptions = {}
   ) {
-    super(
-      container,
-      options.favoritesManager,
-      options.api,
-      options.visibilityManager,
-      options.onPerformerChipClick,
-      options.onTagChipClick,
-      options.showVerifiedCheckmarks,
-      options.showProductionAge
-    );
+    super(container, options);
     this.data = data;
     this.useShuffleMode = options.useShuffleMode || false;
     this.onCancelRequests = options.onCancelRequests;

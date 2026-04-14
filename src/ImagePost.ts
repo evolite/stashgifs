@@ -43,16 +43,7 @@ export class ImagePost extends BasePost {
       reelMode?: boolean;
     }
   ) {
-    super(
-      container,
-      options?.favoritesManager,
-      options?.api,
-      options?.visibilityManager,
-      options?.onPerformerChipClick,
-      options?.onTagChipClick,
-      options?.showVerifiedCheckmarks,
-      options?.showProductionAge
-    );
+    super(container, options);
     this.data = data;
     this.oCount = this.data.image.o_counter || 0;
     this.ratingSystemConfig = options?.ratingSystemConfig;

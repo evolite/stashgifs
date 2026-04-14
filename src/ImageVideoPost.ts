@@ -38,16 +38,7 @@ export class ImageVideoPost extends VideoPostBase {
     data: ImageVideoPostData,
     options?: ImageVideoPostOptions
   ) {
-    super(
-      container,
-      options?.favoritesManager,
-      options?.api,
-      options?.visibilityManager,
-      options?.onPerformerChipClick,
-      options?.onTagChipClick,
-      options?.showVerifiedCheckmarks,
-      options?.showProductionAge
-    );
+    super(container, options);
     this.data = data;
     this.oCount = this.data.image.o_counter || 0;
     this.onCancelRequests = options?.onCancelRequests;

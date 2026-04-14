@@ -7,10 +7,8 @@
 import { NativeVideoPlayer } from './NativeVideoPlayer.js';
 import { isMobileDevice, THEME, showToast } from './utils.js';
 import { HQ_SVG_OUTLINE, HQ_SVG_FILLED, VOLUME_MUTED_SVG, VOLUME_UNMUTED_SVG } from './icons.js';
-import { BasePost } from './BasePost.js';
-import { FavoritesManager } from './FavoritesManager.js';
+import { BasePost, BasePostOptions } from './BasePost.js';
 import { StashAPI } from './StashAPI.js';
-import { VisibilityManager } from './VisibilityManager.js';
 import { setupTouchHandlers, preventClickAfterTouch } from './utils/touchHandlers.js';
 
 export abstract class VideoPostBase extends BasePost {
@@ -32,15 +30,9 @@ export abstract class VideoPostBase extends BasePost {
 
   constructor(
     container: HTMLElement,
-    favoritesManager?: FavoritesManager,
-    api?: StashAPI,
-    visibilityManager?: VisibilityManager,
-    onPerformerChipClick?: (performerId: number, performerName: string) => void,
-    onTagChipClick?: (tagId: number, tagName: string) => void,
-    showVerifiedCheckmarks?: boolean,
-    showProductionAge?: boolean
+    options?: BasePostOptions
   ) {
-    super(container, favoritesManager, api, visibilityManager, onPerformerChipClick, onTagChipClick, showVerifiedCheckmarks, showProductionAge);
+    super(container, options);
   }
 
   protected abstract getPlayer(): NativeVideoPlayer | undefined;

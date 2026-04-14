@@ -14,6 +14,16 @@ import { adjustImageDialogPosition, toggleImageFavorite } from './utils/imagePos
 import { PerformerExtended } from './graphql/types.js';
 import { Performer, Tag } from './types.js';
 
+export interface BasePostOptions {
+  favoritesManager?: FavoritesManager;
+  api?: StashAPI;
+  visibilityManager?: VisibilityManager;
+  onPerformerChipClick?: (performerId: number, performerName: string) => void | Promise<void>;
+  onTagChipClick?: (tagId: number, tagName: string) => void | Promise<void>;
+  showVerifiedCheckmarks?: boolean;
+  showProductionAge?: boolean;
+}
+
 interface HoverHandlers {
   mouseenter: () => void;
   mouseleave: () => void;
@@ -114,22 +124,16 @@ export abstract class BasePost {
 
   constructor(
     container: HTMLElement,
-    favoritesManager?: FavoritesManager,
-    api?: StashAPI,
-    visibilityManager?: VisibilityManager,
-    onPerformerChipClick?: (performerId: number, performerName: string) => void | Promise<void>,
-    onTagChipClick?: (tagId: number, tagName: string) => void | Promise<void>,
-    showVerifiedCheckmarks?: boolean,
-    showProductionAge?: boolean
+    options?: BasePostOptions
   ) {
     this.container = container;
-    this.favoritesManager = favoritesManager;
-    this.api = api;
-    this.visibilityManager = visibilityManager;
-    this.onPerformerChipClick = onPerformerChipClick;
-    this.onTagChipClick = onTagChipClick;
-    this.showVerifiedCheckmarks = showVerifiedCheckmarks !== false;
-    this.showProductionAge = showProductionAge === true;
+    this.favoritesManager = options?.favoritesManager;
+    this.api = options?.api;
+    this.visibilityManager = options?.visibilityManager;
+    this.onPerformerChipClick = options?.onPerformerChipClick;
+    this.onTagChipClick = options?.onTagChipClick;
+    this.showVerifiedCheckmarks = options?.showVerifiedCheckmarks !== false;
+    this.showProductionAge = options?.showProductionAge === true;
     
     // Setup scroll listener to hide overlay when scrolling
     this.setupPerformerOverlayScrollListener();
@@ -1211,8 +1215,10 @@ export abstract class BasePost {
       const referenceDate = productionDate ? new Date(productionDate) : new Date();
       const age = Math.floor((referenceDate.getTime() - birthDate.getTime()) / (365.25 * 24 * 60 * 60 * 1000));
       const label = productionDate ? 'Production Age' : 'Age';
-      metadata.push({ label, value: `${age}` });
-      metadata.push({ label: 'Birthdate', value: performerData.birthdate });
+      metadata.push(
+        { label, value: `${age}` },
+        { label: 'Birthdate', value: performerData.birthdate }
+      );
     }
     if (performerData.gender) {
       const genderIcon = this.getGenderIcon(performerData.gender);
