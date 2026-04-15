@@ -23,4 +23,4 @@ Settings can be configured via the settings button in the header, including imag
 ## AI Usage Disclaimer
 Large parts of this codebase is Vibe coded
 
-Quality validated using SonarQubes Static Code Analyzer.
+Quality validated using SonarQubes Static Code Analyzer and [fallow](https://docs.fallow.tools/integrations/agent-skills) .
