@@ -12,12 +12,12 @@ import { Scene, SceneMarker } from '../types.js';
 /**
  * Filter modifier for includes/excludes operations
  */
-export type FilterModifier = 'INCLUDES' | 'INCLUDES_ALL' | 'EXCLUDES';
+type FilterModifier = 'INCLUDES' | 'INCLUDES_ALL' | 'EXCLUDES';
 
 /**
  * Filter modifier for comparison operations
  */
-export type ComparisonModifier = 'GREATER_THAN' | 'LESS_THAN' | 'EQUALS';
+type ComparisonModifier = 'GREATER_THAN' | 'LESS_THAN' | 'EQUALS';
 
 /**
  * FindFilterType - Common filter for pagination and sorting
@@ -99,7 +99,7 @@ export interface TagFilterInput {
 /**
  * PerformerFilterType - Filter for performers
  */
-export interface PerformerFilterInput {
+interface PerformerFilterInput {
   scene_count?: {
     value: number;
     modifier: ComparisonModifier;
@@ -316,7 +316,7 @@ export interface CheckTagsHaveMarkersResponse {
 /**
  * CheckPerformerHasMarkers response
  */
-export interface CheckPerformerHasMarkersResponse {
+interface CheckPerformerHasMarkersResponse {
   findSceneMarkers: {
     count: number;
   };
@@ -389,7 +389,7 @@ export interface Image {
 /**
  * VisualFile union type
  */
-export interface VisualFile {
+interface VisualFile {
   id: string;
   path: string;
   size?: number;
@@ -446,7 +446,7 @@ export interface SceneMarkerUpdateInput {
 /**
  * SceneMarkerCreateInput
  */
-export interface SceneMarkerCreateInput {
+interface SceneMarkerCreateInput {
   title: string;
   seconds: number;
   end_seconds?: number | null;
@@ -458,7 +458,7 @@ export interface SceneMarkerCreateInput {
 /**
  * SceneUpdateInput
  */
-export interface SceneUpdateInput {
+interface SceneUpdateInput {
   id: string;
   tag_ids?: string[];
   performer_ids?: string[];
@@ -469,7 +469,7 @@ export interface SceneUpdateInput {
 /**
  * SceneAddOInput
  */
-export interface SceneAddOInput {
+interface SceneAddOInput {
   id: string;
   times?: Array<string>; // Timestamp format
 }
@@ -555,7 +555,7 @@ export interface SceneAddOResponse {
 /**
  * ImageUpdate input
  */
-export interface ImageUpdateInput {
+interface ImageUpdateInput {
   id: string;
   tag_ids?: string[];
   performer_ids?: string[];

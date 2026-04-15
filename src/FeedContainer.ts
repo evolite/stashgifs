@@ -14,7 +14,7 @@ import { VisibilityManager } from './VisibilityManager.js';
 import { FavoritesManager } from './FavoritesManager.js';
 import { SettingsPage } from './SettingsPage.js';
 import { AudioManager, AudioPriority } from './AudioManager.js';
-import { debounce, normalizeMediaUrl, detectDeviceCapabilities, DeviceCapabilities, isStandaloneNavigator, isMobileDevice, getNetworkInfo, isSlowNetwork, isCellularConnection, detectVideoFromVisualFiles, isMp4File, getImageUrlForDisplay, THEME, THEME_DEFAULTS } from './utils.js';
+import { debounce, normalizeMediaUrl, detectDeviceCapabilities, DeviceCapabilities, isStandaloneNavigator, isMobileDevice, getNetworkInfo, isSlowNetwork, isCellularConnection, detectVideoFromVisualFiles, isMp4File, getImageUrlForDisplay, THEME, THEME_DEFAULTS, normalizeHexColor, toRgba, darkenHex, buildFullUrl } from './utils.js';
 import { posterPreloader } from './PosterPreloader.js';
 import { Image as GraphQLImage } from './graphql/types.js';
 import { HQ_SVG_OUTLINE, HQ_SVG_FILLED, RANDOM_SVG, SETTINGS_SVG, SHUFFLE_CHECK_SVG, STASHGIFS_LOGO_SVG } from './icons.js';
@@ -358,17 +358,17 @@ export class FeedContainer {
   }
 
   private applyThemeSettings(settings: FeedSettings): void {
-    const background = this.normalizeThemeColor(settings.themeBackground, THEME.colors.backgroundPrimary);
-    const primary = this.normalizeThemeColor(settings.themePrimary, THEME.colors.surface);
-    const secondary = this.normalizeThemeColor(settings.themeSecondary, THEME.colors.backgroundSecondary);
-    const accent = this.normalizeThemeColor(settings.themeAccent, THEME.colors.accentPrimary);
+    const background = normalizeHexColor(settings.themeBackground, THEME.colors.backgroundPrimary);
+    const primary = normalizeHexColor(settings.themePrimary, THEME.colors.surface);
+    const secondary = normalizeHexColor(settings.themeSecondary, THEME.colors.backgroundSecondary);
+    const accent = normalizeHexColor(settings.themeAccent, THEME.colors.accentPrimary);
 
     THEME.colors.backgroundPrimary = background;
     THEME.colors.surface = primary;
     THEME.colors.backgroundSecondary = secondary;
     THEME.colors.accentPrimary = accent;
-    THEME.colors.overlay = this.toRgba(background, 0.96);
-    THEME.colors.overlayMuted = this.toRgba(secondary, 0.96);
+    THEME.colors.overlay = toRgba(background, 0.96);
+    THEME.colors.overlayMuted = toRgba(secondary, 0.96);
 
     const root = document.documentElement;
     root.style.setProperty('--color-bg', background);
@@ -376,11 +376,11 @@ export class FeedContainer {
     root.style.setProperty('--color-surface-secondary', secondary);
     root.style.setProperty('--color-bg-overlay', THEME.colors.overlay);
     root.style.setProperty('--color-accent', accent);
-    root.style.setProperty('--color-accent-strong', this.darkenHex(accent, 0.15));
-    root.style.setProperty('--color-accent-weak', this.toRgba(accent, 0.18));
-    root.style.setProperty('--color-accent-weaker', this.toRgba(accent, 0.1));
+    root.style.setProperty('--color-accent-strong', darkenHex(accent, 0.15));
+    root.style.setProperty('--color-accent-weak', toRgba(accent, 0.18));
+    root.style.setProperty('--color-accent-weaker', toRgba(accent, 0.1));
 
-    const accentGlow = this.toRgba(accent, 0.3);
+    const accentGlow = toRgba(accent, 0.3);
     const backgroundGradient = `linear-gradient(180deg, ${background} 0%, ${background} 70%, ${accentGlow} 100%)`;
 
     if (this.container) {
@@ -727,37 +727,95 @@ export class FeedContainer {
     }
   }
 
-  private normalizeThemeColor(value: string | undefined, fallback: string): string {
-    if (!value) {
-      return fallback;
-    }
-    const trimmed = value.trim();
-    const normalized = trimmed.startsWith('#') ? trimmed : `#${trimmed}`;
-    if (/^#[0-9a-fA-F]{6}$/.test(normalized)) {
-      return normalized.toUpperCase();
-    }
-    return fallback;
-  }
-
-  private toRgba(hex: string, alpha: number): string {
-    const normalized = this.normalizeThemeColor(hex, '#000000');
-    const r = Number.parseInt(normalized.slice(1, 3), 16);
-    const g = Number.parseInt(normalized.slice(3, 5), 16);
-    const b = Number.parseInt(normalized.slice(5, 7), 16);
-    return `rgba(${r}, ${g}, ${b}, ${alpha})`;
-  }
-
-  private darkenHex(hex: string, fraction: number): string {
-    const value = hex.replace('#', '');
-    const r = Math.round(Number.parseInt(value.slice(0, 2), 16) * (1 - fraction));
-    const g = Math.round(Number.parseInt(value.slice(2, 4), 16) * (1 - fraction));
-    const b = Math.round(Number.parseInt(value.slice(4, 6), 16) * (1 - fraction));
-    return `#${r.toString(16).padStart(2, '0')}${g.toString(16).padStart(2, '0')}${b.toString(16).padStart(2, '0')}`;
-  }
-
   /**
    * Save settings to localStorage
    */
+  private handleSettingsChange(newSettings: Partial<FeedSettings>): void {
+    const previousShowVerified = this.settings.showVerifiedCheckmarks;
+    const previousShowProductionAge = this.settings.showProductionAge;
+    const previousExcludedTags = this.normalizeExcludedTagNames(this.settings.excludedTagNames ?? []);
+    const previousOrientation = this.normalizeOrientationFilter(this.settings.orientationFilter ?? []);
+
+    const updatedSettings = { ...this.settings, ...newSettings };
+    this.settings = updatedSettings;
+    this.api.maxContentLimit = updatedSettings.contentLimit ?? 5000;
+    this.saveSettingsToStorage(updatedSettings);
+    this.applyThemeSettings(updatedSettings);
+
+    const reelModeChanged = newSettings.reelMode !== undefined;
+    this.handleLayoutSettingsChange(newSettings, reelModeChanged);
+    this.handlePostDisplaySettingsChange(newSettings, updatedSettings, previousShowVerified, previousShowProductionAge);
+
+    const excludedTagsChanged = !this.areExcludedTagNamesEqual(
+      previousExcludedTags,
+      this.normalizeExcludedTagNames(updatedSettings.excludedTagNames ?? [])
+    );
+    const orientationFilterChanged = newSettings.orientationFilter !== undefined
+      && !this.areOrientationFiltersEqual(
+        previousOrientation,
+        this.normalizeOrientationFilter(updatedSettings.orientationFilter ?? [])
+      );
+
+    if (this.shouldReloadFeed(newSettings, excludedTagsChanged, orientationFilterChanged, reelModeChanged)) {
+      this.loadVideos(this.currentFilters, false, undefined, true).catch((e) => {
+        console.error('Failed to reload feed after settings change', e);
+      });
+    }
+  }
+
+  private handleLayoutSettingsChange(newSettings: Partial<FeedSettings>, reelModeChanged: boolean): void {
+    if (newSettings.snapToCards !== undefined || reelModeChanged) {
+      this.setupCardSnapping();
+    }
+    if (reelModeChanged) {
+      this.applyReelModeLayout();
+    }
+    if (!reelModeChanged && newSettings.snapToCards !== undefined) {
+      this.refreshAutoplayAfterLayout();
+    }
+  }
+
+  private handlePostDisplaySettingsChange(
+    newSettings: Partial<FeedSettings>,
+    updatedSettings: FeedSettings,
+    previousShowVerified: boolean | undefined,
+    previousShowProductionAge: boolean | undefined
+  ): void {
+    if (newSettings.showVerifiedCheckmarks !== undefined && updatedSettings.showVerifiedCheckmarks !== previousShowVerified) {
+      for (const post of this.posts.values()) {
+        post.setShowVerifiedCheckmarks?.(updatedSettings.showVerifiedCheckmarks !== false);
+      }
+    }
+    if (newSettings.showProductionAge !== undefined && updatedSettings.showProductionAge !== previousShowProductionAge) {
+      for (const post of this.posts.values()) {
+        post.setShowProductionAge?.(updatedSettings.showProductionAge === true);
+      }
+    }
+  }
+
+  private shouldReloadFeed(
+    newSettings: Partial<FeedSettings>,
+    excludedTagsChanged: boolean,
+    orientationFilterChanged: boolean,
+    reelModeChanged: boolean
+  ): boolean {
+    return !!(
+      newSettings.includeImagesInFeed !== undefined ||
+      newSettings.enabledFileTypes ||
+      newSettings.imagesOnly !== undefined ||
+      newSettings.shortFormInHDMode !== undefined ||
+      newSettings.shortFormInNonHDMode !== undefined ||
+      newSettings.shortFormMaxDuration !== undefined ||
+      newSettings.shortFormOnly !== undefined ||
+      newSettings.imagesInGalleryOnly !== undefined ||
+      newSettings.galleryIds !== undefined ||
+      newSettings.contentLimit !== undefined ||
+      orientationFilterChanged ||
+      reelModeChanged ||
+      excludedTagsChanged
+    );
+  }
+
   private saveSettingsToStorage(settings: FeedSettings): void {
     try {
       // Ensure we have a complete settings object by merging with defaults
@@ -1293,12 +1351,20 @@ export class FeedContainer {
     while (suggestions.firstChild) {
       suggestions.firstChild.remove();
     }
+    const container = this.createRandomModeNotice();
+    container.style.width = '100%';
+    suggestions.appendChild(container);
+  }
+
+  /**
+   * Create random mode notice banner
+   */
+  private createRandomModeNotice(): HTMLElement {
     const container = document.createElement('div');
     container.style.display = 'flex';
     container.style.justifyContent = 'center';
     container.style.alignItems = 'center';
     container.style.padding = '16px';
-    container.style.width = '100%';
     const notice = document.createElement('div');
     notice.textContent = 'Random mode active — search disabled';
     notice.style.padding = '8px 12px';
@@ -1308,7 +1374,7 @@ export class FeedContainer {
     notice.style.color = THEME.colors.textSecondary;
     notice.style.fontSize = '13px';
     container.appendChild(notice);
-    suggestions.appendChild(container);
+    return container;
   }
 
   /**
@@ -1830,21 +1896,7 @@ export class FeedContainer {
 
     if (this.shuffleMode > 0) {
       container.innerHTML = '';
-      const banner = document.createElement('div');
-      banner.style.display = 'flex';
-      banner.style.justifyContent = 'center';
-      banner.style.alignItems = 'center';
-      banner.style.padding = '16px';
-      const notice = document.createElement('div');
-      notice.textContent = 'Random mode active — search disabled';
-      notice.style.padding = '8px 12px';
-      notice.style.borderRadius = '999px';
-      notice.style.background = THEME.colors.surface;
-      notice.style.border = `1px solid ${THEME.colors.border}`;
-      notice.style.color = THEME.colors.textSecondary;
-      notice.style.fontSize = '13px';
-      banner.appendChild(notice);
-      container.appendChild(banner);
+      container.appendChild(this.createRandomModeNotice());
       suggestions.scrollTop = 0;
       return;
     }
@@ -2620,69 +2672,7 @@ export class FeedContainer {
       this.settingsContainer,
       this.settings,
       (signal) => this.api.findGalleries(signal),
-      (newSettings) => {
-        const previousShowVerified = this.settings.showVerifiedCheckmarks;
-        const previousShowProductionAge = this.settings.showProductionAge;
-        const previousExcludedTags = this.normalizeExcludedTagNames(this.settings.excludedTagNames ?? []);
-        const previousOrientation = this.normalizeOrientationFilter(this.settings.orientationFilter ?? []);
-        // Update settings by merging with current settings
-        const updatedSettings = { ...this.settings, ...newSettings };
-        this.settings = updatedSettings;
-        this.api.maxContentLimit = updatedSettings.contentLimit ?? 5000;
-        // Save updated settings to localStorage
-        this.saveSettingsToStorage(updatedSettings);
-        this.applyThemeSettings(updatedSettings);
-        const reelModeChanged = newSettings.reelMode !== undefined;
-        const nextExcludedTags = this.normalizeExcludedTagNames(updatedSettings.excludedTagNames ?? []);
-        const nextOrientation = this.normalizeOrientationFilter(updatedSettings.orientationFilter ?? []);
-        const excludedTagsChanged = !this.areExcludedTagNamesEqual(previousExcludedTags, nextExcludedTags);
-        const showVerifiedChanged = newSettings.showVerifiedCheckmarks !== undefined
-          && updatedSettings.showVerifiedCheckmarks !== previousShowVerified;
-        const showProductionAgeChanged = newSettings.showProductionAge !== undefined
-          && updatedSettings.showProductionAge !== previousShowProductionAge;
-        const orientationFilterChanged = newSettings.orientationFilter !== undefined
-          && !this.areOrientationFiltersEqual(previousOrientation, nextOrientation);
-        // Update card snapping if setting changed
-        if (newSettings.snapToCards !== undefined || reelModeChanged) {
-          this.setupCardSnapping();
-        }
-        if (reelModeChanged) {
-          this.applyReelModeLayout();
-        }
-        if (!reelModeChanged && newSettings.snapToCards !== undefined) {
-          this.refreshAutoplayAfterLayout();
-        }
-        if (showVerifiedChanged) {
-          for (const post of this.posts.values()) {
-            post.setShowVerifiedCheckmarks?.(updatedSettings.showVerifiedCheckmarks !== false);
-          }
-        }
-        if (showProductionAgeChanged) {
-          for (const post of this.posts.values()) {
-            post.setShowProductionAge?.(updatedSettings.showProductionAge === true);
-          }
-        }
-        // Reload feed if images or short-form settings changed
-        if (
-          newSettings.includeImagesInFeed !== undefined ||
-          newSettings.enabledFileTypes ||
-          newSettings.imagesOnly !== undefined ||
-          newSettings.shortFormInHDMode !== undefined ||
-          newSettings.shortFormInNonHDMode !== undefined ||
-          newSettings.shortFormMaxDuration !== undefined ||
-          newSettings.shortFormOnly !== undefined ||
-          newSettings.imagesInGalleryOnly !== undefined ||
-          newSettings.galleryIds !== undefined ||
-          newSettings.contentLimit !== undefined ||
-          orientationFilterChanged ||
-          reelModeChanged ||
-          excludedTagsChanged
-        ) {
-          this.loadVideos(this.currentFilters, false, undefined, true).catch((e) => {
-            console.error('Failed to reload feed after settings change', e);
-          });
-        }
-      },
+      (newSettings) => this.handleSettingsChange(newSettings),
       () => {
         // On close, remove settings container and clear reference
         this.settingsContainer?.remove();
@@ -2986,16 +2976,7 @@ export class FeedContainer {
     // No need for paddingTop since header is sticky and inside scroll container
 
     const updateSearchBarDisplay = () => {
-      // Show the active search term in the search bar
-      if (this.selectedTagName) {
-        queryInput.value = this.selectedTagName;
-      } else if (this.selectedPerformerName) {
-        queryInput.value = this.selectedPerformerName;
-      } else if (this.selectedSavedFilter) {
-        queryInput.value = this.selectedSavedFilter.name;
-      } else {
-        queryInput.value = '';
-      }
+      queryInput.value = this.getSelectedFilterDisplayName();
       // Hide tag header since we're showing it in the search bar
       tagHeader.style.display = 'none';
       // Ensure animated placeholder hides when we have any value or focus
@@ -3543,6 +3524,16 @@ export class FeedContainer {
   }
 
   /**
+   * Get display name for the current filter selection
+   */
+  private getSelectedFilterDisplayName(): string {
+    if (this.selectedTagName) return this.selectedTagName;
+    if (this.selectedPerformerName) return this.selectedPerformerName;
+    if (this.selectedSavedFilter) return this.selectedSavedFilter.name;
+    return '';
+  }
+
+  /**
    * Update query input display with current selection
    */
   private updateQueryInputDisplay(): void {
@@ -3551,15 +3542,7 @@ export class FeedContainer {
       return;
     }
 
-    if (this.selectedTagName) {
-      queryInput.value = this.selectedTagName;
-    } else if (this.selectedPerformerName) {
-      queryInput.value = this.selectedPerformerName;
-    } else if (this.selectedSavedFilter) {
-      queryInput.value = this.selectedSavedFilter.name;
-    } else {
-      queryInput.value = '';
-    }
+    queryInput.value = this.getSelectedFilterDisplayName();
 
     const ph = document.getElementById('feed-search-placeholder');
     if (ph) {
@@ -3961,6 +3944,23 @@ export class FeedContainer {
   }
 
   /**
+   * Build the common options shared by all post constructors
+   */
+  private buildCommonPostOptions() {
+    return {
+      favoritesManager: this.favoritesManager,
+      api: this.api,
+      visibilityManager: this.visibilityManager,
+      onPerformerChipClick: (performerId: number, performerName: string) => { void this.handlePerformerChipClick(performerId, performerName); },
+      onTagChipClick: (tagId: number, tagName: string) => { void this.handleTagChipClick(tagId, tagName); },
+      showVerifiedCheckmarks: this.settings.showVerifiedCheckmarks !== false,
+      showProductionAge: this.settings.showProductionAge === true,
+      ratingSystemConfig: this.ratingSystemConfig,
+      reelMode: this.settings.reelMode === true,
+    };
+  }
+
+  /**
    * Create ImageVideoPost instance
    */
   private createImageVideoPostInstance(
@@ -3978,21 +3978,13 @@ export class FeedContainer {
       postContainer,
       postData,
       {
-        favoritesManager: this.favoritesManager,
-        api: this.api,
-        visibilityManager: this.visibilityManager,
-        onPerformerChipClick: (performerId, performerName) => { void this.handlePerformerChipClick(performerId, performerName); },
-        onTagChipClick: (tagId, tagName) => { void this.handleTagChipClick(tagId, tagName); },
-        showVerifiedCheckmarks: this.settings.showVerifiedCheckmarks !== false,
-        showProductionAge: this.settings.showProductionAge === true,
+        ...this.buildCommonPostOptions(),
         onCancelRequests: () => this.cancelAllPendingRequests(),
         onMuteToggle: (isMuted: boolean) => this.setGlobalMuteState(isMuted),
         getGlobalMuteState: () => this.getGlobalMuteState(),
-        ratingSystemConfig: this.ratingSystemConfig,
-        reelMode: this.settings.reelMode === true,
       }
     );
-    
+
     post.initialize();
     
     return post;
@@ -4038,26 +4030,11 @@ export class FeedContainer {
   }
 
   /**
-   * Build URL from path with base URL
-   */
-  private buildUrlFromPath(path: string, baseUrl: string): string {
-    try {
-      return new URL(path, baseUrl).toString();
-    } catch {
-      try {
-        return new URL(encodeURI(path), baseUrl).toString();
-      } catch {
-        return path.startsWith('http') ? path : `${baseUrl}${path}`;
-      }
-    }
-  }
-
-  /**
    * Try to get valid media URL from path
    */
   private tryGetValidMediaUrl(path: string | undefined, baseUrl: string): string | undefined {
     if (!path) return undefined;
-    const url = this.buildUrlFromPath(path, baseUrl);
+    const url = buildFullUrl(path, baseUrl);
     return normalizeMediaUrl(url) ?? undefined;
   }
 
@@ -4140,16 +4117,8 @@ export class FeedContainer {
       postContainer,
       postData,
       {
-        favoritesManager: this.favoritesManager,
-        api: this.api,
-        visibilityManager: this.visibilityManager,
-        onPerformerChipClick: (performerId, performerName) => { void this.handlePerformerChipClick(performerId, performerName); },
-        onTagChipClick: (tagId, tagName) => { void this.handleTagChipClick(tagId, tagName); },
-        showVerifiedCheckmarks: this.settings.showVerifiedCheckmarks !== false,
-        showProductionAge: this.settings.showProductionAge === true,
+        ...this.buildCommonPostOptions(),
         onLoadFullVideo: undefined,
-        ratingSystemConfig: this.ratingSystemConfig,
-        reelMode: this.settings.reelMode === true
       }
     );
     
@@ -5602,53 +5571,47 @@ export class FeedContainer {
    * Check if browser supports the video codec/format
    * Returns true if supported, false if not
    */
+  private static readonly HEVC_MIME_TYPES = [
+    'video/mp4; codecs="hev1.1.6.L93.B0,mp4a.40.2"',
+    'video/mp4; codecs="hvc1.1.6.L93.B0,mp4a.40.2"',
+    'video/mp4; codecs="hev1"',
+    'video/mp4; codecs="hvc1"',
+  ] as const;
+
+  private static readonly MATROSKA_MIME_TYPES = [
+    'video/x-matroska',
+    'video/mkv',
+  ] as const;
+
+  private static canPlayAny(video: HTMLVideoElement, mimeTypes: readonly string[]): boolean {
+    return mimeTypes.some(type => {
+      const result = video.canPlayType(type);
+      return result && result.length > 0;
+    });
+  }
+
   private isVideoCodecSupported(marker: SceneMarker, videoUrl: string): boolean {
-    // Create a temporary video element to check codec support
-    const testVideo = document.createElement('video');
-    
-    // Check for HEVC/H.265 codec from scene files
-    const sceneFiles = marker.scene?.files;
-    if (!sceneFiles || sceneFiles.length === 0) {
-      return true; // If no file info, assume supported
-    }
-    const firstFile = sceneFiles[0];
+    const firstFile = marker.scene?.files?.[0];
     if (firstFile) {
       const videoCodec = firstFile.video_codec?.toLowerCase() || '';
-      const isHevc = videoCodec.includes('hevc') || 
-                     videoCodec.includes('h.265') ||
-                     videoCodec.includes('h265');
-      
+      const isHevc = videoCodec.includes('hevc') || videoCodec.includes('h.265') || videoCodec.includes('h265');
       if (isHevc) {
-        // Check if browser supports HEVC
-        const hevcSupport1 = testVideo.canPlayType('video/mp4; codecs="hev1.1.6.L93.B0,mp4a.40.2"');
-        const hevcSupport2 = testVideo.canPlayType('video/mp4; codecs="hvc1.1.6.L93.B0,mp4a.40.2"');
-        const hevcSupport3 = testVideo.canPlayType('video/mp4; codecs="hev1"');
-        const hevcSupport4 = testVideo.canPlayType('video/mp4; codecs="hvc1"');
-        
-        const hevcSupport = hevcSupport1 || hevcSupport2 || hevcSupport3 || hevcSupport4;
-        
-        // Empty string means not supported
-        if (!hevcSupport || hevcSupport.length === 0) {
-          return false; // HEVC not supported
+        const testVideo = document.createElement('video');
+        if (!FeedContainer.canPlayAny(testVideo, FeedContainer.HEVC_MIME_TYPES)) {
+          return false;
         }
       }
     }
-    
-    // Check for Matroska/MKV format
-    const isMatroska = videoUrl.toLowerCase().includes('.mkv') ||
-                       videoUrl.toLowerCase().includes('matroska');
-    
-    if (isMatroska) {
-      // Check if browser supports Matroska
-      const matroskaSupport = testVideo.canPlayType('video/x-matroska') ||
-                              testVideo.canPlayType('video/mkv');
-      
-      if (!matroskaSupport || matroskaSupport.length === 0) {
-        return false; // Matroska not supported
+
+    const lowerUrl = videoUrl.toLowerCase();
+    if (lowerUrl.includes('.mkv') || lowerUrl.includes('matroska')) {
+      const testVideo = document.createElement('video');
+      if (!FeedContainer.canPlayAny(testVideo, FeedContainer.MATROSKA_MIME_TYPES)) {
+        return false;
       }
     }
-    
-    return true; // Codec/format appears to be supported
+
+    return true;
   }
 
   /**
@@ -5815,22 +5778,14 @@ export class FeedContainer {
     };
 
     const post = new VideoPost(
-      postContainer, 
+      postContainer,
       postData,
       {
-        favoritesManager: this.favoritesManager,
-        api: this.api,
-        visibilityManager: this.visibilityManager,
-        onPerformerChipClick: (performerId, performerName) => { void this.handlePerformerChipClick(performerId, performerName); },
-        onTagChipClick: (tagId, tagName) => { void this.handleTagChipClick(tagId, tagName); },
-        showVerifiedCheckmarks: this.settings.showVerifiedCheckmarks !== false,
-        showProductionAge: this.settings.showProductionAge === true,
+        ...this.buildCommonPostOptions(),
         useShuffleMode: this.shuffleMode > 0,
         onCancelRequests: () => this.cancelAllPendingRequests(),
         onMuteToggle: (isMuted: boolean) => this.setGlobalMuteState(isMuted),
         getGlobalMuteState: () => this.getGlobalMuteState(),
-        ratingSystemConfig: this.ratingSystemConfig,
-        reelMode: this.settings.reelMode === true
       }
     );
     
@@ -8000,56 +7955,63 @@ export class FeedContainer {
    * Update settings
    */
   updateSettings(newSettings: Partial<FeedSettings>): void {
-    const reelModeChanged = newSettings.reelMode !== undefined;
     const previousExcludedTags = this.normalizeExcludedTagNames(this.settings.excludedTagNames ?? []);
     const previousShowVerified = this.settings.showVerifiedCheckmarks;
     const previousShowProductionAge = this.settings.showProductionAge;
     const previousOrientation = this.normalizeOrientationFilter(this.settings.orientationFilter ?? []);
     this.settings = { ...this.settings, ...newSettings };
-    const nextExcludedTags = this.normalizeExcludedTagNames(this.settings.excludedTagNames ?? []);
-    const nextOrientation = this.normalizeOrientationFilter(this.settings.orientationFilter ?? []);
-    const excludedTagsChanged = !this.areExcludedTagNamesEqual(previousExcludedTags, nextExcludedTags);
-    const showVerifiedChanged = newSettings.showVerifiedCheckmarks !== undefined
-      && this.settings.showVerifiedCheckmarks !== previousShowVerified;
-    const showProductionAgeChanged = newSettings.showProductionAge !== undefined
-      && this.settings.showProductionAge !== previousShowProductionAge;
-    const orientationFilterChanged = newSettings.orientationFilter !== undefined
-      && !this.areOrientationFiltersEqual(previousOrientation, nextOrientation);
+
+    const reelModeChanged = newSettings.reelMode !== undefined;
     if (reelModeChanged || newSettings.snapToCards !== undefined) {
       this.setupCardSnapping();
     }
     if (reelModeChanged) {
-      this.applyReelModeLayout();
-      // Update reel mode in visibility manager
-      this.visibilityManager.setReelMode(this.settings.reelMode === true);
-      // Also update autoplay setting based on HD mode and reel mode
-      this.visibilityManager.setAutoPlay(!this.useHDMode || this.settings.reelMode === true);
+      this.applyReelModeSettings();
     }
-
-
     this.refreshAutoplayAfterLayout();
 
-    if (showVerifiedChanged) {
+    this.applyPostDisplaySettings(newSettings, previousShowVerified, previousShowProductionAge);
+    this.reloadFeedIfFiltersChanged(newSettings, previousExcludedTags, previousOrientation);
+  }
+
+  private applyReelModeSettings(): void {
+    this.applyReelModeLayout();
+    this.visibilityManager.setReelMode(this.settings.reelMode === true);
+    this.visibilityManager.setAutoPlay(!this.useHDMode || this.settings.reelMode === true);
+  }
+
+  private applyPostDisplaySettings(
+    newSettings: Partial<FeedSettings>,
+    previousShowVerified: boolean | undefined,
+    previousShowProductionAge: boolean | undefined
+  ): void {
+    if (newSettings.showVerifiedCheckmarks !== undefined
+      && this.settings.showVerifiedCheckmarks !== previousShowVerified) {
       for (const post of this.posts.values()) {
         post.setShowVerifiedCheckmarks?.(this.settings.showVerifiedCheckmarks !== false);
       }
     }
-
-    if (showProductionAgeChanged) {
+    if (newSettings.showProductionAge !== undefined
+      && this.settings.showProductionAge !== previousShowProductionAge) {
       for (const post of this.posts.values()) {
         post.setShowProductionAge?.(this.settings.showProductionAge === true);
       }
     }
+  }
 
-    if (excludedTagsChanged) {
+  private reloadFeedIfFiltersChanged(
+    newSettings: Partial<FeedSettings>,
+    previousExcludedTags: string[],
+    previousOrientation: string[]
+  ): void {
+    const nextExcludedTags = this.normalizeExcludedTagNames(this.settings.excludedTagNames ?? []);
+    const nextOrientation = this.normalizeOrientationFilter(this.settings.orientationFilter ?? []);
+    const excludedTagsChanged = !this.areExcludedTagNamesEqual(previousExcludedTags, nextExcludedTags);
+    const orientationChanged = newSettings.orientationFilter !== undefined
+      && !this.areOrientationFiltersEqual(previousOrientation, nextOrientation);
+    if (excludedTagsChanged || orientationChanged) {
       this.loadVideos(this.currentFilters, false, undefined, true).catch((e) => {
-        console.error('Failed to reload feed after excluded tag update', e);
-      });
-    }
-
-    if (orientationFilterChanged) {
-      this.loadVideos(this.currentFilters, false, undefined, true).catch((e) => {
-        console.error('Failed to reload feed after orientation filter update', e);
+        console.error('Failed to reload feed after filter update', e);
       });
     }
   }

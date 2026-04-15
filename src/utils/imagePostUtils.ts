@@ -7,7 +7,7 @@
 import { StashAPI } from '../StashAPI.js';
 import { FavoritesManager } from '../FavoritesManager.js';
 
-export interface ImageTag {
+interface ImageTag {
   id?: string;
   name: string;
 }
@@ -15,7 +15,7 @@ export interface ImageTag {
 /**
  * Resolve the favorite tag ID for an image, optionally creating it if missing.
  */
-export async function resolveImageFavoriteTagId(
+async function resolveImageFavoriteTagId(
   api: StashAPI,
   favoritesManager: FavoritesManager | undefined,
   favoriteTagName: string,
@@ -38,7 +38,7 @@ export async function resolveImageFavoriteTagId(
   return newTag?.id ?? null;
 }
 
-export interface ToggleImageFavoriteResult {
+interface ToggleImageFavoriteResult {
   newIsFavorite: boolean;
   newTags: ImageTag[];
 }

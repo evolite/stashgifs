@@ -57,8 +57,6 @@ export class VideoPost extends VideoPostBase {
   
   
   // Cached DOM elements
-  private playerContainer?: HTMLElement;
-  private footer?: HTMLElement;
 
   private readonly onCancelRequests?: () => void; // Callback to cancel pending requests
 
@@ -118,12 +116,6 @@ export class VideoPost extends VideoPostBase {
    * Create the player container with loading indicator
    */
   private createPlayerContainer(): HTMLElement {
-    const container = document.createElement('div');
-    container.className = 'video-post__player';
-    container.style.position = 'relative';
-    container.style.width = '100%';
-
-    // Calculate aspect ratio
     let aspectRatio: number | undefined;
     let aspectRatioClass = 'aspect-16-9';
     if (this.data.marker.scene.files && this.data.marker.scene.files.length > 0) {
@@ -134,34 +126,7 @@ export class VideoPost extends VideoPostBase {
       }
     }
 
-    if (aspectRatio && Number.isFinite(aspectRatio)) {
-      this.setAspectRatioMetadata(container, aspectRatio);
-    }
-    
-    // Use inline aspectRatio style for better browser compatibility (Chrome/Safari)
-    // Match ImagePost format - use number format like "1.777" for consistency
-    if (aspectRatio && Number.isFinite(aspectRatio)) {
-      container.style.aspectRatio = `${aspectRatio}`;
-    }
-    // Always add CSS class as fallback for older browsers
-    container.classList.add(aspectRatioClass);
-
-
-    // Poster layer (preview) to prevent black flashes
-    this.appendPosterLayer(container, this.isReelMode ? this.getPreviewPosterUrl() : undefined);
-
-    // Loading indicator for video
-    const loading = document.createElement('div');
-    loading.className = 'video-post__loading';
-    const spinner = document.createElement('div');
-    spinner.className = 'spinner';
-    loading.appendChild(spinner);
-    loading.style.display = this.isLoaded ? 'none' : 'flex';
-    loading.style.zIndex = '3';
-    container.appendChild(loading);
-    this.videoLoadingIndicator = loading;
-
-    return container;
+    return this.createVideoPlayerContainer(aspectRatio, aspectRatioClass, this.getPreviewPosterUrl());
   }
 
   /**
@@ -205,24 +170,30 @@ export class VideoPost extends VideoPostBase {
    * Only uses screenshots - never preview or webp
    * Returns undefined if screenshot is unavailable (will trigger first frame fallback)
    */
-  private getPosterUrl(): string | undefined {
-    const m = this.data.marker;
+  /**
+   * Resolve poster URL for special marker types (image-based, synthetic, shortform)
+   * @returns poster URL if marker is a special type, undefined otherwise
+   */
+  private resolveSpecialMarkerPoster(m: SceneMarker): string | undefined | null {
     const markerId = m?.id;
-    
-    // Handle image-based markers (marker.id starts with 'image-')
     if (markerId && typeof markerId === 'string' && markerId.startsWith('image-')) {
       return this.getImageBasedMarkerPoster(m);
     }
-    
-    // Skip synthetic markers and short form markers - they don't have screenshots in Stash
     if (markerId && typeof markerId === 'string' && (markerId.startsWith('synthetic-') || markerId.startsWith('shortform-'))) {
       return this.getSyntheticMarkerPoster(m);
     }
-    
+    return null; // Not a special marker type
+  }
+
+  private getPosterUrl(): string | undefined {
+    const m = this.data.marker;
+    const specialPoster = this.resolveSpecialMarkerPoster(m);
+    if (specialPoster !== null) return specialPoster;
+
     // Prefer preloaded poster from batch prefetch (commit parity)
     const cached = posterPreloader.getPosterForMarker(m);
     if (cached) return cached;
-    
+
     // Only use screenshot if not preloaded
     const p = m?.scene?.paths?.screenshot;
     if (!p) return undefined;
@@ -231,13 +202,8 @@ export class VideoPost extends VideoPostBase {
 
   private getPreviewPosterUrl(): string | undefined {
     const m = this.data.marker;
-    const markerId = m?.id;
-    if (markerId && typeof markerId === 'string' && markerId.startsWith('image-')) {
-      return this.getImageBasedMarkerPoster(m);
-    }
-    if (markerId && typeof markerId === 'string' && (markerId.startsWith('synthetic-') || markerId.startsWith('shortform-'))) {
-      return this.getSyntheticMarkerPoster(m);
-    }
+    const specialPoster = this.resolveSpecialMarkerPoster(m);
+    if (specialPoster !== null) return specialPoster;
     const preview = m?.preview;
     if (preview) {
       return this.buildUrlWithCacheBusting(preview);
@@ -264,19 +230,11 @@ export class VideoPost extends VideoPostBase {
    * Create header with performer and tag chips
    */
   protected createHeader(): HTMLElement {
-    const header = document.createElement('div');
-    header.className = 'video-post__header';
-    header.style.padding = '8px 16px';
-    header.style.marginBottom = '0';
-    header.style.borderBottom = 'none';
+    const header = this.createHeaderContainer();
 
     // Performer section - name and image
     if (this.data.marker.scene.performers && this.data.marker.scene.performers.length > 0) {
-      const performersSection = document.createElement('div');
-      performersSection.className = 'video-post__performers';
-      if (this.data.marker.scene.performers.length === 2) {
-        performersSection.style.gap = '12px';
-      }
+      const performersSection = this.createPerformersContainer(this.data.marker.scene.performers.length);
       for (const performer of this.data.marker.scene.performers) {
         const chip = this.createPerformerChip(performer);
         performersSection.appendChild(chip);
@@ -291,12 +249,7 @@ export class VideoPost extends VideoPostBase {
       tagsSection.className = 'video-post__tags';
       this.addTagChips(tagsSection);
       if (this.isReelMode) {
-        tagsSection.style.display = 'flex';
-        tagsSection.style.flexWrap = 'wrap';
-        tagsSection.style.alignItems = 'center';
-        tagsSection.style.gap = '4px';
-        tagsSection.style.marginTop = '4px';
-        tagsSection.style.opacity = '0.85';
+        this.applyReelModeTagStyles(tagsSection);
       }
       header.appendChild(tagsSection);
     }
@@ -1134,17 +1087,8 @@ export class VideoPost extends VideoPostBase {
       return undefined;
     }
 
-    if (this.player?.getIsUnloaded()) {
-      this.player.reload();
-      this.isLoaded = true;
-      this.hasRenderedVideo = false;
-      this.showPosterLayer();
-      const container = this.playerContainer || this.container.querySelector<HTMLElement>('.video-post__player');
-      if (container) {
-        this.hideMediaWhenReady(this.player, container);
-      }
-      return this.player;
-    }
+    const reloaded = this.attemptReloadIfUnloaded();
+    if (reloaded) return reloaded;
 
     // Show loading indicator when video starts loading
     if (this.videoLoadingIndicator && !this.isLoaded) {
@@ -1152,13 +1096,11 @@ export class VideoPost extends VideoPostBase {
     }
     this.showPosterLayer();
 
-    const player = this.loadPlayer(
+    return this.loadPlayer(
       this.data.videoUrl!,
       this.data.startTime ?? this.data.marker.seconds,
       this.data.endTime ?? this.data.marker.end_seconds
     );
-    
-    return player;
   }
 
 
@@ -1421,61 +1363,19 @@ export class VideoPost extends VideoPostBase {
    * Create marker creation dialog
    */
   private createMarkerDialog(): HTMLElement {
-    const dialog = document.createElement('div');
-    dialog.className = 'marker-dialog';
-    dialog.setAttribute('role', 'dialog');
-    dialog.setAttribute('aria-modal', 'true');
-    dialog.setAttribute('aria-hidden', 'true');
-    dialog.hidden = true;
-    dialog.style.position = 'absolute';
-    dialog.style.bottom = 'calc(100% + 6px)';
-    dialog.style.left = '50%';
-    dialog.style.transform = 'translateX(-50%)';
-    dialog.style.width = '320px';
-    dialog.style.maxWidth = 'calc(100vw - 32px)';
-    dialog.style.background = THEME.colors.backgroundSecondary;
-    dialog.style.backdropFilter = 'blur(18px) saturate(160%)';
-    dialog.style.border = `1px solid ${THEME.colors.border}`;
-    dialog.style.borderRadius = THEME.radius.card;
-    dialog.style.padding = THEME.spacing.cardPadding;
-    dialog.style.boxShadow = '0 8px 32px rgba(0, 0, 0, 0.4)';
-    dialog.style.zIndex = '200';
-    dialog.style.opacity = '0';
-    dialog.style.transform = 'translateX(-50%) translateY(4px) scale(0.96)';
-    dialog.style.pointerEvents = 'none';
-    dialog.style.transition = 'opacity 0.2s cubic-bezier(0.2, 0, 0, 1), transform 0.2s cubic-bezier(0.2, 0, 0, 1)';
-    dialog.style.boxSizing = 'border-box';
+    const dialog = this.createDialogContainer('marker-dialog');
     this.markerDialog = dialog;
 
-    // Title
-    const title = document.createElement('div');
-    title.id = 'marker-dialog-title';
-    title.textContent = 'Create Marker';
-    title.style.fontSize = '16px';
-    title.style.fontWeight = '600';
-    title.style.color = THEME.colors.textPrimary;
-    title.style.marginBottom = '12px';
-    dialog.appendChild(title);
+    dialog.appendChild(this.createDialogTitle('Create Marker', 'marker-dialog-title'));
 
-    // Input wrapper
-    const inputWrapper = document.createElement('div');
-    inputWrapper.style.position = 'relative';
-    inputWrapper.style.marginBottom = '12px';
-
-    // Tag input
-    const input = document.createElement('input');
-    input.type = 'text';
-    input.placeholder = 'Search for tag...';
-    input.style.width = '100%';
-    input.style.padding = '10px 12px';
-    input.style.background = THEME.colors.surface;
-    input.style.border = `1px solid ${THEME.colors.border}`;
-    input.style.borderRadius = '8px';
-    input.style.color = THEME.colors.textPrimary;
-    input.style.fontSize = '14px';
-    input.style.boxSizing = 'border-box';
-    input.setAttribute('aria-label', 'Tag name');
+    const { inputWrapper, input, suggestions } = this.createDialogInputSection({
+      placeholder: 'Search for tag...',
+      ariaLabel: 'Tag name',
+      suggestionsClassName: 'marker-dialog__suggestions',
+    });
+    suggestions.style.boxShadow = '0 4px 16px rgba(0, 0, 0, 0.3)';
     this.markerDialogInput = input;
+    this.markerDialogSuggestions = suggestions;
 
     input.addEventListener('input', () => {
       this.handleMarkerTagInput();
@@ -1494,27 +1394,6 @@ export class VideoPost extends VideoPostBase {
         this.closeMarkerDialog();
       }
     });
-
-    inputWrapper.appendChild(input);
-
-    // Suggestions dropdown
-    const suggestions = document.createElement('div');
-    suggestions.className = 'marker-dialog__suggestions';
-    suggestions.style.display = 'none';
-    suggestions.style.position = 'absolute';
-    suggestions.style.top = '100%';
-    suggestions.style.left = '0';
-    suggestions.style.right = '0';
-    suggestions.style.background = THEME.colors.backgroundSecondary;
-    suggestions.style.border = `1px solid ${THEME.colors.border}`;
-    suggestions.style.borderTop = 'none';
-    suggestions.style.borderRadius = '0 0 8px 8px';
-    suggestions.style.maxHeight = '200px';
-    suggestions.style.overflowY = 'auto';
-    suggestions.style.zIndex = '201';
-    suggestions.style.boxShadow = '0 4px 16px rgba(0, 0, 0, 0.3)';
-    this.markerDialogSuggestions = suggestions;
-    inputWrapper.appendChild(suggestions);
 
     dialog.appendChild(inputWrapper);
 
@@ -1643,6 +1522,14 @@ export class VideoPost extends VideoPostBase {
   /**
    * Close marker dialog
    */
+  private resetMarkerDialogButton(text: string = 'Add'): void {
+    if (this.markerDialogCreateButton) {
+      this.markerDialogCreateButton.disabled = false;
+      this.markerDialogCreateButton.textContent = text;
+      this.markerDialogCreateButton.style.opacity = '1';
+    }
+  }
+
   private closeMarkerDialog(): void {
     if (!this.isMarkerDialogOpen) return;
     this.isMarkerDialogOpen = false;
@@ -2020,104 +1907,91 @@ export class VideoPost extends VideoPostBase {
     if (!this.api || !this.selectedTagId || !this.selectedTagName) return;
     if (!this.markerDialogCreateButton) return;
 
-    const startTime = this.data.startTime ?? 0;
-    // Ensure sceneId is a valid string (GraphQL ID type requires string)
     const sceneIdRaw = this.data.marker.scene?.id;
     if (!sceneIdRaw) {
       console.error('Failed to create marker: scene ID is missing', this.data.marker);
       showToast('Failed to create marker: scene information is missing.');
       return;
     }
-    const sceneId = String(sceneIdRaw);
 
-    // Pause all videos and cancel pending requests before creating marker
+    this.prepareForMarkerCreation();
+
+    try {
+      const markerTagId = await this.ensureMarkerTagExists(this.api);
+      const tagIds = markerTagId ? [String(markerTagId)] : [];
+
+      const createdMarker = await this.api.createSceneMarker(
+        String(sceneIdRaw),
+        this.data.startTime ?? 0,
+        String(this.selectedTagId),
+        '',
+        null,
+        tagIds
+      );
+
+      if (createdMarker) {
+        this.applyCreatedMarkerData(createdMarker);
+      }
+
+      showToast(`Marker created with tag "${this.selectedTagName}"`);
+      this.hasCreatedMarker = true;
+      this.refreshHeader();
+      this.replaceMarkerButtonWithHeart();
+      await this.checkFavoriteStatus();
+      this.closeMarkerDialog();
+    } catch (error) {
+      console.error('Failed to create marker', error);
+      showToast('Failed to create marker. Please try again.');
+      this.resetMarkerDialogButton('Create');
+    }
+  }
+
+  private prepareForMarkerCreation(): void {
     if (this.visibilityManager) {
       this.visibilityManager.pauseAllVideos();
     }
     if (this.onCancelRequests) {
       this.onCancelRequests();
     }
+    this.markerDialogCreateButton!.disabled = true;
+    this.markerDialogCreateButton!.textContent = 'Creating...';
+    this.markerDialogCreateButton!.style.opacity = '0.6';
+  }
 
-    this.markerDialogCreateButton.disabled = true;
-    this.markerDialogCreateButton.textContent = 'Creating...';
-    this.markerDialogCreateButton.style.opacity = '0.6';
-
+  private async ensureMarkerTagExists(api: StashAPI): Promise<string | null> {
     try {
-      // Find or create the "StashGifs Marker" tag
-      let markerTagId: string | null = null;
-      try {
-        const existingMarkerTag = await this.api.findTagByName(MARKER_TAG_NAME);
-        if (existingMarkerTag) {
-          markerTagId = existingMarkerTag.id;
-        } else {
-          const newMarkerTag = await this.api.createTag(MARKER_TAG_NAME);
-          markerTagId = newMarkerTag?.id || null;
-        }
-      } catch (error) {
-        console.warn('VideoPost: Failed to get marker tag, continuing without it', error);
-      }
-
-      // Include marker tag in tagIds if we got it
-      const tagIds = markerTagId ? [String(markerTagId)] : [];
-
-      // Ensure all IDs are strings for GraphQL
-      const primaryTagId = String(this.selectedTagId);
-
-      // Create the marker and capture the returned data
-      const createdMarker = await this.api.createSceneMarker(
-        sceneId,
-        startTime,
-        primaryTagId,
-        '',
-        null,
-        tagIds
-      );
-
-      // Update this.data.marker with the real marker data from GraphQL
-      // This ensures the favorite button works with the real marker ID
-      if (createdMarker) {
-        // Preserve the existing scene data structure and merge with any new data
-        const existingScene = this.data.marker.scene;
-        this.data.marker = {
-          id: createdMarker.id, // Real marker ID (replaces synthetic ID)
-          title: createdMarker.title,
-          seconds: createdMarker.seconds,
-          end_seconds: createdMarker.end_seconds,
-          stream: createdMarker.stream,
-          preview: createdMarker.preview,
-          primary_tag: createdMarker.primary_tag,
-          tags: createdMarker.tags || [],
-          scene: {
-            ...existingScene, // Preserve existing scene data
-            ...createdMarker.scene, // Merge in any new scene data from the response
-            // Ensure files array matches SceneFile type if present
-            files: createdMarker.scene.files ? createdMarker.scene.files.map((f: { width?: number; height?: number; path?: string }) => ({
-              id: '', // GraphQL response doesn't include file id
-              path: f.path || '',
-              width: f.width,
-              height: f.height,
-            })) : existingScene.files,
-          } as Scene,
-        };
-      }
-
-      showToast(`Marker created with tag "${this.selectedTagName}"`);
-      this.hasCreatedMarker = true;
-      // Refresh header to show the newly assigned tag as a chip
-      this.refreshHeader();
-      this.replaceMarkerButtonWithHeart();
-      // Check favorite status after updating marker data to refresh UI
-      await this.checkFavoriteStatus();
-      this.closeMarkerDialog();
-      // Videos will resume naturally via visibility manager when they become visible again
+      const existing = await api.findTagByName(MARKER_TAG_NAME);
+      if (existing) return existing.id;
+      const created = await api.createTag(MARKER_TAG_NAME);
+      return created?.id ?? null;
     } catch (error) {
-      console.error('Failed to create marker', error);
-      showToast('Failed to create marker. Please try again.');
-      this.markerDialogCreateButton.disabled = false;
-      this.markerDialogCreateButton.textContent = 'Create';
-      this.markerDialogCreateButton.style.opacity = '1';
-      // Videos will resume naturally via visibility manager when they become visible again
+      console.warn('VideoPost: Failed to get marker tag, continuing without it', error);
+      return null;
     }
+  }
+
+  private applyCreatedMarkerData(createdMarker: Awaited<ReturnType<StashAPI['createSceneMarker']>>): void {
+    const existingScene = this.data.marker.scene;
+    this.data.marker = {
+      id: createdMarker.id,
+      title: createdMarker.title,
+      seconds: createdMarker.seconds,
+      end_seconds: createdMarker.end_seconds,
+      stream: createdMarker.stream,
+      preview: createdMarker.preview,
+      primary_tag: createdMarker.primary_tag,
+      tags: createdMarker.tags || [],
+      scene: {
+        ...existingScene,
+        ...createdMarker.scene,
+        files: createdMarker.scene.files ? createdMarker.scene.files.map((f: { width?: number; height?: number; path?: string }) => ({
+          id: '',
+          path: f.path || '',
+          width: f.width,
+          height: f.height,
+        })) : existingScene.files,
+      } as Scene,
+    };
   }
 
   /**
@@ -2294,9 +2168,7 @@ export class VideoPost extends VideoPostBase {
         const currentTagIds = (this.data.marker.scene.tags || []).map(t => t.id).filter(Boolean);
         if (currentTagIds.includes(this.selectedTagId)) {
           showToast(`Tag "${this.selectedTagName}" is already added to this scene.`);
-          this.markerDialogCreateButton.disabled = false;
-          this.markerDialogCreateButton.textContent = 'Add';
-          this.markerDialogCreateButton.style.opacity = '1';
+          this.resetMarkerDialogButton();
           return;
         }
 
@@ -2318,9 +2190,7 @@ export class VideoPost extends VideoPostBase {
       } catch (error) {
         console.error('Failed to add tag to scene', error);
         showToast('Failed to add tag. Please try again.');
-        this.markerDialogCreateButton.disabled = false;
-        this.markerDialogCreateButton.textContent = 'Add';
-        this.markerDialogCreateButton.style.opacity = '1';
+        this.resetMarkerDialogButton();
       }
       return;
     }
@@ -2340,9 +2210,7 @@ export class VideoPost extends VideoPostBase {
       const currentTagIds = (this.data.marker.tags || []).map(t => t.id);
       if (currentTagIds.includes(this.selectedTagId)) {
         showToast(`Tag "${this.selectedTagName}" is already added to this marker.`);
-        this.markerDialogCreateButton.disabled = false;
-        this.markerDialogCreateButton.textContent = 'Add';
-        this.markerDialogCreateButton.style.opacity = '1';
+        this.resetMarkerDialogButton();
         return;
       }
 

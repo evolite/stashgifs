@@ -10,12 +10,12 @@ const RATING_MAX_STARS = 10;
 const RATING_MIN_STARS = 0;
 const RESIZE_THROTTLE_MS = 100;
 
-export interface RatingSystemConfig {
+interface RatingSystemConfig {
   type?: string;
   starPrecision?: string;
 }
 
-export interface RatingControlOptions {
+interface RatingControlOptions {
   container: HTMLElement;
   subjectLabel: 'scene' | 'image';
   ratingSystemConfig?: RatingSystemConfig | null;

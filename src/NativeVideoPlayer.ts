@@ -386,6 +386,27 @@ export class NativeVideoPlayer {
   }
 
   /**
+   * Create a styled poster image element with consistent positioning and mobile z-index
+   */
+  private createPosterImageElement(src: string): HTMLImageElement {
+    const img = document.createElement('img');
+    img.src = src;
+    img.className = 'video-player__poster-fallback';
+    img.style.position = 'absolute';
+    img.style.top = '0';
+    img.style.left = '0';
+    img.style.width = '100%';
+    img.style.height = '100%';
+    img.style.objectFit = 'cover';
+    const isMobile = isMobileDevice();
+    img.style.zIndex = isMobile ? '2' : '0';
+    img.style.pointerEvents = 'none';
+    img.style.opacity = '1';
+    img.style.transition = 'opacity 0.3s ease-out';
+    return img;
+  }
+
+  /**
    * Create a fallback poster image element for mobile
    * This ensures the poster is visible even when the video element's poster attribute doesn't display
    * Poster will fade out smoothly when video plays, and fade in when video pauses
@@ -401,27 +422,12 @@ export class NativeVideoPlayer {
       this.posterImage.remove();
     }
 
-    const img = document.createElement('img');
-    img.src = normalizedPosterUrl;
-    img.className = 'video-player__poster-fallback';
-    img.style.position = 'absolute';
-    img.style.top = '0';
-    img.style.left = '0';
-    img.style.width = '100%';
-    img.style.height = '100%';
-    img.style.objectFit = 'cover';
-    // On mobile, put poster above video element (z-index 2) to ensure it covers video
-    // Poster starts visible (opacity 1) and will fade out when video plays
-    const isMobile = isMobileDevice();
-    img.style.zIndex = isMobile ? '2' : '0'; // Above video element on mobile (z-index 2), behind on desktop
-    img.style.pointerEvents = 'none';
-    img.style.opacity = '1'; // Start visible - will fade out when video plays
-    img.style.transition = 'opacity 0.3s ease-out'; // Smooth fade transition
-    
+    const img = this.createPosterImageElement(normalizedPosterUrl);
+
     // On mobile, video element starts with opacity 0 (set in setupVideoElementBasicProperties)
     // Video will fade in smoothly when playing event fires
     // We don't show video on loadeddata/canplay - only when actually playing to prevent animated previews
-    
+
     // Add error handler - if poster fails to load, extract first frame from video
     img.addEventListener('error', () => {
       console.warn('NativeVideoPlayer: Poster image failed to load, extracting first frame from video', { posterUrl });
@@ -511,21 +517,7 @@ export class NativeVideoPlayer {
             this.posterImage = undefined;
           }
 
-          const img = document.createElement('img');
-          img.src = src;
-          img.className = 'video-player__poster-fallback';
-          img.style.position = 'absolute';
-          img.style.top = '0';
-          img.style.left = '0';
-          img.style.width = '100%';
-          img.style.height = '100%';
-          img.style.objectFit = 'cover';
-          const isMobile = isMobileDevice();
-          img.style.zIndex = isMobile ? '2' : '0';
-          img.style.pointerEvents = 'none';
-          img.style.opacity = '1';
-          img.style.transition = 'opacity 0.3s ease-out';
-
+          const img = this.createPosterImageElement(src);
           this.posterImage = img;
 
           // Insert before video element in the player wrapper
@@ -693,6 +685,36 @@ export class NativeVideoPlayer {
     }
   }
 
+  private createPlayerWrapper(): HTMLElement {
+    const wrapper = document.createElement('div');
+    wrapper.className = 'video-player';
+    wrapper.style.position = 'absolute';
+    wrapper.style.top = '0';
+    wrapper.style.left = '0';
+    wrapper.style.width = '100%';
+    wrapper.style.height = '100%';
+    wrapper.style.zIndex = '1';
+    wrapper.style.backgroundColor = 'transparent';
+    wrapper.style.transform = 'none';
+    wrapper.style.willChange = 'auto';
+    wrapper.style.pointerEvents = isMobileDevice() ? 'auto' : 'none';
+    return wrapper;
+  }
+
+  private prepareVideoSource(videoUrl: string): boolean {
+    this.videoElement.pause();
+    const normalizedVideoUrl = normalizeMediaUrl(videoUrl);
+    if (!normalizedVideoUrl) {
+      this.errorHandled = true;
+      return false;
+    }
+    if (!this.assignVideoSource(normalizedVideoUrl)) {
+      return false;
+    }
+    this.videoElement.pause();
+    return true;
+  }
+
   /**
    * Set video source for videos with startTime
    */
@@ -704,24 +726,11 @@ export class NativeVideoPlayer {
     } catch {
       // Ignore - will set in event handlers
     }
-    
-    // Ensure video is paused to prevent auto-playing
-    this.videoElement.pause();
-    
-    // Now set src - this will trigger loading
-    const normalizedVideoUrl = normalizeMediaUrl(videoUrl);
-    if (!normalizedVideoUrl) {
-      // URL is invalid, don't set src to prevent error
-      this.errorHandled = true;
+
+    if (!this.prepareVideoSource(videoUrl)) {
       return false;
     }
-    if (!this.assignVideoSource(normalizedVideoUrl)) {
-      return false;
-    }
-    
-    // Ensure video stays paused after setting src
-    this.videoElement.pause();
-    
+
     // Immediately try to set currentTime again after setting src
     // This is critical to prevent showing last frame
     try {
@@ -905,24 +914,9 @@ export class NativeVideoPlayer {
    */
   private setVideoSourceWithoutStartTime(videoUrl: string): boolean {
     // Simple approach: set src directly, no currentTime manipulation
-    // Ensure video is paused to prevent auto-playing
-    this.videoElement.pause();
-    
-    // Set src - this will trigger loading
-    const normalizedVideoUrl = normalizeMediaUrl(videoUrl);
-    if (!normalizedVideoUrl) {
-      // URL is invalid, don't set src to prevent error
-      this.errorHandled = true;
+    if (!this.prepareVideoSource(videoUrl)) {
       return false;
     }
-    if (!this.assignVideoSource(normalizedVideoUrl)) {
-      return false;
-    }
-    
-    // Ensure video stays paused after setting src
-    this.videoElement.pause();
-    
-    // Show loading indicator on loadstart as backup
     return true;
   }
 
@@ -972,23 +966,8 @@ export class NativeVideoPlayer {
       this.resolveReady();
     }
 
-    const playerWrapper = document.createElement('div');
-    playerWrapper.className = 'video-player';
-    playerWrapper.style.position = 'absolute';
-    playerWrapper.style.top = '0';
-    playerWrapper.style.left = '0';
-    playerWrapper.style.width = '100%';
-    playerWrapper.style.height = '100%';
-    playerWrapper.style.zIndex = '1';
-    // Set transparent background
-    playerWrapper.style.backgroundColor = 'transparent';
-    // Enable hardware acceleration for video wrapper
-    playerWrapper.style.transform = 'none';
-    playerWrapper.style.willChange = 'auto';
-    // Set pointer-events: none by default to prevent blocking clicks on header/footer buttons
-    // Will be enabled when hovering over the player container
-    playerWrapper.style.pointerEvents = isMobileDevice() ? 'auto' : 'none';
-    this.playerWrapper = playerWrapper; // Store reference for hover handlers
+    const playerWrapper = this.createPlayerWrapper();
+    this.playerWrapper = playerWrapper;
     
     this.videoElement.style.position = 'relative';
     // On mobile, video z-index is 1 (below poster which is 2) to ensure poster covers video
@@ -2623,18 +2602,7 @@ export class NativeVideoPlayer {
       
       // If no playerWrapper exists, create it
       if (!playerWrapper) {
-        playerWrapper = document.createElement('div');
-        playerWrapper.className = 'video-player';
-        playerWrapper.style.position = 'absolute';
-        playerWrapper.style.top = '0';
-        playerWrapper.style.left = '0';
-        playerWrapper.style.width = '100%';
-        playerWrapper.style.height = '100%';
-        playerWrapper.style.zIndex = '1';
-        playerWrapper.style.backgroundColor = 'transparent';
-        playerWrapper.style.transform = 'none';
-        playerWrapper.style.willChange = 'auto';
-        playerWrapper.style.pointerEvents = isMobileDevice() ? 'auto' : 'none';
+        playerWrapper = this.createPlayerWrapper();
         
         // Insert playerWrapper before controlsContainer if it exists
         if (this.controlsContainer?.parentNode === this.container) {

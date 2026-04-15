@@ -5,6 +5,7 @@
 import { FeedContainer } from './FeedContainer.js';
 import { StashAPI } from './StashAPI.js';
 import { FeedSettings } from './types.js';
+import { toRgba, darkenHex, normalizeHexColor } from './utils.js';
 
 /**
  * Load theme colors early to prevent color flash before UI renders
@@ -33,31 +34,8 @@ function getSavedSettings(): Partial<FeedSettings> {
   }
 }
 
-function toRgba(hex: string, alpha: number): string {
-  const value = hex.replace('#', '');
-  const r = Number.parseInt(value.slice(0, 2), 16);
-  const g = Number.parseInt(value.slice(2, 4), 16);
-  const b = Number.parseInt(value.slice(4, 6), 16);
-  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
-}
-
-function darkenHex(hex: string, fraction: number): string {
-  const value = hex.replace('#', '');
-  const r = Math.round(Number.parseInt(value.slice(0, 2), 16) * (1 - fraction));
-  const g = Math.round(Number.parseInt(value.slice(2, 4), 16) * (1 - fraction));
-  const b = Math.round(Number.parseInt(value.slice(4, 6), 16) * (1 - fraction));
-  return `#${r.toString(16).padStart(2, '0')}${g.toString(16).padStart(2, '0')}${b.toString(16).padStart(2, '0')}`;
-}
-
 function loadThemeEarly(settings: Partial<FeedSettings>): void {
   try {
-    const normalizeHexColor = (value: string | undefined, fallback: string): string => {
-      if (!value) return fallback;
-      const trimmed = value.trim();
-      const normalized = trimmed.startsWith('#') ? trimmed : `#${trimmed}`;
-      return /^#[0-9a-fA-F]{6}$/.test(normalized) ? normalized.toUpperCase() : fallback;
-    };
-
     const background = normalizeHexColor(settings.themeBackground, '#1F2A33');
     const primary = normalizeHexColor(settings.themePrimary, '#2C3B46');
     const secondary = normalizeHexColor(settings.themeSecondary, '#24323C');

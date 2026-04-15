@@ -60,6 +60,38 @@ export const THEME = {
 };
 
 /**
+ * Normalize a hex color value, validating format and adding # prefix if needed
+ */
+export function normalizeHexColor(value: string | undefined, fallback: string): string {
+  if (!value) return fallback;
+  const trimmed = value.trim();
+  const normalized = trimmed.startsWith('#') ? trimmed : `#${trimmed}`;
+  return /^#[0-9a-fA-F]{6}$/.test(normalized) ? normalized.toUpperCase() : fallback;
+}
+
+/**
+ * Convert a hex color to rgba string
+ */
+export function toRgba(hex: string, alpha: number): string {
+  const normalized = normalizeHexColor(hex, '#000000');
+  const r = Number.parseInt(normalized.slice(1, 3), 16);
+  const g = Number.parseInt(normalized.slice(3, 5), 16);
+  const b = Number.parseInt(normalized.slice(5, 7), 16);
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+}
+
+/**
+ * Darken a hex color by a given fraction (0-1)
+ */
+export function darkenHex(hex: string, fraction: number): string {
+  const value = hex.replace('#', '');
+  const r = Math.round(Number.parseInt(value.slice(0, 2), 16) * (1 - fraction));
+  const g = Math.round(Number.parseInt(value.slice(2, 4), 16) * (1 - fraction));
+  const b = Math.round(Number.parseInt(value.slice(4, 6), 16) * (1 - fraction));
+  return `#${r.toString(16).padStart(2, '0')}${g.toString(16).padStart(2, '0')}${b.toString(16).padStart(2, '0')}`;
+}
+
+/**
  * Throttle function calls
  */
 export function throttle<T extends (...args: never[]) => unknown>(
@@ -304,7 +336,7 @@ export function detectDeviceCapabilities(): DeviceCapabilities {
  * Get optimized thumbnail URL with size parameters
  * Downsizes image before loading to reduce memory usage
  */
-export function getOptimizedThumbnailUrl(baseUrl: string, maxWidth: number, maxHeight?: number): string {
+function getOptimizedThumbnailUrl(baseUrl: string, maxWidth: number, maxHeight?: number): string {
   if (!baseUrl) return baseUrl;
   
   // If URL already has query parameters, append with &
@@ -522,7 +554,7 @@ export function hasMsFullscreenDocument(doc: Document): doc is DocumentMsFullscr
 /**
  * Check if fullscreen API is supported
  */
-export function hasFullscreenSupport(element: Element): boolean {
+function hasFullscreenSupport(element: Element): boolean {
   return !!(
     element.requestFullscreen ||
     hasWebkitFullscreen(element) ||
@@ -562,7 +594,7 @@ export function isMobileDevice(): boolean {
 /**
  * Detect if the current device is an iOS device
  */
-export function isIOSDevice(): boolean {
+function isIOSDevice(): boolean {
   const userAgent = typeof navigator === 'undefined' ? '' : navigator.userAgent;
   return /iPhone|iPad|iPod/i.test(userAgent);
 }
@@ -570,7 +602,7 @@ export function isIOSDevice(): boolean {
 /**
  * Detect if the current device is an Android device
  */
-export function isAndroidDevice(): boolean {
+function isAndroidDevice(): boolean {
   const userAgent = typeof navigator === 'undefined' ? '' : navigator.userAgent;
   return /Android/i.test(userAgent);
 }
@@ -578,7 +610,7 @@ export function isAndroidDevice(): boolean {
 /**
  * Network information interface for adaptive buffering
  */
-export interface NetworkInfo {
+interface NetworkInfo {
   effectiveType?: 'slow-2g' | '2g' | '3g' | '4g';
   downlink?: number; // Mbps
   saveData?: boolean;
@@ -654,7 +686,7 @@ export function isCellularConnection(): boolean {
  * Image codecs that should be treated as images (not videos)
  * These codecs may have animation but should be displayed as images
  */
-export const IMAGE_CODECS = ['gif', 'webp', 'apng', 'avif', 'heic', 'heif'] as const;
+const IMAGE_CODECS = ['gif', 'webp', 'apng', 'avif', 'heic', 'heif'] as const;
 
 /**
  * Image file extensions that should always be displayed as images (not videos)
@@ -679,7 +711,7 @@ const VIDEO_EXTENSIONS = [
  * @param url The URL to check
  * @returns true if the URL ends with an image extension
  */
-export function isImageFile(url: string): boolean {
+function isImageFile(url: string): boolean {
   const lowerUrl = url.toLowerCase();
   return IMAGE_EXTENSIONS.some(ext => lowerUrl.endsWith(ext));
 }
@@ -689,7 +721,7 @@ export function isImageFile(url: string): boolean {
  * @param url The URL to check
  * @returns true if the URL ends with a video extension
  */
-export function isVideoFile(url: string): boolean {
+function isVideoFile(url: string): boolean {
   const lowerUrl = url.toLowerCase();
   return VIDEO_EXTENSIONS.some(ext => lowerUrl.endsWith(ext));
 }
@@ -699,7 +731,7 @@ export function isVideoFile(url: string): boolean {
  * @param codec The codec string to check
  * @returns true if the codec is an image codec
  */
-export function isImageCodec(codec: string): boolean {
+function isImageCodec(codec: string): boolean {
   return IMAGE_CODECS.includes(codec.toLowerCase() as typeof IMAGE_CODECS[number]);
 }
 
@@ -708,7 +740,7 @@ export function isImageCodec(codec: string): boolean {
  * @param codec The codec string to check
  * @returns true if the codec is a video codec
  */
-export function isVideoCodec(codec: string): boolean {
+function isVideoCodec(codec: string): boolean {
   return !isImageCodec(codec);
 }
 
@@ -762,7 +794,7 @@ export function isMp4File(path?: string): boolean {
 /**
  * Build full URL from path
  */
-function buildFullUrl(path: string, baseUrl: string): string {
+export function buildFullUrl(path: string, baseUrl: string): string {
   try {
     return new URL(path, baseUrl).toString();
   } catch {

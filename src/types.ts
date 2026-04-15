@@ -34,7 +34,7 @@ export interface SceneMarker {
   scene: Scene; // Parent scene
 }
 
-export interface Studio {
+interface Studio {
   id: string;
   name: string;
 }
@@ -53,7 +53,7 @@ export interface Tag {
   name: string;
 }
 
-export interface SceneFile {
+interface SceneFile {
   id: string;
   path: string;
   size?: number;
@@ -65,7 +65,7 @@ export interface SceneFile {
   bit_rate?: number;
 }
 
-export interface ScenePaths {
+interface ScenePaths {
   screenshot?: string;
   preview?: string;
   stream?: string;

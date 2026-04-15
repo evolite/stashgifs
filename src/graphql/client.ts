@@ -305,6 +305,21 @@ export class GraphQLClient {
   }
 
   /**
+   * Validate that response has a JSON-compatible content type
+   */
+  private async validateResponseContentType(response: Response): Promise<void> {
+    const contentType = response.headers.get('content-type');
+    if (!contentType || (!contentType.includes('application/json') && !contentType.includes('application/graphql-response+json'))) {
+      const text = await response.text();
+      throw createGraphQLError(
+        response,
+        null,
+        new Error(`Unexpected content type: ${contentType}. Response: ${text.substring(0, 200)}`)
+      );
+    }
+  }
+
+  /**
    * Common response parsing and error checking
    * Checks abort only at critical points: before parsing and after async operations
    */
@@ -315,16 +330,7 @@ export class GraphQLClient {
     // Check abort before starting parse operation
     this.checkAbort(signal);
 
-    // Check content type before parsing
-    const contentType = response.headers.get('content-type');
-    if (!contentType || (!contentType.includes('application/json') && !contentType.includes('application/graphql-response+json'))) {
-      const text = await response.text();
-      throw createGraphQLError(
-        response,
-        null,
-        new Error(`Unexpected content type: ${contentType}. Response: ${text.substring(0, 200)}`)
-      );
-    }
+    await this.validateResponseContentType(response);
 
     try {
       const data = (await response.json()) as GraphQLResponse<TData>;
@@ -975,15 +981,7 @@ export class GraphQLClient {
       throw createGraphQLError(response, null);
     }
 
-    const contentType = response.headers.get('content-type');
-    if (!contentType || (!contentType.includes('application/json') && !contentType.includes('application/graphql-response+json'))) {
-      const text = await response.text();
-      throw createGraphQLError(
-        response,
-        null,
-        new Error(`Unexpected content type: ${contentType}. Response: ${text.substring(0, 200)}`)
-      );
-    }
+    await this.validateResponseContentType(response);
 
     const responseData = await response.json();
     

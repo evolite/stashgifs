@@ -94,44 +94,48 @@ export class FavoritesManager {
   }
 
   /**
+   * Resolve favorite tag ID and current status for a marker
+   */
+  private async resolveFavoriteContext(marker: SceneMarker): Promise<{ tagId: string; isCurrentlyFavorite: boolean }> {
+    const tagId = await this.getFavoriteTagId();
+    if (!tagId) {
+      throw new Error('Favorite tag not available');
+    }
+    const isCurrentlyFavorite = await this.isFavorite(marker);
+    return { tagId, isCurrentlyFavorite };
+  }
+
+  /**
+   * Apply a favorite state change (add or remove tag)
+   */
+  private async applyFavoriteChange(marker: SceneMarker, tagId: string, shouldBeFavorite: boolean): Promise<void> {
+    if (this.isShortFormMarker(marker)) {
+      if (!marker.scene?.id) {
+        throw new Error('Scene ID not available for shortform marker');
+      }
+      if (shouldBeFavorite) {
+        await this.api.addTagToScene(marker.scene.id, tagId);
+      } else {
+        await this.api.removeTagFromScene(marker.scene.id, tagId);
+      }
+    } else {
+      if (shouldBeFavorite) {
+        await this.api.addTagToMarker(marker, tagId);
+      } else {
+        await this.api.removeTagFromMarker(marker, tagId);
+      }
+    }
+  }
+
+  /**
    * Toggle favorite status for a marker
    */
   async toggleFavorite(marker: SceneMarker): Promise<boolean> {
     try {
-      const tagId = await this.getFavoriteTagId();
-      if (!tagId) {
-        throw new Error('Favorite tag not available');
-      }
-
-      const isCurrentlyFavorite = await this.isFavorite(marker);
-      
-      // For shortform content, use scene tag methods
-      if (this.isShortFormMarker(marker)) {
-        if (!marker.scene?.id) {
-          throw new Error('Scene ID not available for shortform marker');
-        }
-        
-        if (isCurrentlyFavorite) {
-          // Remove tag from scene
-          await this.api.removeTagFromScene(marker.scene.id, tagId);
-          return false;
-        } else {
-          // Add tag to scene
-          await this.api.addTagToScene(marker.scene.id, tagId);
-          return true;
-        }
-      }
-      
-      // For regular markers, use marker tag methods
-      if (isCurrentlyFavorite) {
-        // Remove tag
-        await this.api.removeTagFromMarker(marker, tagId);
-        return false;
-      } else {
-        // Add tag
-        await this.api.addTagToMarker(marker, tagId);
-        return true;
-      }
+      const { tagId, isCurrentlyFavorite } = await this.resolveFavoriteContext(marker);
+      const newState = !isCurrentlyFavorite;
+      await this.applyFavoriteChange(marker, tagId, newState);
+      return newState;
     } catch (error) {
       console.error('FavoritesManager: Failed to toggle favorite', error);
       throw error;
@@ -143,32 +147,9 @@ export class FavoritesManager {
    */
   async setFavorite(marker: SceneMarker, favorite: boolean): Promise<void> {
     try {
-      const tagId = await this.getFavoriteTagId();
-      if (!tagId) {
-        throw new Error('Favorite tag not available');
-      }
-
-      const isCurrentlyFavorite = await this.isFavorite(marker);
-      
-      // For shortform content, use scene tag methods
-      if (this.isShortFormMarker(marker)) {
-        if (!marker.scene?.id) {
-          throw new Error('Scene ID not available for shortform marker');
-        }
-        
-        if (favorite && !isCurrentlyFavorite) {
-          await this.api.addTagToScene(marker.scene.id, tagId);
-        } else if (!favorite && isCurrentlyFavorite) {
-          await this.api.removeTagFromScene(marker.scene.id, tagId);
-        }
-        return;
-      }
-      
-      // For regular markers, use marker tag methods
-      if (favorite && !isCurrentlyFavorite) {
-        await this.api.addTagToMarker(marker, tagId);
-      } else if (!favorite && isCurrentlyFavorite) {
-        await this.api.removeTagFromMarker(marker, tagId);
+      const { tagId, isCurrentlyFavorite } = await this.resolveFavoriteContext(marker);
+      if (favorite !== isCurrentlyFavorite) {
+        await this.applyFavoriteChange(marker, tagId, favorite);
       }
     } catch (error) {
       console.error('FavoritesManager: Failed to set favorite', error);

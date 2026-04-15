@@ -30,9 +30,6 @@ export class ImageVideoPost extends VideoPostBase {
   private player?: NativeVideoPlayer;
   private readonly onCancelRequests?: () => void;
 
-  private playerContainer?: HTMLElement;
-  private footer?: HTMLElement;
-
   constructor(
     container: HTMLElement,
     data: ImageVideoPostData,
@@ -40,13 +37,10 @@ export class ImageVideoPost extends VideoPostBase {
   ) {
     super(container, options);
     this.data = data;
-    this.oCount = this.data.image.o_counter || 0;
     this.onCancelRequests = options?.onCancelRequests;
     this.onMuteToggle = options?.onMuteToggle;
     this.getGlobalMuteState = options?.getGlobalMuteState;
-    this.ratingSystemConfig = options?.ratingSystemConfig;
-    this.isReelMode = options?.reelMode === true;
-
+    this.initImagePostOptions(this.data.image.o_counter, options?.ratingSystemConfig, options?.reelMode);
     this.render();
   }
 
@@ -61,31 +55,13 @@ export class ImageVideoPost extends VideoPostBase {
    * Render the complete image video post structure
    */
   private render(): void {
-    const { header, playerContainer, footer } = this.renderBasePost({
-      className: 'video-post',
-      postId: this.data.image.id,
-      createHeader: () => this.createHeader(),
-      createPlayerContainer: () => this.createPlayerContainer(),
-      createFooter: () => this.createFooter()
-    });
-    this.playerContainer = playerContainer;
-    this.footer = footer;
-
-    if (this.isReelMode) {
-      this.applyReelModeLayout({ header, playerContainer, footer });
-    }
+    this.renderImageBasedPost('video-post', this.data.image.id, () => this.createPlayerContainer(), () => this.createFooter());
   }
 
   /**
    * Create the player container with loading indicator
    */
   private createPlayerContainer(): HTMLElement {
-    const container = document.createElement('div');
-    container.className = 'video-post__player';
-    container.style.position = 'relative';
-    container.style.width = '100%';
-
-    // Calculate aspect ratio from image dimensions
     let aspectRatio: number | undefined;
     let aspectRatioClass = 'aspect-16-9';
     if (this.data.image.width && this.data.image.height && this.data.image.height > 0) {
@@ -98,32 +74,7 @@ export class ImageVideoPost extends VideoPostBase {
       }
     }
 
-    if (aspectRatio && Number.isFinite(aspectRatio)) {
-      this.setAspectRatioMetadata(container, aspectRatio);
-    }
-    
-    // Use inline aspectRatio style for better browser compatibility
-    if (aspectRatio && Number.isFinite(aspectRatio)) {
-      container.style.aspectRatio = `${aspectRatio}`;
-    }
-    // Always add CSS class as fallback for older browsers
-    container.classList.add(aspectRatioClass);
-
-    // Poster layer (preview) to prevent black flashes
-    this.appendPosterLayer(container, this.isReelMode ? this.getPosterUrl() : undefined);
-
-    // Loading indicator for video
-    const loading = document.createElement('div');
-    loading.className = 'video-post__loading';
-    const spinner = document.createElement('div');
-    spinner.className = 'spinner';
-    loading.appendChild(spinner);
-    loading.style.display = this.isLoaded ? 'none' : 'flex';
-    loading.style.zIndex = '3';
-    container.appendChild(loading);
-    this.videoLoadingIndicator = loading;
-
-    return container;
+    return this.createVideoPlayerContainer(aspectRatio, aspectRatioClass, this.getPosterUrl());
   }
 
   /**
@@ -133,27 +84,7 @@ export class ImageVideoPost extends VideoPostBase {
     const { footer, buttonGroup } = this.buildFooterContainer();
     this.buttonGroup = buttonGroup;
 
-    // Heart button (favorite)
-    if (this.favoritesManager) {
-      this.heartButton = this.createHeartButton();
-      buttonGroup.appendChild(this.heartButton);
-    }
-
-    // Add tag button
-    if (this.api) {
-      this.addTagButton = this.createAddTagButton('Add tag to image');
-      buttonGroup.appendChild(this.addTagButton);
-    }
-
-    // O-count button
-    if (this.api) {
-      this.oCountButton = this.createOCountButton();
-      buttonGroup.appendChild(this.oCountButton);
-    }
-
-    // Rating control
-    const ratingControl = this.createRatingSection();
-    buttonGroup.appendChild(ratingControl);
+    this.appendCommonImageFooterButtons(buttonGroup, this.data.image.id);
 
     // HQ button (upgrade to HD)
     if (this.api && !this.isHQMode) {
@@ -507,17 +438,9 @@ export class ImageVideoPost extends VideoPostBase {
     if (!videoUrl) {
       return undefined;
     }
-    if (this.player?.getIsUnloaded()) {
-      this.player.reload();
-      this.isLoaded = true;
-      this.hasRenderedVideo = false;
-      this.showPosterLayer();
-      const container = this.playerContainer || this.container.querySelector<HTMLElement>('.video-post__player');
-      if (container) {
-        this.hideMediaWhenReady(this.player, container);
-      }
-      return this.player;
-    }
+    const reloaded = this.attemptReloadIfUnloaded();
+    if (reloaded) return reloaded;
+
     this.showPosterLayer();
     return this.loadPlayer(videoUrl);
   }
@@ -549,12 +472,8 @@ export class ImageVideoPost extends VideoPostBase {
    * Destroy the post
    */
   destroy(): void {
-    // Close dialogs if open
-    if (this.addTagDialogState.isOpen) {
-      this.closeAddTagDialogBase({ state: this.addTagDialogState });
-    }
+    this.cleanupAddTagDialogState();
 
-    // Clean up timers
     this.clearLoadErrorCheckTimeout();
     this.detachLoadErrorHandler();
     if (this.retryTimeoutId) {
@@ -562,23 +481,13 @@ export class ImageVideoPost extends VideoPostBase {
       this.retryTimeoutId = undefined;
     }
 
-    if (this.addTagDialogState.autocompleteDebounceTimer) {
-      clearTimeout(this.addTagDialogState.autocompleteDebounceTimer);
-      this.addTagDialogState.autocompleteDebounceTimer = undefined;
-    }
-    if (this.addTagDialogState.tagSearchLoadingTimer) {
-      clearTimeout(this.addTagDialogState.tagSearchLoadingTimer);
-      this.addTagDialogState.tagSearchLoadingTimer = undefined;
-    }
-
     if (this.player) {
       this.player.destroy();
       this.player = undefined;
     }
     this.isLoaded = false;
-    
+
     super.destroy();
-    // Remove the entire container from the DOM
     this.container?.remove();
   }
 }

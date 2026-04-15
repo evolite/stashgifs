@@ -6,7 +6,7 @@
 /**
  * Standard touch detection thresholds
  */
-export const TOUCH_THRESHOLDS = {
+const TOUCH_THRESHOLDS = {
   /** Maximum pixel movement to consider a tap (not a scroll) */
   MOVE_THRESHOLD: 15,
   /** Maximum duration in ms to consider a tap (not a long press) */
@@ -48,7 +48,7 @@ export function createTouchState(): TouchState {
 /**
  * Handle touchstart event and update state
  */
-export function handleTouchStart(
+function handleTouchStart(
   event: TouchEvent,
   state: TouchState
 ): void {
@@ -64,7 +64,7 @@ export function handleTouchStart(
 /**
  * Handle touchmove event and detect scrolling
  */
-export function handleTouchMove(
+function handleTouchMove(
   event: TouchEvent,
   state: TouchState
 ): void {
@@ -83,7 +83,7 @@ export function handleTouchMove(
 /**
  * Result of touch end analysis
  */
-export interface TouchEndResult {
+interface TouchEndResult {
   /** Whether this was a valid tap (not a scroll) */
   isTap: boolean;
   /** Whether this was a double tap */
@@ -97,7 +97,7 @@ export interface TouchEndResult {
 /**
  * Analyze touchend event and determine if it was a tap
  */
-export function analyzeTouchEnd(
+function analyzeTouchEnd(
   event: TouchEvent,
   state: TouchState
 ): TouchEndResult {
@@ -155,7 +155,7 @@ export function analyzeTouchEnd(
  * Setup unified touch handlers for an element
  * Returns cleanup function
  */
-export interface TouchHandlerOptions {
+interface TouchHandlerOptions {
   /** Callback for single tap */
   onTap?: (event: TouchEvent) => void;
   /** Callback for double tap */

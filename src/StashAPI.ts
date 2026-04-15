@@ -51,6 +51,16 @@ import { GraphQLClient } from './graphql/client.js';
 
 type ImageOrientation = 'landscape' | 'portrait' | 'square';
 
+interface MarkerTagUpdateData {
+  id: string;
+  title: string;
+  seconds: number;
+  end_seconds?: number | null;
+  scene: { id: string };
+  primary_tag?: { id: string } | null;
+  tags?: Array<{ id: string }>;
+}
+
 interface StashPluginApi {
   GQL: {
     useFindScenesQuery?: (variables: unknown) => { data?: unknown; loading: boolean };
@@ -1506,15 +1516,7 @@ export class StashAPI {
    * Update tags on a scene marker
    */
   private async updateMarkerTags(
-    marker: {
-      id: string;
-      title: string;
-      seconds: number;
-      end_seconds?: number | null;
-      scene: { id: string };
-      primary_tag?: { id: string } | null;
-      tags?: Array<{ id: string }>;
-    },
+    marker: MarkerTagUpdateData,
     newTagIds: string[],
     signal?: AbortSignal
   ): Promise<void> {
@@ -1529,13 +1531,7 @@ export class StashAPI {
   }
 
   async updateMarkerTagsWithPrimary(
-    marker: {
-      id: string;
-      title: string;
-      seconds: number;
-      end_seconds?: number | null;
-      scene: { id: string };
-    },
+    marker: Pick<MarkerTagUpdateData, 'id' | 'title' | 'seconds' | 'end_seconds' | 'scene'>,
     primaryTagId: string,
     tagIds: string[],
     signal?: AbortSignal
@@ -1566,15 +1562,7 @@ export class StashAPI {
    * Requires full marker data to include all required fields in the mutation
    */
   async addTagToMarker(
-    marker: {
-      id: string;
-      title: string;
-      seconds: number;
-      end_seconds?: number | null;
-      scene: { id: string };
-      primary_tag?: { id: string } | null;
-      tags?: Array<{ id: string }>;
-    },
+    marker: MarkerTagUpdateData,
     tagId: string,
     signal?: AbortSignal
   ): Promise<void> {
@@ -1747,35 +1735,49 @@ export class StashAPI {
   }
 
   /**
-   * Add a tag to a scene (kept for backwards compatibility)
+   * Get current tag IDs for a scene
    */
-  async addTagToScene(sceneId: string, tagId: string, signal?: AbortSignal): Promise<void> {
-    if (this.isAborted(signal)) return;
-    
-    // First get current scene tags
-    try {
-      // Get current tags
-      const result = await this.gqlClient.query<FindSceneResponse>({
-        query: queries.FIND_SCENE_MINIMAL,
-        variables: { id: sceneId },
-        signal,
-      });
-      
-      if (this.isAborted(signal)) return;
-      
-      const currentTags: string[] = (result.data?.findScene?.tags || []).map((t: { id: string }) => t.id);
+  private async getSceneTagIds(sceneId: string, signal?: AbortSignal): Promise<string[]> {
+    const result = await this.gqlClient.query<FindSceneResponse>({
+      query: queries.FIND_SCENE_MINIMAL,
+      variables: { id: sceneId },
+      signal,
+    });
+    if (this.isAborted(signal)) return [];
+    return (result.data?.findScene?.tags || []).map((t: { id: string }) => t.id);
+  }
 
-      // Add the new tag if not already present
-      if (!currentTags.includes(tagId)) {
-        await this.updateSceneTags(sceneId, [...currentTags, tagId], signal);
+  /**
+   * Modify a scene's tags (add or remove) with shared fetch-modify-update pattern
+   */
+  private async modifySceneTags(
+    methodName: string,
+    sceneId: string,
+    tagId: string,
+    modify: (currentTags: string[], tagId: string) => string[] | null,
+    signal?: AbortSignal
+  ): Promise<void> {
+    if (this.isAborted(signal)) return;
+    try {
+      const currentTags = await this.getSceneTagIds(sceneId, signal);
+      if (this.isAborted(signal)) return;
+      const newTags = modify(currentTags, tagId);
+      if (newTags !== null) {
+        await this.updateSceneTags(sceneId, newTags, signal);
       }
     } catch (error) {
-      if (isAbortError(error) || this.isAborted(signal)) {
-        return;
-      }
-      this.logError('addTagToScene', error);
+      if (isAbortError(error) || this.isAborted(signal)) return;
+      this.logError(methodName, error);
       throw error;
     }
+  }
+
+  /**
+   * Add a tag to a scene
+   */
+  async addTagToScene(sceneId: string, tagId: string, signal?: AbortSignal): Promise<void> {
+    await this.modifySceneTags('addTagToScene', sceneId, tagId, (tags, id) =>
+      tags.includes(id) ? null : [...tags, id], signal);
   }
 
   /**
@@ -1783,67 +1785,29 @@ export class StashAPI {
    * Requires full marker data to include all required fields in the mutation
    */
   async removeTagFromMarker(
-    marker: {
-      id: string;
-      title: string;
-      seconds: number;
-      end_seconds?: number | null;
-      scene: { id: string };
-      primary_tag?: { id: string } | null;
-      tags?: Array<{ id: string }>;
-    },
+    marker: MarkerTagUpdateData,
     tagId: string,
     signal?: AbortSignal
   ): Promise<void> {
     if (this.isAborted(signal)) return;
-    
+
     try {
-      // Get current tags from marker data
       const currentTags: string[] = (marker.tags || []).map(t => t.id);
-
-      // Remove the tag
       const tagIds = currentTags.filter(id => id !== tagId);
-
       await this.updateMarkerTags(marker, tagIds, signal);
     } catch (error) {
-      if (isAbortError(error) || this.isAborted(signal)) {
-        return;
-      }
+      if (isAbortError(error) || this.isAborted(signal)) return;
       this.logError('removeTagFromMarker', error);
       throw error;
     }
   }
 
   /**
-   * Remove a tag from a scene (kept for backwards compatibility)
+   * Remove a tag from a scene
    */
   async removeTagFromScene(sceneId: string, tagId: string, signal?: AbortSignal): Promise<void> {
-    if (this.isAborted(signal)) return;
-    
-    // First get current scene tags
-    try {
-      // Get current tags
-      const result = await this.gqlClient.query<FindSceneResponse>({
-        query: queries.FIND_SCENE_MINIMAL,
-        variables: { id: sceneId },
-        signal,
-      });
-      
-      if (this.isAborted(signal)) return;
-      
-      const currentTags: string[] = (result.data?.findScene?.tags || []).map((t: { id: string }) => t.id);
-
-      // Remove the tag
-      const tagIds = currentTags.filter(id => id !== tagId);
-
-      await this.updateSceneTags(sceneId, tagIds, signal);
-    } catch (error) {
-      if (isAbortError(error) || this.isAborted(signal)) {
-        return;
-      }
-      this.logError('removeTagFromScene', error);
-      throw error;
-    }
+    await this.modifySceneTags('removeTagFromScene', sceneId, tagId, (tags, id) =>
+      tags.filter(t => t !== id), signal);
   }
 
   /**
@@ -1886,101 +1850,64 @@ export class StashAPI {
   }
 
   /**
-   * Update the rating for a scene (0-10 scale → rating100)
-   * @param sceneId Scene identifier
-   * @param rating10 Rating on a 0-10 scale (can include decimals)
-   * @param signal Optional abort signal
-   * @returns Updated rating100 value from Stash
+   * Validate and normalize a rating10 value to rating100
    */
-  async updateSceneRating(sceneId: string, rating10: number, signal?: AbortSignal): Promise<number> {
-    if (this.isAborted(signal)) return 0;
-    
-    // Input validation
-    if (!sceneId || typeof sceneId !== 'string' || sceneId.trim() === '') {
-      throw new Error('updateSceneRating: sceneId is required and must be a non-empty string');
+  private validateAndNormalizeRating(methodName: string, entityId: string, rating10: number): number {
+    if (!entityId || typeof entityId !== 'string' || entityId.trim() === '') {
+      throw new Error(`${methodName}: entityId is required and must be a non-empty string`);
     }
     if (typeof rating10 !== 'number' || !Number.isFinite(rating10)) {
-      throw new TypeError('updateSceneRating: rating10 must be a finite number');
+      throw new TypeError(`${methodName}: rating10 must be a finite number`);
     }
-    
     const normalized = Number.isFinite(rating10) ? rating10 : 0;
     const clamped = Math.min(10, Math.max(0, normalized));
-    const rating100 = Math.round(clamped * 10);
+    return Math.round(clamped * 10);
+  }
 
-    const variables = {
-      input: {
-        id: sceneId,
-        rating100,
-      },
-    };
+  /**
+   * Perform a rating mutation (shared by scene and image rating updates)
+   */
+  private async performRatingMutation<T>(
+    methodName: string,
+    entityId: string,
+    rating100: number,
+    mutation: string,
+    signal?: AbortSignal
+  ): Promise<number> {
+    if (this.isAborted(signal)) return 0;
 
     try {
-      await this.gqlClient.mutate<SceneUpdateResponse>({
-        mutation: mutations.SCENE_UPDATE,
-        variables,
+      await this.gqlClient.mutate<T>({
+        mutation,
+        variables: { input: { id: entityId, rating100 } },
         signal,
       });
-      
-      if (this.isAborted(signal)) return 0;
 
-      // SceneUpdateResponse doesn't include rating100, so we return the value we set
+      if (this.isAborted(signal)) return 0;
       return rating100;
     } catch (error) {
       if (isAbortError(error) || this.isAborted(signal)) {
         return 0;
       }
-      this.logError('updateSceneRating', error);
+      this.logError(methodName, error);
       throw error;
     }
   }
 
   /**
-   * Update image rating
-   * @param imageId Image ID
-   * @param rating10 Rating value (0-10 scale)
-   * @param signal Optional abort signal
-   * @returns Updated rating100 value (0-100 scale)
+   * Update the rating for a scene (0-10 scale → rating100)
+   */
+  async updateSceneRating(sceneId: string, rating10: number, signal?: AbortSignal): Promise<number> {
+    const rating100 = this.validateAndNormalizeRating('updateSceneRating', sceneId, rating10);
+    return this.performRatingMutation<SceneUpdateResponse>('updateSceneRating', sceneId, rating100, mutations.SCENE_UPDATE, signal);
+  }
+
+  /**
+   * Update image rating (0-10 scale → rating100)
    */
   async updateImageRating(imageId: string, rating10: number, signal?: AbortSignal): Promise<number> {
-    if (this.isAborted(signal)) return 0;
-    
-    // Input validation
-    if (!imageId || typeof imageId !== 'string' || imageId.trim() === '') {
-      throw new Error('updateImageRating: imageId is required and must be a non-empty string');
-    }
-    if (typeof rating10 !== 'number' || !Number.isFinite(rating10)) {
-      throw new TypeError('updateImageRating: rating10 must be a finite number');
-    }
-    
-    const normalized = Number.isFinite(rating10) ? rating10 : 0;
-    const clamped = Math.min(10, Math.max(0, normalized));
-    const rating100 = Math.round(clamped * 10);
-
-    const variables = {
-      input: {
-        id: imageId,
-        rating100,
-      },
-    };
-
-    try {
-      await this.gqlClient.mutate<{ imageUpdate: { id: string } }>({
-        mutation: mutations.IMAGE_UPDATE,
-        variables,
-        signal,
-      });
-      
-      if (this.isAborted(signal)) return 0;
-
-      // ImageUpdateResponse doesn't include rating100, so we return the value we set
-      return rating100;
-    } catch (error) {
-      if (isAbortError(error) || this.isAborted(signal)) {
-        return 0;
-      }
-      this.logError('updateImageRating', error);
-      throw error;
-    }
+    const rating100 = this.validateAndNormalizeRating('updateImageRating', imageId, rating10);
+    return this.performRatingMutation<{ imageUpdate: { id: string } }>('updateImageRating', imageId, rating100, mutations.IMAGE_UPDATE, signal);
   }
 
   /**

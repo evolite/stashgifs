@@ -110,14 +110,7 @@ export class AudioManager {
       return;
     }
     // Priority 1: Hovered video (highest priority)
-    const hoveredId = this.getHoveredPostId ? this.getHoveredPostId() : this.hoveredPostId;
-    if (hoveredId) {
-      const entry = this.entries.get(hoveredId);
-      if (entry?.player && entry.isVisible && entry.player.isPlaying()) {
-        this.setAudioOwner(hoveredId, AudioPriority.HOVER);
-        return;
-      }
-    }
+    if (this.trySetAudioForHoveredPost()) return;
 
     // Priority 2: Manually started videos
     for (const postId of this.manuallyStartedVideos) {
@@ -139,6 +132,22 @@ export class AudioManager {
     this.setAudioOwner(undefined, AudioPriority.NONE);
   }
 
+  /**
+   * Try to set audio owner to the hovered post if it's visible and playing
+   * @returns true if audio was set to hovered post
+   */
+  private trySetAudioForHoveredPost(): boolean {
+    const hoveredId = this.getHoveredPostId ? this.getHoveredPostId() : this.hoveredPostId;
+    if (hoveredId) {
+      const entry = this.entries.get(hoveredId);
+      if (entry?.player && entry.isVisible && entry.player.isPlaying()) {
+        this.setAudioOwner(hoveredId, AudioPriority.HOVER);
+        return true;
+      }
+    }
+    return false;
+  }
+
   private isDesktopNonReelMode(): boolean {
     if (isMobileDevice()) {
       return false;
@@ -158,14 +167,7 @@ export class AudioManager {
   }
 
   private applyDesktopNonReelAudioFocus(): void {
-    const hoveredId = this.getHoveredPostId ? this.getHoveredPostId() : this.hoveredPostId;
-    if (hoveredId) {
-      const entry = this.entries.get(hoveredId);
-      if (entry?.player && entry.isVisible && entry.player.isPlaying()) {
-        this.setAudioOwner(hoveredId, AudioPriority.HOVER);
-        return;
-      }
-    }
+    if (this.trySetAudioForHoveredPost()) return;
 
     const lastAudible = this.getLastAudibleCandidate();
     if (lastAudible) {

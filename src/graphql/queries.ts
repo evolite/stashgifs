@@ -19,7 +19,7 @@ export const GET_UI_CONFIGURATION = `
 /**
  * Check if tags have markers
  */
-export const CHECK_TAGS_HAVE_MARKERS = `
+const CHECK_TAGS_HAVE_MARKERS = `
   query CheckTagsHaveMarkers($scene_marker_filter: SceneMarkerFilterType) {
     findSceneMarkers(scene_marker_filter: $scene_marker_filter) {
       count
@@ -147,7 +147,7 @@ export const FIND_PERFORMER = `
 /**
  * Find a single scene
  */
-export const FIND_SCENE = `
+const FIND_SCENE = `
   ${SceneFields}
   query FindScene($id: ID!) {
     findScene(id: $id) {

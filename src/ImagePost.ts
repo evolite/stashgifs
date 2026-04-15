@@ -21,9 +21,6 @@ export class ImagePost extends BasePost {
   protected readonly data: ImagePostData;
   private player?: ImagePlayer;
   private isLoaded: boolean = false;
-  
-  private playerContainer?: HTMLElement;
-  private footer?: HTMLElement;
 
   
 
@@ -45,10 +42,7 @@ export class ImagePost extends BasePost {
   ) {
     super(container, options);
     this.data = data;
-    this.oCount = this.data.image.o_counter || 0;
-    this.ratingSystemConfig = options?.ratingSystemConfig;
-    this.isReelMode = options?.reelMode === true;
-
+    this.initImagePostOptions(this.data.image.o_counter, options?.ratingSystemConfig, options?.reelMode);
     this.render();
   }
 
@@ -63,19 +57,7 @@ export class ImagePost extends BasePost {
    * Render the complete image post structure
    */
   private render(): void {
-    const { header, playerContainer, footer } = this.renderBasePost({
-      className: 'image-post',
-      postId: this.data.image.id,
-      createHeader: () => this.createHeader(),
-      createPlayerContainer: () => this.createPlayerContainer(),
-      createFooter: () => this.createFooter()
-    });
-    this.playerContainer = playerContainer;
-    this.footer = footer;
-
-    if (this.isReelMode) {
-      this.applyReelModeLayout({ header, playerContainer, footer });
-    }
+    this.renderImageBasedPost('image-post', this.data.image.id, () => this.createPlayerContainer(), () => this.createFooter());
   }
 
   /**
@@ -180,27 +162,7 @@ export class ImagePost extends BasePost {
     const { footer, buttonGroup } = this.buildFooterContainer();
     this.buttonGroup = buttonGroup;
 
-    // Heart button (favorite)
-    if (this.favoritesManager) {
-      this.heartButton = this.createHeartButton();
-      buttonGroup.appendChild(this.heartButton);
-    }
-
-    // Add tag button
-    if (this.api) {
-      this.addTagButton = this.createAddTagButton('Add tag to image');
-      buttonGroup.appendChild(this.addTagButton);
-    }
-
-    // O-count button
-    if (this.api) {
-      this.oCountButton = this.createOCountButton();
-      buttonGroup.appendChild(this.oCountButton);
-    }
-
-    // Rating control
-    const ratingControl = this.createRatingSection();
-    buttonGroup.appendChild(ratingControl);
+    this.appendCommonImageFooterButtons(buttonGroup, this.data.image.id);
 
     // Image button (open in Stash)
     const imageBtn = this.createImageButton(this.data.image.id);
@@ -224,14 +186,10 @@ export class ImagePost extends BasePost {
     const newOCount = await this.api.incrementImageOCount(this.data.image.id);
     this.oCount = newOCount;
     this.data.image.o_counter = newOCount;
-    // ImagePost-specific: adjust padding for 3-digit numbers
+    // Adjust padding for 3-digit numbers
     if (this.oCountButton) {
       const digitCount = this.oCount > 0 ? this.oCount.toString().length : 0;
-      if (digitCount >= 3) {
-        this.oCountButton.style.paddingRight = `${OCOUNT_THREE_DIGIT_PADDING}px`;
-      } else {
-        this.oCountButton.style.paddingRight = `${OCOUNT_DEFAULT_PADDING}px`;
-      }
+      this.oCountButton.style.paddingRight = `${digitCount >= 3 ? OCOUNT_THREE_DIGIT_PADDING : OCOUNT_DEFAULT_PADDING}px`;
     }
   }
 
@@ -285,20 +243,7 @@ export class ImagePost extends BasePost {
    * Destroy the post
    */
   destroy(): void {
-    // Close dialogs if open
-    if (this.addTagDialogState.isOpen) {
-      this.closeAddTagDialogBase({ state: this.addTagDialogState });
-    }
-
-    // Clean up timers
-    if (this.addTagDialogState.autocompleteDebounceTimer) {
-      clearTimeout(this.addTagDialogState.autocompleteDebounceTimer);
-      this.addTagDialogState.autocompleteDebounceTimer = undefined;
-    }
-    if (this.addTagDialogState.tagSearchLoadingTimer) {
-      clearTimeout(this.addTagDialogState.tagSearchLoadingTimer);
-      this.addTagDialogState.tagSearchLoadingTimer = undefined;
-    }
+    this.cleanupAddTagDialogState();
 
     if (this.player) {
       this.player.destroy();
@@ -306,7 +251,6 @@ export class ImagePost extends BasePost {
     }
     this.isLoaded = false;
     super.destroy();
-    // Remove the entire container from the DOM so stale cards don't linger
     this.container?.remove();
   }
 }

@@ -6,7 +6,7 @@
 import { INFO_SVG } from './icons.js';
 import { FeedSettings } from './types.js';
 import * as version from './version.js';
-import { THEME, THEME_DEFAULTS } from './utils.js';
+import { THEME, THEME_DEFAULTS, normalizeHexColor } from './utils.js';
 
 export class SettingsPage {
   private readonly container: HTMLElement;
@@ -338,13 +338,6 @@ export class SettingsPage {
     contentWrapper.appendChild(themeContent);
     modal.appendChild(contentWrapper);
 
-    const normalizeHexColor = (value: string | undefined, fallback: string): string => {
-      if (!value) return fallback;
-      const trimmed = value.trim();
-      const normalized = trimmed.startsWith('#') ? trimmed : `#${trimmed}`;
-      return /^#[0-9a-fA-F]{6}$/.test(normalized) ? normalized.toUpperCase() : fallback;
-    };
-
     // Theme Section
     const themeSection = document.createElement('div');
     themeSection.style.marginBottom = '24px';
@@ -587,19 +580,21 @@ export class SettingsPage {
       );
     };
 
-    const applyThemePreset = (preset: typeof themePresets[number]) => {
-      backgroundRow.input.value = preset.colors.background;
-      primaryRow.input.value = preset.colors.primary;
-      secondaryRow.input.value = preset.colors.secondary;
-      accentRow.input.value = preset.colors.accent;
-
+    const applyThemeColors = (colors: { background: string; primary: string; secondary: string; accent: string }) => {
+      backgroundRow.input.value = colors.background;
+      primaryRow.input.value = colors.primary;
+      secondaryRow.input.value = colors.secondary;
+      accentRow.input.value = colors.accent;
       updateThemeLabel(backgroundRow.input, backgroundRow.valueLabel);
       updateThemeLabel(primaryRow.input, primaryRow.valueLabel);
       updateThemeLabel(secondaryRow.input, secondaryRow.valueLabel);
       updateThemeLabel(accentRow.input, accentRow.valueLabel);
-
       setPresetSelectValue();
       this.saveSettings();
+    };
+
+    const applyThemePreset = (preset: typeof themePresets[number]) => {
+      applyThemeColors(preset.colors);
     };
 
     presetRow.select.addEventListener('change', () => {
@@ -638,16 +633,12 @@ export class SettingsPage {
     });
 
     resetButton.addEventListener('click', () => {
-      backgroundRow.input.value = THEME_DEFAULTS.backgroundPrimary;
-      primaryRow.input.value = THEME_DEFAULTS.surface;
-      secondaryRow.input.value = THEME_DEFAULTS.backgroundSecondary;
-      accentRow.input.value = THEME_DEFAULTS.accentPrimary;
-      updateThemeLabel(backgroundRow.input, backgroundRow.valueLabel);
-      updateThemeLabel(primaryRow.input, primaryRow.valueLabel);
-      updateThemeLabel(secondaryRow.input, secondaryRow.valueLabel);
-      updateThemeLabel(accentRow.input, accentRow.valueLabel);
-      setPresetSelectValue();
-      this.saveSettings();
+      applyThemeColors({
+        background: THEME_DEFAULTS.backgroundPrimary,
+        primary: THEME_DEFAULTS.surface,
+        secondary: THEME_DEFAULTS.backgroundSecondary,
+        accent: THEME_DEFAULTS.accentPrimary
+      });
     });
 
     themeSection.appendChild(resetButton);
@@ -1462,91 +1453,80 @@ export class SettingsPage {
   /**
    * Save settings automatically when toggles/inputs change
    */
-  private saveSettings(): void {
-    const fileTypesInput = (this as any).fileTypesInput as HTMLInputElement | undefined;
-    const maxDurationInput = (this as any).maxDurationInput as HTMLInputElement | undefined;
-    const includeImagesToggle = (this as any).includeImagesToggle as HTMLInputElement | undefined;
-    const imagesOnlyToggle = (this as any).imagesOnlyToggle as HTMLInputElement | undefined;
-    const shortFormIncludeToggle = (this as any).shortFormIncludeToggle as HTMLInputElement | undefined;
-    const shortFormOnlyToggle = (this as any).shortFormOnlyToggle as HTMLInputElement | undefined;
-    const reelModeToggle = (this as any).reelModeToggle as HTMLInputElement | undefined;
-    const portraitToggle = (this as any).portraitToggle as HTMLInputElement | undefined;
-    const landscapeToggle = (this as any).landscapeToggle as HTMLInputElement | undefined;
-    const themeBackgroundInput = (this as any).themeBackgroundInput as HTMLInputElement | undefined;
-    const themePrimaryInput = (this as any).themePrimaryInput as HTMLInputElement | undefined;
-    const themeSecondaryInput = (this as any).themeSecondaryInput as HTMLInputElement | undefined;
-    const themeAccentInput = (this as any).themeAccentInput as HTMLInputElement | undefined;
-    const showVerifiedCheckmarksToggle = (this as any).showVerifiedCheckmarksToggle as HTMLInputElement | undefined;
-    const showProductionAgeToggle = (this as any).showProductionAgeToggle as HTMLInputElement | undefined;
-    const excludedTagsInput = (this as any).excludedTagsInput as HTMLInputElement | undefined;
+  private getFormInput(name: string): HTMLInputElement | undefined {
+    return (this as any)[name] as HTMLInputElement | undefined;
+  }
 
-    const seenHistorySizeInput = (this as any).seenHistorySizeInput as HTMLInputElement | undefined;
-    const contentLimitInput = (this as any).contentLimitInput as HTMLInputElement | undefined;
-
-    if (!fileTypesInput || !maxDurationInput || !includeImagesToggle || !imagesOnlyToggle ||
-        !shortFormIncludeToggle || !shortFormOnlyToggle || !reelModeToggle ||
-        !portraitToggle || !landscapeToggle ||
-        !themeBackgroundInput || !themePrimaryInput || !themeSecondaryInput || !themeAccentInput ||
-        !showVerifiedCheckmarksToggle || !showProductionAgeToggle || !excludedTagsInput || !seenHistorySizeInput ||
-        !contentLimitInput) {
-      return; // Settings not fully initialized yet
+  private collectFormInputs(): Record<string, HTMLInputElement> | undefined {
+    const inputNames = [
+      'fileTypesInput', 'maxDurationInput', 'includeImagesToggle', 'imagesOnlyToggle',
+      'shortFormIncludeToggle', 'shortFormOnlyToggle', 'reelModeToggle',
+      'portraitToggle', 'landscapeToggle',
+      'themeBackgroundInput', 'themePrimaryInput', 'themeSecondaryInput', 'themeAccentInput',
+      'showVerifiedCheckmarksToggle', 'showProductionAgeToggle', 'excludedTagsInput',
+      'seenHistorySizeInput', 'contentLimitInput',
+    ];
+    const inputs: Record<string, HTMLInputElement> = {};
+    for (const name of inputNames) {
+      const el = this.getFormInput(name);
+      if (!el) return undefined;
+      inputs[name] = el;
     }
+    return inputs;
+  }
 
-    const extensions = fileTypesInput.value
+  private parseOrientationFilter(portraitChecked: boolean, landscapeChecked: boolean): Array<'portrait' | 'landscape'> | undefined {
+    const selected: Array<'portrait' | 'landscape'> = [];
+    if (portraitChecked) selected.push('portrait');
+    if (landscapeChecked) selected.push('landscape');
+    return selected.length === 0 || selected.length === 2 ? undefined : selected;
+  }
+
+  private saveSettings(): void {
+    const inputs = this.collectFormInputs();
+    if (!inputs) return;
+
+    const extensions = inputs.fileTypesInput.value
       .split(',')
       .map(ext => ext.trim())
       .filter(ext => ext.length > 0)
       .map(ext => ext.startsWith('.') ? ext : `.${ext}`);
 
-    const maxDuration = Number.parseInt(maxDurationInput.value, 10);
+    const maxDuration = Number.parseInt(inputs.maxDurationInput.value, 10);
     const validMaxDuration = !Number.isNaN(maxDuration) && maxDuration > 0 ? maxDuration : 120;
 
-    const excludedTagNames = excludedTagsInput.value
+    const excludedTagNames = inputs.excludedTagsInput.value
       .split(',')
       .map((name) => name.trim())
       .filter((name) => name.length > 0);
 
-    const selectedOrientations: Array<'portrait' | 'landscape'> = [];
-    if (portraitToggle.checked) {
-      selectedOrientations.push('portrait');
-    }
-    if (landscapeToggle.checked) {
-      selectedOrientations.push('landscape');
-    }
-    const orientationFilter = selectedOrientations.length === 0 || selectedOrientations.length === 2
-      ? undefined
-      : selectedOrientations;
-
-
-    const galleryOnlyToggle = (this as any).galleryOnlyToggle as HTMLInputElement | undefined;
+    const galleryOnlyToggle = this.getFormInput('galleryOnlyToggle');
     const gallerySelectedIds = (this as any).gallerySelectedIds as Set<string> | undefined;
 
     const newSettings: Partial<FeedSettings> = {
-      includeImagesInFeed: includeImagesToggle.checked,
+      includeImagesInFeed: inputs.includeImagesToggle.checked,
       enabledFileTypes: extensions.length > 0 ? extensions : ['.jpg', '.png', '.gif', '.mp4', '.m4v', '.webm'],
-      imagesOnly: imagesOnlyToggle.checked,
-      shortFormInHDMode: shortFormIncludeToggle.checked,
-      shortFormInNonHDMode: shortFormIncludeToggle.checked,
+      imagesOnly: inputs.imagesOnlyToggle.checked,
+      shortFormInHDMode: inputs.shortFormIncludeToggle.checked,
+      shortFormInNonHDMode: inputs.shortFormIncludeToggle.checked,
       shortFormMaxDuration: validMaxDuration,
-      shortFormOnly: shortFormOnlyToggle.checked,
-      reelMode: reelModeToggle.checked,
-      snapToCards: reelModeToggle.checked,
-      orientationFilter,
-      themeBackground: themeBackgroundInput.value,
-      themePrimary: themePrimaryInput.value,
-      themeSecondary: themeSecondaryInput.value,
-      themeAccent: themeAccentInput.value,
-      showVerifiedCheckmarks: showVerifiedCheckmarksToggle.checked,
-      showProductionAge: showProductionAgeToggle.checked,
+      shortFormOnly: inputs.shortFormOnlyToggle.checked,
+      reelMode: inputs.reelModeToggle.checked,
+      snapToCards: inputs.reelModeToggle.checked,
+      orientationFilter: this.parseOrientationFilter(inputs.portraitToggle.checked, inputs.landscapeToggle.checked),
+      themeBackground: inputs.themeBackgroundInput.value,
+      themePrimary: inputs.themePrimaryInput.value,
+      themeSecondary: inputs.themeSecondaryInput.value,
+      themeAccent: inputs.themeAccentInput.value,
+      showVerifiedCheckmarks: inputs.showVerifiedCheckmarksToggle.checked,
+      showProductionAge: inputs.showProductionAgeToggle.checked,
       excludedTagNames,
       imagesInGalleryOnly: galleryOnlyToggle?.checked ?? false,
       galleryIds: gallerySelectedIds ? [...gallerySelectedIds] : [],
-      seenHistorySize: Math.max(0, Math.min(2000, Number.parseInt(seenHistorySizeInput.value, 10) || 0)),
-      contentLimit: Math.max(100, Math.min(50000, Number.parseInt(contentLimitInput.value, 10) || 5000)),
+      seenHistorySize: Math.max(0, Math.min(2000, Number.parseInt(inputs.seenHistorySizeInput.value, 10) || 0)),
+      contentLimit: Math.max(100, Math.min(50000, Number.parseInt(inputs.contentLimitInput.value, 10) || 5000)),
     };
 
-    // Notify parent to update settings and reload feed if needed
-    // Parent (FeedContainer) will handle saving to localStorage
     if (this.onSave) {
       this.onSave(newSettings);
     }

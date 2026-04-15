@@ -40,6 +40,48 @@ export abstract class VideoPostBase extends BasePost {
   protected abstract getEntityLogId(): string;
   protected abstract getHQButtonOffLabel(): string;
 
+  protected createVideoPlayerContainer(aspectRatio: number | undefined, aspectRatioClass: string, posterUrl: string | undefined): HTMLElement {
+    const container = document.createElement('div');
+    container.className = 'video-post__player';
+    container.style.position = 'relative';
+    container.style.width = '100%';
+
+    if (aspectRatio && Number.isFinite(aspectRatio)) {
+      this.setAspectRatioMetadata(container, aspectRatio);
+      container.style.aspectRatio = `${aspectRatio}`;
+    }
+    container.classList.add(aspectRatioClass);
+
+    this.appendPosterLayer(container, this.isReelMode ? posterUrl : undefined);
+
+    const loading = document.createElement('div');
+    loading.className = 'video-post__loading';
+    const spinner = document.createElement('div');
+    spinner.className = 'spinner';
+    loading.appendChild(spinner);
+    loading.style.display = this.isLoaded ? 'none' : 'flex';
+    loading.style.zIndex = '3';
+    container.appendChild(loading);
+    this.videoLoadingIndicator = loading;
+
+    return container;
+  }
+
+  protected attemptReloadIfUnloaded(): NativeVideoPlayer | undefined {
+    const player = this.getPlayer();
+    if (!player?.getIsUnloaded()) return undefined;
+
+    player.reload();
+    this.isLoaded = true;
+    this.hasRenderedVideo = false;
+    this.showPosterLayer();
+    const container = this.playerContainer || this.container.querySelector<HTMLElement>('.video-post__player');
+    if (container) {
+      this.hideMediaWhenReady(player, container);
+    }
+    return player;
+  }
+
   protected clearLoadErrorCheckTimeout(): void {
     if (this.loadErrorCheckTimeoutId) {
       clearTimeout(this.loadErrorCheckTimeoutId);

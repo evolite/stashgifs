@@ -113,7 +113,7 @@ export function createGraphQLError(
 /**
  * Helper to handle GraphQL errors consistently
  */
-export function handleGraphQLError(
+function handleGraphQLError(
   error: unknown,
   context?: string
 ): never {

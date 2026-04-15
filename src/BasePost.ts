@@ -29,7 +29,7 @@ interface HoverHandlers {
   mouseleave: () => void;
 }
 
-export interface AddTagDialogState {
+interface AddTagDialogState {
   dialog?: HTMLElement;
   input?: HTMLInputElement;
   suggestions?: HTMLElement;
@@ -97,6 +97,8 @@ export abstract class BasePost {
   protected oCountButton?: HTMLElement;
   protected oCount: number = 0;
   protected isReelMode: boolean = false;
+  protected playerContainer?: HTMLElement;
+  protected footer?: HTMLElement;
   protected showVerifiedCheckmarks: boolean = true;
   protected showProductionAge: boolean = false;
   // Performer overlay properties
@@ -168,6 +170,32 @@ export abstract class BasePost {
     this.container.appendChild(footer);
 
     return { header, playerContainer, footer };
+  }
+
+  protected initImagePostOptions(
+    oCounter: number | undefined | null,
+    ratingSystemConfig?: { type?: string; starPrecision?: string } | null,
+    reelMode?: boolean
+  ): void {
+    this.oCount = oCounter || 0;
+    this.ratingSystemConfig = ratingSystemConfig;
+    this.isReelMode = reelMode === true;
+  }
+
+  protected renderImageBasedPost(className: string, postId: string, createPlayerContainer: () => HTMLElement, createFooter: () => HTMLElement): void {
+    const { header, playerContainer, footer } = this.renderBasePost({
+      className,
+      postId,
+      createHeader: () => this.createHeader(),
+      createPlayerContainer,
+      createFooter,
+    });
+    this.playerContainer = playerContainer;
+    this.footer = footer;
+
+    if (this.isReelMode) {
+      this.applyReelModeLayout({ header, playerContainer, footer });
+    }
   }
 
   destroy(): void {
@@ -614,6 +642,37 @@ export abstract class BasePost {
     return { footer, info, row, buttonGroup };
   }
 
+  protected appendCommonImageFooterButtons(buttonGroup: HTMLElement, imageId: string): void {
+    if (this.favoritesManager) {
+      this.heartButton = this.createHeartButton();
+      buttonGroup.appendChild(this.heartButton);
+    }
+    if (this.api) {
+      this.addTagButton = this.createAddTagButton('Add tag to image');
+      buttonGroup.appendChild(this.addTagButton);
+    }
+    if (this.api) {
+      this.oCountButton = this.createOCountButton();
+      buttonGroup.appendChild(this.oCountButton);
+    }
+    const ratingControl = this.createRatingSection();
+    buttonGroup.appendChild(ratingControl);
+  }
+
+  protected cleanupAddTagDialogState(): void {
+    if (this.addTagDialogState.isOpen) {
+      this.closeAddTagDialogBase({ state: this.addTagDialogState });
+    }
+    if (this.addTagDialogState.autocompleteDebounceTimer) {
+      clearTimeout(this.addTagDialogState.autocompleteDebounceTimer);
+      this.addTagDialogState.autocompleteDebounceTimer = undefined;
+    }
+    if (this.addTagDialogState.tagSearchLoadingTimer) {
+      clearTimeout(this.addTagDialogState.tagSearchLoadingTimer);
+      this.addTagDialogState.tagSearchLoadingTimer = undefined;
+    }
+  }
+
   /**
    * Setup scroll listener to hide performer and tag overlays when user scrolls
    */
@@ -1010,12 +1069,117 @@ export abstract class BasePost {
   /**
    * Create image section for performer overlay (compact headshot on left, 2:3 aspect ratio matching 1280x1920)
    */
-  private createPerformerOverlayImageSection(performerData: PerformerExtended): HTMLElement {
+  /**
+   * Create a styled overlay container with common layout and event handling
+   */
+  private createOverlayContainer(
+    className: string,
+    maxWidth: string,
+    callbacks: {
+      onMouseEnter: () => void;
+      onMouseLeave: () => void;
+      onClickBackground: () => void;
+    },
+    extraStyles?: Partial<CSSStyleDeclaration>
+  ): HTMLElement {
+    const overlay = document.createElement('div');
+    overlay.className = className;
+    overlay.style.position = 'fixed';
+    overlay.style.zIndex = '10000';
+    overlay.style.backgroundColor = THEME.colors.overlay;
+    overlay.style.border = `1px solid ${THEME.colors.border}`;
+    overlay.style.borderRadius = THEME.radius.card;
+    overlay.style.boxShadow = '0 8px 32px rgba(0, 0, 0, 0.5)';
+    overlay.style.display = 'flex';
+    overlay.style.flexDirection = 'row';
+    overlay.style.gap = '12px';
+    overlay.style.padding = THEME.spacing.cardPadding;
+    overlay.style.width = 'auto';
+    overlay.style.maxWidth = maxWidth;
+    overlay.style.opacity = '0';
+    overlay.style.transition = 'opacity 0.2s ease';
+    overlay.style.pointerEvents = 'auto';
+    if (extraStyles) {
+      Object.assign(overlay.style, extraStyles);
+    }
+
+    overlay.addEventListener('mouseenter', callbacks.onMouseEnter);
+    overlay.addEventListener('mouseleave', callbacks.onMouseLeave);
+    overlay.addEventListener('click', (e) => {
+      const target = e.target as HTMLElement;
+      if (target === overlay || (!target.closest('a') && !target.closest('button'))) {
+        callbacks.onClickBackground();
+      }
+    });
+
+    return overlay;
+  }
+
+  /**
+   * Create a flex column content section for overlays
+   */
+  private createOverlayContentSection(): HTMLElement {
+    const contentSection = document.createElement('div');
+    contentSection.style.display = 'flex';
+    contentSection.style.flexDirection = 'column';
+    contentSection.style.flex = '1';
+    contentSection.style.minWidth = '0';
+    return contentSection;
+  }
+
+  /**
+   * Create a name link with hover effects for overlays
+   */
+  private createOverlayNameLink(href: string, displayName: string): HTMLAnchorElement {
+    const nameLink = document.createElement('a');
+    nameLink.href = href;
+    nameLink.target = '_blank';
+    nameLink.rel = 'noopener noreferrer';
+    nameLink.style.display = 'flex';
+    nameLink.style.alignItems = 'center';
+    nameLink.style.gap = '4px';
+    nameLink.style.textDecoration = 'none';
+    nameLink.style.color = THEME.colors.textPrimary;
+    nameLink.style.cursor = 'pointer';
+    nameLink.addEventListener('mouseenter', () => {
+      nameLink.style.color = THEME.colors.accentPrimary;
+    });
+    nameLink.addEventListener('mouseleave', () => {
+      nameLink.style.color = THEME.colors.textPrimary;
+    });
+
+    const name = document.createElement('h3');
+    name.textContent = displayName;
+    name.style.margin = '0';
+    name.style.fontSize = THEME.typography.sizeTitle;
+    name.style.fontWeight = THEME.typography.weightTitle;
+    name.style.lineHeight = THEME.typography.lineHeightTight;
+    nameLink.appendChild(name);
+
+    const externalIcon = document.createElement('span');
+    externalIcon.innerHTML = EXTERNAL_LINK_SVG;
+    externalIcon.style.display = 'inline-flex';
+    externalIcon.style.alignItems = 'center';
+    externalIcon.style.opacity = '0.7';
+    externalIcon.style.flexShrink = '0';
+    externalIcon.style.color = THEME.colors.accentPrimary;
+    nameLink.appendChild(externalIcon);
+
+    return nameLink;
+  }
+
+  /**
+   * Create a styled image section container for overlays
+   */
+  private createOverlayImageSection(
+    width: string, height: string, fallbackFontSize: string,
+    imagePath: string | undefined, name: string, logContext: string
+  ): HTMLElement {
     const imageSection = document.createElement('div');
-    imageSection.style.width = '160px';
-    imageSection.style.height = '240px';
-    imageSection.style.minWidth = '160px';
-    imageSection.style.minHeight = '240px';
+    imageSection.style.width = width;
+    imageSection.style.height = height;
+    imageSection.style.minWidth = width;
+    imageSection.style.minHeight = height;
     imageSection.style.backgroundColor = THEME.colors.backgroundSecondary;
     imageSection.style.display = 'flex';
     imageSection.style.alignItems = 'center';
@@ -1023,30 +1187,34 @@ export abstract class BasePost {
     imageSection.style.overflow = 'hidden';
     imageSection.style.borderRadius = '8px';
     imageSection.style.flexShrink = '0';
-    imageSection.style.position = 'relative';
 
-    if (performerData.image_path) {
-      const imageSrc = normalizeMediaUrl(performerData.image_path);
+    if (imagePath) {
+      const imageSrc = normalizeMediaUrl(imagePath);
       if (imageSrc) {
         const img = document.createElement('img');
         img.src = imageSrc;
-        img.alt = performerData.name;
+        img.alt = name;
         img.style.width = '100%';
         img.style.height = '100%';
         img.style.objectFit = 'cover';
         img.style.objectPosition = 'center center';
         imageSection.appendChild(img);
-      } else {
-        console.warn('BasePost: Invalid performer overlay image URL', { url: performerData.image_path, performer: performerData.name });
-        imageSection.textContent = performerData.name.charAt(0).toUpperCase();
-        imageSection.style.fontSize = '64px';
-        imageSection.style.color = THEME.colors.textMuted;
+        return imageSection;
       }
-    } else {
-      imageSection.textContent = performerData.name.charAt(0).toUpperCase();
-      imageSection.style.fontSize = '64px';
-      imageSection.style.color = THEME.colors.textMuted;
+      console.warn(`BasePost: Invalid ${logContext} overlay image URL`, { url: imagePath, name });
     }
+    imageSection.textContent = name.charAt(0).toUpperCase();
+    imageSection.style.fontSize = fallbackFontSize;
+    imageSection.style.color = THEME.colors.textMuted;
+    return imageSection;
+  }
+
+  private createPerformerOverlayImageSection(performerData: PerformerExtended): HTMLElement {
+    const imageSection = this.createOverlayImageSection(
+      '160px', '240px', '64px',
+      performerData.image_path, performerData.name, 'performer'
+    );
+    imageSection.style.position = 'relative';
 
     // Add country flag overlay in bottom right corner
     if (performerData.country) {
@@ -1090,40 +1258,7 @@ export abstract class BasePost {
     leftGroup.style.alignItems = 'center';
     leftGroup.style.gap = '6px';
 
-    const nameLink = document.createElement('a');
-    nameLink.href = this.getPerformerLink(performerData.id);
-    nameLink.target = '_blank';
-    nameLink.rel = 'noopener noreferrer';
-    nameLink.style.display = 'flex';
-    nameLink.style.alignItems = 'center';
-    nameLink.style.gap = '4px';
-    nameLink.style.textDecoration = 'none';
-    nameLink.style.color = THEME.colors.textPrimary;
-    nameLink.style.cursor = 'pointer';
-    nameLink.addEventListener('mouseenter', () => {
-      nameLink.style.color = THEME.colors.accentPrimary;
-    });
-    nameLink.addEventListener('mouseleave', () => {
-      nameLink.style.color = THEME.colors.textPrimary;
-    });
-
-    const name = document.createElement('h3');
-    name.textContent = performerData.name;
-    name.style.margin = '0';
-    name.style.fontSize = THEME.typography.sizeTitle;
-    name.style.fontWeight = THEME.typography.weightTitle;
-    name.style.lineHeight = THEME.typography.lineHeightTight;
-    nameLink.appendChild(name);
-
-    const externalIcon = document.createElement('span');
-    externalIcon.innerHTML = EXTERNAL_LINK_SVG;
-    externalIcon.style.display = 'inline-flex';
-    externalIcon.style.alignItems = 'center';
-    externalIcon.style.opacity = '0.7';
-    externalIcon.style.flexShrink = '0';
-    externalIcon.style.color = THEME.colors.accentPrimary;
-    nameLink.appendChild(externalIcon);
-
+    const nameLink = this.createOverlayNameLink(this.getPerformerLink(performerData.id), performerData.name);
     leftGroup.appendChild(nameLink);
 
     nameRow.appendChild(leftGroup);
@@ -1461,72 +1596,28 @@ export abstract class BasePost {
    * Create performer overlay card (compact horizontal layout)
    */
   private createPerformerOverlay(performerData: PerformerExtended, onRemove?: () => Promise<boolean>): HTMLElement {
-    const overlay = document.createElement('div');
-    overlay.className = 'performer-overlay';
-    overlay.style.position = 'fixed';
-    overlay.style.zIndex = '10000';
-    overlay.style.backgroundColor = THEME.colors.overlay;
-    overlay.style.border = `1px solid ${THEME.colors.border}`;
-    overlay.style.borderRadius = THEME.radius.card;
-    overlay.style.boxShadow = '0 8px 32px rgba(0, 0, 0, 0.5)';
-    overlay.style.display = 'flex';
-    overlay.style.flexDirection = 'row';
-    overlay.style.gap = '12px';
-    overlay.style.padding = THEME.spacing.cardPadding;
-    overlay.style.width = 'auto';
-    overlay.style.maxWidth = '480px';
-    overlay.style.maxHeight = '80vh';
-    overlay.style.overflowY = 'auto';
-    overlay.style.opacity = '0';
-    overlay.style.transition = 'opacity 0.2s ease';
-    overlay.style.pointerEvents = 'auto';
+    const overlay = this.createOverlayContainer('performer-overlay', '480px', {
+      onMouseEnter: () => {
+        if (this.performerOverlayHideTimeout) {
+          clearTimeout(this.performerOverlayHideTimeout);
+          this.performerOverlayHideTimeout = undefined;
+        }
+      },
+      onMouseLeave: () => this.hidePerformerOverlay(),
+      onClickBackground: () => this.hidePerformerOverlay(true),
+    }, { maxHeight: '80vh', overflowY: 'auto' });
 
-    // Keep overlay visible when hovering over it
-    // Note: Don't clear timeout here - the timeout is for showing the overlay, not hiding it
-    overlay.addEventListener('mouseenter', () => {
-      // Cancel any pending hide timeout when hovering over overlay
-      if (this.performerOverlayHideTimeout) {
-        clearTimeout(this.performerOverlayHideTimeout);
-        this.performerOverlayHideTimeout = undefined;
-      }
-    });
-    overlay.addEventListener('mouseleave', () => {
-      this.hidePerformerOverlay();
-    });
+    overlay.appendChild(this.createPerformerOverlayImageSection(performerData));
 
-    // Close overlay when clicking on overlay background (not on interactive elements)
-    overlay.addEventListener('click', (e) => {
-      const target = e.target as HTMLElement;
-      // Only close if clicking on the overlay itself or non-interactive areas
-      // Don't close if clicking on links, buttons, or other interactive elements
-      if (target === overlay || (!target.closest('a') && !target.closest('button'))) {
-        this.hidePerformerOverlay(true);
-      }
-    });
+    const contentSection = this.createOverlayContentSection();
+    contentSection.appendChild(this.createPerformerOverlayNameRow(performerData, onRemove));
 
-    // Image section (left side)
-    const imageSection = this.createPerformerOverlayImageSection(performerData);
-    overlay.appendChild(imageSection);
-
-    // Content section (right side)
-    const contentSection = document.createElement('div');
-    contentSection.style.display = 'flex';
-    contentSection.style.flexDirection = 'column';
-    contentSection.style.flex = '1';
-    contentSection.style.minWidth = '0';
-
-    // Name and favorite
-    const nameRow = this.createPerformerOverlayNameRow(performerData, onRemove);
-    contentSection.appendChild(nameRow);
-
-    // Metadata
     const metadata = this.buildPerformerMetadata(performerData);
     const metadataSection = this.createPerformerOverlayMetadata(metadata);
     if (metadataSection) {
       contentSection.appendChild(metadataSection);
     }
 
-    // Tags
     const tagsSection = this.createPerformerOverlayTags(performerData);
     if (tagsSection) {
       contentSection.appendChild(tagsSection);
@@ -1721,38 +1812,10 @@ export abstract class BasePost {
    * Create image section for tag overlay (compact square image on left)
    */
   private createTagOverlayImageSection(tagData: { id: string; name: string; image_path?: string }): HTMLElement {
-    const imageSection = document.createElement('div');
-    imageSection.style.width = '64px';
-    imageSection.style.height = '64px';
-    imageSection.style.minWidth = '64px';
-    imageSection.style.minHeight = '64px';
-    imageSection.style.backgroundColor = THEME.colors.backgroundSecondary;
-    imageSection.style.display = 'flex';
-    imageSection.style.alignItems = 'center';
-    imageSection.style.justifyContent = 'center';
-    imageSection.style.overflow = 'hidden';
-    imageSection.style.borderRadius = '8px';
-    imageSection.style.flexShrink = '0';
-
-    if (tagData.image_path) {
-      const imageSrc = normalizeMediaUrl(tagData.image_path);
-      if (imageSrc) {
-        const img = document.createElement('img');
-        img.src = imageSrc;
-        img.alt = tagData.name;
-        img.style.width = '100%';
-        img.style.height = '100%';
-        img.style.objectFit = 'cover';
-        img.style.objectPosition = 'center center';
-        imageSection.appendChild(img);
-        return imageSection;
-      }
-      console.warn('BasePost: Invalid tag image URL', { url: tagData.image_path, tag: tagData.name });
-    }
-    imageSection.textContent = tagData.name.charAt(0).toUpperCase();
-    imageSection.style.fontSize = '32px';
-    imageSection.style.color = THEME.colors.textMuted;
-    return imageSection;
+    return this.createOverlayImageSection(
+      '64px', '64px', '32px',
+      tagData.image_path, tagData.name, 'tag'
+    );
   }
 
   /**
@@ -1765,39 +1828,7 @@ export abstract class BasePost {
     nameRow.style.gap = '6px';
     nameRow.style.marginBottom = '6px';
 
-    const nameLink = document.createElement('a');
-    nameLink.href = this.getTagLink(tagData.id);
-    nameLink.target = '_blank';
-    nameLink.rel = 'noopener noreferrer';
-    nameLink.style.display = 'flex';
-    nameLink.style.alignItems = 'center';
-    nameLink.style.gap = '4px';
-    nameLink.style.textDecoration = 'none';
-    nameLink.style.color = THEME.colors.textPrimary;
-    nameLink.style.cursor = 'pointer';
-    nameLink.addEventListener('mouseenter', () => {
-      nameLink.style.color = THEME.colors.accentPrimary;
-    });
-    nameLink.addEventListener('mouseleave', () => {
-      nameLink.style.color = THEME.colors.textPrimary;
-    });
-
-    const name = document.createElement('h3');
-    name.textContent = tagData.name;
-    name.style.margin = '0';
-    name.style.fontSize = '16px';
-    name.style.fontWeight = '600';
-    name.style.lineHeight = '1.2';
-    nameLink.appendChild(name);
-
-    const externalIcon = document.createElement('span');
-    externalIcon.innerHTML = EXTERNAL_LINK_SVG;
-    externalIcon.style.display = 'inline-flex';
-    externalIcon.style.alignItems = 'center';
-    externalIcon.style.opacity = '0.7';
-    externalIcon.style.flexShrink = '0';
-    nameLink.appendChild(externalIcon);
-
+    const nameLink = this.createOverlayNameLink(this.getTagLink(tagData.id), tagData.name);
     nameRow.appendChild(nameLink);
     return nameRow;
   }
@@ -1826,60 +1857,22 @@ export abstract class BasePost {
     tagData: { id: string; name: string; image_path?: string; description?: string },
     onRemove?: () => Promise<boolean>
   ): HTMLElement {
-    const overlay = document.createElement('div');
-    overlay.className = 'tag-overlay';
-    overlay.style.position = 'fixed';
-    overlay.style.zIndex = '10000';
-    overlay.style.backgroundColor = THEME.colors.overlay;
-    overlay.style.border = `1px solid ${THEME.colors.border}`;
-    overlay.style.borderRadius = THEME.radius.card;
-    overlay.style.boxShadow = '0 8px 32px rgba(0, 0, 0, 0.5)';
-    overlay.style.display = 'flex';
-    overlay.style.flexDirection = 'row';
-    overlay.style.gap = '12px';
-    overlay.style.padding = THEME.spacing.cardPadding;
-    overlay.style.width = 'auto';
-    overlay.style.maxWidth = '280px';
-    overlay.style.opacity = '0';
-    overlay.style.transition = 'opacity 0.2s ease';
-    overlay.style.pointerEvents = 'auto';
-
-    // Keep overlay visible when hovering over it
-    overlay.addEventListener('mouseenter', () => {
-      // Cancel any pending hide timeout when hovering over overlay
-      if (this.tagOverlayHideTimeout) {
-        clearTimeout(this.tagOverlayHideTimeout);
-        this.tagOverlayHideTimeout = undefined;
-      }
-    });
-    overlay.addEventListener('mouseleave', () => {
-      this.hideTagOverlay();
+    const overlay = this.createOverlayContainer('tag-overlay', '280px', {
+      onMouseEnter: () => {
+        if (this.tagOverlayHideTimeout) {
+          clearTimeout(this.tagOverlayHideTimeout);
+          this.tagOverlayHideTimeout = undefined;
+        }
+      },
+      onMouseLeave: () => this.hideTagOverlay(),
+      onClickBackground: () => this.hideTagOverlay(true),
     });
 
-    // Close overlay when clicking on overlay background (not on interactive elements)
-    overlay.addEventListener('click', (e) => {
-      const target = e.target as HTMLElement;
-      // Only close if clicking on the overlay itself or non-interactive areas
-      // Don't close if clicking on links, buttons, or other interactive elements
-      if (target === overlay || (!target.closest('a') && !target.closest('button'))) {
-        this.hideTagOverlay(true);
-      }
-    });
+    overlay.appendChild(this.createTagOverlayImageSection(tagData));
 
-    // Image section (left side)
-    const imageSection = this.createTagOverlayImageSection(tagData);
-    overlay.appendChild(imageSection);
+    const contentSection = this.createOverlayContentSection();
 
-    // Content section (right side)
-    const contentSection = document.createElement('div');
-    contentSection.style.display = 'flex';
-    contentSection.style.flexDirection = 'column';
-    contentSection.style.flex = '1';
-    contentSection.style.minWidth = '0';
-
-    // Name with link
     const nameRow = this.createTagOverlayNameRow(tagData);
-
     if (onRemove) {
       nameRow.style.justifyContent = 'space-between';
       const removeButton = this.createOverlayRemoveButton(
@@ -1890,10 +1883,8 @@ export abstract class BasePost {
       );
       nameRow.appendChild(removeButton);
     }
-
     contentSection.appendChild(nameRow);
 
-    // Description (optional)
     const descriptionSection = this.createTagOverlayDescription(tagData);
     if (descriptionSection) {
       contentSection.appendChild(descriptionSection);
@@ -2160,24 +2151,43 @@ export abstract class BasePost {
     return hashtag;
   }
 
-  protected buildImageHeader(options: {
-    performers?: Performer[];
-    tags?: Tag[];
-    favoriteTagName?: string;
-  }): HTMLElement {
+  protected createHeaderContainer(): HTMLElement {
     const header = document.createElement('div');
     header.className = 'video-post__header';
     header.style.padding = '8px 16px';
     header.style.marginBottom = '0';
     header.style.borderBottom = 'none';
+    return header;
+  }
+
+  protected createPerformersContainer(performerCount: number): HTMLElement {
+    const section = document.createElement('div');
+    section.className = 'video-post__performers';
+    if (performerCount === 2) {
+      section.style.gap = '12px';
+    }
+    return section;
+  }
+
+  protected applyReelModeTagStyles(tagsSection: HTMLElement): void {
+    tagsSection.style.display = 'flex';
+    tagsSection.style.flexWrap = 'wrap';
+    tagsSection.style.alignItems = 'center';
+    tagsSection.style.gap = '4px';
+    tagsSection.style.marginTop = '4px';
+    tagsSection.style.opacity = '0.85';
+  }
+
+  protected buildImageHeader(options: {
+    performers?: Performer[];
+    tags?: Tag[];
+    favoriteTagName?: string;
+  }): HTMLElement {
+    const header = this.createHeaderContainer();
 
     // Performer section - name and image
     if (options.performers?.length) {
-      const performersSection = document.createElement('div');
-      performersSection.className = 'video-post__performers';
-      if (options.performers.length === 2) {
-        performersSection.style.gap = '12px';
-      }
+      const performersSection = this.createPerformersContainer(options.performers.length);
       this.appendPerformerChips(performersSection, options.performers);
       header.appendChild(performersSection);
     }
@@ -2189,12 +2199,7 @@ export abstract class BasePost {
       const hasPerformers = !!options.performers?.length;
       this.appendTagChips(tagsSection, options.tags, options.favoriteTagName, hasPerformers);
       if (this.isReelMode) {
-        tagsSection.style.display = 'flex';
-        tagsSection.style.flexWrap = 'wrap';
-        tagsSection.style.alignItems = 'center';
-        tagsSection.style.gap = '4px';
-        tagsSection.style.marginTop = '4px';
-        tagsSection.style.opacity = '0.85';
+        this.applyReelModeTagStyles(tagsSection);
       }
       header.appendChild(tagsSection);
     }
@@ -2557,15 +2562,9 @@ export abstract class BasePost {
     }
   }
 
-  private createAddTagDialogBase(options: {
-    state: AddTagDialogState;
-    onSearch: (searchTerm: string) => void;
-    onSubmit: () => void;
-    focusAfterClose?: HTMLElement | null;
-  }): void {
-    const { state, onSearch, onSubmit } = options;
+  protected createDialogContainer(className: string): HTMLElement {
     const dialog = document.createElement('div');
-    dialog.className = 'add-tag-dialog';
+    dialog.className = className;
     dialog.setAttribute('role', 'dialog');
     dialog.setAttribute('aria-modal', 'true');
     dialog.setAttribute('aria-hidden', 'true');
@@ -2588,23 +2587,32 @@ export abstract class BasePost {
     dialog.style.pointerEvents = 'none';
     dialog.style.transition = 'opacity 0.2s cubic-bezier(0.2, 0, 0, 1), transform 0.2s cubic-bezier(0.2, 0, 0, 1)';
     dialog.style.boxSizing = 'border-box';
-    state.dialog = dialog;
+    return dialog;
+  }
 
+  protected createDialogTitle(text: string, id?: string): HTMLElement {
     const title = document.createElement('div');
-    title.textContent = 'Add Tag';
+    if (id) title.id = id;
+    title.textContent = text;
     title.style.fontSize = '16px';
     title.style.fontWeight = '600';
     title.style.color = THEME.colors.textPrimary;
     title.style.marginBottom = '12px';
-    dialog.appendChild(title);
+    return title;
+  }
 
+  protected createDialogInputSection(options: {
+    placeholder: string;
+    ariaLabel: string;
+    suggestionsClassName: string;
+  }): { inputWrapper: HTMLElement; input: HTMLInputElement; suggestions: HTMLElement } {
     const inputWrapper = document.createElement('div');
     inputWrapper.style.position = 'relative';
     inputWrapper.style.marginBottom = '12px';
 
     const input = document.createElement('input');
     input.type = 'text';
-    input.placeholder = 'Search for tag...';
+    input.placeholder = options.placeholder;
     input.style.width = '100%';
     input.style.padding = '10px 12px';
     input.style.background = THEME.colors.surface;
@@ -2613,8 +2621,49 @@ export abstract class BasePost {
     input.style.color = THEME.colors.textPrimary;
     input.style.fontSize = THEME.typography.sizeBody;
     input.style.boxSizing = 'border-box';
-    input.setAttribute('aria-label', 'Tag name');
+    input.setAttribute('aria-label', options.ariaLabel);
+
+    const suggestions = document.createElement('div');
+    suggestions.className = options.suggestionsClassName;
+    suggestions.style.display = 'none';
+    suggestions.style.position = 'absolute';
+    suggestions.style.top = '100%';
+    suggestions.style.left = '0';
+    suggestions.style.right = '0';
+    suggestions.style.background = THEME.colors.backgroundSecondary;
+    suggestions.style.border = `1px solid ${THEME.colors.border}`;
+    suggestions.style.borderTop = 'none';
+    suggestions.style.borderRadius = `0 0 ${THEME.radius.card} ${THEME.radius.card}`;
+    suggestions.style.maxHeight = '200px';
+    suggestions.style.overflowY = 'auto';
+    suggestions.style.zIndex = '201';
+
+    inputWrapper.appendChild(input);
+    inputWrapper.appendChild(suggestions);
+
+    return { inputWrapper, input, suggestions };
+  }
+
+  private createAddTagDialogBase(options: {
+    state: AddTagDialogState;
+    onSearch: (searchTerm: string) => void;
+    onSubmit: () => void;
+    focusAfterClose?: HTMLElement | null;
+  }): void {
+    const { state, onSearch, onSubmit } = options;
+    const dialog = this.createDialogContainer('add-tag-dialog');
+    state.dialog = dialog;
+
+    dialog.appendChild(this.createDialogTitle('Add Tag'));
+
+    const { inputWrapper, input, suggestions } = this.createDialogInputSection({
+      placeholder: 'Search for tag...',
+      ariaLabel: 'Tag name',
+      suggestionsClassName: 'add-tag-dialog__suggestions',
+    });
+    suggestions.style.marginTop = '4px';
     state.input = input;
+    state.suggestions = suggestions;
 
     input.addEventListener('input', () => {
       this.handleAddTagInputBase({ state, onSearch });
@@ -2644,26 +2693,6 @@ export abstract class BasePost {
         this.closeAddTagDialogBase({ state, focusAfterClose: options.focusAfterClose });
       }
     });
-
-    inputWrapper.appendChild(input);
-
-    const suggestions = document.createElement('div');
-    suggestions.className = 'add-tag-dialog__suggestions';
-    suggestions.style.display = 'none';
-    suggestions.style.position = 'absolute';
-    suggestions.style.top = '100%';
-    suggestions.style.left = '0';
-    suggestions.style.right = '0';
-    suggestions.style.background = THEME.colors.backgroundSecondary;
-    suggestions.style.border = `1px solid ${THEME.colors.border}`;
-    suggestions.style.borderTop = 'none';
-    suggestions.style.borderRadius = `0 0 ${THEME.radius.card} ${THEME.radius.card}`;
-    suggestions.style.maxHeight = '200px';
-    suggestions.style.overflowY = 'auto';
-    suggestions.style.zIndex = '201';
-    suggestions.style.marginTop = '4px';
-    state.suggestions = suggestions;
-    inputWrapper.appendChild(suggestions);
 
     dialog.appendChild(inputWrapper);
 
