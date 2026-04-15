@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [5.40.0] - 2026-04-15\n\n### Changed\n- Deduplicate 52 clone groups and reduce complexity hotspots
+- Refactor BasePost/VideoPostBase constructors to use options object and consolidate push calls
+- Add configurable content limit setting (default 5000)
+- Release v5.39.0\n
+
 ## [5.39.2] - 2026-04-14\n\n### Changed\n- Add configurable content limit setting (default 5000)
 - Release v5.39.0\n
 
