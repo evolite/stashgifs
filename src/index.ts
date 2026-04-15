@@ -4,6 +4,7 @@
 
 import { FeedContainer } from './FeedContainer.js';
 import { StashAPI } from './StashAPI.js';
+import { PluginSettingsManager } from './PluginSettingsManager.js';
 import { FeedSettings } from './types.js';
 import { toRgba, darkenHex, normalizeHexColor } from './utils.js';
 
@@ -135,6 +136,9 @@ function init(): void {
     // Initialize API (will use window.stash if available)
     const api = new StashAPI();
 
+    // Create settings manager (reads from localStorage synchronously)
+    const settingsManager = new PluginSettingsManager(api);
+
     // Get settings from localStorage or use defaults
     const settings = savedSettings;
 
@@ -145,7 +149,15 @@ function init(): void {
     }
 
     // Create feed
-    const feed = new FeedContainer(appContainer, api, settings);
+    const feed = new FeedContainer(appContainer, api, settings, settingsManager);
+
+    // When server settings arrive and differ from local cache, update feed
+    settingsManager.setOnSettingsUpdated((data) => {
+      if (data.settings && Object.keys(data.settings).length > 0) {
+        loadThemeEarly(data.settings);
+        feed.updateSettings(data.settings);
+      }
+    });
 
     // Initialize feed
     feed.init().catch((error: unknown) => {
@@ -158,6 +170,11 @@ function init(): void {
            <p style="font-size: 0.875rem; color: var(--color-text-muted, #8A99A6);">Check browser console for details</p>
          </div>
        `;
+    });
+
+    // Background: sync settings from server (handles migration + cross-device sync)
+    settingsManager.loadFromServer().catch((error: unknown) => {
+      console.warn('Failed to sync settings from server:', error);
     });
 
     (globalThis.window as WindowWithStashgifs).stashgifsFeed = feed;

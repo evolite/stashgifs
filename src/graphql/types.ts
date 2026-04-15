@@ -593,6 +593,22 @@ export interface ImageIncrementOResponse {
   imageIncrementO: number;
 }
 
+/**
+ * Plugin configuration response
+ */
+export interface PluginConfigurationResponse {
+  configuration: {
+    plugins: Record<string, Record<string, unknown>>;
+  };
+}
+
+/**
+ * ConfigurePlugin mutation response
+ */
+export interface ConfigurePluginResponse {
+  configurePlugin: Record<string, unknown>;
+}
+
 // ============================================================================
 // GraphQL Client Types
 // ============================================================================

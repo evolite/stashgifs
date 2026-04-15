@@ -40,6 +40,8 @@ import {
   TypedGraphQLClient,
   Image,
   UIConfigurationResponse,
+  PluginConfigurationResponse,
+  ConfigurePluginResponse,
 } from './graphql/types.js';
 import {
   GraphQLRequestError,
@@ -2305,6 +2307,51 @@ export class StashAPI {
       return null;
     } catch (error) {
       return this.handleError('getUIConfiguration', error, signal, null);
+    }
+  }
+
+  /**
+   * Get plugin-specific settings from Stash server
+   */
+  async getPluginSettings(pluginId: string, signal?: AbortSignal): Promise<Record<string, unknown> | null> {
+    if (this.isAborted(signal)) return null;
+
+    try {
+      const result = await this.gqlClient.query<PluginConfigurationResponse>({
+        query: queries.GET_PLUGIN_CONFIGURATION,
+        signal,
+      });
+
+      if (this.isAborted(signal)) return null;
+
+      const plugins = result.data?.configuration?.plugins;
+      if (!plugins || typeof plugins !== 'object') return null;
+
+      const pluginConfig = plugins[pluginId];
+      if (!pluginConfig || typeof pluginConfig !== 'object') return null;
+
+      return pluginConfig as Record<string, unknown>;
+    } catch (error) {
+      return this.handleError('getPluginSettings', error, signal, null);
+    }
+  }
+
+  /**
+   * Save plugin-specific settings to Stash server
+   */
+  async savePluginSettings(pluginId: string, input: Record<string, unknown>, signal?: AbortSignal): Promise<boolean> {
+    if (this.isAborted(signal)) return false;
+
+    try {
+      await this.gqlClient.mutate<ConfigurePluginResponse>({
+        mutation: mutations.CONFIGURE_PLUGIN,
+        variables: { plugin_id: pluginId, input },
+        signal,
+      });
+      return true;
+    } catch (error) {
+      this.handleError('savePluginSettings', error, signal, false);
+      return false;
     }
   }
 

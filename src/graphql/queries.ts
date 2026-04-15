@@ -17,6 +17,17 @@ export const GET_UI_CONFIGURATION = `
 `;
 
 /**
+ * Get plugin configuration
+ */
+export const GET_PLUGIN_CONFIGURATION = `
+  query PluginConfiguration {
+    configuration {
+      plugins
+    }
+  }
+`;
+
+/**
  * Check if tags have markers
  */
 const CHECK_TAGS_HAVE_MARKERS = `

@@ -131,3 +131,12 @@ export const PERFORMER_UPDATE = `
     }
   }
 `;
+
+/**
+ * Save plugin configuration
+ */
+export const CONFIGURE_PLUGIN = `
+  mutation ConfigurePlugin($plugin_id: ID!, $input: Map!) {
+    configurePlugin(plugin_id: $plugin_id, input: $input)
+  }
+`;

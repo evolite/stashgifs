@@ -5,6 +5,7 @@
 
 import { SceneMarker, Scene, FilterOptions, FeedSettings, VideoPostData, ImagePostData, ImageVideoPostData, Image } from './types.js';
 import { StashAPI, generateRandomSortSeed } from './StashAPI.js';
+import { PluginSettingsManager } from './PluginSettingsManager.js';
 import { VideoPost } from './VideoPost.js';
 import { ImagePost } from './ImagePost.js';
 import { ImageVideoPost } from './ImageVideoPost.js';
@@ -87,6 +88,7 @@ export class FeedContainer {
   private readonly container: HTMLElement;
   private scrollContainer: HTMLElement;
   private readonly api: StashAPI;
+  private readonly settingsManager: PluginSettingsManager;
   private visibilityManager: VisibilityManager;
   private favoritesManager: FavoritesManager;
   private posts: Map<string, PostType>;
@@ -179,9 +181,10 @@ export class FeedContainer {
     'touchmove',
   ];
 
-  constructor(container: HTMLElement, api?: StashAPI, settings?: Partial<FeedSettings>) {
+  constructor(container: HTMLElement, api?: StashAPI, settings?: Partial<FeedSettings>, settingsManager?: PluginSettingsManager) {
     this.container = container;
     this.api = api || new StashAPI();
+    this.settingsManager = settingsManager || new PluginSettingsManager(this.api);
     // Merge settings: defaults first, then passed settings (which may include loaded settings from index.ts)
     // If no settings passed, load from localStorage
     const loadedSettings = settings && Object.keys(settings).length > 0 ? settings : this.loadSettingsFromStorage();
@@ -817,13 +820,8 @@ export class FeedContainer {
   }
 
   private saveSettingsToStorage(settings: FeedSettings): void {
-    try {
-      // Ensure we have a complete settings object by merging with defaults
-      const completeSettings: FeedSettings = { ...DEFAULT_SETTINGS, ...settings };
-      localStorage.setItem('stashgifs-settings', JSON.stringify(completeSettings));
-    } catch (error) {
-      console.error('Failed to save settings to localStorage', error);
-    }
+    const completeSettings: FeedSettings = { ...DEFAULT_SETTINGS, ...settings };
+    this.settingsManager.save({ settings: completeSettings });
   }
 
   /**
@@ -1032,56 +1030,18 @@ export class FeedContainer {
    * Load HD mode preference from localStorage
    */
   private loadHDModePreference(): boolean {
-    try {
-      const savedHD = localStorage.getItem('stashgifs-useHDMode');
-      if (savedHD === null) {
-        return true;
-      }
-      return savedHD === 'true';
-    } catch {
-      return true;
-    }
+    return this.settingsManager.data.hdMode;
   }
 
   /**
    * Load shuffle mode preference from localStorage
    */
   private loadShuffleModePreference(): number {
-    try {
-      const savedShuffle = localStorage.getItem('stashgifs-shuffleMode');
-      if (savedShuffle === null) {
-        return 0;
-      }
-      const parsed = Number.parseInt(savedShuffle, 10);
-      if (this.isValidShuffleMode(parsed)) {
-        return parsed;
-      }
-      return 0;
-    } catch {
-      return 0;
-    }
+    return this.settingsManager.data.shuffleMode;
   }
-
-  /**
-   * Check if shuffle mode value is valid
-   */
-  private isValidShuffleMode(value: number): boolean {
-    return !Number.isNaN(value) && value >= 0 && value <= 2;
-  }
-
 
   private loadGlobalMuteState(): boolean {
-    try {
-      const savedMuteState = localStorage.getItem('stashgifs-globalMuteState');
-      if (savedMuteState === null) {
-        // Default to muted on first load
-        return true;
-      }
-      return savedMuteState === 'true';
-    } catch {
-      // Default to muted on first load
-      return true;
-    }
+    return this.settingsManager.data.globalMuteState;
   }
 
   /**
@@ -1089,13 +1049,7 @@ export class FeedContainer {
    */
   private setGlobalMuteState(isMuted: boolean): void {
     this.globalMuteState = isMuted;
-    
-    // Save to localStorage
-    try {
-      localStorage.setItem('stashgifs-globalMuteState', isMuted ? 'true' : 'false');
-    } catch (e) {
-      console.error('Failed to save global mute state:', e);
-    }
+    this.settingsManager.save({ globalMuteState: isMuted });
     
     // Apply to all players
     this.applyGlobalMuteState();
@@ -1616,7 +1570,7 @@ export class FeedContainer {
         onHDToggleClick();
       }
       this.shuffleMode = this.shuffleMode > 0 ? 0 : 1;
-      try { localStorage.setItem('stashgifs-shuffleMode', String(this.shuffleMode)); } catch {}
+      this.settingsManager.save({ shuffleMode: this.shuffleMode });
       updateButtonStates();
       updateSearchBarDisplay();
       this.clearPosts();
@@ -2747,18 +2701,10 @@ export class FeedContainer {
       
       if (!newHDMode && this.shuffleMode > 0) {
         this.shuffleMode = 0;
-        try {
-          localStorage.setItem('stashgifs-shuffleMode', '0');
-        } catch (e) {
-          console.error('Failed to save shuffle mode preference:', e);
-        }
+        this.settingsManager.save({ shuffleMode: 0 });
       }
-      
-      try {
-        localStorage.setItem('stashgifs-useHDMode', newHDMode ? 'true' : 'false');
-      } catch (e) {
-        console.error('Failed to save HD mode preference:', e);
-      }
+
+      this.settingsManager.save({ hdMode: newHDMode });
       
       // Update HD mode state
       this.useHDMode = newHDMode;
@@ -2848,13 +2794,8 @@ export class FeedContainer {
 
     const onShuffleClick = async () => {
       this.shuffleMode = (this.shuffleMode + 1) % 3;
-      
-      try {
-        localStorage.setItem('stashgifs-shuffleMode', String(this.shuffleMode));
-      } catch (e) {
-        console.error('Failed to save shuffle mode preference:', e);
-      }
-      
+      this.settingsManager.save({ shuffleMode: this.shuffleMode });
+
       setShuffleToggleVisualState();
       
       
@@ -3171,7 +3112,7 @@ export class FeedContainer {
     const disableRandomIfActive = async () => {
       if (this.shuffleMode > 0) {
         this.shuffleMode = 0;
-        try { localStorage.setItem('stashgifs-shuffleMode', '0'); } catch {}
+        this.settingsManager.save({ shuffleMode: 0 });
         // Re-enable input visuals
         updateSearchBarDisplay();
         // Reload non-random feed
