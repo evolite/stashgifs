@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [5.42.0] - 2026-04-15\n\n### Changed\n- Add PluginSettingsManager to plugin manifest
+- Persist settings to Stash plugin settings via GraphQL
+- Release v5.39.0\n
+
+## [5.41.0] - 2026-04-15\n\n### Changed\n- Persist settings to Stash plugin settings via GraphQL
+- Deduplicate 52 clone groups and reduce complexity hotspots
+- Release v5.39.0\n
+
 ## [5.40.0] - 2026-04-15\n\n### Changed\n- Deduplicate 52 clone groups and reduce complexity hotspots
 - Refactor BasePost/VideoPostBase constructors to use options object and consolidate push calls
 - Add configurable content limit setting (default 5000)
