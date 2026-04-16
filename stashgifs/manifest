@@ -2,8 +2,8 @@ id: stashgifs
 name: StashGifs
 metadata:
   description: Social Media style browsing experience
-version: 5.42.0
-date: "2026-04-15 19:20:48"
+version: 5.42.1
+date: "2026-04-16 13:39:02"
 requires: []
 source_repository: https://raw.githubusercontent.com/evolite/stashgifs/refs/heads/master/index.yml
 files:

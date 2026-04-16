@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [5.42.1] - 2026-04-16\n\n### Changed\n- Update README.md
+- Update README to include Fallow in quality validation\n
+
 ## [5.42.0] - 2026-04-15\n\n### Changed\n- Add PluginSettingsManager to plugin manifest
 - Persist settings to Stash plugin settings via GraphQL
 - Release v5.39.0\n

@@ -384,34 +384,32 @@ export class VideoPost extends VideoPostBase {
    * Add action buttons (heart/marker/add tag) to button group
    */
   private addActionButtons(buttonGroup: HTMLElement): void {
-    const isShortForm = this.isShortFormContent();
-    
-    // Hide favorite button in shuffle mode, show marker button instead
-    // But if marker was already created, show heart button instead
     if (this.useShuffleMode) {
-      if (this.hasCreatedMarker && this.favoritesManager) {
-        // Marker was created, show heart button and "+" button
-        const heartBtn = this.createHeartButton();
-        buttonGroup.appendChild(heartBtn);
-        if (this.api && (this.isRealMarker() || isShortForm)) {
-          const addTagBtn = this.createAddTagButton('Add tag to marker');
-          buttonGroup.appendChild(addTagBtn);
-        }
-      } else if (this.api) {
-        // Show marker button to create marker
-        const markerBtn = this.createMarkerButton();
-        buttonGroup.appendChild(markerBtn);
-      }
+      this.addShuffleModeButtons(buttonGroup);
     } else {
-      // Non-shuffle mode: show heart and "+" buttons for real markers and shortform content
-      if (this.favoritesManager) {
-        const heartBtn = this.createHeartButton();
-        buttonGroup.appendChild(heartBtn);
-      }
-      if (this.api && (this.isRealMarker() || isShortForm)) {
-        const addTagBtn = this.createAddTagButton('Add tag to marker');
-        buttonGroup.appendChild(addTagBtn);
-      }
+      this.addStandardButtons(buttonGroup);
+    }
+  }
+
+  private addShuffleModeButtons(buttonGroup: HTMLElement): void {
+    if (this.hasCreatedMarker && this.favoritesManager) {
+      buttonGroup.appendChild(this.createHeartButton());
+      this.appendAddTagButton(buttonGroup);
+    } else if (this.api) {
+      buttonGroup.appendChild(this.createMarkerButton());
+    }
+  }
+
+  private addStandardButtons(buttonGroup: HTMLElement): void {
+    if (this.favoritesManager) {
+      buttonGroup.appendChild(this.createHeartButton());
+    }
+    this.appendAddTagButton(buttonGroup);
+  }
+
+  private appendAddTagButton(buttonGroup: HTMLElement): void {
+    if (this.api && (this.isRealMarker() || this.isShortFormContent())) {
+      buttonGroup.appendChild(this.createAddTagButton('Add tag to marker'));
     }
   }
 

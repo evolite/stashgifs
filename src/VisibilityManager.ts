@@ -660,30 +660,28 @@ export class VisibilityManager {
     }
 
     const videoThatShouldPlay = this.getVideoThatShouldPlay();
-    
-    // Pause any videos that shouldn't be playing (but respect manual pause)
-    // The most centered video takes priority, but don't pause manually paused videos
-    for (const [postId, entry] of this.entries) {
-      if (entry.player && entry.player.isPlaying() && postId !== videoThatShouldPlay) {
-        // Don't pause if video was manually paused - user's intent should be respected
-        // But if it's playing and shouldn't be, pause it (unless manually paused)
-        if (!entry.player.isManuallyPaused()) {
-          this.pauseVideo(postId);
-        }
-      }
-    }
+    this.pauseOtherVideos(videoThatShouldPlay);
+    this.startTargetVideo(videoThatShouldPlay);
+  }
 
-    // Start playback for the video that should be playing
-    if (videoThatShouldPlay) {
-      const entry = this.entries.get(videoThatShouldPlay);
-      if (entry?.isVisible && entry.player && !entry.player.isPlaying()) {
-        // Request playback for the video that should be playing
-        // But respect manual pause state
-        if (!entry.player.isManuallyPaused()) {
-          this.requestPlaybackIfReady(videoThatShouldPlay, entry, 'observer');
-        }
+  private pauseOtherVideos(excludePostId: string | undefined): void {
+    for (const [postId, entry] of this.entries) {
+      if (!entry.player || !entry.player.isPlaying() || postId === excludePostId) {
+        continue;
+      }
+      if (!entry.player.isManuallyPaused()) {
+        this.pauseVideo(postId);
       }
     }
+  }
+
+  private startTargetVideo(postId: string | undefined): void {
+    if (!postId) return;
+    const entry = this.entries.get(postId);
+    if (!entry?.isVisible || !entry.player || entry.player.isPlaying() || entry.player.isManuallyPaused()) {
+      return;
+    }
+    this.requestPlaybackIfReady(postId, entry, 'observer');
   }
 
   /**

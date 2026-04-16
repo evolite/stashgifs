@@ -3496,39 +3496,31 @@ export class FeedContainer {
    */
   private async buildFiltersForApply(): Promise<{ tags?: string[]; performers?: string[] }> {
     if (this.selectedPerformerId) {
-      return {
-        performers: [String(this.selectedPerformerId)],
-      };
+      return { performers: [String(this.selectedPerformerId)] };
     }
 
-    if (this.selectedTagId || this.selectedTagName) {
-      if (this.selectedTagId) {
-        return {
-          tags: [String(this.selectedTagId)],
-        };
-      }
-
-      if (this.selectedTagName) {
-        try {
-          const exactTag = await this.api.findTagByName(this.selectedTagName);
-          if (exactTag) {
-            return {
-              tags: [String(exactTag.id)],
-            };
-          }
-        } catch (error) {
-          console.error('Failed to find exact tag', error);
-        }
-
-        if (this.selectedTagId) {
-          return {
-            tags: [String(this.selectedTagId)],
-          };
-        }
-      }
+    const tagId = await this.resolveSelectedTagId();
+    if (tagId) {
+      return { tags: [tagId] };
     }
 
     return {};
+  }
+
+  private async resolveSelectedTagId(): Promise<string | null> {
+    if (this.selectedTagId) {
+      return String(this.selectedTagId);
+    }
+    if (!this.selectedTagName) return null;
+
+    try {
+      const exactTag = await this.api.findTagByName(this.selectedTagName);
+      if (exactTag) return String(exactTag.id);
+    } catch (error) {
+      console.error('Failed to find exact tag', error);
+    }
+
+    return this.selectedTagId ? String(this.selectedTagId) : null;
   }
 
   /**
@@ -5596,24 +5588,20 @@ export class FeedContainer {
   private stopLoadingVideos(): void {
     for (const [, post] of this.posts.entries()) {
       const player = post.getPlayer();
-      // Only handle video players (NativeVideoPlayer), not image players
       if (isNativeVideoPlayer(player)) {
-        const videoElement = player.getVideoElement();
-        // If video is loading (networkState is LOADING or networkState is 2), stop it
-        if (videoElement.networkState === 2 || videoElement.readyState < 2) {
-          try {
-            videoElement.pause();
-            videoElement.removeAttribute('src');
-            videoElement.load();
-            videoElement.load(); // This cancels the network request
-          } catch (e: unknown) {
-            // Ignore errors when stopping video (non-critical)
-            if (e instanceof Error) {
-              // Silently ignore - video stopping errors are not critical
-            }
-          }
-        }
+        this.cancelVideoLoad(player.getVideoElement());
       }
+    }
+  }
+
+  private cancelVideoLoad(video: HTMLVideoElement): void {
+    if (video.networkState !== 2 && video.readyState >= 2) return;
+    try {
+      video.pause();
+      video.removeAttribute('src');
+      video.load();
+    } catch {
+      // Non-critical: video stopping errors are safe to ignore
     }
   }
 
@@ -6662,35 +6650,33 @@ export class FeedContainer {
     let loaded = 0;
 
     for (const postId of this.postOrder) {
-      if (loaded >= maxToLoad) {
-        break;
-      }
-      if (this.activePreloadPosts.has(postId)) {
-        continue;
-      }
+      if (loaded >= maxToLoad) break;
+      if (this.activePreloadPosts.has(postId)) continue;
 
       const post = this.posts.get(postId);
-      if (!post || post.isPlayerLoaded() || !post.hasVideoSource()) {
-        continue;
-      }
+      if (!post || post.isPlayerLoaded() || !post.hasVideoSource()) continue;
+      if (!this.isPostVisibleInViewport(post, viewport)) continue;
 
-      const container = post.getContainer();
-      const rect = container.getBoundingClientRect();
-      const isVisible = rect.bottom > viewport.top && rect.top < viewport.top + viewport.height;
-      if (!isVisible) {
-        continue;
-      }
-
-      try {
-        const player = post.preload();
-        if (isNativeVideoPlayer(player)) {
-          this.visibilityManager.registerPlayer(postId, player);
-          loaded += 1;
-        }
-      } catch (error) {
-        console.warn('Visible preload failed for post', postId, error);
-      }
+      loaded += this.tryPreloadPost(postId, post);
     }
+  }
+
+  private isPostVisibleInViewport(post: PostType, viewport: { top: number; height: number }): boolean {
+    const rect = post.getContainer().getBoundingClientRect();
+    return rect.bottom > viewport.top && rect.top < viewport.top + viewport.height;
+  }
+
+  private tryPreloadPost(postId: string, post: PostType): number {
+    try {
+      const player = post.preload();
+      if (isNativeVideoPlayer(player)) {
+        this.visibilityManager.registerPlayer(postId, player);
+        return 1;
+      }
+    } catch (error) {
+      console.warn('Visible preload failed for post', postId, error);
+    }
+    return 0;
   }
 
   /**

@@ -7,6 +7,30 @@
     "stashgifs/**",
     "src/graphql/generated/**"
   ],
+  "ignoreExports": [
+    { "file": "src/PluginSettingsManager.ts", "exports": ["PluginSettingsData"] }
+  ],
+  "usedClassMembers": [
+    "initialize", "destroy", "cleanup", "preload", "getPlayer", "isPlayerLoaded",
+    "hasVideoSource", "getPostId", "hidePost", "getContainer", "getSettings",
+    "isInHQMode", "registerPlayerWithVisibilityManager", "setHQMode",
+    "data", "save", "flush",
+    "pause", "isManuallyPaused", "setVolume",
+    "getImageElement", "isImageLoaded", "getIsGif", "getIsVideo",
+    "setDebug", "setLogger", "pauseAllVideos", "reevaluateAudioFocus", "focusAudioOn",
+    "setGlobalMuteState", "getCurrentPriority", "toggleFavorite", "setFavorite",
+    "maxContentLimit",
+    "searchMarkerTags", "searchPerformers", "getPerformerDetails", "getTagDetails",
+    "fetchSavedMarkerFilters", "fetchSceneMarkers", "fetchSceneMarkerTags",
+    "fetchShortFormVideos", "findImages", "findGalleries", "findTagsForSelect",
+    "getUIConfiguration", "getPluginSettings", "savePluginSettings",
+    "getMarkerVideoUrl", "sceneHasTag", "markerHasTag",
+    "createTag", "createSceneMarker", "addTagToMarker", "addTagToScene",
+    "removeTagFromMarker", "removeTagFromScene",
+    "updateSceneRating", "updateScenePerformers",
+    "updateImageRating", "updateImageTags", "updateImagePerformers",
+    "updatePerformerFavorite", "incrementOCount", "incrementImageOCount"
+  ],
   "duplicates": {
     "mode": "mild"
   },
