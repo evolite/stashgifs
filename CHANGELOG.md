@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [5.42.2] - 2026-04-18\n\n### Changed\n- Strip apikey query param from stream URLs before use
+- Update README.md
+- Update README to include Fallow in quality validation\n
+
 ## [5.42.1] - 2026-04-16\n\n### Changed\n- Update README.md
 - Update README to include Fallow in quality validation\n
 
