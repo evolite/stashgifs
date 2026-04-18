@@ -376,16 +376,30 @@ export function toAbsoluteUrl(url?: string): string | undefined {
 /**
  * Normalize media URL to a safe absolute URL
  */
+export function stripApiKey(url: string): string {
+  if (!url) return url;
+  const qIndex = url.indexOf('?');
+  if (qIndex === -1) return url;
+  const base = url.substring(0, qIndex);
+  const params = new URLSearchParams(url.substring(qIndex + 1));
+  if (!params.has('apikey')) return url;
+  params.delete('apikey');
+  const newQuery = params.toString();
+  return newQuery ? `${base}?${newQuery}` : base;
+}
+
 export function normalizeMediaUrl(url?: string): string | undefined {
   if (!url) return undefined;
   const trimmed = url.trim();
   if (!trimmed) return undefined;
   if (trimmed.startsWith('data:') || trimmed.startsWith('blob:')) return trimmed;
   try {
-    return new URL(trimmed, globalThis.location.origin).toString();
+    const normalized = new URL(trimmed, globalThis.location.origin).toString();
+    return stripApiKey(normalized);
   } catch {
     try {
-      return new URL(encodeURI(trimmed), globalThis.location.origin).toString();
+      const normalized = new URL(encodeURI(trimmed), globalThis.location.origin).toString();
+      return stripApiKey(normalized);
     } catch {
       return undefined;
     }
@@ -399,8 +413,9 @@ export function normalizeMediaUrl(url?: string): string | undefined {
  */
 export function addCacheBusting(url: string): string {
   if (!url) return url;
-  const separator = url.includes('?') ? '&' : '?';
-  return `${url}${separator}t=${Date.now()}`;
+  const clean = stripApiKey(url);
+  const separator = clean.includes('?') ? '&' : '?';
+  return `${clean}${separator}t=${Date.now()}`;
 }
 
 // ============================================================================

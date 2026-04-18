@@ -4,7 +4,7 @@
  */
 
 import { VideoPlayerState } from './types.js';
-import { addCacheBusting, formatDuration, normalizeMediaUrl, hasWebkitFullscreen, hasMozFullscreen, hasMsFullscreen, hasWebkitFullscreenHTMLElement, hasMozFullscreenHTMLElement, hasMsFullscreenHTMLElement, hasWebkitFullscreenDocument, hasMozFullscreenDocument, hasMsFullscreenDocument, type ElementWebkitFullscreen, type ElementMozFullscreen, type ElementMsFullscreen, isMobileDevice, getNetworkInfo, isSlowNetwork, isCellularConnection, THEME, subscribeWindowScroll } from './utils.js';
+import { addCacheBusting, stripApiKey, formatDuration, normalizeMediaUrl, hasWebkitFullscreen, hasMozFullscreen, hasMsFullscreen, hasWebkitFullscreenHTMLElement, hasMozFullscreenHTMLElement, hasMsFullscreenHTMLElement, hasWebkitFullscreenDocument, hasMozFullscreenDocument, hasMsFullscreenDocument, type ElementWebkitFullscreen, type ElementMozFullscreen, type ElementMsFullscreen, isMobileDevice, getNetworkInfo, isSlowNetwork, isCellularConnection, THEME, subscribeWindowScroll } from './utils.js';
 import { VOLUME_MUTED_SVG, VOLUME_UNMUTED_SVG, PLAY_BUTTON_SVG, PAUSE_SVG, FULLSCREEN_SVG } from './icons.js';
 import { setupTouchHandlers, createTouchState, type TouchState } from './utils/touchHandlers.js';
 
@@ -668,12 +668,13 @@ export class NativeVideoPlayer {
   }
 
   private assignVideoSource(url: string, shouldLoad: boolean = false): boolean {
+    const cleanUrl = stripApiKey(url);
     try {
       if (shouldLoad) {
         this.videoElement.pause();
         this.videoElement.removeAttribute('src');
       }
-      this.videoElement.src = url;
+      this.videoElement.src = cleanUrl;
       if (shouldLoad) {
         this.videoElement.load();
       }

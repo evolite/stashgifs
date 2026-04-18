@@ -4,7 +4,7 @@
  */
 
 import { Scene, SceneMarker, FilterOptions } from './types.js';
-import { normalizeMediaUrl } from './utils.js';
+import { normalizeMediaUrl, stripApiKey } from './utils.js';
 import * as queries from './graphql/queries.js';
 import * as mutations from './graphql/mutations.js';
 import {
@@ -1386,8 +1386,9 @@ export class StashAPI {
    * Add cache-busting parameter to URL
    */
   private addCacheBusting(url: string): string {
-    const separator = url.includes('?') ? '&' : '?';
-    return `${url}${separator}t=${Date.now()}`;
+    const clean = stripApiKey(url);
+    const separator = clean.includes('?') ? '&' : '?';
+    return `${clean}${separator}t=${Date.now()}`;
   }
 
 
