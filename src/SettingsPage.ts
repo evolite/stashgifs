@@ -1340,8 +1340,7 @@ export class SettingsPage {
     versionFooter.style.textAlign = 'center';
 
     const versionText = document.createElement('div');
-    const buildHash = (version as { BUILD_HASH?: string }).BUILD_HASH ?? 'dev';
-    versionText.textContent = `Version ${version.VERSION} (${buildHash})`;
+    versionText.textContent = `Version ${version.VERSION} (${version.BUILD_HASH ?? 'dev'})`;
     versionText.style.color = THEME.colors.textMuted;
     versionText.style.fontSize = THEME.typography.sizeMeta;
     versionFooter.appendChild(versionText);
