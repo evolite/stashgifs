@@ -18,7 +18,7 @@ import { AudioManager, AudioPriority } from './AudioManager.js';
 import { debounce, normalizeMediaUrl, detectDeviceCapabilities, DeviceCapabilities, isStandaloneNavigator, isMobileDevice, getNetworkInfo, isSlowNetwork, isCellularConnection, detectVideoFromVisualFiles, isMp4File, getImageUrlForDisplay, THEME, THEME_DEFAULTS, normalizeHexColor, toRgba, darkenHex, buildFullUrl } from './utils.js';
 import { posterPreloader } from './PosterPreloader.js';
 import { Image as GraphQLImage } from './graphql/types.js';
-import { HQ_SVG_OUTLINE, HQ_SVG_FILLED, SETTINGS_SVG, STASHGIFS_LOGO_SVG } from './icons.js';
+import { SETTINGS_SVG, STASHGIFS_LOGO_SVG } from './icons.js';
 
 const DEFAULT_SETTINGS: FeedSettings = {
   autoPlay: true, // Enable autoplay for markers
@@ -743,6 +743,14 @@ export class FeedContainer {
     this.saveSettingsToStorage(updatedSettings);
     this.applyThemeSettings(updatedSettings);
 
+    if (newSettings.hdMode !== undefined) {
+      const newHDMode = newSettings.hdMode;
+      this.useHDMode = newHDMode;
+      this.settingsManager.save({ hdMode: newHDMode });
+      this.visibilityManager.setHDMode(newHDMode);
+      this.visibilityManager.setAutoPlay(!newHDMode || (updatedSettings.reelMode ?? false));
+    }
+
     const reelModeChanged = newSettings.reelMode !== undefined;
     this.handleLayoutSettingsChange(newSettings, reelModeChanged);
     this.handlePostDisplaySettingsChange(newSettings, updatedSettings, previousShowVerified, previousShowProductionAge);
@@ -801,6 +809,7 @@ export class FeedContainer {
     reelModeChanged: boolean
   ): boolean {
     return !!(
+      newSettings.hdMode !== undefined ||
       newSettings.includeImagesInFeed !== undefined ||
       newSettings.enabledFileTypes ||
       newSettings.imagesOnly !== undefined ||
@@ -1027,6 +1036,10 @@ export class FeedContainer {
    * Load HD mode preference from localStorage
    */
   private loadHDModePreference(): boolean {
+    // Read from FeedSettings first (new path), fall back to legacy hdMode field
+    if (this.settings.hdMode !== undefined) {
+      return this.settings.hdMode;
+    }
     return this.settingsManager.data.hdMode;
   }
 
@@ -1452,54 +1465,6 @@ export class FeedContainer {
   }
 
   /**
-   * Create playback controls section (HD toggle and Random positions)
-   */
-  private createPlaybackControlsSection(
-    container: HTMLElement,
-    alignmentOffset: number,
-    onHDToggleClick: () => void,
-    updateSearchBarDisplay: () => void
-  ): void {
-    const playbackSection = document.createElement('div');
-    playbackSection.style.display = 'flex';
-    playbackSection.style.flexDirection = 'row';
-    playbackSection.style.alignItems = 'center';
-    playbackSection.style.gap = '8px';
-    playbackSection.style.flexWrap = 'wrap';
-    playbackSection.style.marginLeft = `${alignmentOffset}px`;
-
-    // HD toggle button
-    const hdBtn = document.createElement('button');
-    hdBtn.type = 'button';
-    hdBtn.innerHTML = this.useHDMode ? HQ_SVG_FILLED : HQ_SVG_OUTLINE;
-    hdBtn.title = this.useHDMode ? 'HD Video: On' : 'HD Video: Off';
-    hdBtn.style.padding = '10px';
-    hdBtn.style.width = '44px';
-    hdBtn.style.height = '44px';
-    hdBtn.style.borderRadius = THEME.radius.button;
-    hdBtn.style.border = this.useHDMode ? `1px solid ${THEME.colors.accentPrimary}` : `1px solid ${THEME.colors.border}`;
-    hdBtn.style.background = this.useHDMode ? THEME.colors.surfaceHover : THEME.colors.backgroundSecondary;
-    hdBtn.style.color = this.useHDMode ? THEME.colors.accentPrimary : THEME.colors.iconInactive;
-    hdBtn.style.cursor = 'pointer';
-    hdBtn.style.display = 'inline-flex';
-    hdBtn.style.alignItems = 'center';
-    hdBtn.style.justifyContent = 'center';
-
-    hdBtn.addEventListener('click', () => {
-      onHDToggleClick();
-      const hdIsOn = this.useHDMode;
-      hdBtn.innerHTML = hdIsOn ? HQ_SVG_FILLED : HQ_SVG_OUTLINE;
-      hdBtn.style.background = hdIsOn ? THEME.colors.surfaceHover : THEME.colors.backgroundSecondary;
-      hdBtn.style.border = hdIsOn ? `1px solid ${THEME.colors.accentPrimary}` : `1px solid ${THEME.colors.border}`;
-      hdBtn.style.color = hdIsOn ? THEME.colors.accentPrimary : THEME.colors.iconInactive;
-      hdBtn.title = hdIsOn ? 'HD Video: On' : 'HD Video: Off';
-    });
-
-    playbackSection.appendChild(hdBtn);
-    container.appendChild(playbackSection);
-  }
-
-  /**
    * Create saved filters section
    */
   private createSavedFiltersSection(
@@ -1656,7 +1621,6 @@ export class FeedContainer {
     suggestions: HTMLElement,
     horizontalPadding: number,
     ensureLatest: () => boolean,
-    onHDToggleClick: () => void,
     updateSearchBarDisplay: () => void,
     apply: () => Promise<void>
   ): Promise<void> {
@@ -1665,8 +1629,6 @@ export class FeedContainer {
     }
 
     const alignmentOffset = this.calculateAlignmentOffset(container, horizontalPadding);
-
-    this.createPlaybackControlsSection(container, alignmentOffset, onHDToggleClick, updateSearchBarDisplay);
 
     await this.loadSavedFiltersIfNeeded();
     if (!ensureLatest()) return;
@@ -2410,28 +2372,6 @@ export class FeedContainer {
   /**
    * Setup header buttons (HD toggle)
    */
-  private setupHeaderButtons(): {
-    buttonsContainer: HTMLElement;
-    hdToggle: HTMLButtonElement;
-    onHDToggleClick: () => void;
-  } {
-    const buttonsContainer = document.createElement('div');
-    buttonsContainer.style.display = 'inline-flex';
-    buttonsContainer.style.alignItems = 'center';
-    buttonsContainer.style.gap = '8px';
-    buttonsContainer.style.height = '36px';
-
-    const hdToggleResult = this.createHDToggleButton();
-    const hdToggle = hdToggleResult.button;
-    const onHDToggleClick = hdToggleResult.onClick;
-
-    return {
-      buttonsContainer,
-      hdToggle,
-      onHDToggleClick,
-    };
-  }
-
   /**
    * Create settings button
    */
@@ -2497,90 +2437,6 @@ export class FeedContainer {
   }
 
   /**
-   * Create HD toggle button
-   */
-  private createHDToggleButton(): {
-    button: HTMLButtonElement;
-    onClick: () => void;
-  } {
-    const hdToggle = document.createElement('button');
-    hdToggle.type = 'button';
-    hdToggle.title = 'Load HD scene videos';
-    hdToggle.setAttribute('aria-label', 'Toggle HD videos');
-    hdToggle.style.height = '44px';
-    hdToggle.style.minWidth = '44px';
-    hdToggle.style.padding = '0 14px';
-    hdToggle.style.borderRadius = THEME.radius.button;
-    hdToggle.style.border = `1px solid ${THEME.colors.border}`;
-    hdToggle.style.background = THEME.colors.backgroundSecondary;
-    hdToggle.style.color = THEME.colors.textSecondary;
-    hdToggle.style.fontSize = THEME.typography.sizeMeta;
-    hdToggle.style.fontWeight = THEME.typography.weightTitle;
-    hdToggle.style.cursor = 'pointer';
-    hdToggle.style.lineHeight = THEME.typography.lineHeightTight;
-    hdToggle.style.userSelect = 'none';
-    hdToggle.style.display = 'inline-flex';
-    hdToggle.style.alignItems = 'center';
-    hdToggle.style.justifyContent = 'center';
-    hdToggle.style.transition = 'background 0.2s ease, border-color 0.2s ease, color 0.2s ease, transform 0.2s cubic-bezier(0.2, 0, 0, 1)';
-
-    const setHDToggleVisualState = () => {
-      if (this.useHDMode) {
-        hdToggle.textContent = 'HD Video';
-        hdToggle.style.background = THEME.colors.surfaceHover;
-        hdToggle.style.borderColor = THEME.colors.success;
-        hdToggle.style.color = THEME.colors.success;
-      } else {
-        hdToggle.textContent = 'HD Video';
-        hdToggle.style.background = THEME.colors.backgroundSecondary;
-        hdToggle.style.borderColor = THEME.colors.border;
-        hdToggle.style.color = THEME.colors.iconInactive;
-      }
-    };
-
-    hdToggle.addEventListener('mouseenter', () => {
-      hdToggle.style.background = THEME.colors.surfaceHover;
-      hdToggle.style.borderColor = THEME.colors.border;
-      hdToggle.style.opacity = '0.95';
-    });
-
-    hdToggle.addEventListener('mouseleave', () => {
-      setHDToggleVisualState();
-      hdToggle.style.opacity = '1';
-    });
-
-    const onHDToggleClick = () => {
-      const newHDMode = !this.useHDMode;
-
-      this.settingsManager.save({ hdMode: newHDMode });
-      
-      // Update HD mode state
-      this.useHDMode = newHDMode;
-      
-      // Update VisibilityManager settings immediately
-      this.visibilityManager.setHDMode(newHDMode);
-      this.visibilityManager.setAutoPlay(!newHDMode); // Enable autoplay in non-HD mode, disable in HD mode
-      
-      // Refresh feed to apply HD mode changes
-      this.refreshFeed().catch((e) => console.error('Failed to refresh feed after HD mode change', e));
-    };
-
-    hdToggle.addEventListener('click', (e) => {
-      e.preventDefault();
-      e.stopPropagation();
-      onHDToggleClick();
-    });
-
-    // Set initial state
-    setHDToggleVisualState();
-
-    return {
-      button: hdToggle,
-      onClick: onHDToggleClick,
-    };
-  }
-
-  /**
    * Create top header bar with unified search
    */
   private createHeaderBar(): void {
@@ -2625,13 +2481,6 @@ export class FeedContainer {
 
     // Append input to wrapper
     inputWrapper.appendChild(queryInput);
-
-    const buttonsSetup = this.setupHeaderButtons();
-    const buttonsContainer = buttonsSetup.buttonsContainer;
-    const onHDToggleClick = buttonsSetup.onHDToggleClick;
-    
-    // Add buttons container to header inner (third grid column)
-    headerInner.appendChild(buttonsContainer);
 
     const suggestions = document.createElement('div');
     suggestions.className = 'feed-filters__suggestions hide-scrollbar';
@@ -2766,7 +2615,6 @@ export class FeedContainer {
       panel: HTMLElement,
       horizontalPadding: number,
       ensureLatest: () => boolean,
-      onHDToggleClick: () => void,
       updateSearchBarDisplay: () => void,
       apply: () => Promise<void>
     ) => {
@@ -2775,7 +2623,6 @@ export class FeedContainer {
         panel,
         horizontalPadding,
         ensureLatest,
-        onHDToggleClick,
         updateSearchBarDisplay,
         apply
       );
@@ -2822,7 +2669,6 @@ export class FeedContainer {
           suggestions,
           viewportConfig.horizontalPadding,
           ensureLatest,
-          onHDToggleClick,
           updateSearchBarDisplay,
           apply
         );

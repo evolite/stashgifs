@@ -708,6 +708,27 @@ export class SettingsPage {
 
     layoutSection.appendChild(reelModeContainer);
 
+    const hdVideoContainer = document.createElement('div');
+    hdVideoContainer.style.display = 'flex';
+    hdVideoContainer.style.justifyContent = 'space-between';
+    hdVideoContainer.style.alignItems = 'center';
+    hdVideoContainer.style.marginBottom = '16px';
+
+    hdVideoContainer.appendChild(
+      buildInfoLabel(
+        'HD Video',
+        'Loads full scene videos directly from Stash instead of pre-rendered preview clips.\n\nEnables seek-to-marker, random start positions, and full resolution — but uses more bandwidth and may load slower on slow connections.'
+      )
+    );
+
+    const { container: hdVideoToggleContainer, input: hdVideoToggle } = this.createToggleSwitch(
+      this.settings.hdMode !== false,
+      () => this.saveSettings()
+    );
+    hdVideoContainer.appendChild(hdVideoToggleContainer);
+    layoutSection.appendChild(hdVideoContainer);
+    (this as any).hdVideoToggle = hdVideoToggle;
+
     const verifiedCheckmarksContainer = document.createElement('div');
     verifiedCheckmarksContainer.style.display = 'flex';
     verifiedCheckmarksContainer.style.justifyContent = 'space-between';
@@ -1425,7 +1446,7 @@ export class SettingsPage {
   private collectFormInputs(): Record<string, HTMLInputElement> | undefined {
     const inputNames = [
       'fileTypesInput', 'maxDurationInput', 'includeMarkersToggle', 'includeRandomToggle', 'includeImagesToggle',
-      'shortFormIncludeToggle', 'reelModeToggle',
+      'shortFormIncludeToggle', 'reelModeToggle', 'hdVideoToggle',
       'portraitToggle', 'landscapeToggle',
       'themeBackgroundInput', 'themePrimaryInput', 'themeSecondaryInput', 'themeAccentInput',
       'showVerifiedCheckmarksToggle', 'showProductionAgeToggle', 'excludedTagsInput',
@@ -1469,6 +1490,7 @@ export class SettingsPage {
     const gallerySelectedIds = (this as any).gallerySelectedIds as Set<string> | undefined;
 
     const newSettings: Partial<FeedSettings> = {
+      hdMode: inputs.hdVideoToggle.checked,
       includeMarkersInFeed: inputs.includeMarkersToggle.checked,
       includeRandomInFeed: inputs.includeRandomToggle.checked,
       includeImagesInFeed: inputs.includeImagesToggle.checked,

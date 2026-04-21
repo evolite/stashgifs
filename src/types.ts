@@ -92,6 +92,7 @@ export interface FilterOptions {
 }
 
 export interface FeedSettings {
+  hdMode?: boolean; // Whether to load full HD scene videos instead of preview clips
   autoPlay: boolean;
   autoPlayThreshold: number; // 0-1, how much of video must be visible
   unloadDistance: number; // pixels from viewport to unload
