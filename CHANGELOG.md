@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [5.43.1] - 2026-04-21\n\n### Changed\n- Fix all open SonarQube issues
+- Fix typo in README.md for Configurable Feeds
+- Export BUILD_HASH from version.ts so settings page displays it\n
+
 ## [5.43.0] - 2026-04-21\n\n### Changed\n- Export BUILD_HASH from version.ts so settings page displays it
 - Move HD Video from header button to settings toggle with info button
 - Convert shuffleMode to includeRandomInFeed content type toggle
