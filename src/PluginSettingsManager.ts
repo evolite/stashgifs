@@ -181,7 +181,6 @@ export class PluginSettingsManager {
     const input: Record<string, unknown> = {
       settings: data.settings,
       hdMode: data.hdMode,
-      shuffleMode: data.shuffleMode,
       globalMuteState: data.globalMuteState,
       _version: SETTINGS_VERSION,
     };
@@ -192,7 +191,6 @@ export class PluginSettingsManager {
     try {
       localStorage.setItem(LOCAL_SETTINGS_KEY, JSON.stringify(data.settings));
       localStorage.setItem(LOCAL_HD_KEY, data.hdMode ? 'true' : 'false');
-      localStorage.setItem(LOCAL_SHUFFLE_KEY, String(data.shuffleMode));
       localStorage.setItem(LOCAL_MUTE_KEY, data.globalMuteState ? 'true' : 'false');
     } catch (error) {
       console.warn('PluginSettingsManager: Failed to write to localStorage', error);

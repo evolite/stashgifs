@@ -291,7 +291,7 @@ export class SettingsPage {
     };
 
     const layoutTabButton = createTabButton('Layout');
-    const contentTabButton = createTabButton('Content');
+    const contentTabButton = createTabButton('Options');
     const themeTabButton = createTabButton('Theme');
     tabBar.appendChild(layoutTabButton);
     tabBar.appendChild(contentTabButton);
@@ -708,153 +708,6 @@ export class SettingsPage {
 
     layoutSection.appendChild(reelModeContainer);
 
-
-    const orientationFilter = this.settings.orientationFilter ?? [];
-    const hasOrientationFilter = orientationFilter.length > 0;
-    const portraitEnabled = !hasOrientationFilter || orientationFilter.includes('portrait');
-    const landscapeEnabled = !hasOrientationFilter || orientationFilter.includes('landscape');
-
-    const portraitContainer = document.createElement('div');
-    portraitContainer.style.display = 'flex';
-    portraitContainer.style.justifyContent = 'space-between';
-    portraitContainer.style.alignItems = 'center';
-    portraitContainer.style.marginBottom = '16px';
-
-    portraitContainer.appendChild(
-      buildInfoLabel(
-        'Portrait',
-        'Include portrait-oriented content in the feed.'
-      )
-    );
-
-    const { container: portraitToggleContainer, input: portraitToggle } = this.createToggleSwitch(
-      portraitEnabled,
-      () => this.saveSettings()
-    );
-    portraitContainer.appendChild(portraitToggleContainer);
-
-    layoutSection.appendChild(portraitContainer);
-
-    const landscapeContainer = document.createElement('div');
-    landscapeContainer.style.display = 'flex';
-    landscapeContainer.style.justifyContent = 'space-between';
-    landscapeContainer.style.alignItems = 'center';
-    landscapeContainer.style.marginBottom = '16px';
-
-    landscapeContainer.appendChild(
-      buildInfoLabel(
-        'Landscape',
-        'Include landscape-oriented content in the feed.'
-      )
-    );
-
-    const { container: landscapeToggleContainer, input: landscapeToggle } = this.createToggleSwitch(
-      landscapeEnabled,
-      () => this.saveSettings()
-    );
-    landscapeContainer.appendChild(landscapeToggleContainer);
-
-    layoutSection.appendChild(landscapeContainer);
-
-    const excludedTagsContainer = document.createElement('div');
-    excludedTagsContainer.style.marginBottom = '16px';
-
-    const excludedTagsLabelRow = buildInputLabel(
-      'Excluded Tags',
-      'Hide any content that contains one of these tags.'
-    );
-    excludedTagsContainer.appendChild(excludedTagsLabelRow.container);
-
-    const excludedTagsInput = document.createElement('input');
-    excludedTagsInput.type = 'text';
-    excludedTagsInput.value = (this.settings.excludedTagNames || []).join(', ');
-    excludedTagsInput.style.width = '100%';
-    excludedTagsInput.style.padding = '12px';
-    excludedTagsInput.style.borderRadius = THEME.radius.button;
-    excludedTagsInput.style.border = `1px solid ${THEME.colors.border}`;
-    excludedTagsInput.style.backgroundColor = THEME.colors.surface;
-    excludedTagsInput.style.color = THEME.colors.textPrimary;
-    excludedTagsInput.style.fontSize = THEME.typography.sizeBody;
-    excludedTagsInput.style.boxSizing = 'border-box';
-    excludedTagsInput.placeholder = 'VR, POV';
-    excludedTagsContainer.appendChild(excludedTagsInput);
-
-    excludedTagsInput.addEventListener('input', () => {
-      clearTimeout((excludedTagsInput as any).saveTimeout);
-      (excludedTagsInput as any).saveTimeout = setTimeout(() => {
-        this.saveSettings();
-      }, 500);
-    });
-
-    layoutSection.appendChild(excludedTagsContainer);
-
-    const seenHistoryContainer = document.createElement('div');
-    seenHistoryContainer.style.marginBottom = '16px';
-
-    const seenHistoryLabelRow = buildInputLabel(
-      'Recency Bias',
-      'Tracks up to this many recently seen items and hides them from the feed.\nSet to 0 to disable. Default: 500.'
-    );
-    seenHistoryContainer.appendChild(seenHistoryLabelRow.container);
-
-    const seenHistorySizeInput = document.createElement('input');
-    seenHistorySizeInput.type = 'number';
-    seenHistorySizeInput.value = String(this.settings.seenHistorySize ?? 500);
-    seenHistorySizeInput.min = '0';
-    seenHistorySizeInput.max = '2000';
-    seenHistorySizeInput.style.width = '100%';
-    seenHistorySizeInput.style.padding = '12px';
-    seenHistorySizeInput.style.borderRadius = THEME.radius.button;
-    seenHistorySizeInput.style.border = `1px solid ${THEME.colors.border}`;
-    seenHistorySizeInput.style.backgroundColor = THEME.colors.surface;
-    seenHistorySizeInput.style.color = THEME.colors.textPrimary;
-    seenHistorySizeInput.style.fontSize = THEME.typography.sizeBody;
-    seenHistorySizeInput.style.boxSizing = 'border-box';
-    seenHistorySizeInput.addEventListener('input', () => {
-      clearTimeout((seenHistorySizeInput as any).saveTimeout);
-      (seenHistorySizeInput as any).saveTimeout = setTimeout(() => {
-        this.saveSettings();
-      }, 500);
-    });
-    seenHistoryContainer.appendChild(seenHistorySizeInput);
-
-    layoutSection.appendChild(seenHistoryContainer);
-    (this as any).seenHistorySizeInput = seenHistorySizeInput;
-
-    // Content Limit
-    const contentLimitContainer = document.createElement('div');
-    contentLimitContainer.style.marginBottom = '16px';
-
-    const contentLimitLabelRow = buildInputLabel(
-      'Content Limit',
-      'Maximum items per content type to paginate through.\nLower values improve performance for large libraries. Default: 5000.'
-    );
-    contentLimitContainer.appendChild(contentLimitLabelRow.container);
-
-    const contentLimitInput = document.createElement('input');
-    contentLimitInput.type = 'number';
-    contentLimitInput.value = String(this.settings.contentLimit ?? 5000);
-    contentLimitInput.min = '100';
-    contentLimitInput.max = '50000';
-    contentLimitInput.style.width = '100%';
-    contentLimitInput.style.padding = '12px';
-    contentLimitInput.style.borderRadius = THEME.radius.button;
-    contentLimitInput.style.border = `1px solid ${THEME.colors.border}`;
-    contentLimitInput.style.backgroundColor = THEME.colors.surface;
-    contentLimitInput.style.color = THEME.colors.textPrimary;
-    contentLimitInput.style.fontSize = THEME.typography.sizeBody;
-    contentLimitInput.style.boxSizing = 'border-box';
-    contentLimitInput.addEventListener('input', () => {
-      clearTimeout((contentLimitInput as any).saveTimeout);
-      (contentLimitInput as any).saveTimeout = setTimeout(() => {
-        this.saveSettings();
-      }, 500);
-    });
-    contentLimitContainer.appendChild(contentLimitInput);
-
-    layoutSection.appendChild(contentLimitContainer);
-    (this as any).contentLimitInput = contentLimitInput;
-
     const verifiedCheckmarksContainer = document.createElement('div');
     verifiedCheckmarksContainer.style.display = 'flex';
     verifiedCheckmarksContainer.style.justifyContent = 'space-between';
@@ -898,9 +751,154 @@ export class SettingsPage {
     layoutSection.appendChild(productionAgeContainer);
     (this as any).showProductionAgeToggle = productionAgeToggle;
 
+    // ── Content Types Section ──────────────────────────────────────────────
+    const contentTypesSection = document.createElement('div');
+    contentTypesSection.style.marginBottom = '24px';
+    contentTypesSection.style.border = `1px solid ${THEME.colors.border}`;
+    contentTypesSection.style.borderRadius = THEME.radius.card;
+    contentTypesSection.style.padding = '16px';
+
+    const contentTypesTitleRow = document.createElement('div');
+    contentTypesTitleRow.style.display = 'flex';
+    contentTypesTitleRow.style.alignItems = 'center';
+    contentTypesTitleRow.style.marginBottom = '16px';
+
+    const contentTypesTitle = document.createElement('h3');
+    contentTypesTitle.textContent = 'Content Types';
+    contentTypesTitle.style.margin = '0';
+    contentTypesTitle.style.color = THEME.colors.textPrimary;
+    contentTypesTitle.style.fontSize = THEME.typography.sizeTitle;
+    contentTypesTitle.style.fontWeight = THEME.typography.weightTitle;
+    contentTypesTitleRow.appendChild(contentTypesTitle);
+    contentTypesTitleRow.appendChild(this.createInfoButton(
+      'Select which content types appear in your feed.\n\n' +
+      'Markers — Scene marker clips from your Stash library.\n' +
+      'Random — Full scenes played from a random position.\n' +
+      'Short-Form — Full scenes shorter than a set length (default 120 seconds).\n' +
+      'Images — Images and image-video files (GIFs, MP4s, etc.).'
+    ));
+    contentTypesSection.appendChild(contentTypesTitleRow);
+
+    // Markers toggle
+    const { container: markersToggleContainer, input: includeMarkersToggle } = this.createToggleSwitch(
+      this.settings.includeMarkersInFeed !== false,
+      () => this.saveSettings()
+    );
+    const markersRow = document.createElement('div');
+    markersRow.style.display = 'flex';
+    markersRow.style.justifyContent = 'space-between';
+    markersRow.style.alignItems = 'center';
+    markersRow.style.marginBottom = '12px';
+    markersRow.appendChild(buildInfoLabel('Markers', 'Scene marker clips from your Stash library.'));
+    markersRow.appendChild(markersToggleContainer);
+    contentTypesSection.appendChild(markersRow);
+
+    // Random toggle
+    const { container: includeRandomToggleContainer, input: includeRandomToggle } = this.createToggleSwitch(
+      this.settings.includeRandomInFeed === true,
+      () => this.saveSettings()
+    );
+    const randomRow = document.createElement('div');
+    randomRow.style.display = 'flex';
+    randomRow.style.justifyContent = 'space-between';
+    randomRow.style.alignItems = 'center';
+    randomRow.style.marginBottom = '12px';
+    randomRow.appendChild(buildInfoLabel('Random', 'Full scenes from your library played from a random position.'));
+    randomRow.appendChild(includeRandomToggleContainer);
+    contentTypesSection.appendChild(randomRow);
+
+    // Short-Form toggle
+    const { container: shortFormIncludeToggleContainer, input: shortFormIncludeToggle } = this.createToggleSwitch(
+      this.settings.shortFormInHDMode !== false || this.settings.shortFormInNonHDMode !== false,
+      () => this.saveSettings()
+    );
+    const shortFormRow = document.createElement('div');
+    shortFormRow.style.display = 'flex';
+    shortFormRow.style.justifyContent = 'space-between';
+    shortFormRow.style.alignItems = 'center';
+    shortFormRow.style.marginBottom = '12px';
+    shortFormRow.appendChild(buildInfoLabel('Short-Form', 'Full scenes shorter than a set length (default 120 seconds).'));
+    shortFormRow.appendChild(shortFormIncludeToggleContainer);
+    contentTypesSection.appendChild(shortFormRow);
+
+    // Images toggle
+    const { container: includeImagesToggleContainer, input: includeImagesToggle } = this.createToggleSwitch(
+      this.settings.includeImagesInFeed !== false,
+      () => this.saveSettings()
+    );
+    const imagesRow = document.createElement('div');
+    imagesRow.style.display = 'flex';
+    imagesRow.style.justifyContent = 'space-between';
+    imagesRow.style.alignItems = 'center';
+    imagesRow.style.marginBottom = '0';
+    imagesRow.appendChild(buildInfoLabel('Images', 'Images and image-video files from your Stash library.'));
+    imagesRow.appendChild(includeImagesToggleContainer);
+    contentTypesSection.appendChild(imagesRow);
+
+    layoutContent.appendChild(contentTypesSection);
     layoutContent.appendChild(layoutSection);
 
-    // Image Feed Settings Section
+    // ── Short-Form Options ─────────────────────────────────────────────────
+    const shortFormSection = document.createElement('div');
+    shortFormSection.style.marginBottom = '24px';
+    shortFormSection.style.border = `1px solid ${THEME.colors.border}`;
+    shortFormSection.style.borderRadius = THEME.radius.card;
+    shortFormSection.style.padding = '16px';
+
+    const shortFormSectionTitleContainer = document.createElement('div');
+    shortFormSectionTitleContainer.style.display = 'flex';
+    shortFormSectionTitleContainer.style.alignItems = 'center';
+    shortFormSectionTitleContainer.style.marginBottom = '16px';
+
+    const shortFormSectionTitle = document.createElement('h3');
+    shortFormSectionTitle.textContent = 'Short-Form Options';
+    shortFormSectionTitle.style.margin = '0';
+    shortFormSectionTitle.style.color = THEME.colors.textPrimary;
+    shortFormSectionTitle.style.fontSize = THEME.typography.sizeTitle;
+    shortFormSectionTitle.style.fontWeight = THEME.typography.weightTitle;
+    shortFormSectionTitleContainer.appendChild(shortFormSectionTitle);
+    shortFormSectionTitleContainer.appendChild(this.createInfoButton(
+      'Full scenes shorter than a set length (default 120 seconds).\n\n' +
+      'Treated as Videos by Stash (not Images).\n' +
+      'Full video playback with controls.'
+    ));
+    shortFormSection.appendChild(shortFormSectionTitleContainer);
+
+    // Max duration input
+    const maxDurationContainer = document.createElement('div');
+    maxDurationContainer.style.marginBottom = '0';
+
+    const maxDurationLabelRow = buildInputLabel(
+      'Max Duration (seconds)',
+      'Videos at or below this length are treated as short-form.'
+    );
+    maxDurationContainer.appendChild(maxDurationLabelRow.container);
+
+    const maxDurationInput = document.createElement('input');
+    maxDurationInput.type = 'number';
+    maxDurationInput.value = String(this.settings.shortFormMaxDuration || 120);
+    maxDurationInput.min = '1';
+    maxDurationInput.max = '600';
+    maxDurationInput.style.width = '100%';
+    maxDurationInput.style.padding = '12px';
+    maxDurationInput.style.borderRadius = THEME.radius.button;
+    maxDurationInput.style.border = `1px solid ${THEME.colors.border}`;
+    maxDurationInput.style.backgroundColor = THEME.colors.surface;
+    maxDurationInput.style.color = THEME.colors.textPrimary;
+    maxDurationInput.style.fontSize = THEME.typography.sizeBody;
+    maxDurationInput.style.boxSizing = 'border-box';
+    maxDurationInput.addEventListener('input', () => {
+      clearTimeout((maxDurationInput as any).saveTimeout);
+      (maxDurationInput as any).saveTimeout = setTimeout(() => {
+        this.saveSettings();
+      }, 500);
+    });
+    maxDurationContainer.appendChild(maxDurationInput);
+    shortFormSection.appendChild(maxDurationContainer);
+
+    contentTabContent.appendChild(shortFormSection);
+
+    // ── Image Options ──────────────────────────────────────────────────────
     const imageSection = document.createElement('div');
     imageSection.style.marginBottom = '24px';
     imageSection.style.border = `1px solid ${THEME.colors.border}`;
@@ -913,43 +911,18 @@ export class SettingsPage {
     imageSectionTitleContainer.style.marginBottom = '16px';
 
     const imageSectionTitle = document.createElement('h3');
-    imageSectionTitle.textContent = 'Image Feed';
+    imageSectionTitle.textContent = 'Image Options';
     imageSectionTitle.style.margin = '0';
     imageSectionTitle.style.color = THEME.colors.textPrimary;
     imageSectionTitle.style.fontSize = THEME.typography.sizeTitle;
     imageSectionTitle.style.fontWeight = THEME.typography.weightTitle;
     imageSectionTitleContainer.appendChild(imageSectionTitle);
-
-    const imageFeedInfo = this.createInfoButton(
-      'Displays images and looping videos from your Stash library.\n\n' +
+    imageSectionTitleContainer.appendChild(this.createInfoButton(
+      'Images and image-video files from your Stash library.\n\n' +
       'Treated as Images by Stash (not Videos).\n' +
-      'Includes video controls and can be upgraded to HD mode with audio support.\n' +
-      'Supports a variety of web video extensions like mp4, m4v, webm, etc.'
-    );
-    imageSectionTitleContainer.appendChild(imageFeedInfo);
+      'Supports a variety of web formats: jpg, png, gif, mp4, m4v, webm, etc.'
+    ));
     imageSection.appendChild(imageSectionTitleContainer);
-
-    // Include images toggle
-    const includeImagesContainer = document.createElement('div');
-    includeImagesContainer.style.display = 'flex';
-    includeImagesContainer.style.justifyContent = 'space-between';
-    includeImagesContainer.style.alignItems = 'center';
-    includeImagesContainer.style.marginBottom = '16px';
-
-    includeImagesContainer.appendChild(
-      buildInfoLabel(
-        'Enable Image Feed',
-        'Adds images and image-video files to the feed alongside videos.'
-      )
-    );
-
-    const { container: includeImagesToggleContainer, input: includeImagesToggle } = this.createToggleSwitch(
-      this.settings.includeImagesInFeed !== false,
-      () => this.saveSettings()
-    );
-    includeImagesContainer.appendChild(includeImagesToggleContainer);
-
-    imageSection.appendChild(includeImagesContainer);
 
     // File types input
     const fileTypesContainer = document.createElement('div');
@@ -976,7 +949,6 @@ export class SettingsPage {
     fileTypesContainer.appendChild(fileTypesInput);
 
     fileTypesInput.addEventListener('input', () => {
-      // Debounce the save to avoid too many saves while typing
       clearTimeout((fileTypesInput as any).saveTimeout);
       (fileTypesInput as any).saveTimeout = setTimeout(() => {
         this.saveSettings();
@@ -984,32 +956,6 @@ export class SettingsPage {
     });
 
     imageSection.appendChild(fileTypesContainer);
-
-    // Images only toggle
-    const imagesOnlyContainer = document.createElement('div');
-    imagesOnlyContainer.style.display = 'flex';
-    imagesOnlyContainer.style.justifyContent = 'space-between';
-    imagesOnlyContainer.style.alignItems = 'center';
-    imagesOnlyContainer.style.marginBottom = '16px';
-
-    imagesOnlyContainer.appendChild(
-      buildInfoLabel(
-        'Images Only',
-        'Loads only image items; regular videos will be skipped.'
-      )
-    );
-
-    const { container: imagesOnlyToggleContainer, input: imagesOnlyToggle } = this.createToggleSwitch(
-      this.settings.imagesOnly === true,
-      (checked) => {
-        if (checked) {
-          includeImagesToggle.checked = true;
-          includeImagesToggle.dispatchEvent(new Event('change'));
-        }
-        this.saveSettings();
-      }
-    );
-    imagesOnlyContainer.appendChild(imagesOnlyToggleContainer);
 
     // Gallery Images Only toggle
     const galleryOnlyContainer = document.createElement('div');
@@ -1038,7 +984,7 @@ export class SettingsPage {
     // Gallery selector (shown when toggle is on)
     const gallerySelectorWrapper = document.createElement('div');
     gallerySelectorWrapper.style.display = this.settings.imagesInGalleryOnly ? 'block' : 'none';
-    gallerySelectorWrapper.style.marginBottom = '16px';
+    gallerySelectorWrapper.style.marginBottom = '0';
 
     // Chip container — styled like a text input
     const galleryChipContainer = document.createElement('div');
@@ -1071,7 +1017,6 @@ export class SettingsPage {
 
     gallerySelectorWrapper.appendChild(galleryChipContainer);
     imageSection.appendChild(gallerySelectorWrapper);
-    imageSection.appendChild(imagesOnlyContainer);
 
     // Dropdown — fixed positioned, appended to modal overlay to escape overflow clipping
     const galleryDropdown = document.createElement('div');
@@ -1227,121 +1172,144 @@ export class SettingsPage {
 
     contentTabContent.appendChild(imageSection);
 
-    // Short Form Content Settings Section
-    const shortFormSection = document.createElement('div');
-    shortFormSection.style.marginBottom = '24px';
-    shortFormSection.style.border = `1px solid ${THEME.colors.border}`;
-    shortFormSection.style.borderRadius = THEME.radius.card;
-    shortFormSection.style.padding = '16px';
+    // ── Filters Section ────────────────────────────────────────────────────
+    const filtersSection = document.createElement('div');
+    filtersSection.style.marginBottom = '24px';
+    filtersSection.style.border = `1px solid ${THEME.colors.border}`;
+    filtersSection.style.borderRadius = THEME.radius.card;
+    filtersSection.style.padding = '16px';
 
-    const shortFormSectionTitleContainer = document.createElement('div');
-    shortFormSectionTitleContainer.style.display = 'flex';
-    shortFormSectionTitleContainer.style.alignItems = 'center';
-    shortFormSectionTitleContainer.style.marginBottom = '16px';
+    const filtersTitleRow = document.createElement('div');
+    filtersTitleRow.style.display = 'flex';
+    filtersTitleRow.style.alignItems = 'center';
+    filtersTitleRow.style.marginBottom = '16px';
 
-    const shortFormSectionTitle = document.createElement('h3');
-    shortFormSectionTitle.textContent = 'Short-Form Videos';
-    shortFormSectionTitle.style.margin = '0';
-    shortFormSectionTitle.style.color = THEME.colors.textPrimary;
-    shortFormSectionTitle.style.fontSize = THEME.typography.sizeTitle;
-    shortFormSectionTitle.style.fontWeight = THEME.typography.weightTitle;
-    shortFormSectionTitleContainer.appendChild(shortFormSectionTitle);
+    const filtersSectionTitle = document.createElement('h3');
+    filtersSectionTitle.textContent = 'Filters';
+    filtersSectionTitle.style.margin = '0';
+    filtersSectionTitle.style.color = THEME.colors.textPrimary;
+    filtersSectionTitle.style.fontSize = THEME.typography.sizeTitle;
+    filtersSectionTitle.style.fontWeight = THEME.typography.weightTitle;
+    filtersTitleRow.appendChild(filtersSectionTitle);
+    filtersSection.appendChild(filtersTitleRow);
 
-    const shortFormInfo = this.createInfoButton(
-      'Scenes (videos) below a certain length.\n\n' +
-      'Treated as Videos by Stash (not Images).\n' +
-      'Full video playback with controls.\n' +
-      'Supports HD and non-HD modes.'
+    // Orientation toggles
+    const orientationFilter = this.settings.orientationFilter ?? [];
+    const hasOrientationFilter = orientationFilter.length > 0;
+    const portraitEnabled = !hasOrientationFilter || orientationFilter.includes('portrait');
+    const landscapeEnabled = !hasOrientationFilter || orientationFilter.includes('landscape');
+
+    const portraitContainer = document.createElement('div');
+    portraitContainer.style.display = 'flex';
+    portraitContainer.style.justifyContent = 'space-between';
+    portraitContainer.style.alignItems = 'center';
+    portraitContainer.style.marginBottom = '12px';
+    portraitContainer.appendChild(buildInfoLabel('Portrait', 'Include portrait-oriented content in the feed.'));
+    const { container: portraitToggleContainer, input: portraitToggle } = this.createToggleSwitch(
+      portraitEnabled, () => this.saveSettings()
     );
-    shortFormSectionTitleContainer.appendChild(shortFormInfo);
-    shortFormSection.appendChild(shortFormSectionTitleContainer);
+    portraitContainer.appendChild(portraitToggleContainer);
+    filtersSection.appendChild(portraitContainer);
 
-    // Include short-form videos toggle
-    const shortFormIncludeContainer = document.createElement('div');
-    shortFormIncludeContainer.style.display = 'flex';
-    shortFormIncludeContainer.style.justifyContent = 'space-between';
-    shortFormIncludeContainer.style.alignItems = 'center';
-    shortFormIncludeContainer.style.marginBottom = '16px';
-
-    shortFormIncludeContainer.appendChild(
-      buildInfoLabel(
-        'Enable Short-Form Videos',
-        'Adds videos shorter than the max duration to the feed.'
-      )
+    const landscapeContainer = document.createElement('div');
+    landscapeContainer.style.display = 'flex';
+    landscapeContainer.style.justifyContent = 'space-between';
+    landscapeContainer.style.alignItems = 'center';
+    landscapeContainer.style.marginBottom = '16px';
+    landscapeContainer.appendChild(buildInfoLabel('Landscape', 'Include landscape-oriented content in the feed.'));
+    const { container: landscapeToggleContainer, input: landscapeToggle } = this.createToggleSwitch(
+      landscapeEnabled, () => this.saveSettings()
     );
+    landscapeContainer.appendChild(landscapeToggleContainer);
+    filtersSection.appendChild(landscapeContainer);
 
-    const { container: shortFormIncludeToggleContainer, input: shortFormIncludeToggle } = this.createToggleSwitch(
-      this.settings.shortFormInHDMode !== false || this.settings.shortFormInNonHDMode !== false,
-      () => this.saveSettings()
-    );
-    shortFormIncludeContainer.appendChild(shortFormIncludeToggleContainer);
-
-    shortFormSection.appendChild(shortFormIncludeContainer);
-
-    // Max duration input
-    const maxDurationContainer = document.createElement('div');
-    maxDurationContainer.style.marginBottom = '16px';
-
-    const maxDurationLabelRow = buildInputLabel(
-      'Max Duration (seconds)',
-      'Videos at or below this length are treated as short-form.'
-    );
-    maxDurationContainer.appendChild(maxDurationLabelRow.container);
-
-    const maxDurationInput = document.createElement('input');
-    maxDurationInput.type = 'number';
-    maxDurationInput.value = String(this.settings.shortFormMaxDuration || 120);
-    maxDurationInput.min = '1';
-    maxDurationInput.max = '600';
-    maxDurationInput.style.width = '100%';
-    maxDurationInput.style.padding = '12px';
-    maxDurationInput.style.borderRadius = THEME.radius.button;
-    maxDurationInput.style.border = `1px solid ${THEME.colors.border}`;
-    maxDurationInput.style.backgroundColor = THEME.colors.surface;
-    maxDurationInput.style.color = THEME.colors.textPrimary;
-    maxDurationInput.style.fontSize = THEME.typography.sizeBody;
-    maxDurationInput.style.boxSizing = 'border-box';
-    maxDurationInput.addEventListener('input', () => {
-      // Debounce the save to avoid too many saves while typing
-      clearTimeout((maxDurationInput as any).saveTimeout);
-      (maxDurationInput as any).saveTimeout = setTimeout(() => {
-        this.saveSettings();
-      }, 500);
+    // Excluded Tags
+    const excludedTagsContainer = document.createElement('div');
+    excludedTagsContainer.style.marginBottom = '16px';
+    const excludedTagsLabelRow = buildInputLabel('Excluded Tags', 'Hide any content that contains one of these tags.');
+    excludedTagsContainer.appendChild(excludedTagsLabelRow.container);
+    const excludedTagsInput = document.createElement('input');
+    excludedTagsInput.type = 'text';
+    excludedTagsInput.value = (this.settings.excludedTagNames || []).join(', ');
+    excludedTagsInput.style.width = '100%';
+    excludedTagsInput.style.padding = '12px';
+    excludedTagsInput.style.borderRadius = THEME.radius.button;
+    excludedTagsInput.style.border = `1px solid ${THEME.colors.border}`;
+    excludedTagsInput.style.backgroundColor = THEME.colors.surface;
+    excludedTagsInput.style.color = THEME.colors.textPrimary;
+    excludedTagsInput.style.fontSize = THEME.typography.sizeBody;
+    excludedTagsInput.style.boxSizing = 'border-box';
+    excludedTagsInput.placeholder = 'VR, POV';
+    excludedTagsContainer.appendChild(excludedTagsInput);
+    excludedTagsInput.addEventListener('input', () => {
+      clearTimeout((excludedTagsInput as any).saveTimeout);
+      (excludedTagsInput as any).saveTimeout = setTimeout(() => { this.saveSettings(); }, 500);
     });
-    maxDurationContainer.appendChild(maxDurationInput);
+    filtersSection.appendChild(excludedTagsContainer);
 
-    shortFormSection.appendChild(maxDurationContainer);
-
-    // Only short form content toggle
-    const shortFormOnlyContainer = document.createElement('div');
-    shortFormOnlyContainer.style.display = 'flex';
-    shortFormOnlyContainer.style.justifyContent = 'space-between';
-    shortFormOnlyContainer.style.alignItems = 'center';
-    shortFormOnlyContainer.style.marginBottom = '16px';
-
-    shortFormOnlyContainer.appendChild(
-      buildInfoLabel(
-        'Short-Form Only',
-        'Shows only short-form videos and skips regular-length videos.'
-      )
+    // Recency Bias
+    const seenHistoryContainer = document.createElement('div');
+    seenHistoryContainer.style.marginBottom = '16px';
+    const seenHistoryLabelRow = buildInputLabel(
+      'Recency Bias',
+      'Tracks up to this many recently seen items and hides them from the feed.\nSet to 0 to disable. Default: 500.'
     );
+    seenHistoryContainer.appendChild(seenHistoryLabelRow.container);
+    const seenHistorySizeInput = document.createElement('input');
+    seenHistorySizeInput.type = 'number';
+    seenHistorySizeInput.value = String(this.settings.seenHistorySize ?? 500);
+    seenHistorySizeInput.min = '0';
+    seenHistorySizeInput.max = '2000';
+    seenHistorySizeInput.style.width = '100%';
+    seenHistorySizeInput.style.padding = '12px';
+    seenHistorySizeInput.style.borderRadius = THEME.radius.button;
+    seenHistorySizeInput.style.border = `1px solid ${THEME.colors.border}`;
+    seenHistorySizeInput.style.backgroundColor = THEME.colors.surface;
+    seenHistorySizeInput.style.color = THEME.colors.textPrimary;
+    seenHistorySizeInput.style.fontSize = THEME.typography.sizeBody;
+    seenHistorySizeInput.style.boxSizing = 'border-box';
+    seenHistorySizeInput.addEventListener('input', () => {
+      clearTimeout((seenHistorySizeInput as any).saveTimeout);
+      (seenHistorySizeInput as any).saveTimeout = setTimeout(() => { this.saveSettings(); }, 500);
+    });
+    seenHistoryContainer.appendChild(seenHistorySizeInput);
+    filtersSection.appendChild(seenHistoryContainer);
+    (this as any).seenHistorySizeInput = seenHistorySizeInput;
 
-    const { container: shortFormOnlyToggleContainer, input: shortFormOnlyToggle } = this.createToggleSwitch(
-      this.settings.shortFormOnly === true,
-      (checked) => {
-        if (checked) {
-          shortFormIncludeToggle.checked = true;
-          shortFormIncludeToggle.dispatchEvent(new Event('change'));
-        }
-        this.saveSettings();
-      }
+    // Content Limit
+    const contentLimitContainer = document.createElement('div');
+    contentLimitContainer.style.marginBottom = '0';
+    const contentLimitLabelRow = buildInputLabel(
+      'Content Limit',
+      'Maximum items per content type to paginate through.\nLower values improve performance for large libraries. Default: 5000.'
     );
-    shortFormOnlyContainer.appendChild(shortFormOnlyToggleContainer);
+    contentLimitContainer.appendChild(contentLimitLabelRow.container);
+    const contentLimitInput = document.createElement('input');
+    contentLimitInput.type = 'number';
+    contentLimitInput.value = String(this.settings.contentLimit ?? 5000);
+    contentLimitInput.min = '100';
+    contentLimitInput.max = '50000';
+    contentLimitInput.style.width = '100%';
+    contentLimitInput.style.padding = '12px';
+    contentLimitInput.style.borderRadius = THEME.radius.button;
+    contentLimitInput.style.border = `1px solid ${THEME.colors.border}`;
+    contentLimitInput.style.backgroundColor = THEME.colors.surface;
+    contentLimitInput.style.color = THEME.colors.textPrimary;
+    contentLimitInput.style.fontSize = THEME.typography.sizeBody;
+    contentLimitInput.style.boxSizing = 'border-box';
+    contentLimitInput.addEventListener('input', () => {
+      clearTimeout((contentLimitInput as any).saveTimeout);
+      (contentLimitInput as any).saveTimeout = setTimeout(() => { this.saveSettings(); }, 500);
+    });
+    contentLimitContainer.appendChild(contentLimitInput);
+    filtersSection.appendChild(contentLimitContainer);
+    (this as any).contentLimitInput = contentLimitInput;
 
-    shortFormSection.appendChild(shortFormOnlyContainer);
+    (this as any).portraitToggle = portraitToggle;
+    (this as any).landscapeToggle = landscapeToggle;
+    (this as any).excludedTagsInput = excludedTagsInput;
 
-    contentTabContent.appendChild(shortFormSection);
-
+    contentTabContent.appendChild(filtersSection);
 
     // Version footer
     const versionFooter = document.createElement('div');
@@ -1417,14 +1385,11 @@ export class SettingsPage {
     // Store references to inputs for saveSettings method
     (this as any).fileTypesInput = fileTypesInput;
     (this as any).maxDurationInput = maxDurationInput;
+    (this as any).includeMarkersToggle = includeMarkersToggle;
+    (this as any).includeRandomToggle = includeRandomToggle;
     (this as any).includeImagesToggle = includeImagesToggle;
-    (this as any).imagesOnlyToggle = imagesOnlyToggle;
     (this as any).shortFormIncludeToggle = shortFormIncludeToggle;
-    (this as any).shortFormOnlyToggle = shortFormOnlyToggle;
     (this as any).reelModeToggle = reelModeToggle;
-    (this as any).portraitToggle = portraitToggle;
-    (this as any).landscapeToggle = landscapeToggle;
-    (this as any).excludedTagsInput = excludedTagsInput;
 
     this.container.appendChild(modal);
 
@@ -1459,8 +1424,8 @@ export class SettingsPage {
 
   private collectFormInputs(): Record<string, HTMLInputElement> | undefined {
     const inputNames = [
-      'fileTypesInput', 'maxDurationInput', 'includeImagesToggle', 'imagesOnlyToggle',
-      'shortFormIncludeToggle', 'shortFormOnlyToggle', 'reelModeToggle',
+      'fileTypesInput', 'maxDurationInput', 'includeMarkersToggle', 'includeRandomToggle', 'includeImagesToggle',
+      'shortFormIncludeToggle', 'reelModeToggle',
       'portraitToggle', 'landscapeToggle',
       'themeBackgroundInput', 'themePrimaryInput', 'themeSecondaryInput', 'themeAccentInput',
       'showVerifiedCheckmarksToggle', 'showProductionAgeToggle', 'excludedTagsInput',
@@ -1504,13 +1469,13 @@ export class SettingsPage {
     const gallerySelectedIds = (this as any).gallerySelectedIds as Set<string> | undefined;
 
     const newSettings: Partial<FeedSettings> = {
+      includeMarkersInFeed: inputs.includeMarkersToggle.checked,
+      includeRandomInFeed: inputs.includeRandomToggle.checked,
       includeImagesInFeed: inputs.includeImagesToggle.checked,
       enabledFileTypes: extensions.length > 0 ? extensions : ['.jpg', '.png', '.gif', '.mp4', '.m4v', '.webm'],
-      imagesOnly: inputs.imagesOnlyToggle.checked,
       shortFormInHDMode: inputs.shortFormIncludeToggle.checked,
       shortFormInNonHDMode: inputs.shortFormIncludeToggle.checked,
       shortFormMaxDuration: validMaxDuration,
-      shortFormOnly: inputs.shortFormOnlyToggle.checked,
       reelMode: inputs.reelModeToggle.checked,
       snapToCards: inputs.reelModeToggle.checked,
       orientationFilter: this.parseOrientationFilter(inputs.portraitToggle.checked, inputs.landscapeToggle.checked),

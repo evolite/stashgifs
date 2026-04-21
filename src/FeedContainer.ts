@@ -18,7 +18,7 @@ import { AudioManager, AudioPriority } from './AudioManager.js';
 import { debounce, normalizeMediaUrl, detectDeviceCapabilities, DeviceCapabilities, isStandaloneNavigator, isMobileDevice, getNetworkInfo, isSlowNetwork, isCellularConnection, detectVideoFromVisualFiles, isMp4File, getImageUrlForDisplay, THEME, THEME_DEFAULTS, normalizeHexColor, toRgba, darkenHex, buildFullUrl } from './utils.js';
 import { posterPreloader } from './PosterPreloader.js';
 import { Image as GraphQLImage } from './graphql/types.js';
-import { HQ_SVG_OUTLINE, HQ_SVG_FILLED, RANDOM_SVG, SETTINGS_SVG, SHUFFLE_CHECK_SVG, STASHGIFS_LOGO_SVG } from './icons.js';
+import { HQ_SVG_OUTLINE, HQ_SVG_FILLED, SETTINGS_SVG, STASHGIFS_LOGO_SVG } from './icons.js';
 
 const DEFAULT_SETTINGS: FeedSettings = {
   autoPlay: true, // Enable autoplay for markers
@@ -153,10 +153,8 @@ export class FeedContainer {
   private skeletonLoaders: HTMLElement[] = [];
   private useHDMode: boolean = false;
   private globalMuteState: boolean = false; // Global mute state - all videos muted when true
-  private shuffleMode: number = 0; // 0 = off, 1 = shuffle with markers only, 2 = shuffle all (including no markers)
   private readonly loadObservers: Map<string, IntersectionObserver> = new Map(); // Track load observers for cleanup
   private deviceCapabilities: DeviceCapabilities; // Device capabilities for adaptive quality
-  private shuffleToggle?: HTMLElement; // Reference to shuffle toggle button
   private updatePlaceholderVisibilityRef?: () => void; // Reference to updatePlaceholderVisibility function
   // Card snapping state
   private cardSnapWheelHandler?: (e: WheelEvent) => void;
@@ -829,7 +827,6 @@ export class FeedContainer {
    */
   private loadUserPreferences(): void {
     this.useHDMode = this.loadHDModePreference();
-    this.shuffleMode = this.loadShuffleModePreference();
     this.globalMuteState = this.loadGlobalMuteState();
   }
 
@@ -1033,12 +1030,7 @@ export class FeedContainer {
     return this.settingsManager.data.hdMode;
   }
 
-  /**
-   * Load shuffle mode preference from localStorage
-   */
-  private loadShuffleModePreference(): number {
-    return this.settingsManager.data.shuffleMode;
-  }
+
 
   private loadGlobalMuteState(): boolean {
     return this.settingsManager.data.globalMuteState;
@@ -1296,42 +1288,6 @@ export class FeedContainer {
   }
 
   /**
-   * Show random mode notice in suggestions panel
-   */
-  private showRandomModeNotice(suggestions: HTMLElement): void {
-    this.setHeaderOverlayState(true);
-    suggestions.style.display = 'flex';
-    this.lockBodyScroll();
-    while (suggestions.firstChild) {
-      suggestions.firstChild.remove();
-    }
-    const container = this.createRandomModeNotice();
-    container.style.width = '100%';
-    suggestions.appendChild(container);
-  }
-
-  /**
-   * Create random mode notice banner
-   */
-  private createRandomModeNotice(): HTMLElement {
-    const container = document.createElement('div');
-    container.style.display = 'flex';
-    container.style.justifyContent = 'center';
-    container.style.alignItems = 'center';
-    container.style.padding = '16px';
-    const notice = document.createElement('div');
-    notice.textContent = 'Random mode active — search disabled';
-    notice.style.padding = '8px 12px';
-    notice.style.borderRadius = '999px';
-    notice.style.background = THEME.colors.surface;
-    notice.style.border = `1px solid ${THEME.colors.border}`;
-    notice.style.color = THEME.colors.textSecondary;
-    notice.style.fontSize = '13px';
-    container.appendChild(notice);
-    return container;
-  }
-
-  /**
    * Create section label element
    */
   private createSectionLabel(label: string, uppercase: boolean = false): HTMLElement {
@@ -1529,60 +1485,17 @@ export class FeedContainer {
     hdBtn.style.alignItems = 'center';
     hdBtn.style.justifyContent = 'center';
 
-    // Random positions toggle
-    const randomBtn = document.createElement('button');
-    randomBtn.type = 'button';
-    randomBtn.innerHTML = RANDOM_SVG;
-    const setRandomBtnState = () => {
-      const isOn = this.shuffleMode > 0;
-      randomBtn.title = isOn ? 'Random Positions: On' : 'Random Positions: Off';
-      randomBtn.style.background = isOn ? THEME.colors.surfaceHover : THEME.colors.backgroundSecondary;
-      randomBtn.style.border = isOn ? `1px solid ${THEME.colors.accentPrimary}` : `1px solid ${THEME.colors.border}`;
-      randomBtn.style.color = isOn ? THEME.colors.accentPrimary : THEME.colors.iconInactive;
-    };
-    randomBtn.style.padding = '10px';
-    randomBtn.style.width = '44px';
-    randomBtn.style.height = '44px';
-    randomBtn.style.borderRadius = THEME.radius.button;
-    randomBtn.style.cursor = 'pointer';
-    randomBtn.style.display = 'inline-flex';
-    randomBtn.style.alignItems = 'center';
-    randomBtn.style.justifyContent = 'center';
-    setRandomBtnState();
-
-    const updateButtonStates = () => {
-      hdBtn.innerHTML = this.useHDMode ? HQ_SVG_FILLED : HQ_SVG_OUTLINE;
-      hdBtn.style.background = this.useHDMode ? THEME.colors.surfaceHover : THEME.colors.backgroundSecondary;
-      hdBtn.style.border = this.useHDMode ? `1px solid ${THEME.colors.accentPrimary}` : `1px solid ${THEME.colors.border}`;
-      hdBtn.style.color = this.useHDMode ? THEME.colors.accentPrimary : THEME.colors.iconInactive;
-      hdBtn.title = this.useHDMode ? 'HD Video: On' : 'HD Video: Off';
-      setRandomBtnState();
-    };
-
     hdBtn.addEventListener('click', () => {
       onHDToggleClick();
-      updateButtonStates();
-    });
-
-    randomBtn.addEventListener('click', () => {
-      const willBeOn = this.shuffleMode === 0;
-      if (willBeOn && !this.useHDMode) {
-        onHDToggleClick();
-      }
-      this.shuffleMode = this.shuffleMode > 0 ? 0 : 1;
-      this.settingsManager.save({ shuffleMode: this.shuffleMode });
-      updateButtonStates();
-      updateSearchBarDisplay();
-      this.clearPosts();
-      if (this.postsContainer) this.postsContainer.innerHTML = '';
-      this.currentPage = 1;
-      this.hasMore = true;
-      this.isLoading = false;
-      void this.loadVideos(this.currentFilters, false, undefined, true);
+      const hdIsOn = this.useHDMode;
+      hdBtn.innerHTML = hdIsOn ? HQ_SVG_FILLED : HQ_SVG_OUTLINE;
+      hdBtn.style.background = hdIsOn ? THEME.colors.surfaceHover : THEME.colors.backgroundSecondary;
+      hdBtn.style.border = hdIsOn ? `1px solid ${THEME.colors.accentPrimary}` : `1px solid ${THEME.colors.border}`;
+      hdBtn.style.color = hdIsOn ? THEME.colors.accentPrimary : THEME.colors.iconInactive;
+      hdBtn.title = hdIsOn ? 'HD Video: On' : 'HD Video: Off';
     });
 
     playbackSection.appendChild(hdBtn);
-    playbackSection.appendChild(randomBtn);
     container.appendChild(playbackSection);
   }
 
@@ -1608,7 +1521,6 @@ export class FeedContainer {
     pillRow.style.gap = '8px';
 
     pillRow.appendChild(this.createPillButton('Favorites', async () => {
-      if (this.shuffleMode > 0) return;
       this.selectedSavedFilter = undefined;
       this.selectedPerformerId = undefined;
       this.selectedPerformerName = undefined;
@@ -1633,7 +1545,6 @@ export class FeedContainer {
 
     for (const filter of this.savedFiltersCache) {
       pillRow.appendChild(this.createPillButton(filter.name, () => {
-        if (this.shuffleMode > 0) return;
         this.selectedSavedFilter = { id: filter.id, name: filter.name };
         this.selectedTagId = undefined;
         this.selectedTagName = undefined;
@@ -1675,7 +1586,6 @@ export class FeedContainer {
     for (const tag of tags) {
       tagsSection.appendChild(
         this.createListButton(tag.name, () => {
-          if (this.shuffleMode > 0) return;
           this.selectedSavedFilter = undefined;
           this.selectedPerformerId = undefined;
           this.selectedPerformerName = undefined;
@@ -1722,7 +1632,6 @@ export class FeedContainer {
         this.createListButton(
           performer.name,
           () => {
-            if (this.shuffleMode > 0) return;
             this.selectedSavedFilter = undefined;
             this.selectedTagId = undefined;
             this.selectedTagName = undefined;
@@ -1848,13 +1757,6 @@ export class FeedContainer {
   ): Promise<void> {
     container.innerHTML = '';
 
-    if (this.shuffleMode > 0) {
-      container.innerHTML = '';
-      container.appendChild(this.createRandomModeNotice());
-      suggestions.scrollTop = 0;
-      return;
-    }
-
     await this.loadSavedFiltersIfNeeded();
 
     const alignmentOffsetForResults = this.calculateAlignmentOffset(container, horizontalPadding);
@@ -1863,7 +1765,7 @@ export class FeedContainer {
       .filter((filter) => filter.name.toLowerCase().includes(trimmedText.toLowerCase()))
       .slice(0, 6);
 
-    if (matchingSavedFilters.length > 0 && this.shuffleMode === 0) {
+    if (matchingSavedFilters.length > 0) {
       const savedSection = document.createElement('div');
       savedSection.style.display = 'flex';
       savedSection.style.flexDirection = 'column';
@@ -2311,8 +2213,6 @@ export class FeedContainer {
     queryInput: HTMLInputElement;
     placeholderWrapper: HTMLElement;
     loadingSpinner: HTMLElement;
-    shuffleIndicator: HTMLElement;
-    randomLeftIcon: HTMLElement;
     updatePlaceholderVisibility: () => void;
   } {
     const inputWrapper = document.createElement('div');
@@ -2321,14 +2221,10 @@ export class FeedContainer {
     const queryInput = this.createQueryInput();
     const placeholderSetup = this.setupPlaceholderAnimation(queryInput);
     const placeholderWrapper = placeholderSetup.placeholderWrapper;
-    const randomLeftIcon = this.createRandomLeftIcon();
     const loadingSpinner = this.createLoadingSpinner();
-    const shuffleIndicator = this.createShuffleIndicator();
 
     inputWrapper.appendChild(placeholderWrapper);
-    inputWrapper.appendChild(randomLeftIcon);
     inputWrapper.appendChild(loadingSpinner);
-    inputWrapper.appendChild(shuffleIndicator);
 
     this.setupInputEventHandlers(queryInput, placeholderWrapper, placeholderSetup);
 
@@ -2337,8 +2233,6 @@ export class FeedContainer {
       queryInput,
       placeholderWrapper,
       loadingSpinner,
-      shuffleIndicator,
-      randomLeftIcon,
       updatePlaceholderVisibility: placeholderSetup.updatePlaceholderVisibility,
     };
   }
@@ -2501,21 +2395,6 @@ export class FeedContainer {
   }
 
   /**
-   * Create random left icon for shuffle mode
-   */
-  private createRandomLeftIcon(): HTMLElement {
-    const randomLeftIcon = document.createElement('div');
-    randomLeftIcon.className = 'feed-random-left-icon';
-    randomLeftIcon.style.display = this.shuffleMode > 0 ? 'inline-flex' : 'none';
-    
-    const randomLeftIconSpan = document.createElement('span');
-    randomLeftIconSpan.innerHTML = RANDOM_SVG;
-    randomLeftIcon.appendChild(randomLeftIconSpan);
-    
-    return randomLeftIcon;
-  }
-
-  /**
    * Create loading spinner for search input
    */
   private createLoadingSpinner(): HTMLElement {
@@ -2528,28 +2407,12 @@ export class FeedContainer {
   /**
    * Create shuffle indicator element
    */
-  private createShuffleIndicator(): HTMLElement {
-    const shuffleIndicator = document.createElement('div');
-    shuffleIndicator.className = 'feed-random-indicator';
-    shuffleIndicator.style.display = 'none';
-    
-    const randomIconSvg = document.createElement('span');
-    randomIconSvg.innerHTML = SHUFFLE_CHECK_SVG;
-    const shuffleText = document.createElement('span');
-    shuffleText.textContent = 'Random';
-    shuffleIndicator.appendChild(randomIconSvg);
-    shuffleIndicator.appendChild(shuffleText);
-    
-    return shuffleIndicator;
-  }
-
   /**
-   * Setup header buttons (HD toggle, volume toggle, shuffle toggle)
+   * Setup header buttons (HD toggle)
    */
   private setupHeaderButtons(): {
     buttonsContainer: HTMLElement;
     hdToggle: HTMLButtonElement;
-    shuffleToggle: HTMLButtonElement;
     onHDToggleClick: () => void;
   } {
     const buttonsContainer = document.createElement('div');
@@ -2561,14 +2424,10 @@ export class FeedContainer {
     const hdToggleResult = this.createHDToggleButton();
     const hdToggle = hdToggleResult.button;
     const onHDToggleClick = hdToggleResult.onClick;
-    const shuffleToggle = this.createShuffleToggleButton(hdToggle);
-
-    // Volume toggle removed - mute button is now on each video player
 
     return {
       buttonsContainer,
       hdToggle,
-      shuffleToggle,
       onHDToggleClick,
     };
   }
@@ -2665,23 +2524,17 @@ export class FeedContainer {
     hdToggle.style.justifyContent = 'center';
     hdToggle.style.transition = 'background 0.2s ease, border-color 0.2s ease, color 0.2s ease, transform 0.2s cubic-bezier(0.2, 0, 0, 1)';
 
-    const setHDToggleVisualState = (shuffleToggle: HTMLButtonElement | HTMLElement | null | undefined) => {
+    const setHDToggleVisualState = () => {
       if (this.useHDMode) {
         hdToggle.textContent = 'HD Video';
         hdToggle.style.background = THEME.colors.surfaceHover;
         hdToggle.style.borderColor = THEME.colors.success;
         hdToggle.style.color = THEME.colors.success;
-        if (shuffleToggle) {
-          shuffleToggle.style.display = 'inline-flex';
-        }
       } else {
         hdToggle.textContent = 'HD Video';
         hdToggle.style.background = THEME.colors.backgroundSecondary;
         hdToggle.style.borderColor = THEME.colors.border;
         hdToggle.style.color = THEME.colors.iconInactive;
-        if (shuffleToggle) {
-          shuffleToggle.style.display = 'none';
-        }
       }
     };
 
@@ -2692,17 +2545,12 @@ export class FeedContainer {
     });
 
     hdToggle.addEventListener('mouseleave', () => {
-      setHDToggleVisualState(this.shuffleToggle ?? null);
+      setHDToggleVisualState();
       hdToggle.style.opacity = '1';
     });
 
     const onHDToggleClick = () => {
       const newHDMode = !this.useHDMode;
-      
-      if (!newHDMode && this.shuffleMode > 0) {
-        this.shuffleMode = 0;
-        this.settingsManager.save({ shuffleMode: 0 });
-      }
 
       this.settingsManager.save({ hdMode: newHDMode });
       
@@ -2724,103 +2572,12 @@ export class FeedContainer {
     });
 
     // Set initial state
-    setHDToggleVisualState(null);
+    setHDToggleVisualState();
 
     return {
       button: hdToggle,
       onClick: onHDToggleClick,
     };
-  }
-
-  /**
-   * Create shuffle toggle button
-   */
-  private createShuffleToggleButton(hdToggle: HTMLButtonElement): HTMLButtonElement {
-    const shuffleToggle = document.createElement('button');
-    shuffleToggle.type = 'button';
-    shuffleToggle.title = 'Toggle shuffle mode';
-    shuffleToggle.setAttribute('aria-label', 'Toggle shuffle mode');
-    shuffleToggle.style.height = '44px';
-    shuffleToggle.style.minWidth = '44px';
-    shuffleToggle.style.padding = '0 14px';
-    shuffleToggle.style.borderRadius = THEME.radius.button;
-    shuffleToggle.style.border = `1px solid ${THEME.colors.border}`;
-    shuffleToggle.style.background = THEME.colors.backgroundSecondary;
-    shuffleToggle.style.color = THEME.colors.textSecondary;
-    shuffleToggle.style.cursor = 'pointer';
-    shuffleToggle.style.display = this.useHDMode ? 'inline-flex' : 'none';
-    shuffleToggle.style.alignItems = 'center';
-    shuffleToggle.style.justifyContent = 'center';
-    shuffleToggle.style.transition = 'background 0.2s ease, border-color 0.2s ease, color 0.2s ease, transform 0.2s cubic-bezier(0.2, 0, 0, 1)';
-    shuffleToggle.style.fontSize = THEME.typography.sizeMeta;
-    shuffleToggle.style.fontWeight = THEME.typography.weightTitle;
-    shuffleToggle.style.lineHeight = THEME.typography.lineHeightTight;
-    shuffleToggle.style.userSelect = 'none';
-
-    const setShuffleToggleVisualState = () => {
-      if (this.shuffleMode === 0) {
-        shuffleToggle.textContent = 'Random Positions';
-        shuffleToggle.style.background = THEME.colors.backgroundSecondary;
-        shuffleToggle.style.borderColor = THEME.colors.border;
-        shuffleToggle.style.color = THEME.colors.iconInactive;
-        shuffleToggle.title = 'Random Positions';
-      } else if (this.shuffleMode === 1) {
-        shuffleToggle.textContent = 'Random Positions';
-        shuffleToggle.style.background = THEME.colors.surfaceHover;
-        shuffleToggle.style.borderColor = THEME.colors.accentPrimary;
-        shuffleToggle.style.color = THEME.colors.accentPrimary;
-        shuffleToggle.title = 'Random Positions';
-      } else {
-        shuffleToggle.textContent = 'Random Positions';
-        shuffleToggle.style.background = THEME.colors.surfaceHover;
-        shuffleToggle.style.borderColor = THEME.colors.accentPrimary;
-        shuffleToggle.style.color = THEME.colors.accentPrimary;
-        shuffleToggle.title = 'Random Positions (No Markers)';
-      }
-    };
-
-    setShuffleToggleVisualState();
-
-    shuffleToggle.addEventListener('mouseenter', () => {
-      shuffleToggle.style.background = THEME.colors.surfaceHover;
-      shuffleToggle.style.borderColor = this.shuffleMode === 0 ? THEME.colors.border : THEME.colors.accentPrimary;
-      shuffleToggle.style.opacity = '0.92';
-    });
-
-    shuffleToggle.addEventListener('mouseleave', () => {
-      setShuffleToggleVisualState();
-      shuffleToggle.style.opacity = '1';
-    });
-
-    const onShuffleClick = async () => {
-      this.shuffleMode = (this.shuffleMode + 1) % 3;
-      this.settingsManager.save({ shuffleMode: this.shuffleMode });
-
-      setShuffleToggleVisualState();
-      
-      
-      this.clearPosts();
-      
-      if (this.postsContainer) {
-        this.postsContainer.innerHTML = '';
-      }
-      
-      this.currentPage = 1;
-      this.hasMore = true;
-      this.isLoading = false;
-      
-      await this.loadVideos(this.currentFilters, false, undefined, true);
-    };
-    
-    shuffleToggle.addEventListener('click', (e) => {
-      e.preventDefault();
-      e.stopPropagation();
-      void onShuffleClick();
-    });
-
-    this.shuffleToggle = shuffleToggle;
-
-    return shuffleToggle;
   }
 
   /**
@@ -2863,8 +2620,6 @@ export class FeedContainer {
     const inputWrapper = inputSetup.inputWrapper;
     const queryInput = inputSetup.queryInput;
     const loadingSpinner = inputSetup.loadingSpinner;
-    const shuffleIndicator = inputSetup.shuffleIndicator;
-    const randomLeftIcon = inputSetup.randomLeftIcon;
     const updatePlaceholderVisibility = inputSetup.updatePlaceholderVisibility;
     this.updatePlaceholderVisibilityRef = updatePlaceholderVisibility;
 
@@ -2918,24 +2673,13 @@ export class FeedContainer {
 
     const updateSearchBarDisplay = () => {
       queryInput.value = this.getSelectedFilterDisplayName();
-      // Hide tag header since we're showing it in the search bar
       tagHeader.style.display = 'none';
-      // Ensure animated placeholder hides when we have any value or focus
       updatePlaceholderVisibility();
-      // Disable search input in random mode
-      const disabled = this.shuffleMode > 0;
-      // Use readOnly so clicks can disable random mode
       if (queryInput instanceof HTMLInputElement) {
-        queryInput.readOnly = disabled;
+        queryInput.readOnly = false;
       }
-      // Keep opacity at 1 in both modes for consistent appearance
       queryInput.style.opacity = '1';
-      // Keep padding consistent across modes
       queryInput.style.paddingLeft = '14px';
-      // Hide deprecated right pill (no longer used)
-      shuffleIndicator.style.display = 'none';
-      // Hide left indicator in random mode
-      randomLeftIcon.style.display = 'none';
     };
 
     const apply = async () => {
@@ -3058,11 +2802,6 @@ export class FeedContainer {
     };
 
     const fetchAndShowSuggestions = async (text: string, forceShow: boolean = false) => {
-      if (this.shuffleMode > 0) {
-        this.showRandomModeNotice(suggestions);
-        return;
-      }
-      
       const trimmedText = text.trim();
       const requestId = ++suggestionsRequestId;
       const ensureLatest = () => requestId === suggestionsRequestId;
@@ -3109,21 +2848,6 @@ export class FeedContainer {
     // Handle focus and show suggestions
     let focusHandled = false;
     let clickHandled = false;
-    const disableRandomIfActive = async () => {
-      if (this.shuffleMode > 0) {
-        this.shuffleMode = 0;
-        this.settingsManager.save({ shuffleMode: 0 });
-        // Re-enable input visuals
-        updateSearchBarDisplay();
-        // Reload non-random feed
-        this.clearPosts();
-        if (this.postsContainer) this.postsContainer.innerHTML = '';
-        this.currentPage = 1;
-        this.hasMore = true;
-        this.isLoading = false;
-        await this.loadVideos(this.currentFilters, false, undefined, true);
-      }
-    };
 
     const focusInputSafely = (input: HTMLInputElement) => {
       try {
@@ -3142,7 +2866,6 @@ export class FeedContainer {
     };
 
     const prepareSearchForInput = () => {
-      void disableRandomIfActive();
       this.preloadSuggestions().catch((e) => console.warn('Suggestion preload refresh failed', e));
       queryInput.style.background = THEME.colors.surface;
       queryInput.style.borderColor = THEME.colors.border;
@@ -3185,7 +2908,6 @@ export class FeedContainer {
     const handleMobileTouchEnd = (e: TouchEvent) => {
       e.stopPropagation();
       focusInputSafely(queryInput);
-      void disableRandomIfActive();
       handleFocus();
     };
     
@@ -3276,8 +2998,6 @@ export class FeedContainer {
    * Handle performer chip click - clear filters and set performer filter
    */
   private async handlePerformerChipClick(performerId: number, performerName: string): Promise<void> {
-    // Disable chip interactions in random mode
-    if (this.shuffleMode > 0) return;
     // Clear all filters
     this.selectedTagId = undefined;
     this.selectedTagName = undefined;
@@ -3295,8 +3015,6 @@ export class FeedContainer {
    * Handle tag chip click - clear filters and set tag filter
    */
   private async handleTagChipClick(tagId: number, tagName: string): Promise<void> {
-    // Disable chip interactions in random mode
-    if (this.shuffleMode > 0) return;
     // Clear all filters
     this.selectedPerformerId = undefined;
     this.selectedPerformerName = undefined;
@@ -3327,19 +3045,6 @@ export class FeedContainer {
     return undefined;
   }
 
-  /**
-   * Handle random mode filter application
-   */
-  private async applyRandomModeFilters(loadSignal?: AbortSignal): Promise<void> {
-    const newFilters: FilterOptions = {
-      limit: FeedContainer.CONTENT_LOAD_LIMIT,
-      offset: 0,
-      shuffleMode: true,
-      includeScenesWithoutMarkers: this.shuffleMode === 2,
-    };
-    this.currentFilters = newFilters;
-    await this.loadVideos(newFilters, false, loadSignal, true);
-  }
 
   /**
    * Build filter values from selected performer
@@ -3429,11 +3134,6 @@ export class FeedContainer {
    */
   private async applyCurrentSearch(loadSignal?: AbortSignal): Promise<void> {
     const q = this.getCurrentQueryFromInput();
-
-    if (this.shuffleMode > 0) {
-      await this.applyRandomModeFilters(loadSignal);
-      return;
-    }
 
     let queryValue: string | undefined = undefined;
     let tags: string[] | undefined = undefined;
@@ -4200,8 +3900,6 @@ export class FeedContainer {
       ...currentFilters,
       limit,
       offset,
-      shuffleMode: this.shuffleMode > 0,
-      includeScenesWithoutMarkers: this.shuffleMode === 2,
     }, signal);
     
     // Update sortSeed in filters if returned
@@ -4383,6 +4081,7 @@ export class FeedContainer {
     shouldLoadMarkers: boolean;
     shouldLoadImages: boolean;
     shouldLoadShortForm: boolean;
+    shouldLoadRandom: boolean;
   } {
     // Use provided filters or fall back to currentFilters
     const activeFilters = filters || this.currentFilters || {};
@@ -4395,26 +4094,22 @@ export class FeedContainer {
       return {
         shouldLoadMarkers: true,
         shouldLoadImages: false,
-        shouldLoadShortForm: false
+        shouldLoadShortForm: false,
+        shouldLoadRandom: false
       };
     }
     
     const shortFormEnabledForCurrentMode = this.shouldLoadShortFormContent();
-    const shortFormOnlyActive = this.settings.shortFormOnly === true && shortFormEnabledForCurrentMode;
-    
-    // In shuffle mode, don't force load short form content separately
-    // It's already included naturally as scenes, so loading it separately would cause duplication
-    const shouldLoadShortForm = this.shuffleMode === 0 && (shortFormEnabledForCurrentMode || shortFormOnlyActive);
-    
-    // When filtering by tags or performers, include all content types that support these filters
-    // Images and short form content both support tag/performer filtering
-    const shouldLoadMarkers = !(this.settings.imagesOnly ?? false) && !shortFormOnlyActive;
-    const shouldLoadImages = this.shouldLoadImages() || (this.settings.imagesOnly ?? false);
-    
+    const shouldLoadShortForm = shortFormEnabledForCurrentMode;
+    const shouldLoadMarkers = this.settings.includeMarkersInFeed !== false;
+    const shouldLoadImages = this.shouldLoadImages();
+    const shouldLoadRandom = this.settings.includeRandomInFeed === true;
+
     return {
       shouldLoadMarkers,
       shouldLoadImages,
-      shouldLoadShortForm
+      shouldLoadShortForm,
+      shouldLoadRandom
     };
   }
 
@@ -4479,29 +4174,32 @@ export class FeedContainer {
       shouldLoadMarkers: boolean;
       shouldLoadImages: boolean;
       shouldLoadShortForm: boolean;
+      shouldLoadRandom: boolean;
     };
     append: boolean;
   }): Promise<{
     markers: SceneMarker[];
     images: Image[];
     shortFormMarkers: SceneMarker[];
+    randomMarkers: SceneMarker[];
     markerCount: number;
     imageCount: number;
     shortFormCount: number;
   }> {
     const { currentFilters, limits, signal, loadingFlags, append } = options;
     const { limit, markerLimit, shortFormLimit } = limits;
-    const { shouldLoadMarkers, shouldLoadImages, shouldLoadShortForm } = loadingFlags;
+    const { shouldLoadMarkers, shouldLoadImages, shouldLoadShortForm, shouldLoadRandom } = loadingFlags;
 
     this.ensureSortSeed(currentFilters);
 
     const { markerPageSize, imagePageSize } = this.calculatePaginationForContent(append, markerLimit, limit);
     const { markerOffset, imageOffset, shortFormOffset } = this.getLoadOffsets(append);
 
-    const [markersResult, imagesResult, shortFormResult] = await Promise.all([
+    const [markersResult, imagesResult, shortFormResult, randomResult] = await Promise.all([
       this.fetchMarkersIfNeeded({ currentFilters, markerPageSize, markerOffset, signal, shouldLoadMarkers }),
       this.fetchImagesIfNeeded({ currentFilters, imagePageSize, imageOffset, signal, shouldLoadImages }),
-      this.fetchShortFormIfNeeded({ currentFilters, shortFormLimit, shortFormOffset, signal, shouldLoadShortForm })
+      this.fetchShortFormIfNeeded({ currentFilters, shortFormLimit, shortFormOffset, signal, shouldLoadShortForm }),
+      this.fetchRandomIfNeeded({ currentFilters, limit, signal, shouldLoadRandom })
     ]);
 
     this.logFetchedContentResults({
@@ -4517,11 +4215,12 @@ export class FeedContainer {
     });
 
     this.updateShortFormOffsetIfNeeded(shouldLoadShortForm, append, shortFormResult);
-    
+
     return {
       markers: markersResult.markers,
       images: imagesResult.images,
       shortFormMarkers: shortFormResult.markers,
+      randomMarkers: randomResult.markers,
       markerCount: markersResult.totalCount,
       imageCount: imagesResult.totalCount,
       shortFormCount: shortFormResult.totalCount
@@ -4586,6 +4285,40 @@ export class FeedContainer {
       return { markers: [], totalCount: 0, unfilteredOffsetConsumed: 0 };
     }
     return this.fetchShortFormVideosForLoad(currentFilters, shortFormLimit, shortFormOffset, signal);
+  }
+
+  private async fetchRandomIfNeeded(options: {
+    currentFilters: FilterOptions;
+    limit: number;
+    signal: AbortSignal | undefined;
+    shouldLoadRandom: boolean;
+  }): Promise<{ markers: SceneMarker[]; totalCount: number }> {
+    const { currentFilters, limit, signal, shouldLoadRandom } = options;
+    if (!shouldLoadRandom) {
+      return { markers: [], totalCount: 0 };
+    }
+    return this.fetchRandomScenesForLoad(currentFilters, limit, signal);
+  }
+
+  private async fetchRandomScenesForLoad(
+    currentFilters: FilterOptions,
+    limit: number,
+    signal?: AbortSignal
+  ): Promise<{ markers: SceneMarker[]; totalCount: number }> {
+    if (!this.api) {
+      return { markers: [], totalCount: 0 };
+    }
+    const filters: FilterOptions = {
+      ...currentFilters,
+      limit,
+      shuffleMode: true,
+      includeScenesWithoutMarkers: true
+    };
+    const result = await this.api.fetchSceneMarkers(filters, signal);
+    return {
+      markers: this.filterMarkersByExcludedTags(result.markers),
+      totalCount: result.totalCount
+    };
   }
 
   private updateShortFormOffsetIfNeeded(
@@ -4767,20 +4500,21 @@ export class FeedContainer {
         return;
       }
 
-      const { shouldLoadMarkers, shouldLoadImages, shouldLoadShortForm } = this.determineContentLoadingFlags(currentFilters);
-      
+      const { shouldLoadMarkers, shouldLoadImages, shouldLoadShortForm, shouldLoadRandom } = this.determineContentLoadingFlags(currentFilters);
+
       // Calculate limits (simple split when both markers and shortform are enabled)
       const limits = this.calculateContentLimits(limit, shouldLoadMarkers, shouldLoadShortForm);
       const markerLimit = limits.markerLimit;
       const shortFormLimit = limits.shortFormLimit;
-      
+
       // Debug logging for short-form content
       this.logShortFormSettings(shouldLoadShortForm);
-      
+
       const {
         markers,
         images,
         shortFormMarkers,
+        randomMarkers,
         markerCount,
         imageCount,
         shortFormCount
@@ -4796,7 +4530,8 @@ export class FeedContainer {
         loadingFlags: {
           shouldLoadMarkers,
           shouldLoadImages,
-          shouldLoadShortForm
+          shouldLoadShortForm,
+          shouldLoadRandom
         },
         append
       });
@@ -4808,24 +4543,25 @@ export class FeedContainer {
         return;
       }
 
+      const allMarkersForContent = [...markers, ...shortFormMarkers, ...randomMarkers];
       const mergedContent = await this.processFetchedContent({
         content: {
-          markers,
-          shortFormMarkers,
+          markers: allMarkersForContent,
+          shortFormMarkers: [],
           images
         },
         counts: {
-          markerCount,
+          markerCount: markerCount + randomMarkers.length,
           shortFormCount,
           imageCount
         },
         currentFilters,
         offset,
         append,
-        shouldLoadMarkers
+        shouldLoadMarkers: shouldLoadMarkers || shouldLoadRandom
       });
 
-      const totalUnfiltered = markers.length + shortFormMarkers.length + images.length;
+      const totalUnfiltered = markers.length + shortFormMarkers.length + randomMarkers.length + images.length;
       if (totalUnfiltered > 0 && mergedContent.length === 0 && append && this.seenSkipCount < 10) {
         this.currentPage = page;
         this.seenSkipCount++;
@@ -4836,18 +4572,17 @@ export class FeedContainer {
         this.seenSkipCount = 0;
       }
 
-      const allMarkers = [...markers, ...shortFormMarkers];
       await this.renderAndFinalizeContent(
         mergedContent,
-        allMarkers,
-        shouldLoadMarkers,
+        allMarkersForContent,
+        shouldLoadMarkers || shouldLoadRandom,
         currentFilters,
         append,
         signal,
         page
       );
 
-      void this.prefetchNextPagePosters(currentFilters, shouldLoadMarkers);
+      void this.prefetchNextPagePosters(currentFilters, shouldLoadMarkers || shouldLoadRandom);
     } catch (error: unknown) {
       this.handleLoadError(error, append);
     } finally {
@@ -5047,9 +4782,8 @@ export class FeedContainer {
    */
   private shouldLoadImages(): boolean {
     const imagesEnabled = this.settings.includeImagesInFeed ?? true;
-    const imagesOnly = this.settings.imagesOnly ?? false;
     const hasFileTypes = (this.settings.enabledFileTypes?.length ?? 0) > 0;
-    return (imagesEnabled || imagesOnly) && hasFileTypes;
+    return imagesEnabled && hasFileTypes;
   }
 
   /**
@@ -5671,7 +5405,7 @@ export class FeedContainer {
       return undefined; // Marker videos are pre-rendered clips
     }
 
-    if (this.shuffleMode > 0) {
+    if (typeof marker.id === 'string' && marker.id.startsWith('synthetic-')) {
       return this.calculateRandomStartTime(marker);
     }
 
@@ -5711,7 +5445,7 @@ export class FeedContainer {
       postData,
       {
         ...this.buildCommonPostOptions(),
-        useShuffleMode: this.shuffleMode > 0,
+        useShuffleMode: typeof marker.id === 'string' && marker.id.startsWith('synthetic-'),
         onCancelRequests: () => this.cancelAllPendingRequests(),
         onMuteToggle: (isMuted: boolean) => this.setGlobalMuteState(isMuted),
         getGlobalMuteState: () => this.getGlobalMuteState(),

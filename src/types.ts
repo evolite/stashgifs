@@ -104,6 +104,8 @@ export interface FeedSettings {
   backgroundPreloadFastScrollDelay?: number; // ms, default: 400ms delay during fast scrolling
   backgroundPreloadScrollVelocityThreshold?: number; // pixels/ms, default: 2.0 for fast scroll detection
   enabledFileTypes?: string[]; // File extensions to include (e.g., ['.gif', '.webm']), default: ['.gif']
+  includeMarkersInFeed?: boolean; // Whether to include scene markers in feed, default: true
+  includeRandomInFeed?: boolean; // Include random scenes played from a random timeframe, default: false
   includeImagesInFeed?: boolean; // Whether to include images in feed, default: true
   imagesOnly?: boolean; // When true, only load images and skip videos
   orientationFilter?: ('landscape' | 'portrait' | 'square')[]; // Filter content by orientation
