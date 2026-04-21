@@ -8,7 +8,6 @@ import { NativeVideoPlayer } from './NativeVideoPlayer.js';
 import { isMobileDevice, THEME, showToast } from './utils.js';
 import { HQ_SVG_OUTLINE, HQ_SVG_FILLED, VOLUME_MUTED_SVG, VOLUME_UNMUTED_SVG } from './icons.js';
 import { BasePost, BasePostOptions } from './BasePost.js';
-import { StashAPI } from './StashAPI.js';
 import { setupTouchHandlers, preventClickAfterTouch } from './utils/touchHandlers.js';
 
 export abstract class VideoPostBase extends BasePost {

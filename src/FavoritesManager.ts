@@ -118,12 +118,10 @@ export class FavoritesManager {
       } else {
         await this.api.removeTagFromScene(marker.scene.id, tagId);
       }
+    } else if (shouldBeFavorite) {
+      await this.api.addTagToMarker(marker, tagId);
     } else {
-      if (shouldBeFavorite) {
-        await this.api.addTagToMarker(marker, tagId);
-      } else {
-        await this.api.removeTagFromMarker(marker, tagId);
-      }
+      await this.api.removeTagFromMarker(marker, tagId);
     }
   }
 

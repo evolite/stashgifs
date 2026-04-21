@@ -25,7 +25,7 @@ export interface PluginSettingsData {
 }
 
 export class PluginSettingsManager {
-  private api: StashAPI;
+  private readonly api: StashAPI;
   private current: PluginSettingsData;
   private debounceTimer: ReturnType<typeof setTimeout> | null = null;
   private pendingSave: PluginSettingsData | null = null;

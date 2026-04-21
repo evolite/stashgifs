@@ -2331,7 +2331,7 @@ export class StashAPI {
       const pluginConfig = plugins[pluginId];
       if (!pluginConfig || typeof pluginConfig !== 'object') return null;
 
-      return pluginConfig as Record<string, unknown>;
+      return pluginConfig;
     } catch (error) {
       return this.handleError('getPluginSettings', error, signal, null);
     }
