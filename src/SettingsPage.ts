@@ -758,7 +758,7 @@ export class SettingsPage {
 
     productionAgeContainer.appendChild(
       buildInfoLabel(
-        'Show Production Age',
+        'Performer Production Age',
         'Shows the performer\'s age at the time of the scene or image next to their name.'
       )
     );
@@ -859,7 +859,7 @@ export class SettingsPage {
     layoutContent.appendChild(contentTypesSection);
     layoutContent.appendChild(layoutSection);
 
-    // ── Short-Form Options ─────────────────────────────────────────────────
+    // ── Short-Form ─────────────────────────────────────────────────
     const shortFormSection = document.createElement('div');
     shortFormSection.style.marginBottom = '24px';
     shortFormSection.style.border = `1px solid ${THEME.colors.border}`;
@@ -872,7 +872,7 @@ export class SettingsPage {
     shortFormSectionTitleContainer.style.marginBottom = '16px';
 
     const shortFormSectionTitle = document.createElement('h3');
-    shortFormSectionTitle.textContent = 'Short-Form Options';
+    shortFormSectionTitle.textContent = 'Short-Form';
     shortFormSectionTitle.style.margin = '0';
     shortFormSectionTitle.style.color = THEME.colors.textPrimary;
     shortFormSectionTitle.style.fontSize = THEME.typography.sizeTitle;
@@ -919,7 +919,7 @@ export class SettingsPage {
 
     contentTabContent.appendChild(shortFormSection);
 
-    // ── Image Options ──────────────────────────────────────────────────────
+    // ── Images ──────────────────────────────────────────────────────
     const imageSection = document.createElement('div');
     imageSection.style.marginBottom = '24px';
     imageSection.style.border = `1px solid ${THEME.colors.border}`;
@@ -932,7 +932,7 @@ export class SettingsPage {
     imageSectionTitleContainer.style.marginBottom = '16px';
 
     const imageSectionTitle = document.createElement('h3');
-    imageSectionTitle.textContent = 'Image Options';
+    imageSectionTitle.textContent = 'Images';
     imageSectionTitle.style.margin = '0';
     imageSectionTitle.style.color = THEME.colors.textPrimary;
     imageSectionTitle.style.fontSize = THEME.typography.sizeTitle;

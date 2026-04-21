@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [5.43.0] - 2026-04-21\n\n### Changed\n- Export BUILD_HASH from version.ts so settings page displays it
+- Move HD Video from header button to settings toggle with info button
+- Convert shuffleMode to includeRandomInFeed content type toggle
+- Strip apikey query param from stream URLs before use
+- Update README to include Fallow in quality validation\n
+
 ## [5.42.2] - 2026-04-18\n\n### Changed\n- Strip apikey query param from stream URLs before use
 - Update README.md
 - Update README to include Fallow in quality validation\n
