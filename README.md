@@ -11,7 +11,7 @@ Install it via Stash's plugin system using the `index.yml` file. - https://raw.g
 ## Features
 
 - **Endless vertical feed** - Scroll through your markers, gifs, and short clips in a continuous feed that loads more content as you go.
-- **Modes** - Select between dynamic Cards or fuullscreen Reels.
+- **Modes** - Select between dynamic Cards or fullscreen Reels.
 - **Configurable Feeds** - Select if you want to include Scenes, markers, images and short form videos.
 - **Filtering** - Narrow down content by performers, tags, or use your saved Stash filters to find exactly what you're looking for.
 - **Interactions** - Favorite content with a tap, add tags to content, rate scenes and images. Each post links back to the content in Stash.
