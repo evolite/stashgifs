@@ -794,7 +794,7 @@ export class SettingsPage {
     contentTypesTitleRow.appendChild(this.createInfoButton(
       'Select which content types appear in your feed.\n\n' +
       'Markers — Scene marker clips from your Stash library.\n' +
-      'Random — Full scenes played from a random position.\n' +
+      'Random — Full scenes played from a random position. Filters and search do not apply.\n' +
       'Short-Form — Full scenes shorter than a set length (default 120 seconds).\n' +
       'Images — Images and image-video files (GIFs, MP4s, etc.).'
     ));
@@ -819,14 +819,27 @@ export class SettingsPage {
       this.settings.includeRandomInFeed === true,
       () => this.saveSettings()
     );
+    const randomWrapper = document.createElement('div');
+    randomWrapper.style.marginBottom = '12px';
+
     const randomRow = document.createElement('div');
     randomRow.style.display = 'flex';
     randomRow.style.justifyContent = 'space-between';
     randomRow.style.alignItems = 'center';
-    randomRow.style.marginBottom = '12px';
-    randomRow.appendChild(buildInfoLabel('Random', 'Full scenes from your library played from a random position.'));
+    randomRow.appendChild(buildInfoLabel('Random', 'Full scenes from your library played from a random position. Filters and search do not apply — scenes are selected randomly regardless of any active tag, performer, or text filters.'));
     randomRow.appendChild(includeRandomToggleContainer);
-    contentTypesSection.appendChild(randomRow);
+
+    const randomHint = document.createElement('span');
+    randomHint.textContent = 'Filters and search do not apply to random content';
+    randomHint.style.display = 'block';
+    randomHint.style.marginTop = '4px';
+    randomHint.style.fontSize = THEME.typography.sizeMeta;
+    randomHint.style.color = THEME.colors.textSecondary;
+    randomHint.style.fontStyle = 'italic';
+
+    randomWrapper.appendChild(randomRow);
+    randomWrapper.appendChild(randomHint);
+    contentTypesSection.appendChild(randomWrapper);
 
     // Short-Form toggle
     const { container: shortFormIncludeToggleContainer, input: shortFormIncludeToggle } = this.createToggleSwitch(
