@@ -4389,7 +4389,7 @@ export class FeedContainer {
         return;
       }
 
-      const allMarkersForContent = [...markers, ...shortFormMarkers, ...randomMarkers];
+      const allMarkersForContent = this.shuffleArray([...markers, ...shortFormMarkers, ...randomMarkers]);
       const mergedContent = await this.processFetchedContent({
         content: {
           markers: allMarkersForContent,
@@ -4793,6 +4793,14 @@ export class FeedContainer {
         height: (vf as { height?: number }).height,
       })),
     };
+  }
+
+  private shuffleArray<T>(arr: T[]): T[] {
+    for (let i = arr.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [arr[i], arr[j]] = [arr[j], arr[i]];
+    }
+    return arr;
   }
 
   /**

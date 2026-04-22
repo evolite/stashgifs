@@ -814,33 +814,6 @@ export class SettingsPage {
     markersRow.appendChild(markersToggleContainer);
     contentTypesSection.appendChild(markersRow);
 
-    // Random toggle
-    const { container: includeRandomToggleContainer, input: includeRandomToggle } = this.createToggleSwitch(
-      this.settings.includeRandomInFeed === true,
-      () => this.saveSettings()
-    );
-    const randomWrapper = document.createElement('div');
-    randomWrapper.style.marginBottom = '12px';
-
-    const randomRow = document.createElement('div');
-    randomRow.style.display = 'flex';
-    randomRow.style.justifyContent = 'space-between';
-    randomRow.style.alignItems = 'center';
-    randomRow.appendChild(buildInfoLabel('Random', 'Full scenes from your library played from a random position. Filters and search do not apply — scenes are selected randomly regardless of any active tag, performer, or text filters.'));
-    randomRow.appendChild(includeRandomToggleContainer);
-
-    const randomHint = document.createElement('span');
-    randomHint.textContent = 'Filters and search do not apply to random content';
-    randomHint.style.display = 'block';
-    randomHint.style.marginTop = '4px';
-    randomHint.style.fontSize = THEME.typography.sizeMeta;
-    randomHint.style.color = THEME.colors.textSecondary;
-    randomHint.style.fontStyle = 'italic';
-
-    randomWrapper.appendChild(randomRow);
-    randomWrapper.appendChild(randomHint);
-    contentTypesSection.appendChild(randomWrapper);
-
     // Short-Form toggle
     const { container: shortFormIncludeToggleContainer, input: shortFormIncludeToggle } = this.createToggleSwitch(
       this.settings.shortFormInHDMode !== false || this.settings.shortFormInNonHDMode !== false,
@@ -864,10 +837,36 @@ export class SettingsPage {
     imagesRow.style.display = 'flex';
     imagesRow.style.justifyContent = 'space-between';
     imagesRow.style.alignItems = 'center';
-    imagesRow.style.marginBottom = '0';
+    imagesRow.style.marginBottom = '12px';
     imagesRow.appendChild(buildInfoLabel('Images', 'Images and image-video files from your Stash library.'));
     imagesRow.appendChild(includeImagesToggleContainer);
     contentTypesSection.appendChild(imagesRow);
+
+    // Random toggle
+    const { container: includeRandomToggleContainer, input: includeRandomToggle } = this.createToggleSwitch(
+      this.settings.includeRandomInFeed === true,
+      () => this.saveSettings()
+    );
+    const randomWrapper = document.createElement('div');
+
+    const randomRow = document.createElement('div');
+    randomRow.style.display = 'flex';
+    randomRow.style.justifyContent = 'space-between';
+    randomRow.style.alignItems = 'center';
+    randomRow.appendChild(buildInfoLabel('Random', 'Full scenes from your library played from a random position. Filters and search do not apply — scenes are selected randomly regardless of any active tag, performer, or text filters.'));
+    randomRow.appendChild(includeRandomToggleContainer);
+
+    const randomHint = document.createElement('span');
+    randomHint.textContent = 'Filters and search do not apply to random content';
+    randomHint.style.display = 'block';
+    randomHint.style.marginTop = '4px';
+    randomHint.style.fontSize = THEME.typography.sizeMeta;
+    randomHint.style.color = THEME.colors.textSecondary;
+    randomHint.style.fontStyle = 'italic';
+
+    randomWrapper.appendChild(randomRow);
+    randomWrapper.appendChild(randomHint);
+    contentTypesSection.appendChild(randomWrapper);
 
     layoutContent.appendChild(contentTypesSection);
     layoutContent.appendChild(layoutSection);
