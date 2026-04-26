@@ -4041,12 +4041,14 @@ export class FeedContainer {
     const { markerPageSize, imagePageSize } = this.calculatePaginationForContent(append, markerLimit, limit);
     const { markerOffset, imageOffset, shortFormOffset } = this.getLoadOffsets(append);
 
+    const fetchStart = performance.now();
     const [markersResult, imagesResult, shortFormResult, randomResult] = await Promise.all([
       this.fetchMarkersIfNeeded({ currentFilters, markerPageSize, markerOffset, signal, shouldLoadMarkers }),
       this.fetchImagesIfNeeded({ currentFilters, imagePageSize, imageOffset, signal, shouldLoadImages }),
       this.fetchShortFormIfNeeded({ currentFilters, shortFormLimit, shortFormOffset, signal, shouldLoadShortForm }),
       this.fetchRandomIfNeeded({ currentFilters, limit, signal, shouldLoadRandom })
     ]);
+    const fetchDuration = performance.now() - fetchStart;
 
     this.logFetchedContentResults({
       shouldLoadMarkers,
@@ -4057,7 +4059,8 @@ export class FeedContainer {
       limit,
       markersResult,
       shortFormResult,
-      imagesResult
+      imagesResult,
+      fetchDuration
     });
 
     this.updateShortFormOffsetIfNeeded(shouldLoadShortForm, append, shortFormResult);
@@ -4188,6 +4191,7 @@ export class FeedContainer {
     markersResult: { markers: SceneMarker[]; totalCount: number };
     shortFormResult: { markers: SceneMarker[]; totalCount: number };
     imagesResult: { images: Image[]; totalCount: number };
+    fetchDuration: number;
   }): void {
     const {
       shouldLoadMarkers,
@@ -4198,17 +4202,19 @@ export class FeedContainer {
       limit,
       markersResult,
       shortFormResult,
-      imagesResult
+      imagesResult,
+      fetchDuration
     } = options;
 
+    const ms = fetchDuration.toFixed(0);
     if (shouldLoadMarkers) {
-      console.log(`[Load] Fetched ${markersResult.markers.length} markers (limit: ${markerLimit}, total: ${markersResult.totalCount})`);
+      console.log(`[Load] Fetched ${markersResult.markers.length} markers (limit: ${markerLimit}, total: ${markersResult.totalCount}) in ${ms}ms`);
     }
     if (shouldLoadShortForm) {
-      console.log(`[Load] Fetched ${shortFormResult.markers.length} short-form markers (limit: ${shortFormLimit}, total: ${shortFormResult.totalCount})`);
+      console.log(`[Load] Fetched ${shortFormResult.markers.length} short-form markers (limit: ${shortFormLimit}, total: ${shortFormResult.totalCount}) in ${ms}ms`);
     }
     if (shouldLoadImages) {
-      console.log(`[Load] Fetched ${imagesResult.images.length} images (limit: ${limit}, total: ${imagesResult.totalCount})`);
+      console.log(`[Load] Fetched ${imagesResult.images.length} images (limit: ${limit}, total: ${imagesResult.totalCount}) in ${ms}ms`);
     }
   }
 
