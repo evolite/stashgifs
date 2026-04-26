@@ -15,7 +15,7 @@ import { VisibilityManager } from './VisibilityManager.js';
 import { FavoritesManager } from './FavoritesManager.js';
 import { SettingsPage } from './SettingsPage.js';
 import { AudioManager, AudioPriority } from './AudioManager.js';
-import { debounce, normalizeMediaUrl, detectDeviceCapabilities, DeviceCapabilities, isStandaloneNavigator, isMobileDevice, getNetworkInfo, isSlowNetwork, isCellularConnection, detectVideoFromVisualFiles, isMp4File, getImageUrlForDisplay, THEME, THEME_DEFAULTS, normalizeHexColor, toRgba, darkenHex, buildFullUrl } from './utils.js';
+import { debounce, normalizeMediaUrl, detectDeviceCapabilities, DeviceCapabilities, isStandaloneNavigator, isMobileDevice, detectVideoFromVisualFiles, isMp4File, getImageUrlForDisplay, THEME, THEME_DEFAULTS, normalizeHexColor, toRgba, darkenHex, buildFullUrl } from './utils.js';
 import { posterPreloader } from './PosterPreloader.js';
 import { Image as GraphQLImage } from './graphql/types.js';
 import { SETTINGS_SVG, STASHGIFS_LOGO_SVG } from './icons.js';
@@ -232,70 +232,24 @@ export class FeedContainer {
    */
   private initializeDeviceConfiguration(): void {
     this.isMobileDevice = isMobileDevice();
-    
-    // Conservative defaults to prevent runaway RAM usage
-    this.maxSimultaneousPreloads = 2;
+    this.deviceCapabilities = detectDeviceCapabilities();
 
-    if (this.isMobileDevice) {
-      // Mobile: more aggressive memory management
+    if (this.deviceCapabilities.availableRAM >= 4096) {
+      this.maxSimultaneousPreloads = 3;
+      this.settings.backgroundPreloadDelay = 60;
+      this.settings.backgroundPreloadFastScrollDelay = 150;
+    } else if (this.deviceCapabilities.availableRAM >= 3072) {
+      this.maxSimultaneousPreloads = 2;
       this.settings.backgroundPreloadDelay = 80;
       this.settings.backgroundPreloadFastScrollDelay = 200;
-      this.deviceCapabilities = detectDeviceCapabilities();
-      
-      // Network-aware optimizations for mobile
-      this.applyNetworkOptimizations();
     } else {
-      // Desktop: use default settings
-      this.deviceCapabilities = detectDeviceCapabilities();
-      if (this.deviceCapabilities.availableRAM >= 4096) {
-        this.maxSimultaneousPreloads = 3;
-        this.settings.backgroundPreloadDelay = 60;
-        this.settings.backgroundPreloadFastScrollDelay = 150;
-      } else if (this.deviceCapabilities.availableRAM >= 3072) {
-        this.maxSimultaneousPreloads = 2;
-        this.settings.backgroundPreloadDelay = 80;
-        this.settings.backgroundPreloadFastScrollDelay = 200;
-      } else {
-        this.maxSimultaneousPreloads = 1;
-        this.settings.backgroundPreloadDelay = 120;
-        this.settings.backgroundPreloadFastScrollDelay = 300;
-      }
+      this.maxSimultaneousPreloads = 1;
+      this.settings.backgroundPreloadDelay = 120;
+      this.settings.backgroundPreloadFastScrollDelay = 300;
     }
-    
+
     this.posts = new Map();
     this.postOrder = [];
-  }
-
-  /**
-   * Apply network-aware optimizations based on connection quality
-   */
-  private applyNetworkOptimizations(): void {
-    const networkInfo = getNetworkInfo();
-    if (!networkInfo) {
-      return; // Network info not available
-    }
-
-    // On slow networks or cellular connections, reduce preloading
-    if (isSlowNetwork() || isCellularConnection()) {
-      // Increase delays to reduce bandwidth usage
-      this.settings.backgroundPreloadDelay = Math.max(this.settings.backgroundPreloadDelay || 80, 200);
-      this.settings.backgroundPreloadFastScrollDelay = Math.max(this.settings.backgroundPreloadFastScrollDelay || 200, 500);
-      
-      // Reduce max simultaneous preloads on slow networks
-      this.maxSimultaneousPreloads = 1;
-      
-      // Disable background preloading on very slow networks
-      if (networkInfo.effectiveType === 'slow-2g' || networkInfo.effectiveType === '2g') {
-        this.settings.backgroundPreloadEnabled = false;
-      }
-    }
-
-    // Adjust based on connection type
-    if (isCellularConnection() && networkInfo.saveData) {
-      // User has data saver enabled - be very conservative
-      this.settings.backgroundPreloadEnabled = false;
-      this.maxSimultaneousPreloads = 0;
-    }
   }
 
   /**

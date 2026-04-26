@@ -4,7 +4,7 @@
  */
 
 import { VideoPlayerState } from './types.js';
-import { addCacheBusting, stripApiKey, formatDuration, normalizeMediaUrl, hasWebkitFullscreen, hasMozFullscreen, hasMsFullscreen, hasWebkitFullscreenHTMLElement, hasMozFullscreenHTMLElement, hasMsFullscreenHTMLElement, hasWebkitFullscreenDocument, hasMozFullscreenDocument, hasMsFullscreenDocument, type ElementWebkitFullscreen, type ElementMozFullscreen, type ElementMsFullscreen, isMobileDevice, getNetworkInfo, isSlowNetwork, isCellularConnection, THEME, subscribeWindowScroll } from './utils.js';
+import { addCacheBusting, stripApiKey, formatDuration, normalizeMediaUrl, hasWebkitFullscreen, hasMozFullscreen, hasMsFullscreen, hasWebkitFullscreenHTMLElement, hasMozFullscreenHTMLElement, hasMsFullscreenHTMLElement, hasWebkitFullscreenDocument, hasMozFullscreenDocument, hasMsFullscreenDocument, type ElementWebkitFullscreen, type ElementMozFullscreen, type ElementMsFullscreen, isMobileDevice, THEME, subscribeWindowScroll } from './utils.js';
 import { VOLUME_MUTED_SVG, VOLUME_UNMUTED_SVG, PLAY_BUTTON_SVG, PAUSE_SVG, FULLSCREEN_SVG } from './icons.js';
 import { setupTouchHandlers, createTouchState, type TouchState } from './utils/touchHandlers.js';
 
@@ -43,7 +43,6 @@ export class NativeVideoPlayer {
   private originalEndTime?: number; // Store original end time for reload
   private unloadRetryTimeout?: ReturnType<typeof setTimeout>;
   private readonly isHDMode: boolean = false; // Track if this is HD mode (affects mute button visibility)
-  private posterImage?: HTMLImageElement; // Fallback poster image for mobile
   private placeholderElement?: HTMLDivElement; // Neutral placeholder to avoid black screens
   private shouldShowPlaceholder: boolean = false;
   private hasPoster: boolean = false;
@@ -237,7 +236,7 @@ export class NativeVideoPlayer {
    */
   private setupVideoElementBasicProperties(options?: { startTime?: number; muted?: boolean; posterUrl?: string; aggressivePreload?: boolean }): void {
     const isMobile = isMobileDevice();
-    this.applyPosterConfig(options?.posterUrl, isMobile);
+    this.applyPosterConfig(options?.posterUrl);
     
     // Set object-fit for proper video display
     this.videoElement.style.objectFit = 'cover';
@@ -245,12 +244,12 @@ export class NativeVideoPlayer {
     this.videoElement.style.height = '100%';
     
     // Hide video surface until playback to avoid black frames
-    if (this.shouldHideVideoUntilPlaying(isMobile)) {
+    if (this.shouldHideVideoUntilPlaying()) {
       this.videoElement.style.opacity = '0';
       this.videoElement.style.transition = 'opacity 0.3s ease-out';
     }
     
-    this.applyPreloadStrategy(options?.startTime, isMobile, options?.aggressivePreload);
+    this.applyPreloadStrategy(options?.startTime, options?.aggressivePreload);
     
     this.videoElement.playsInline = true; // Required for iOS inline playback
     this.videoElement.muted = options?.muted ?? false; // Default to unmuted (markers don't have sound anyway)
@@ -267,32 +266,28 @@ export class NativeVideoPlayer {
     // This ensures the video only gets focus when clicked directly
     this.videoElement.setAttribute('tabindex', '-1');
     
-    // Apply adaptive buffering based on network conditions
-    this.applyAdaptiveBuffering();
   }
 
-  private applyPosterConfig(posterUrl: string | undefined, isMobile: boolean): void {
+  private applyPosterConfig(posterUrl: string | undefined): void {
     this.hasPoster = false;
-    this.shouldShowPlaceholder = isMobile;
     if (!posterUrl) {
+      this.shouldShowPlaceholder = true;
       return;
     }
 
     const normalizedPosterUrl = normalizeMediaUrl(posterUrl);
     if (!normalizedPosterUrl) {
       console.warn('NativeVideoPlayer: Invalid poster URL, skipping poster', { posterUrl });
-      return;
-    }
-
-    if (isMobile) {
+      this.shouldShowPlaceholder = true;
       return;
     }
 
     this.hasPoster = true;
     this.videoElement.poster = normalizedPosterUrl;
+    this.shouldShowPlaceholder = false;
   }
 
-  private applyPreloadStrategy(startTime: number | undefined, isMobile: boolean, aggressivePreload?: boolean): void {
+  private applyPreloadStrategy(startTime: number | undefined, aggressivePreload?: boolean): void {
     const hasStartTimeForPreload = typeof startTime === 'number'
       && Number.isFinite(startTime)
       && startTime > 0;
@@ -303,33 +298,6 @@ export class NativeVideoPlayer {
     }
 
     this.videoElement.preload = hasStartTimeForPreload ? 'metadata' : 'auto';
-  }
-
-  /**
-   * Apply adaptive buffering based on network conditions
-   * Adjusts video buffering behavior for slow or cellular connections
-   */
-  private applyAdaptiveBuffering(): void {
-    if (!isMobileDevice()) {
-      return; // Only apply on mobile
-    }
-
-    const networkInfo = getNetworkInfo();
-    if (!networkInfo) {
-      return; // Network info not available
-    }
-
-    // On slow networks or cellular connections, be more conservative with buffering
-    if (isSlowNetwork() || isCellularConnection()) {
-      // Reduce buffering by setting a lower buffer target
-      // This is done implicitly by using 'metadata' preload
-      // We can also add additional optimizations here if needed
-      if (this.videoElement.preload === 'auto') {
-        // If we were going to use 'auto', consider using 'metadata' instead on slow networks
-        // But only if not about to play immediately
-        this.videoElement.preload = 'metadata';
-      }
-    }
   }
 
   private configureStartTime(startTime?: number): void {
@@ -355,103 +323,8 @@ export class NativeVideoPlayer {
     setTimeout(() => this.enforceStartTimePosition(1, false), 50);
   }
 
-  private shouldHideVideoUntilPlaying(isMobile: boolean): boolean {
-    return isMobile || !this.hasPoster;
-  }
-
-  /**
-   * Create a styled poster image element with consistent positioning and mobile z-index
-   */
-  private createPosterImageElement(src: string): HTMLImageElement {
-    const img = document.createElement('img');
-    img.src = src;
-    img.className = 'video-player__poster-fallback';
-    img.style.position = 'absolute';
-    img.style.top = '0';
-    img.style.left = '0';
-    img.style.width = '100%';
-    img.style.height = '100%';
-    img.style.objectFit = 'cover';
-    const isMobile = isMobileDevice();
-    img.style.zIndex = isMobile ? '2' : '0';
-    img.style.pointerEvents = 'none';
-    img.style.opacity = '1';
-    img.style.transition = 'opacity 0.3s ease-out';
-    return img;
-  }
-
-  /**
-   * Create a fallback poster image element for mobile
-   * This ensures the poster is visible even when the video element's poster attribute doesn't display
-   * Poster will fade out smoothly when video plays, and fade in when video pauses
-   */
-  private createPosterFallback(posterUrl: string): void {
-    const normalizedPosterUrl = normalizeMediaUrl(posterUrl);
-    if (!normalizedPosterUrl) {
-      console.warn('NativeVideoPlayer: Invalid poster URL, skipping fallback', { posterUrl });
-      return;
-    }
-    // Remove existing poster fallback if any
-    if (this.posterImage) {
-      this.posterImage.remove();
-    }
-
-    const img = this.createPosterImageElement(normalizedPosterUrl);
-
-    // On mobile, video element starts with opacity 0 (set in setupVideoElementBasicProperties)
-    // Video will fade in smoothly when playing event fires
-    // We don't show video on loadeddata/canplay - only when actually playing to prevent animated previews
-
-    this.posterImage = img;
-    
-    // Insert before video element in the player wrapper
-    const playerWrapper = this.videoElement.parentElement;
-    if (playerWrapper) {
-      playerWrapper.insertBefore(img, this.videoElement);
-    } else {
-      // If no wrapper yet, store and insert later
-      this.container.appendChild(img);
-    }
-  }
-
-  private hidePosterFallback(): void {
-    if (this.posterImage) {
-      const isMobile = isMobileDevice();
-      // Fade out poster smoothly
-      this.posterImage.style.opacity = '0';
-      
-      // On mobile, keep poster in DOM so we can show it again when video pauses
-      // On desktop, remove it after transition to save memory
-      if (!isMobile) {
-        // Remove after transition
-        setTimeout(() => {
-          if (this.posterImage) {
-            this.posterImage.remove();
-            this.posterImage = undefined;
-          }
-        }, 300);
-      }
-    }
-  }
-
-  /**
-   * Show the fallback poster image (mobile only)
-   * Used when video pauses to prevent black screen
-   * Fades in poster smoothly while video fades out
-   */
-  private showPosterFallback(): void {
-    const isMobile = isMobileDevice();
-    if (!isMobile || !this.posterImage) {
-      return;
-    }
-
-    // Check if poster is still in the DOM (should be on mobile since we don't remove it)
-    if (!this.posterImage.isConnected) {
-      return;
-    }
-
-    // Fade in poster smoothly (opacity 0 → 1)
-    this.posterImage.style.opacity = '1';
+  private shouldHideVideoUntilPlaying(): boolean {
+    return !this.hasPoster;
   }
 
   private showPlaceholder(): void {
@@ -503,9 +376,8 @@ export class NativeVideoPlayer {
     if (this.shouldShowPlaceholder && !this.placeholderElement) {
       this.createPlaceholderLayer();
     }
-    this.showPosterFallback();
     this.showPlaceholder();
-    if (this.shouldHideVideoUntilPlaying(isMobileDevice()) && this.firstFrameTimeMs === undefined) {
+    if (this.shouldHideVideoUntilPlaying() && this.firstFrameTimeMs === undefined) {
       this.videoElement.style.opacity = '0';
     }
   }
@@ -1084,10 +956,9 @@ export class NativeVideoPlayer {
           this.startTimeEnforced = true;
         }
       }
-      if (this.shouldHideVideoUntilPlaying(isMobileDevice())) {
+      if (this.shouldHideVideoUntilPlaying()) {
         this.videoElement.style.opacity = '1';
       }
-      this.hidePosterFallback();
       this.hidePlaceholder();
     });
 
@@ -2537,7 +2408,7 @@ export class NativeVideoPlayer {
         this.viewportUnloadTimeoutId = undefined;
       }
       if (this.videoElement.preload === 'none') {
-        this.videoElement.preload = isMobileDevice() ? 'metadata' : 'auto';
+        this.videoElement.preload = 'auto';
       }
       if (this.isUnloaded) {
         this.reload();
@@ -2660,12 +2531,6 @@ export class NativeVideoPlayer {
       this.touchHandlerCleanup = undefined;
     }
     this.touchState = undefined;
-
-    // Remove poster fallback if exists
-    if (this.posterImage) {
-      this.posterImage.remove();
-      this.posterImage = undefined;
-    }
 
     // Aggressively clean up all resources to free RAM
     if (!this.isUnloaded) {
