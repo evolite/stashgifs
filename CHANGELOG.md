@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [5.43.4] - 2026-04-26\n\n### Changed\n- Fix lazy loading delay by increasing rootMargin and adding early fetch on snap navigation
+- Improve content type UX: shuffle video pool and clarify random limitations
+- Export BUILD_HASH from version.ts so settings page displays it\n
+
 ## [5.43.3] - 2026-04-22\n\n### Changed\n- Improve content type UX: shuffle video pool and clarify random limitations
 - Fix all open SonarQube issues
 - Export BUILD_HASH from version.ts so settings page displays it\n
