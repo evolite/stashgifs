@@ -5574,8 +5574,7 @@ export class FeedContainer {
     }
 
     // Use Intersection Observer to detect when trigger is visible
-    // Less aggressive on mobile to prevent loading too much content ahead
-    const rootMargin = this.isMobileDevice ? '50px' : '200px';
+    const rootMargin = this.isMobileDevice ? '400px' : '600px';
     this.scrollObserver = new IntersectionObserver(
       (entries) => {
         for (const entry of entries) {
@@ -6946,6 +6945,14 @@ export class FeedContainer {
     }
 
     const targetCard = cards[targetIndex];
+
+    if (direction === 'next') {
+      const remainingCards = cards.length - 1 - targetIndex;
+      if (remainingCards <= 2 && !this.isLoading && this.hasMore) {
+        void this.loadVideos(undefined, true);
+      }
+    }
+
     this.snapToCard(targetCard);
   }
 
