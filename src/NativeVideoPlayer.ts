@@ -45,7 +45,6 @@ export class NativeVideoPlayer {
   private readonly isHDMode: boolean = false; // Track if this is HD mode (affects mute button visibility)
   private posterImage?: HTMLImageElement; // Fallback poster image for mobile
   private placeholderElement?: HTMLDivElement; // Neutral placeholder to avoid black screens
-  private shouldExtractFirstFrame: boolean = false; // Track if we need to extract first frame as poster
   private shouldShowPlaceholder: boolean = false;
   private hasPoster: boolean = false;
   private hasResolvedReady: boolean = false;
@@ -96,9 +95,7 @@ export class NativeVideoPlayer {
   private progressTimeoutId?: ReturnType<typeof setTimeout>;
   private viewportObserver?: IntersectionObserver;
   private viewportUnloadTimeoutId?: ReturnType<typeof setTimeout>;
-  private posterObjectUrl?: string;
-  private posterExtractionTimeoutId?: ReturnType<typeof setTimeout>;
-  private posterExtractionIdleId?: number;
+
   private visibilityChangeHandler?: () => void;
   private pageHideHandler?: (e: PageTransitionEvent) => void;
   private videoFrameCallbackId?: number;
@@ -278,39 +275,27 @@ export class NativeVideoPlayer {
     this.hasPoster = false;
     this.shouldShowPlaceholder = isMobile;
     if (!posterUrl) {
-      this.shouldExtractFirstFrame = true;
-      this.shouldShowPlaceholder = true;
       return;
     }
 
     const normalizedPosterUrl = normalizeMediaUrl(posterUrl);
     if (!normalizedPosterUrl) {
       console.warn('NativeVideoPlayer: Invalid poster URL, skipping poster', { posterUrl });
-      this.shouldExtractFirstFrame = true;
-      this.shouldShowPlaceholder = true;
+      return;
+    }
+
+    if (isMobile) {
       return;
     }
 
     this.hasPoster = true;
-
-    if (!isMobile) {
-      this.videoElement.poster = normalizedPosterUrl;
-    }
-
-    if (isMobile) {
-      this.createPosterFallback(normalizedPosterUrl);
-    }
+    this.videoElement.poster = normalizedPosterUrl;
   }
 
   private applyPreloadStrategy(startTime: number | undefined, isMobile: boolean, aggressivePreload?: boolean): void {
     const hasStartTimeForPreload = typeof startTime === 'number'
       && Number.isFinite(startTime)
       && startTime > 0;
-
-    if (isMobile) {
-      this.videoElement.preload = 'metadata';
-      return;
-    }
 
     if (aggressivePreload) {
       this.videoElement.preload = 'auto';
@@ -344,17 +329,6 @@ export class NativeVideoPlayer {
         // But only if not about to play immediately
         this.videoElement.preload = 'metadata';
       }
-    }
-  }
-
-  /**
-   * Switch preload to 'auto' when video is about to play
-   * This optimizes bandwidth usage on mobile by only loading full video when needed
-   */
-  private switchToAutoPreload(): void {
-    if (this.videoElement.preload === 'metadata' && isMobileDevice()) {
-      // Only switch if on mobile and currently using metadata preload
-      this.videoElement.preload = 'auto';
     }
   }
 
@@ -428,15 +402,6 @@ export class NativeVideoPlayer {
     // Video will fade in smoothly when playing event fires
     // We don't show video on loadeddata/canplay - only when actually playing to prevent animated previews
 
-    // Add error handler - if poster fails to load, extract first frame from video
-    img.addEventListener('error', () => {
-      console.warn('NativeVideoPlayer: Poster image failed to load, extracting first frame from video', { posterUrl });
-      this.shouldShowPlaceholder = true;
-      this.createPlaceholderLayer();
-      this.showPlaceholder();
-      this.extractFirstFrameAsPoster();
-    }, { once: true });
-    
     this.posterImage = img;
     
     // Insert before video element in the player wrapper
@@ -449,128 +414,6 @@ export class NativeVideoPlayer {
     }
   }
 
-  /**
-   * Extract first frame from video and use as poster
-   * Used when screenshot poster is unavailable or fails to load
-   */
-  private extractFirstFrameAsPoster(): void {
-    // Only extract if video element exists and is valid
-    if (!this.videoElement?.src) {
-      return;
-    }
-    if (!this.videoElement.paused) {
-      return;
-    }
-
-    // Remove existing poster fallback if any
-    if (this.posterImage) {
-      this.posterImage.remove();
-      this.posterImage = undefined;
-    }
-
-    // Store original currentTime to restore later
-    const originalCurrentTime = this.videoElement.currentTime;
-    const originalPaused = this.videoElement.paused;
-
-    // Ensure video is paused
-    this.videoElement.pause();
-
-    // Seek to first frame (0 seconds)
-    this.videoElement.currentTime = 0;
-
-    // Wait for seeked event to ensure frame is loaded
-    const handleSeeked = () => {
-      try {
-        // Get video dimensions - use actual dimensions if available, otherwise use reasonable defaults
-        const videoWidth = this.videoElement.videoWidth || this.videoElement.clientWidth || 1920;
-        const videoHeight = this.videoElement.videoHeight || this.videoElement.clientHeight || 1080;
-        
-        // Ensure we have valid dimensions
-        if (videoWidth === 0 || videoHeight === 0) {
-          console.warn('NativeVideoPlayer: Video dimensions not available for first frame extraction');
-          this.videoElement.removeEventListener('seeked', handleSeeked);
-          return;
-        }
-        
-        // Create canvas to capture frame (downscale to reduce memory)
-        const maxDimension = 640;
-        const scale = Math.min(1, maxDimension / Math.max(videoWidth, videoHeight));
-        const targetWidth = Math.max(1, Math.round(videoWidth * scale));
-        const targetHeight = Math.max(1, Math.round(videoHeight * scale));
-        const canvas = document.createElement('canvas');
-        canvas.width = targetWidth;
-        canvas.height = targetHeight;
-        
-        const ctx = canvas.getContext('2d');
-        if (!ctx) {
-          console.warn('NativeVideoPlayer: Failed to get canvas context for first frame extraction');
-          this.videoElement.removeEventListener('seeked', handleSeeked);
-          return;
-        }
-
-        // Draw video frame to canvas
-        ctx.drawImage(this.videoElement, 0, 0, canvas.width, canvas.height);
-
-        const applyPosterImage = (src: string) => {
-          if (this.posterImage) {
-            this.posterImage.remove();
-            this.posterImage = undefined;
-          }
-
-          const img = this.createPosterImageElement(src);
-          this.posterImage = img;
-
-          // Insert before video element in the player wrapper
-          const playerWrapper = this.videoElement.parentElement;
-          if (playerWrapper) {
-            playerWrapper.insertBefore(img, this.videoElement);
-          } else {
-            this.container.appendChild(img);
-          }
-
-          // Restore original state if needed
-          if (originalCurrentTime > 0 && !originalPaused) {
-            // Only restore if we had a startTime and video was playing
-            // For most cases, we want to stay at 0
-          }
-        };
-
-        canvas.toBlob((blob) => {
-          if (!blob) {
-            const fallbackUrl = canvas.toDataURL('image/jpeg', 0.85);
-            applyPosterImage(fallbackUrl);
-            return;
-          }
-          if (this.posterObjectUrl) {
-            URL.revokeObjectURL(this.posterObjectUrl);
-          }
-          const objectUrl = URL.createObjectURL(blob);
-          this.posterObjectUrl = objectUrl;
-          applyPosterImage(objectUrl);
-        }, 'image/jpeg', 0.85);
-      } catch (error) {
-        console.warn('NativeVideoPlayer: Failed to extract first frame from video', error);
-      } finally {
-        this.videoElement.removeEventListener('seeked', handleSeeked);
-      }
-    };
-
-    // Add timeout to prevent hanging if seeked never fires
-    const timeoutId = setTimeout(() => {
-      this.videoElement.removeEventListener('seeked', handleSeeked);
-      console.warn('NativeVideoPlayer: Timeout waiting for video seeked event for first frame extraction');
-    }, 5000);
-
-    this.videoElement.addEventListener('seeked', () => {
-      clearTimeout(timeoutId);
-      handleSeeked();
-    }, { once: true });
-  }
-
-  /**
-   * Hide the fallback poster image (fade out)
-   * Called when video starts playing to create seamless crossfade
-   */
   private hidePosterFallback(): void {
     if (this.posterImage) {
       const isMobile = isMobileDevice();
@@ -662,7 +505,7 @@ export class NativeVideoPlayer {
     }
     this.showPosterFallback();
     this.showPlaceholder();
-    if (this.shouldHideVideoUntilPlaying(isMobileDevice())) {
+    if (this.shouldHideVideoUntilPlaying(isMobileDevice()) && this.firstFrameTimeMs === undefined) {
       this.videoElement.style.opacity = '0';
     }
   }
@@ -1170,9 +1013,6 @@ export class NativeVideoPlayer {
       if (!this.hasResolvedReady) {
         this.hasResolvedReady = true;
         this.resolveReady();
-      }
-      if (this.shouldExtractFirstFrame && this.videoElement.readyState >= 1) {
-        this.schedulePosterExtraction();
       }
       if (this.isHovered) {
         this.updateOverlayState();
@@ -1815,9 +1655,6 @@ export class NativeVideoPlayer {
     
     const isMobile = isMobileDevice();
     
-    // Switch to auto preload when about to play (mobile optimization)
-    this.switchToAutoPreload();
-    
     await this.prepareForPlay(isMobile);
     
     // Ensure video element is in the DOM and visible
@@ -2280,35 +2117,6 @@ export class NativeVideoPlayer {
     if (this.viewportUnloadTimeoutId) {
       clearTimeout(this.viewportUnloadTimeoutId);
       this.viewportUnloadTimeoutId = undefined;
-    }
-    if (this.posterExtractionTimeoutId) {
-      clearTimeout(this.posterExtractionTimeoutId);
-      this.posterExtractionTimeoutId = undefined;
-    }
-    if (this.posterExtractionIdleId !== undefined && 'cancelIdleCallback' in globalThis) {
-      (globalThis as unknown as Window & { cancelIdleCallback?: (id: number) => void }).cancelIdleCallback?.(this.posterExtractionIdleId);
-      this.posterExtractionIdleId = undefined;
-    }
-  }
-
-  private schedulePosterExtraction(): void {
-    if (!this.shouldExtractFirstFrame) {
-      return;
-    }
-    this.shouldExtractFirstFrame = false;
-    const run = () => {
-      this.posterExtractionTimeoutId = undefined;
-      this.posterExtractionIdleId = undefined;
-      this.extractFirstFrameAsPoster();
-    };
-
-    if ('requestIdleCallback' in globalThis) {
-      this.posterExtractionIdleId = (globalThis as unknown as Window & { requestIdleCallback?: (callback: () => void, options?: { timeout: number }) => number }).requestIdleCallback?.(
-        run,
-        { timeout: 1500 }
-      );
-    } else {
-      this.posterExtractionTimeoutId = setTimeout(run, 200);
     }
   }
 
@@ -2857,11 +2665,6 @@ export class NativeVideoPlayer {
     if (this.posterImage) {
       this.posterImage.remove();
       this.posterImage = undefined;
-    }
-
-    if (this.posterObjectUrl) {
-      URL.revokeObjectURL(this.posterObjectUrl);
-      this.posterObjectUrl = undefined;
     }
 
     // Aggressively clean up all resources to free RAM
