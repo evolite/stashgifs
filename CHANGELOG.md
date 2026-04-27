@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [5.44.0] - 2026-04-27\n\n### Changed\n- Refactor to eliminate dead code, reduce duplication, and fix complexity violations
+- Remove network detection and unify mobile/desktop behaviour
+- Fix lazy loading delay by increasing rootMargin and adding early fetch on snap navigation
+- Export BUILD_HASH from version.ts so settings page displays it\n
+
 ## [5.43.6] - 2026-04-26\n\n### Changed\n- Fix lazy loading delay by increasing rootMargin and adding early fetch on snap navigation
 - Export BUILD_HASH from version.ts so settings page displays it\n
 
