@@ -6,7 +6,7 @@
 import { FavoritesManager } from './FavoritesManager.js';
 import { StashAPI } from './StashAPI.js';
 import { VisibilityManager } from './VisibilityManager.js';
-import { normalizeMediaUrl, showToast, isMobileDevice, THEME, subscribeWindowScroll } from './utils.js';
+import { normalizeMediaUrl, showToast, isMobileDevice, THEME, subscribeWindowScroll, applyMenuItemHover, extractValidPerformerIds, initPopoverDialog } from './utils.js';
 import { RatingControl } from './RatingControl.js';
 import { ADD_TAG_SVG, HEART_SVG_OUTLINE, HEART_SVG_FILLED, OCOUNT_SVG, EXTERNAL_LINK_SVG, STAR_SVG, STAR_SVG_OUTLINE, VERIFIED_SVG } from './icons.js';
 import { setupTouchHandlers, preventClickAfterTouch } from './utils/touchHandlers.js';
@@ -312,9 +312,9 @@ export abstract class BasePost {
     const isPortrait = this.applyReelPlayerStyles(elements.playerContainer);
     this.applyReelMediaStyles(elements.playerContainer, isPortrait);
 
-    const isMobile = isMobileDevice();
-    this.applyReelHeaderStyles(elements.header, isMobile);
-    this.applyReelFooterStyles(elements.footer, isMobile);
+    const isNarrow = globalThis.innerWidth < 768;
+    this.applyReelHeaderStyles(elements.header, isNarrow);
+    this.applyReelFooterStyles(elements.footer, isNarrow);
   }
 
   protected applyReelModeLayoutIfNeeded(header?: HTMLElement): void {
@@ -2537,12 +2537,7 @@ export abstract class BasePost {
         item.style.fontSize = THEME.typography.sizeBody;
         item.style.borderBottom = `1px solid ${THEME.colors.border}`;
         item.textContent = tag.name;
-        item.addEventListener('mouseenter', () => {
-          item.style.background = THEME.colors.backgroundSecondary;
-        });
-        item.addEventListener('mouseleave', () => {
-          item.style.background = 'transparent';
-        });
+        applyMenuItemHover(item);
         item.addEventListener('click', () => {
           state.selectedTagId = tag.id;
           state.selectedTagName = tag.name;
@@ -2565,12 +2560,7 @@ export abstract class BasePost {
   protected createDialogContainer(className: string): HTMLElement {
     const dialog = document.createElement('div');
     dialog.className = className;
-    dialog.setAttribute('role', 'dialog');
-    dialog.setAttribute('aria-modal', 'true');
-    dialog.setAttribute('aria-hidden', 'true');
-    dialog.hidden = true;
-    dialog.style.position = 'absolute';
-    dialog.style.bottom = 'calc(100% + 6px)';
+    initPopoverDialog(dialog, 'calc(100% + 6px)');
     dialog.style.left = '50%';
     dialog.style.transform = 'translateX(-50%)';
     dialog.style.width = '320px';
@@ -2767,10 +2757,23 @@ export abstract class BasePost {
     return this.isFavorite;
   }
 
+  public async initialize(): Promise<void> {
+    await this.checkFavoriteStatus();
+  }
+
   /**
    * Abstract method to increment O-count - must be implemented by subclasses
    */
   protected abstract incrementOCountAction(): Promise<void>;
+
+  protected async doIncrementImageOCount(imageId: string): Promise<number> {
+    if (!this.api) {
+      throw new Error('API not available');
+    }
+    const newOCount = await this.api.incrementImageOCount(imageId);
+    this.oCount = newOCount;
+    return newOCount;
+  }
 
   /**
    * Get the production date of the scene/image for age-at-production calculation.
@@ -2893,9 +2896,7 @@ export abstract class BasePost {
       return false;
     }
 
-    const currentPerformerIds = (options.performers || [])
-      .map((performer) => performer.id)
-      .filter((id): id is string => typeof id === 'string' && id.length > 0);
+    const currentPerformerIds = extractValidPerformerIds(options.performers || []);
 
     if (!currentPerformerIds.includes(performerId)) {
       showToast(`Performer "${performerName}" is not on this ${options.itemType}.`);

@@ -5,7 +5,6 @@
 
 import { NativeVideoPlayer } from './NativeVideoPlayer.js';
 import { AudioManager, AudioPriority } from './AudioManager.js';
-import { isMobileDevice } from './utils.js';
 
 interface HoverHandlers {
   handleEnter: () => void;
@@ -42,7 +41,6 @@ export class VisibilityManager {
   private lastScrollTop: number = 0;
   private lastScrollEventTime: number = 0;
   private lastAudioFocusUpdate: number = 0;
-  private readonly isMobileDevice: boolean;
   private readonly audioManager: AudioManager; // Centralized audio management
   private hoveredPostId?: string; // Track which post is currently hovered/touched
   private touchedPostId?: string; // Track which post is currently touched (separate from hover for mobile)
@@ -77,10 +75,6 @@ export class VisibilityManager {
     isReelMode?: boolean; // When true, autoplay works without hover requirement
     root?: Element | null; // Optional root for IntersectionObserver and viewport checks
   }) {
-    // On mobile, use larger rootMargin to start playing videos earlier
-    const isMobile = isMobileDevice();
-    this.isMobileDevice = isMobile;
-    // Playback decisions rely on actual viewport visibility – keep root margin tight
     const defaultRootMargin = '0px';
 
     this.options = {
@@ -473,9 +467,7 @@ export class VisibilityManager {
    */
   private async waitForPlayerReady(postId: string, player: NativeVideoPlayer): Promise<void> {
     try {
-      const isMobile = isMobileDevice();
-      const timeout = isMobile ? 500 : 2000;
-      await player.waitForReady(timeout);
+      await player.waitForReady(1000);
       this.videoStates.set(postId, 'ready');
       this.debugLog('player-ready', { postId });
     } catch (error) {
@@ -517,10 +509,7 @@ export class VisibilityManager {
   }
 
   private computeVisibilityDelay(isEntering: boolean): number {
-    const isMobile = isMobileDevice();
-    const baseEnter = isMobile ? 40 : 60;
-    const baseExit = isMobile ? 200 : 250; // Increased exit delay for more consistent pausing
-    const base = isEntering ? baseEnter : baseExit;
+    const base = isEntering ? 40 : 200;
     const multiplier = 1 + Math.min(this.scrollVelocity * 8, 2);
     return Math.round(base * multiplier);
   }
@@ -908,12 +897,8 @@ export class VisibilityManager {
       distanceFromViewport = rect.left - (viewport.left + viewport.width);
     }
     
-    // Unload threshold to save RAM: more aggressive on mobile
-    // Mobile devices have less RAM, so unload sooner
-    const unloadThreshold = this.isMobileDevice ? 50 : 100;
-    
-    if (distanceFromViewport > unloadThreshold) {
-      this.debugLog('unloading-video', { postId, distanceFromViewport, isHDMode: this.isHDMode, isMobile: this.isMobileDevice });
+    if (distanceFromViewport > 100) {
+      this.debugLog('unloading-video', { postId, distanceFromViewport, isHDMode: this.isHDMode });
       entry.player.unload();
       entry.isUnloaded = true;
     }
@@ -1033,14 +1018,13 @@ export class VisibilityManager {
     }
 
     const player = entry.player;
-    const isMobile = isMobileDevice();
 
     const perform = async (): Promise<void> => {
       try {
         await this.waitForPlayerReadyBeforePlay(postId, player, entry);
-        await this.executePlayback(postId, player, entry, origin, attempt, isMobile);
+        await this.executePlayback(postId, player, entry, origin, attempt);
       } catch (error: unknown) {
-        this.handlePlaybackError(postId, entry, error, attempt, isMobile);
+        this.handlePlaybackError(postId, entry, error, attempt);
       }
     };
 
@@ -1050,45 +1034,31 @@ export class VisibilityManager {
     });
   }
 
-  /**
-   * Wait for player to be ready before playing (mobile-specific)
-   */
   private async waitForPlayerReadyBeforePlay(
     postId: string,
     player: NativeVideoPlayer,
     entry: VisibilityEntry
   ): Promise<void> {
-    if (this.isMobileDevice) {
-      try {
-        await player.waitForReady(1500);
-      } catch (err) {
-        this.debugLog('play-wait-ready-timeout', { postId, error: err });
-      }
-      if (!entry.isVisible) {
-        this.debugLog('play-abort-after-ready-wait', { postId });
-        throw new Error('Not visible after ready wait');
-      }
+    try {
+      await player.waitForReady(1500);
+    } catch (err) {
+      this.debugLog('play-wait-ready-timeout', { postId, error: err });
+    }
+    if (!entry.isVisible) {
+      this.debugLog('play-abort-after-ready-wait', { postId });
+      throw new Error('Not visible after ready wait');
     }
   }
 
-  /**
-   * Execute playback
-   */
   private async executePlayback(
     postId: string,
     player: NativeVideoPlayer,
     entry: VisibilityEntry,
     origin: PlaybackOrigin,
-    attempt: number,
-    isMobile: boolean
+    attempt: number
   ): Promise<void> {
-    // On mobile, use shorter timeout for faster perceived performance
-    // But ensure video is muted for autoplay compatibility
-    const timeout = isMobile ? 500 : 2000;
-    
-    // Ensure video is muted before attempting play (required for autoplay policies)
     player.setMuted(true);
-    await player.waitForReady(timeout);
+    await player.waitForReady(1000);
     if (!entry.isVisible) {
       throw new Error('Not visible');
     }
@@ -1155,8 +1125,7 @@ export class VisibilityManager {
     postId: string,
     entry: VisibilityEntry,
     error: unknown,
-    attempt: number,
-    isMobile: boolean
+    attempt: number
   ): void {
     this.debugLog('play-failed', { postId, attempt, error });
 
@@ -1166,19 +1135,19 @@ export class VisibilityManager {
       this.debugLog('play-blocked-autoplay', { postId, attempt });
       return;
     }
-    
+
     const errorType = this.detectErrorType(error, entry);
-    
+
     if (errorType === 'invalid-element') {
       this.debugLog('video-element-invalid-hiding-post', { postId, error });
       this.hidePost(postId);
       return;
     }
-    
+
     if (errorType === 'load-failure') {
       this.debugLog('load-failure-detected', { postId, errorType });
     }
-    
+
     if (!entry.isVisible || attempt >= 5) {
       if (attempt >= 5) {
         this.videoStates.set(postId, 'paused');
@@ -1186,7 +1155,7 @@ export class VisibilityManager {
       return;
     }
 
-    const delay = this.computeRetryDelay(isMobile, attempt);
+    const delay = this.computeRetryDelay(attempt);
     this.schedulePlaybackRetry(postId, attempt + 1, delay);
   }
 
@@ -1221,11 +1190,8 @@ export class VisibilityManager {
     this.debugLog('post-hidden-permanently', { postId });
   }
 
-  private computeRetryDelay(isMobile: boolean, attempt: number): number {
-    // On mobile, use shorter retry delays for faster recovery
-    const base = isMobile ? 120 : 220;
-    const maxDelay = isMobile ? 1000 : 2000;
-    return Math.min(base * Math.pow(2, attempt - 1), maxDelay);
+  private computeRetryDelay(attempt: number): number {
+    return Math.min(120 * Math.pow(2, attempt - 1), 1000);
   }
 
   private schedulePlaybackRetry(postId: string, nextAttempt: number, delay: number): void {

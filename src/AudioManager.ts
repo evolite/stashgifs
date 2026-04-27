@@ -4,7 +4,7 @@
  */
 
 import { NativeVideoPlayer } from './NativeVideoPlayer.js';
-import { isMobileDevice } from './utils.js';
+import { supportsHover } from './utils.js';
 
 interface VisibilityEntry {
   element: HTMLElement;
@@ -61,22 +61,16 @@ export class AudioManager {
       return;
     }
 
-    const isMobile = isMobileDevice();
     const videoElement = entry.player.getVideoElement();
-    
-    // On mobile, be more lenient - accept videos that are unpaused even if not fully playing yet
-    // This handles the timing issue where play() succeeds but isPlaying() hasn't returned true yet
-    let isVideoReady = false;
-    if (isMobile && videoElement) {
-      // On mobile, check if video is unpaused (indicates play() was called) even if not fully playing
-      isVideoReady = !videoElement.paused && !videoElement.ended && videoElement.readyState > 0;
-    } else {
-      // On desktop, require full playing state
-      isVideoReady = entry.player.isPlaying();
-    }
+
+    // Accept videos that are unpaused even if not fully playing yet — handles the timing
+    // race where play() succeeds but isPlaying() hasn't returned true yet.
+    const isVideoReady = videoElement
+      ? !videoElement.paused && !videoElement.ended && videoElement.readyState > 0
+      : entry.player.isPlaying();
 
     if (!isVideoReady) {
-      this.debugLog('audio-focus-requested', { postId, priority, granted: false, reason: 'video-not-ready', isMobile, paused: videoElement?.paused, readyState: videoElement?.readyState });
+      this.debugLog('audio-focus-requested', { postId, priority, granted: false, reason: 'video-not-ready', paused: videoElement?.paused, readyState: videoElement?.readyState });
       return;
     }
 
@@ -105,8 +99,8 @@ export class AudioManager {
    * Update audio focus based on current priority system
    */
   updateAudioFocus(): void {
-    if (this.isDesktopNonReelMode()) {
-      this.applyDesktopNonReelAudioFocus();
+    if (this.isHoverBasedAudioMode()) {
+      this.applyHoverBasedAudioFocus();
       return;
     }
     // Priority 1: Hovered video (highest priority)
@@ -148,11 +142,8 @@ export class AudioManager {
     return false;
   }
 
-  private isDesktopNonReelMode(): boolean {
-    if (isMobileDevice()) {
-      return false;
-    }
-    return !(this.getIsReelMode?.() ?? false);
+  private isHoverBasedAudioMode(): boolean {
+    return supportsHover() && !(this.getIsReelMode?.() ?? false);
   }
 
   private getLastAudibleCandidate(): string | undefined {
@@ -166,7 +157,7 @@ export class AudioManager {
     return undefined;
   }
 
-  private applyDesktopNonReelAudioFocus(): void {
+  private applyHoverBasedAudioFocus(): void {
     if (this.trySetAudioForHoveredPost()) return;
 
     const lastAudible = this.getLastAudibleCandidate();
@@ -258,22 +249,17 @@ export class AudioManager {
   /**
    * Auto-grant audio focus to first playing video on mobile when no owner exists
    */
-  private autoGrantAudioFocusOnMobile(): void {
-    if (!isMobileDevice() || this.currentAudioOwner) {
-      return;
-    }
+  private autoGrantAudioFocusIfUnowned(): void {
+    if (this.currentAudioOwner) return;
 
-    // Find the first playing video and grant it audio focus
     for (const [postId, entry] of this.entries) {
       if (entry.player && entry.isVisible) {
         const videoElement = entry.player.getVideoElement();
-        // Check if video is playing or about to play (unpaused with readyState > 0)
         if (videoElement && !videoElement.paused && !videoElement.ended && videoElement.readyState > 0) {
-          // Determine priority: manual > center
           const priority = this.manuallyStartedVideos.has(postId) ? AudioPriority.MANUAL : AudioPriority.CENTER;
           this.setAudioOwner(postId, priority);
           this.debugLog('audio-focus-auto-granted', { postId, priority, reason: 'no-owner-playing-video' });
-          break; // Only grant to the first playing video
+          break;
         }
       }
     }
@@ -294,39 +280,7 @@ export class AudioManager {
   /**
    * Handle mute state for mobile device
    */
-  private handleMuteStateForMobile(entry: VisibilityEntry, shouldBeMuted: boolean): void {
-    if (!entry.player) return;
-    const videoElement = entry.player.getVideoElement();
-    if (!videoElement) return;
-
-    if (!shouldBeMuted && videoElement.muted) {
-      // On mobile, ensure video is unmuted only if it's the audio owner
-      entry.player.setMuted(false);
-      return;
-    }
-    if (shouldBeMuted && !videoElement.muted) {
-      // Mobile: mute if not owner
-      entry.player.setMuted(true);
-    }
-  }
-
-  /**
-   * Handle mute state for desktop device
-   */
-  private handleMuteStateForDesktop(entry: VisibilityEntry, shouldBeMuted: boolean): void {
-    if (!entry.player) return;
-    const videoElement = entry.player.getVideoElement();
-    if (!videoElement) return;
-
-    if (shouldBeMuted !== videoElement.muted) {
-      entry.player.setMuted(shouldBeMuted);
-    }
-  }
-
-  /**
-   * Apply mute state to a single video entry
-   */
-  private applyMuteStateToEntry(postId: string, entry: VisibilityEntry, isMobile: boolean): void {
+  private applyMuteStateToEntry(postId: string, entry: VisibilityEntry): void {
     if (!entry.player) return;
 
     const videoElement = entry.player.getVideoElement();
@@ -335,39 +289,27 @@ export class AudioManager {
     const shouldBeMuted = postId !== this.currentAudioOwner;
     const isCurrentlyPlaying = entry.player.isPlaying();
 
-    // CRITICAL: Only change mute state if video is already playing
-    // If video is not playing, keep it muted (required for autoplay)
+    // Only change mute state once the video is playing — keeps it muted for autoplay
     if (!isCurrentlyPlaying) {
       this.handleMuteStateForNonPlaying(entry);
       return;
     }
 
-    // Video is playing - can safely change mute state
-    if (isMobile) {
-      this.handleMuteStateForMobile(entry, shouldBeMuted);
-    } else {
-      this.handleMuteStateForDesktop(entry, shouldBeMuted);
+    if (shouldBeMuted !== videoElement.muted) {
+      entry.player.setMuted(shouldBeMuted);
     }
   }
 
-  /**
-   * Apply mute state to all videos based on current owner
-   */
   private applyMuteState(): void {
-    const isMobile = isMobileDevice();
-    
-    // If globally muted, mute all videos
     if (this.globalMuteState) {
       this.muteAllVideos();
       return;
     }
 
-    // On mobile, if no audio owner exists but a video is playing, automatically grant it audio focus
-    this.autoGrantAudioFocusOnMobile();
+    this.autoGrantAudioFocusIfUnowned();
 
-    // When global mute is off: unmute owner, mute others
     for (const [postId, entry] of this.entries) {
-      this.applyMuteStateToEntry(postId, entry, isMobile);
+      this.applyMuteStateToEntry(postId, entry);
     }
   }
 

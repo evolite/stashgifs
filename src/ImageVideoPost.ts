@@ -5,25 +5,9 @@
 
 import { ImageVideoPostData } from './types.js';
 import { NativeVideoPlayer } from './NativeVideoPlayer.js';
-import { FavoritesManager } from './FavoritesManager.js';
-import { StashAPI } from './StashAPI.js';
-import { VisibilityManager } from './VisibilityManager.js';
 import { calculateAspectRatio, getAspectRatioClass, normalizeMediaUrl, toAbsoluteUrl, THEME } from './utils.js';
-import { VideoPostBase } from './VideoPostBase.js';
-interface ImageVideoPostOptions {
-  onMuteToggle?: (isMuted: boolean) => void;
-  getGlobalMuteState?: () => boolean;
-  favoritesManager?: FavoritesManager;
-  api?: StashAPI;
-  visibilityManager?: VisibilityManager;
-  onPerformerChipClick?: (performerId: number, performerName: string) => void;
-  onTagChipClick?: (tagId: number, tagName: string) => void;
-  showVerifiedCheckmarks?: boolean;
-  showProductionAge?: boolean;
-  onCancelRequests?: () => void;
-  ratingSystemConfig?: { type?: string; starPrecision?: string } | null;
-  reelMode?: boolean;
-}
+import { VideoPostBase, BaseVideoPostOptions } from './VideoPostBase.js';
+interface ImageVideoPostOptions extends BaseVideoPostOptions {}
 
 export class ImageVideoPost extends VideoPostBase {
   protected readonly data: ImageVideoPostData;
@@ -42,13 +26,6 @@ export class ImageVideoPost extends VideoPostBase {
     this.getGlobalMuteState = options?.getGlobalMuteState;
     this.initImagePostOptions(this.data.image.o_counter, options?.ratingSystemConfig, options?.reelMode);
     this.render();
-  }
-
-  /**
-   * Initialize asynchronous operations after construction
-   */
-  public async initialize(): Promise<void> {
-    await this.checkFavoriteStatus();
   }
 
   /**
@@ -148,14 +125,7 @@ export class ImageVideoPost extends VideoPostBase {
       throw new Error('Image video URL not available');
     }
 
-    const playerContainer = this.playerContainer || this.container.querySelector('.video-post__player') as HTMLElement;
-    if (!playerContainer) {
-      throw new Error('Player container not found');
-    }
-
-    // Capture current playback state
-    const playerState = this.player?.getState();
-    const wasPlaying = playerState?.isPlaying ?? false;
+    const { playerContainer, wasPlaying } = this.capturePlayerState();
 
     // Unload and destroy current player
     await this.destroyCurrentPlayer();
@@ -192,7 +162,6 @@ export class ImageVideoPost extends VideoPostBase {
         startTime: undefined, // Start from beginning for images
         endTime: undefined,
         aggressivePreload: false,
-        isHDMode: true,
         posterUrl: this.getPosterUrl(),
         showLoadingIndicator: false,
       });
@@ -387,11 +356,7 @@ export class ImageVideoPost extends VideoPostBase {
   }
 
   protected async incrementOCountAction(): Promise<void> {
-    if (!this.api) {
-      throw new Error('API not available');
-    }
-    const newOCount = await this.api.incrementImageOCount(this.data.image.id);
-    this.oCount = newOCount;
+    const newOCount = await this.doIncrementImageOCount(this.data.image.id);
     this.data.image.o_counter = newOCount;
   }
 

@@ -47,13 +47,6 @@ export class ImagePost extends BasePost {
   }
 
   /**
-   * Initialize asynchronous operations after construction
-   */
-  public async initialize(): Promise<void> {
-    await this.checkFavoriteStatus();
-  }
-
-  /**
    * Render the complete image post structure
    */
   private render(): void {
@@ -180,13 +173,8 @@ export class ImagePost extends BasePost {
   }
 
   protected async incrementOCountAction(): Promise<void> {
-    if (!this.api) {
-      throw new Error('API not available');
-    }
-    const newOCount = await this.api.incrementImageOCount(this.data.image.id);
-    this.oCount = newOCount;
+    const newOCount = await this.doIncrementImageOCount(this.data.image.id);
     this.data.image.o_counter = newOCount;
-    // Adjust padding for 3-digit numbers
     if (this.oCountButton) {
       const digitCount = this.oCount > 0 ? this.oCount.toString().length : 0;
       this.oCountButton.style.paddingRight = `${digitCount >= 3 ? OCOUNT_THREE_DIGIT_PADDING : OCOUNT_DEFAULT_PADDING}px`;

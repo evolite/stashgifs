@@ -6,7 +6,7 @@ import { FeedContainer } from './FeedContainer.js';
 import { StashAPI } from './StashAPI.js';
 import { PluginSettingsManager } from './PluginSettingsManager.js';
 import { FeedSettings } from './types.js';
-import { toRgba, darkenHex, normalizeHexColor } from './utils.js';
+import { toRgba, normalizeHexColor, applyThemeColors } from './utils.js';
 
 /**
  * Load theme colors early to prevent color flash before UI renders
@@ -42,15 +42,8 @@ function loadThemeEarly(settings: Partial<FeedSettings>): void {
     const secondary = normalizeHexColor(settings.themeSecondary, '#24323C');
     const accent = normalizeHexColor(settings.themeAccent, '#4FA3D1');
 
+    applyThemeColors({ background, primary, secondary, overlay: toRgba(background, 0.96), accent });
     const root = document.documentElement;
-    root.style.setProperty('--color-bg', background);
-    root.style.setProperty('--color-surface', primary);
-    root.style.setProperty('--color-surface-secondary', secondary);
-    root.style.setProperty('--color-bg-overlay', toRgba(background, 0.96));
-    root.style.setProperty('--color-accent', accent);
-    root.style.setProperty('--color-accent-strong', darkenHex(accent, 0.15));
-    root.style.setProperty('--color-accent-weak', toRgba(accent, 0.18));
-    root.style.setProperty('--color-accent-weaker', toRgba(accent, 0.1));
     root.style.setProperty('--color-text-primary', '#E6EEF4');
     root.style.setProperty('--color-text-secondary', '#B4C0C9');
     root.style.setProperty('--color-text-muted', '#8A99A6');

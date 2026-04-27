@@ -340,7 +340,7 @@ export interface FindSceneMarkerTagsResponse {
 /**
  * Image type (from Stash GraphQL)
  */
-export interface Image {
+export interface GQLImage {
   id: string;
   title?: string;
   code?: string;
@@ -415,7 +415,7 @@ export interface FindImagesResponse {
     count: number;
     megapixels?: number;
     filesize?: number;
-    images: Image[];
+    images: GQLImage[];
   };
 }
 

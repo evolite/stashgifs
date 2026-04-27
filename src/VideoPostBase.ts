@@ -10,6 +10,14 @@ import { HQ_SVG_OUTLINE, HQ_SVG_FILLED, VOLUME_MUTED_SVG, VOLUME_UNMUTED_SVG } f
 import { BasePost, BasePostOptions } from './BasePost.js';
 import { setupTouchHandlers, preventClickAfterTouch } from './utils/touchHandlers.js';
 
+export interface BaseVideoPostOptions extends BasePostOptions {
+  onMuteToggle?: (isMuted: boolean) => void;
+  getGlobalMuteState?: () => boolean;
+  onCancelRequests?: () => void;
+  ratingSystemConfig?: { type?: string; starPrecision?: string } | null;
+  reelMode?: boolean;
+}
+
 export abstract class VideoPostBase extends BasePost {
   protected isLoaded: boolean = false;
   protected isHQMode: boolean = false;
@@ -38,6 +46,16 @@ export abstract class VideoPostBase extends BasePost {
   protected abstract checkForLoadError(): void;
   protected abstract getEntityLogId(): string;
   protected abstract getHQButtonOffLabel(): string;
+
+  protected capturePlayerState(): { playerContainer: HTMLElement; wasPlaying: boolean } {
+    const playerContainer = this.playerContainer || this.container.querySelector('.video-post__player') as HTMLElement;
+    if (!playerContainer) {
+      throw new Error('Player container not found');
+    }
+    const playerState = this.getPlayer()?.getState();
+    const wasPlaying = playerState?.isPlaying ?? false;
+    return { playerContainer, wasPlaying };
+  }
 
   protected createVideoPlayerContainer(aspectRatio: number | undefined, aspectRatioClass: string, posterUrl: string | undefined): HTMLElement {
     const container = document.createElement('div');
@@ -137,15 +155,13 @@ export abstract class VideoPostBase extends BasePost {
       return;
     }
     this.clearLoadErrorCheckTimeout();
-    const isMobile = isMobileDevice();
-    const delay = isMobile ? 20000 : 16000;
     this.loadErrorCheckTimeoutId = setTimeout(() => {
       if (!this.getPlayer() || this.hasFailedPermanently) {
         this.clearLoadErrorCheckTimeout();
         return;
       }
       this.checkForLoadError();
-    }, delay);
+    }, 16000);
   }
 
   protected updateHQButton(button: HTMLElement): void {

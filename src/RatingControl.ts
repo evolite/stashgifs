@@ -4,7 +4,7 @@
  */
 
 import { STAR_SVG, STAR_SVG_OUTLINE } from './icons.js';
-import { THEME, throttle } from './utils.js';
+import { THEME, throttle, initPopoverDialog } from './utils.js';
 
 const RATING_MAX_STARS = 10;
 const RATING_MIN_STARS = 0;
@@ -177,12 +177,7 @@ export class RatingControl {
   private createRatingDialog(): HTMLElement {
     const dialog = document.createElement('div');
     dialog.className = 'rating-dialog';
-    dialog.setAttribute('role', 'dialog');
-    dialog.setAttribute('aria-modal', 'true');
-    dialog.setAttribute('aria-hidden', 'true');
-    dialog.hidden = true;
-    dialog.style.position = 'absolute';
-    dialog.style.bottom = 'calc(100% + 10px)';
+    initPopoverDialog(dialog, 'calc(100% + 10px)');
     dialog.style.left = 'auto';
     dialog.style.right = 'var(--rating-dialog-right, auto)';
     dialog.style.width = 'var(--rating-dialog-width, auto)';

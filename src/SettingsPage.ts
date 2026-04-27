@@ -432,14 +432,18 @@ export class SettingsPage {
       return { container, label };
     };
 
-    const buildThemePresetRow = (labelText: string, tooltipText: string): { row: HTMLElement; select: HTMLSelectElement } => {
+    const createLabelledRow = (labelText: string, tooltipText: string): HTMLDivElement => {
       const row = document.createElement('div');
       row.style.display = 'flex';
       row.style.justifyContent = 'space-between';
       row.style.alignItems = 'center';
       row.style.marginBottom = '16px';
-
       row.appendChild(buildInfoLabel(labelText, tooltipText));
+      return row;
+    };
+
+    const buildThemePresetRow = (labelText: string, tooltipText: string): { row: HTMLElement; select: HTMLSelectElement } => {
+      const row = createLabelledRow(labelText, tooltipText);
 
       const select = document.createElement('select');
       select.style.minWidth = '200px';
@@ -474,13 +478,7 @@ export class SettingsPage {
       value: string,
       tooltipText: string
     ): { row: HTMLElement; input: HTMLInputElement; valueLabel: HTMLElement } => {
-      const row = document.createElement('div');
-      row.style.display = 'flex';
-      row.style.justifyContent = 'space-between';
-      row.style.alignItems = 'center';
-      row.style.marginBottom = '16px';
-
-      row.appendChild(buildInfoLabel(labelText, tooltipText));
+      const row = createLabelledRow(labelText, tooltipText);
 
       const control = document.createElement('div');
       control.style.display = 'flex';

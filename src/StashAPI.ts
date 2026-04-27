@@ -38,7 +38,7 @@ import {
   TagCreateInput,
   SceneMarkerUpdateInput,
   TypedGraphQLClient,
-  Image,
+  GQLImage,
   UIConfigurationResponse,
   PluginConfigurationResponse,
   ConfigurePluginResponse,
@@ -321,6 +321,17 @@ export class StashAPI {
     }
   }
 
+  private buildSearchFilter(term: string, limit: number): { hasSearchTerm: boolean; filter: FindFilterInput } {
+    const hasSearchTerm = !!(term && term.trim() !== '');
+    const fetchLimit = hasSearchTerm ? limit * StashAPI.SEARCH_FETCH_MULTIPLIER : Math.max(limit, StashAPI.MIN_SEARCH_LIMIT);
+    const filter: FindFilterInput = {
+      per_page: fetchLimit,
+      page: 1,
+      ...(hasSearchTerm ? { q: term.trim() } : { sort: generateRandomSortSeed() })
+    };
+    return { hasSearchTerm, filter };
+  }
+
   /**
    * Search marker tags (by name) for autocomplete
    * Only returns tags that have more than 10 markers (filtered directly in GraphQL)
@@ -329,14 +340,7 @@ export class StashAPI {
   async searchMarkerTags(term: string, limit: number = 10, signal?: AbortSignal): Promise<Array<{ id: string; name: string }>> {
     const isEmptyTerm = !term || term.trim() === '';
     const cacheKey = this.buildCacheKey('tags', term, limit);
-    const hasSearchTerm = term && term.trim() !== '';
-    const fetchLimit = hasSearchTerm ? limit * StashAPI.SEARCH_FETCH_MULTIPLIER : Math.max(limit, StashAPI.MIN_SEARCH_LIMIT);
-    
-    const filter: FindFilterInput = { 
-      per_page: fetchLimit, 
-      page: 1,
-      ...(hasSearchTerm ? { q: term.trim() } : { sort: generateRandomSortSeed() })
-    };
+    const { hasSearchTerm, filter } = this.buildSearchFilter(term, limit);
     
     // When searching, remove marker_count filter to show all tags (including newly created ones and tags with only scenes/images)
     // When not searching (suggestions), keep marker_count > 10 filter to show only popular/relevant tags
@@ -403,14 +407,7 @@ export class StashAPI {
   async searchPerformers(term: string, limit: number = 10, signal?: AbortSignal): Promise<Array<{ id: string; name: string; image_path?: string }>> {
     const isEmptyTerm = !term || term.trim() === '';
     const cacheKey = this.buildCacheKey('performers-v2', term, limit);
-    const hasSearchTerm = term && term.trim() !== '';
-    const fetchLimit = hasSearchTerm ? limit * StashAPI.SEARCH_FETCH_MULTIPLIER : Math.max(limit, StashAPI.MIN_SEARCH_LIMIT);
-    
-    const filter: FindFilterInput = { 
-      per_page: fetchLimit, 
-      page: 1,
-      ...(hasSearchTerm ? { q: term.trim() } : { sort: generateRandomSortSeed() })
-    };
+    const { hasSearchTerm, filter } = this.buildSearchFilter(term, limit);
     
     return this.searchWithCache(
       cacheKey,
@@ -1564,16 +1561,19 @@ export class StashAPI {
    * Add a tag to a scene marker
    * Requires full marker data to include all required fields in the mutation
    */
+  private extractMarkerTagIds(marker: MarkerTagUpdateData): string[] {
+    return (marker.tags || []).map(t => t.id);
+  }
+
   async addTagToMarker(
     marker: MarkerTagUpdateData,
     tagId: string,
     signal?: AbortSignal
   ): Promise<void> {
     if (this.isAborted(signal)) return;
-    
+
     try {
-      // Get current tags from marker data
-      const currentTags: string[] = (marker.tags || []).map(t => t.id);
+      const currentTags = this.extractMarkerTagIds(marker);
 
       // Add the new tag if not already present
       if (!currentTags.includes(tagId)) {
@@ -1795,7 +1795,7 @@ export class StashAPI {
     if (this.isAborted(signal)) return;
 
     try {
-      const currentTags: string[] = (marker.tags || []).map(t => t.id);
+      const currentTags = this.extractMarkerTagIds(marker);
       const tagIds = currentTags.filter(id => id !== tagId);
       await this.updateMarkerTags(marker, tagIds, signal);
     } catch (error) {
@@ -2222,7 +2222,7 @@ export class StashAPI {
     limit: number = 40,
     offset: number = 0,
     signal?: AbortSignal
-  ): Promise<{ images: Image[]; totalCount: number; sortSeed: string }> {
+  ): Promise<{ images: GQLImage[]; totalCount: number; sortSeed: string }> {
     if (this.isAborted(signal)) return { images: [], totalCount: 0, sortSeed: generateRandomSortSeed() };
 
     // Input validation

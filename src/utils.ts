@@ -83,7 +83,7 @@ export function toRgba(hex: string, alpha: number): string {
 /**
  * Darken a hex color by a given fraction (0-1)
  */
-export function darkenHex(hex: string, fraction: number): string {
+function darkenHex(hex: string, fraction: number): string {
   const value = hex.replace('#', '');
   const r = Math.round(Number.parseInt(value.slice(0, 2), 16) * (1 - fraction));
   const g = Math.round(Number.parseInt(value.slice(2, 4), 16) * (1 - fraction));
@@ -579,31 +579,21 @@ function hasFullscreenSupport(element: Element): boolean {
 }
 
 /**
- * Cached mobile device detection result
- */
-let cachedIsMobile: boolean | null = null;
-
-/**
- * Detect if the current device is a mobile device
- * Uses both user agent detection and feature detection for reliability
- * Result is cached to avoid repeated checks
+ * Detect if the primary pointer is coarse (touch/stylus).
+ * Uses CSS Media Queries Level 4 — the RWD-standard capability check.
+ * Returns true for phones and tablets; false for mouse-driven desktops.
+ * A touchscreen laptop with a mouse attached returns false (primary pointer is fine).
  */
 export function isMobileDevice(): boolean {
-  if (cachedIsMobile !== null) {
-    return cachedIsMobile;
-  }
+  return 'matchMedia' in globalThis && globalThis.matchMedia('(pointer: coarse)').matches;
+}
 
-  // Feature detection: check for touch support
-  const hasTouchSupport = 'ontouchstart' in globalThis || navigator.maxTouchPoints > 0;
-
-  // User agent detection
-  const userAgent = typeof navigator === 'undefined' ? '' : navigator.userAgent;
-  const isMobileUA = /iPhone|iPad|iPod|Android/i.test(userAgent);
-
-  // Consider it mobile if either check is true
-  cachedIsMobile = hasTouchSupport || isMobileUA;
-
-  return cachedIsMobile;
+/**
+ * Returns true when the device's primary pointer supports hover (i.e. a real cursor).
+ * Used to gate hover-based UI behaviours like hover-to-unmute.
+ */
+export function supportsHover(): boolean {
+  return 'matchMedia' in globalThis && globalThis.matchMedia('(hover: hover)').matches;
 }
 
 /**
@@ -835,4 +825,59 @@ export function setupLoopingVideoElement(
   
   // Prevent video element from receiving focus
   videoElement.setAttribute('tabindex', '-1');
+}
+
+export function applyThemeColors(colors: {
+  background: string;
+  primary: string;
+  secondary: string;
+  overlay: string;
+  accent: string;
+}): void {
+  const root = document.documentElement;
+  root.style.setProperty('--color-bg', colors.background);
+  root.style.setProperty('--color-surface', colors.primary);
+  root.style.setProperty('--color-surface-secondary', colors.secondary);
+  root.style.setProperty('--color-bg-overlay', colors.overlay);
+  root.style.setProperty('--color-accent', colors.accent);
+  root.style.setProperty('--color-accent-strong', darkenHex(colors.accent, 0.15));
+  root.style.setProperty('--color-accent-weak', toRgba(colors.accent, 0.18));
+  root.style.setProperty('--color-accent-weaker', toRgba(colors.accent, 0.1));
+}
+
+export function createFullscreenWrapper(className: string): HTMLDivElement {
+  const wrapper = document.createElement('div');
+  wrapper.className = className;
+  wrapper.style.position = 'absolute';
+  wrapper.style.top = '0';
+  wrapper.style.left = '0';
+  wrapper.style.width = '100%';
+  wrapper.style.height = '100%';
+  wrapper.style.zIndex = '1';
+  wrapper.style.backgroundColor = 'transparent';
+  return wrapper;
+}
+
+export function applyMenuItemHover(item: HTMLElement): void {
+  item.addEventListener('mouseenter', () => {
+    item.style.background = THEME.colors.backgroundSecondary;
+  });
+  item.addEventListener('mouseleave', () => {
+    item.style.background = 'transparent';
+  });
+}
+
+export function extractValidPerformerIds(performers: Array<{ id?: string | null }>): string[] {
+  return performers
+    .map((p) => p.id)
+    .filter((id): id is string => typeof id === 'string' && id.length > 0);
+}
+
+export function initPopoverDialog(dialog: HTMLElement, bottomOffset: string): void {
+  dialog.setAttribute('role', 'dialog');
+  dialog.setAttribute('aria-modal', 'true');
+  dialog.setAttribute('aria-hidden', 'true');
+  dialog.hidden = true;
+  dialog.style.position = 'absolute';
+  dialog.style.bottom = bottomOffset;
 }

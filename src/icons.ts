@@ -40,9 +40,6 @@ export const OCOUNT_SVG = `<svg viewBox="${ICON_VIEWBOX}" width="24" height="24"
 // Settings icon (action size)
 export const SETTINGS_SVG = `<svg viewBox="${ICON_VIEWBOX}" width="24" height="24" class="${ICON_SVG_CLASS}" fill="currentColor" xmlns="http://www.w3.org/2000/svg" preserveAspectRatio="xMidYMid meet" aria-hidden="true"><circle cx="6" cy="12" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="18" cy="12" r="2"/></svg>`;
 
-// Random/shuffle icon (action size)
-export const RANDOM_SVG = `<svg viewBox="0 0 32 32" width="24" height="24" class="${ICON_SVG_CLASS}" fill="currentColor" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" preserveAspectRatio="xMidYMid meet"><path d="M0 24q0 0.832 0.576 1.44t1.44 0.576h1.984q2.048 0 3.904-0.8t3.168-2.144 2.144-3.2 0.8-3.872q0-2.464 1.728-4.224t4.256-1.76h4v1.984q0 0.672 0.384 1.152t0.864 0.704 1.12 0.128 1.056-0.544l4-4q0.608-0.64 0.576-1.44t-0.576-1.408l-4-4q-0.48-0.448-1.088-0.544t-1.12 0.128-0.864 0.704-0.352 1.12v2.016h-4q-2.016 0-3.872 0.8t-3.2 2.112-2.144 3.2-0.768 3.872q0 2.496-1.76 4.256t-4.256 1.76h-1.984q-0.832 0-1.44 0.576t-0.576 1.408zM0 8.032q0 0.832 0.576 1.408t1.44 0.576h1.984q1.408 0 2.592 0.608t2.080 1.664q0.672-2.048 1.984-3.68-2.912-2.592-6.656-2.592h-1.984q-0.832 0-1.44 0.608t-0.576 1.408zM13.376 23.456q2.848 2.56 6.624 2.56h4v2.016q0 0.64 0.384 1.152t0.864 0.704 1.12 0.096 1.056-0.544l4-4q0.608-0.608 0.576-1.44t-0.576-1.376l-4-4q-0.48-0.48-1.088-0.576t-1.12 0.128-0.864 0.736-0.352 1.12v1.984h-4q-1.376 0-2.592-0.576t-2.048-1.664q-0.704 2.048-1.984 3.68z"/></svg>`;
-
 // Volume icons (action size)
 export const VOLUME_MUTED_SVG = `<svg viewBox="${ICON_VIEWBOX}" width="24" height="24" class="${ICON_SVG_CLASS}" fill="currentColor" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" preserveAspectRatio="xMidYMid meet"><path d="M16.5 12c0-1.77-1.02-3.29-2.5-4.03v2.21l2.45 2.45c.03-.2.05-.41.05-.63zm2.5 0c0 .94-.2 1.82-.54 2.64l1.51 1.51C20.63 14.91 21 13.5 21 12c0-4.28-2.99-7.86-7-8.77v2.06c2.89.86 5 3.54 5 6.71zM4.27 3L3 4.27 7.73 9H3v6h4l5 5v-6.73l4.25 4.25c-.67.52-1.42.93-2.25 1.18v2.06c1.38-.31 2.63-.95 3.69-1.81L19.73 21 21 19.73l-9-9L4.27 3zM12 4L9.91 6.09 12 8.18V4z"/></svg>`;
 
@@ -50,9 +47,6 @@ export const VOLUME_UNMUTED_SVG = `<svg viewBox="${ICON_VIEWBOX}" width="24" hei
 
 // Info icon (small)
 export const INFO_SVG = `<svg viewBox="${ICON_VIEWBOX}" width="16" height="16" class="${ICON_SVG_CLASS}" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true" focusable="false" xmlns="http://www.w3.org/2000/svg" preserveAspectRatio="xMidYMid meet"><circle cx="12" cy="12" r="9"/><path d="M12 10v6" stroke-linecap="round"/><circle cx="12" cy="7.5" r="1" fill="currentColor" stroke="none"/></svg>`;
-
-// Shuffle checkmark icon (action size)
-export const SHUFFLE_CHECK_SVG = `<svg viewBox="${ICON_VIEWBOX}" width="24" height="24" class="${ICON_SVG_CLASS}" fill="currentColor" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" preserveAspectRatio="xMidYMid meet"><path d="M14.59 7.41L13.17 6 9 10.17 7.41 8.59 6 10l3 3 5.59-5.59z"/><path d="M14 6h5v5h-2V8h-3V6z"/></svg>`;
 
 // Video player control icons (action size)
 export const PLAY_BUTTON_SVG = `<svg viewBox="${ICON_VIEWBOX}" width="24" height="24" class="${ICON_SVG_CLASS}" fill="currentColor" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" preserveAspectRatio="xMidYMid meet"><path d="M8 5v14l11-7z"/></svg>`;

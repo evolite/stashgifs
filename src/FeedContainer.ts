@@ -15,9 +15,9 @@ import { VisibilityManager } from './VisibilityManager.js';
 import { FavoritesManager } from './FavoritesManager.js';
 import { SettingsPage } from './SettingsPage.js';
 import { AudioManager, AudioPriority } from './AudioManager.js';
-import { debounce, normalizeMediaUrl, detectDeviceCapabilities, DeviceCapabilities, isStandaloneNavigator, isMobileDevice, detectVideoFromVisualFiles, isMp4File, getImageUrlForDisplay, THEME, THEME_DEFAULTS, normalizeHexColor, toRgba, darkenHex, buildFullUrl } from './utils.js';
+import { debounce, normalizeMediaUrl, detectDeviceCapabilities, DeviceCapabilities, isStandaloneNavigator, isMobileDevice, detectVideoFromVisualFiles, isMp4File, getImageUrlForDisplay, THEME, THEME_DEFAULTS, normalizeHexColor, toRgba, buildFullUrl, applyThemeColors } from './utils.js';
 import { posterPreloader } from './PosterPreloader.js';
-import { Image as GraphQLImage } from './graphql/types.js';
+import { GQLImage } from './graphql/types.js';
 import { SETTINGS_SVG, STASHGIFS_LOGO_SVG } from './icons.js';
 
 const DEFAULT_SETTINGS: FeedSettings = {
@@ -121,7 +121,6 @@ export class FeedContainer {
   private headerBar?: HTMLElement;
   private selectedSavedFilter?: { id: string; name: string };
   private maxSimultaneousPreloads: number;
-  private isMobileDevice: boolean;
   private preloadedTags: Array<{ id: string; name: string }> = [];
   private preloadedPerformers: Array<{ id: string; name: string; image_path?: string }> = [];
   private isPreloading: boolean = false;
@@ -195,7 +194,7 @@ export class FeedContainer {
     this.posts = new Map();
     this.postOrder = [];
     this.maxSimultaneousPreloads = 0;
-    this.isMobileDevice = false;
+
     this.deviceCapabilities = null!; // Will be set in initializeDeviceConfiguration
 
     this.initializeDeviceConfiguration();
@@ -231,7 +230,6 @@ export class FeedContainer {
    * Initialize device detection and configuration
    */
   private initializeDeviceConfiguration(): void {
-    this.isMobileDevice = isMobileDevice();
     this.deviceCapabilities = detectDeviceCapabilities();
 
     if (this.deviceCapabilities.availableRAM >= 4096) {
@@ -325,15 +323,7 @@ export class FeedContainer {
     THEME.colors.overlay = toRgba(background, 0.96);
     THEME.colors.overlayMuted = toRgba(secondary, 0.96);
 
-    const root = document.documentElement;
-    root.style.setProperty('--color-bg', background);
-    root.style.setProperty('--color-surface', primary);
-    root.style.setProperty('--color-surface-secondary', secondary);
-    root.style.setProperty('--color-bg-overlay', THEME.colors.overlay);
-    root.style.setProperty('--color-accent', accent);
-    root.style.setProperty('--color-accent-strong', darkenHex(accent, 0.15));
-    root.style.setProperty('--color-accent-weak', toRgba(accent, 0.18));
-    root.style.setProperty('--color-accent-weaker', toRgba(accent, 0.1));
+    applyThemeColors({ background, primary, secondary, overlay: THEME.colors.overlay, accent });
 
     const accentGlow = toRgba(accent, 0.3);
     const backgroundGradient = `linear-gradient(180deg, ${background} 0%, ${background} 70%, ${accentGlow} 100%)`;
@@ -1267,16 +1257,20 @@ export class FeedContainer {
   /**
    * Create pill button element
    */
-  private createPillButton(label: string, onSelect: () => void | Promise<void>): HTMLElement {
-    const button = document.createElement('button');
-    button.type = 'button';
-    button.className = 'feed-pill-button';
-    button.textContent = label;
+  private attachSuggestionClickHandler(button: HTMLElement, onSelect: () => void | Promise<void>): void {
     button.addEventListener('click', (event) => {
       event.preventDefault();
       event.stopPropagation();
       Promise.resolve(onSelect()).catch((error) => console.error('Suggestion selection failed', error));
     });
+  }
+
+  private createPillButton(label: string, onSelect: () => void | Promise<void>): HTMLElement {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'feed-pill-button';
+    button.textContent = label;
+    this.attachSuggestionClickHandler(button, onSelect);
     return button;
   }
 
@@ -1333,11 +1327,7 @@ export class FeedContainer {
 
     button.appendChild(textContainer);
 
-    button.addEventListener('click', (event) => {
-      event.preventDefault();
-      event.stopPropagation();
-      Promise.resolve(onSelect()).catch((error) => console.error('Suggestion selection failed', error));
-    });
+    this.attachSuggestionClickHandler(button, onSelect);
 
     return button;
   }
@@ -1418,6 +1408,23 @@ export class FeedContainer {
     return loadingSection;
   }
 
+  private applySavedFilter(
+    filter: { id: string; name: string },
+    updateSearchBarDisplay: () => void,
+    withScroll: boolean
+  ): void {
+    this.selectedSavedFilter = { id: filter.id, name: filter.name };
+    this.selectedTagId = undefined;
+    this.selectedTagName = undefined;
+    this.selectedPerformerId = undefined;
+    this.selectedPerformerName = undefined;
+    this.closeSuggestions();
+    updateSearchBarDisplay();
+    this.currentFilters = { savedFilterId: filter.id, limit: FeedContainer.CONTENT_LOAD_LIMIT, offset: 0 };
+    if (withScroll) this.scrollToTop();
+    this.loadVideos(this.currentFilters, false).catch((e) => console.error('Apply saved filter failed', e));
+  }
+
   /**
    * Create saved filters section
    */
@@ -1463,19 +1470,7 @@ export class FeedContainer {
     }));
 
     for (const filter of this.savedFiltersCache) {
-      pillRow.appendChild(this.createPillButton(filter.name, () => {
-        this.selectedSavedFilter = { id: filter.id, name: filter.name };
-        this.selectedTagId = undefined;
-        this.selectedTagName = undefined;
-        this.selectedPerformerId = undefined;
-        this.selectedPerformerName = undefined;
-        this.closeSuggestions();
-        updateSearchBarDisplay();
-        this.currentFilters = { savedFilterId: filter.id, limit: FeedContainer.CONTENT_LOAD_LIMIT, offset: 0 };
-        // Scroll to top (same approach as refreshFeed)
-        this.scrollToTop();
-        this.loadVideos(this.currentFilters, false).catch((e) => console.error('Apply saved filter failed', e));
-      }));
+      pillRow.appendChild(this.createPillButton(filter.name, () => this.applySavedFilter(filter, updateSearchBarDisplay, true)));
     }
 
     filtersSection.appendChild(pillRow);
@@ -1690,17 +1685,7 @@ export class FeedContainer {
       savedSection.appendChild(this.createSectionLabel('Matching Saved Marker Filters'));
       for (const filter of matchingSavedFilters) {
         savedSection.appendChild(
-          this.createListButton(filter.name, () => {
-            this.selectedSavedFilter = { id: filter.id, name: filter.name };
-            this.selectedTagId = undefined;
-            this.selectedTagName = undefined;
-            this.selectedPerformerId = undefined;
-            this.selectedPerformerName = undefined;
-            this.closeSuggestions();
-            updateSearchBarDisplay();
-            this.currentFilters = { savedFilterId: filter.id, limit: FeedContainer.CONTENT_LOAD_LIMIT, offset: 0 };
-            this.loadVideos(this.currentFilters, false).catch((e) => console.error('Apply saved filter failed', e));
-          })
+          this.createListButton(filter.name, () => this.applySavedFilter(filter, updateSearchBarDisplay, false))
         );
       }
       container.appendChild(savedSection);
@@ -3065,7 +3050,7 @@ export class FeedContainer {
     // Defer suggestion preloading significantly to avoid competing with initial load
     // Wait 10 seconds on mobile, 5 seconds on desktop to ensure initial content is loaded first
     if (globalThis.window !== undefined) {
-      const suggestionDelay = this.isMobileDevice ? 10000 : 5000;
+      const suggestionDelay = 5000;
       globalThis.setTimeout(() => {
         this.preloadSuggestions().catch((e) => console.warn('Preload suggestions failed', e));
       }, suggestionDelay);
@@ -3599,11 +3584,7 @@ export class FeedContainer {
     videoUrl: string,
     signal?: AbortSignal
   ): void {
-    const lazyLoadDistance = this.getLazyLoadDistance();
-    const rootMargin = this.isMobileDevice 
-      ? lazyLoadDistance 
-      : this.getDesktopRootMargin(lazyLoadDistance);
-    
+    const rootMargin = this.getDesktopRootMargin(this.getLazyLoadDistance());
     this.createLazyLoadObserverForImageVideo(postContainer, post, image, rootMargin, signal);
   }
 
@@ -4719,7 +4700,7 @@ export class FeedContainer {
   /**
    * Convert GraphQL Image to simplified Image type
    */
-  private convertGraphQLImageToImage(graphqlImage: GraphQLImage): Image {
+  private convertGraphQLImageToImage(graphqlImage: GQLImage): Image {
     const visualFile = graphqlImage.visual_files?.find(
       (file) => typeof (file as { width?: number }).width === 'number' && typeof (file as { height?: number }).height === 'number'
     ) as { width?: number; height?: number } | undefined;
@@ -5287,11 +5268,7 @@ export class FeedContainer {
     safeVideoUrl: string,
     signal?: AbortSignal
   ): void {
-    const lazyLoadDistance = this.getLazyLoadDistance();
-    const rootMargin = this.isMobileDevice 
-      ? lazyLoadDistance 
-      : this.getDesktopRootMargin(lazyLoadDistance);
-    
+    const rootMargin = this.getDesktopRootMargin(this.getLazyLoadDistance());
     this.createLazyLoadObserver(postContainer, post, marker, rootMargin, signal);
   }
 
@@ -5534,7 +5511,7 @@ export class FeedContainer {
     }
 
     // Use Intersection Observer to detect when trigger is visible
-    const rootMargin = this.isMobileDevice ? '400px' : '600px';
+    const rootMargin = '600px';
     this.scrollObserver = new IntersectionObserver(
       (entries) => {
         for (const entry of entries) {
@@ -5867,7 +5844,7 @@ export class FeedContainer {
     const viewport = this.getViewportRect();
     let margin: number;
     if (this.isReelModeEnabled()) {
-      margin = this.isMobileDevice ? 600 : 800;
+      margin = 800;
     } else {
       margin = 500; // Consider posts near viewport
     }
@@ -6865,6 +6842,12 @@ export class FeedContainer {
     return cardTop + cardHeight / 2 - viewportHeight / 2;
   }
 
+  private resolveTargetIndex(direction: 'next' | 'previous', currentIndex: number, cardCount: number): number | null {
+    const targetIndex = direction === 'next' ? currentIndex + 1 : currentIndex - 1;
+    if (targetIndex < 0 || targetIndex >= cardCount) return null;
+    return targetIndex;
+  }
+
   /**
    * Snap to the next or previous card
    */
@@ -6880,7 +6863,6 @@ export class FeedContainer {
 
     const currentCard = this.findCardClosestToCenter();
     if (!currentCard) {
-      // If no card is close to center, snap to first or last
       const targetCard = direction === 'next' ? cards[0] : cards[cards.length - 1];
       this.snapToCard(targetCard);
       return;
@@ -6891,20 +6873,10 @@ export class FeedContainer {
       return;
     }
 
-    let targetIndex: number;
-    if (direction === 'next') {
-      targetIndex = currentIndex + 1;
-      if (targetIndex >= cards.length) {
-        return; // Already at last card
-      }
-    } else {
-      targetIndex = currentIndex - 1;
-      if (targetIndex < 0) {
-        return; // Already at first card
-      }
+    const targetIndex = this.resolveTargetIndex(direction, currentIndex, cards.length);
+    if (targetIndex === null) {
+      return;
     }
-
-    const targetCard = cards[targetIndex];
 
     if (direction === 'next') {
       const remainingCards = cards.length - 1 - targetIndex;
@@ -6913,7 +6885,7 @@ export class FeedContainer {
       }
     }
 
-    this.snapToCard(targetCard);
+    this.snapToCard(cards[targetIndex]);
   }
 
   /**

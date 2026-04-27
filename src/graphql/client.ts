@@ -319,6 +319,23 @@ export class GraphQLClient {
     }
   }
 
+  private handleParseError(parseError: unknown, response: Response, signal: AbortSignal | undefined, errorMsg: string): never {
+    if (isAbortError(parseError) || signal?.aborted) {
+      throw new GraphQLAbortError();
+    }
+    if (parseError instanceof Error &&
+        (parseError.name === 'GraphQLRequestError' ||
+         parseError.name === 'GraphQLResponseError' ||
+         parseError.name === 'GraphQLNetworkError')) {
+      throw parseError;
+    }
+    throw createGraphQLError(
+      response,
+      null,
+      parseError instanceof Error ? parseError : new Error(errorMsg)
+    );
+  }
+
   /**
    * Common response parsing and error checking
    * Checks abort only at critical points: before parsing and after async operations
@@ -349,23 +366,7 @@ export class GraphQLClient {
 
       return data;
     } catch (parseError: unknown) {
-      // Check for abort first
-      if (isAbortError(parseError) || signal?.aborted) {
-        throw new GraphQLAbortError();
-      }
-      // If it's already a GraphQL error, re-throw it
-      if (parseError instanceof Error && 
-          (parseError.name === 'GraphQLRequestError' || 
-           parseError.name === 'GraphQLResponseError' || 
-           parseError.name === 'GraphQLNetworkError')) {
-        throw parseError;
-      }
-      // Wrap parse errors
-      throw createGraphQLError(
-        response,
-        null,
-        parseError instanceof Error ? parseError : new Error('Failed to parse response')
-      );
+      this.handleParseError(parseError, response, signal, 'Failed to parse response');
     }
   }
 
@@ -905,23 +906,7 @@ export class GraphQLClient {
     try {
       return await this.parseBatchResponse(response, activeOperations);
     } catch (parseError: unknown) {
-      // Check for abort first
-      if (isAbortError(parseError) || combinedSignal?.aborted) {
-        throw new GraphQLAbortError();
-      }
-      // If it's already a GraphQL error, re-throw it
-      if (parseError instanceof Error && 
-          (parseError.name === 'GraphQLRequestError' || 
-           parseError.name === 'GraphQLResponseError' || 
-           parseError.name === 'GraphQLNetworkError')) {
-        throw parseError;
-      }
-      // Wrap parse errors
-      throw createGraphQLError(
-        response,
-        null,
-        parseError instanceof Error ? parseError : new Error('Failed to parse batch response')
-      );
+      this.handleParseError(parseError, response, combinedSignal, 'Failed to parse batch response');
     }
   }
 

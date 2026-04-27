@@ -4,7 +4,7 @@
  */
 
 import { VideoPlayerState } from './types.js';
-import { addCacheBusting, stripApiKey, formatDuration, normalizeMediaUrl, hasWebkitFullscreen, hasMozFullscreen, hasMsFullscreen, hasWebkitFullscreenHTMLElement, hasMozFullscreenHTMLElement, hasMsFullscreenHTMLElement, hasWebkitFullscreenDocument, hasMozFullscreenDocument, hasMsFullscreenDocument, type ElementWebkitFullscreen, type ElementMozFullscreen, type ElementMsFullscreen, isMobileDevice, THEME, subscribeWindowScroll } from './utils.js';
+import { addCacheBusting, stripApiKey, formatDuration, normalizeMediaUrl, hasWebkitFullscreen, hasMozFullscreen, hasMsFullscreen, hasWebkitFullscreenHTMLElement, hasMozFullscreenHTMLElement, hasMsFullscreenHTMLElement, hasWebkitFullscreenDocument, hasMozFullscreenDocument, hasMsFullscreenDocument, type ElementWebkitFullscreen, type ElementMozFullscreen, type ElementMsFullscreen, isMobileDevice, THEME, subscribeWindowScroll, createFullscreenWrapper } from './utils.js';
 import { VOLUME_MUTED_SVG, VOLUME_UNMUTED_SVG, PLAY_BUTTON_SVG, PAUSE_SVG, FULLSCREEN_SVG } from './icons.js';
 import { setupTouchHandlers, createTouchState, type TouchState } from './utils/touchHandlers.js';
 
@@ -42,7 +42,6 @@ export class NativeVideoPlayer {
   private originalStartTime?: number; // Store original start time for reload
   private originalEndTime?: number; // Store original end time for reload
   private unloadRetryTimeout?: ReturnType<typeof setTimeout>;
-  private readonly isHDMode: boolean = false; // Track if this is HD mode (affects mute button visibility)
   private placeholderElement?: HTMLDivElement; // Neutral placeholder to avoid black screens
   private shouldShowPlaceholder: boolean = false;
   private hasPoster: boolean = false;
@@ -106,7 +105,6 @@ export class NativeVideoPlayer {
     endTime?: number;
     onStateChange?: (state: VideoPlayerState) => void;
     aggressivePreload?: boolean; // Use 'auto' preload for non-HD videos
-    isHDMode?: boolean; // Whether this is HD mode (affects mute button visibility)
     posterUrl?: string; // Poster image URL to display before video loads
     showLoadingIndicator?: boolean; // Toggle internal loading spinner
     // onMuteToggle removed - mute is now controlled by overlay button in VideoPost
@@ -125,8 +123,6 @@ export class NativeVideoPlayer {
 
     this.container = container;
     this.onStateChange = options?.onStateChange;
-    // onMuteToggle removed - mute is now controlled by overlay button in VideoPost
-    this.isHDMode = options?.isHDMode ?? false;
     this.shouldShowLoadingIndicator = options?.showLoadingIndicator ?? true;
 
     this.state = {
@@ -402,15 +398,7 @@ export class NativeVideoPlayer {
   }
 
   private createPlayerWrapper(): HTMLElement {
-    const wrapper = document.createElement('div');
-    wrapper.className = 'video-player';
-    wrapper.style.position = 'absolute';
-    wrapper.style.top = '0';
-    wrapper.style.left = '0';
-    wrapper.style.width = '100%';
-    wrapper.style.height = '100%';
-    wrapper.style.zIndex = '1';
-    wrapper.style.backgroundColor = 'transparent';
+    const wrapper = createFullscreenWrapper('video-player');
     wrapper.style.transform = 'none';
     wrapper.style.willChange = 'auto';
     wrapper.style.pointerEvents = isMobileDevice() ? 'auto' : 'none';
@@ -1379,45 +1367,36 @@ export class NativeVideoPlayer {
   /**
    * Prepare video for playback (mute on mobile, wait for ready state)
    */
-  private async prepareForPlay(isMobile: boolean): Promise<void> {
+  private async prepareForPlay(): Promise<void> {
     if (!this.isVideoElementValid()) {
       return;
     }
-    // On mobile, mute for autoplay policies if not already muted
-    if (isMobile && !this.videoElement.muted) {
+    // Mute for autoplay policies on touch devices if not already muted
+    if (isMobileDevice() && !this.videoElement.muted) {
       this.videoElement.muted = true;
       this.state.isMuted = true;
       this.updateMuteButton();
     }
-    const minReadyState = 1; // Gate play on metadata readiness
-    if (this.videoElement.readyState < minReadyState) {
+    if (this.videoElement.readyState < 1) {
       this.showLoadingIndicator();
       try {
-        const timeout = isMobile ? 1000 : 2000;
-        await this.waitForReady(timeout);
+        await this.waitForReady(2000);
       } finally {
         this.hideLoadingIndicator();
       }
     }
   }
 
-  /**
-   * Set start time before play if needed
-   */
-  private setStartTimeBeforePlay(isMobile: boolean): void {
+  private setStartTimeBeforePlay(): void {
     if (this.desiredStartTime === undefined || this.desiredStartTime <= 0 || this.videoElement.readyState < 1) {
       return;
     }
-    
+
     try {
       const currentTime = this.videoElement.currentTime;
-      // Only set to desiredStartTime if:
-      // 1. Video is at or near the beginning (< 1 second), OR
-      // 2. Video is at or before the startTime (for initial load)
-      // This preserves the paused position if video was paused mid-playback
       if (currentTime < 1 || currentTime <= this.desiredStartTime) {
-        // Reset flag to allow re-seeking
-        if (isMobile) {
+        // Reset flag on touch devices to allow re-seeking after play() (browser quirk)
+        if (isMobileDevice()) {
           this.startTimeEnforced = false;
         }
         this.videoElement.currentTime = this.desiredStartTime;
@@ -1524,20 +1503,14 @@ export class NativeVideoPlayer {
       throw new Error('Video element is not valid');
     }
     
-    const isMobile = isMobileDevice();
-    
-    await this.prepareForPlay(isMobile);
-    
-    // Ensure video element is in the DOM and visible
+    await this.prepareForPlay();
+
     if (!this.videoElement.isConnected) {
       throw new Error('Video element not in DOM');
     }
-    
-    // Hint browser to allow autoplay of muted content
+
     this.videoElement.autoplay = true;
-    
-    // Ensure startTime is set right before play (browsers may reset on play)
-    this.setStartTimeBeforePlay(isMobile);
+    this.setStartTimeBeforePlay();
     
     try {
       const playPromise = this.videoElement.play();
@@ -1897,6 +1870,7 @@ export class NativeVideoPlayer {
     }
   }
 
+  // fallow-ignore-next-line unused-class-member
   getState(): VideoPlayerState {
     return { ...this.state };
   }
@@ -1961,10 +1935,7 @@ export class NativeVideoPlayer {
     }
   }
 
-  /**
-   * Clears all timeouts and intervals
-   */
-  private clearTimeoutsAndIntervals(): void {
+  private clearLoadingTimeouts(): void {
     if (this.loadTimeoutId) {
       clearTimeout(this.loadTimeoutId);
       this.loadTimeoutId = undefined;
@@ -1977,6 +1948,13 @@ export class NativeVideoPlayer {
       clearTimeout(this.waitingTimeoutId);
       this.waitingTimeoutId = undefined;
     }
+  }
+
+  /**
+   * Clears all timeouts and intervals
+   */
+  private clearTimeoutsAndIntervals(): void {
+    this.clearLoadingTimeouts();
     if (this.progressTimeoutId) {
       clearTimeout(this.progressTimeoutId);
       this.progressTimeoutId = undefined;
@@ -2336,18 +2314,7 @@ export class NativeVideoPlayer {
     this.hasRetriedDecode = false;
     this.hasResolvedReady = false;
 
-    if (this.loadTimeoutId) {
-      clearTimeout(this.loadTimeoutId);
-      this.loadTimeoutId = undefined;
-    }
-    if (this.stalledTimeoutId) {
-      clearTimeout(this.stalledTimeoutId);
-      this.stalledTimeoutId = undefined;
-    }
-    if (this.waitingTimeoutId) {
-      clearTimeout(this.waitingTimeoutId);
-      this.waitingTimeoutId = undefined;
-    }
+    this.clearLoadingTimeouts();
 
     this.setupErrorHandlerAndTimeout();
 

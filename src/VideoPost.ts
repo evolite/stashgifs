@@ -8,10 +8,10 @@ import { NativeVideoPlayer } from './NativeVideoPlayer.js';
 import { FavoritesManager } from './FavoritesManager.js';
 import { StashAPI } from './StashAPI.js';
 import { VisibilityManager } from './VisibilityManager.js';
-import { calculateAspectRatio, getAspectRatioClass, normalizeMediaUrl, showToast, toAbsoluteUrl, isMobileDevice, THEME } from './utils.js';
+import { calculateAspectRatio, getAspectRatioClass, normalizeMediaUrl, showToast, toAbsoluteUrl, isMobileDevice, THEME, applyMenuItemHover, extractValidPerformerIds } from './utils.js';
 import { posterPreloader } from './PosterPreloader.js';
 import { EXTERNAL_LINK_SVG, MARKER_SVG } from './icons.js';
-import { VideoPostBase } from './VideoPostBase.js';
+import { VideoPostBase, BaseVideoPostOptions } from './VideoPostBase.js';
 import { RatingControl } from './RatingControl.js';
 
 // Constants for magic numbers and strings
@@ -20,20 +20,8 @@ const MARKER_TAG_NAME = 'StashGifs Marker';
 const OCOUNT_DIGIT_WIDTH_PX = 8; // Approximate pixels per digit for 14px font
 const OCOUNT_MIN_WIDTH_PX = 14;
 
-interface VideoPostOptions {
-  onMuteToggle?: (isMuted: boolean) => void; // Callback to set global mute state
-  getGlobalMuteState?: () => boolean; // Callback to get global mute state
-  favoritesManager?: FavoritesManager;
-  api?: StashAPI;
-  visibilityManager?: VisibilityManager;
-  onPerformerChipClick?: (performerId: number, performerName: string) => void;
-  onTagChipClick?: (tagId: number, tagName: string) => void;
-  showVerifiedCheckmarks?: boolean;
-  showProductionAge?: boolean;
+interface VideoPostOptions extends BaseVideoPostOptions {
   useShuffleMode?: boolean;
-  onCancelRequests?: () => void;
-  ratingSystemConfig?: { type?: string; starPrecision?: string } | null; // Rating system configuration
-  reelMode?: boolean;
 }
 
 export class VideoPost extends VideoPostBase {
@@ -83,13 +71,6 @@ export class VideoPost extends VideoPostBase {
     }
     
     this.render();
-  }
-
-  /**
-   * Initialize asynchronous operations after construction
-   */
-  public async initialize(): Promise<void> {
-    await this.checkFavoriteStatus();
   }
 
   /**
@@ -810,10 +791,9 @@ export class VideoPost extends VideoPostBase {
       return;
     }
     
-    const isMobile = isMobileDevice();
-    const waitTimeout = isMobile ? 6000 : 4000; // Longer timeout on mobile for HD videos
-    const checkDelay = isMobile ? 300 : 100; // More time on mobile for play() to take effect
-    
+    const waitTimeout = 6000;
+    const checkDelay = 300;
+
     // Retry logic with exponential backoff
     let retryCount = 0;
     const maxRetries = 2; // Try up to 3 times total (initial + 2 retries)
@@ -859,7 +839,6 @@ export class VideoPost extends VideoPostBase {
         startTime: startTime,
         endTime: this.data.endTime ?? this.data.marker.end_seconds,
         aggressivePreload: false, // HD videos use metadata preload
-        isHDMode: true, // HD mode
         posterUrl: this.getPreferredPosterUrl(),
         showLoadingIndicator: false,
         // onMuteToggle removed - using overlay button instead
@@ -930,14 +909,7 @@ export class VideoPost extends VideoPostBase {
       throw new Error('Scene video URL not available');
     }
 
-    const playerContainer = this.playerContainer || this.container.querySelector('.video-post__player') as HTMLElement;
-    if (!playerContainer) {
-      throw new Error('Player container not found');
-    }
-
-    // Capture current playback state with proper null checks
-    const playerState = this.player?.getState();
-    const wasPlaying = playerState?.isPlaying ?? false;
+    const { playerContainer, wasPlaying } = this.capturePlayerState();
 
     return { sceneVideoUrl: normalizedSceneVideoUrl, playerContainer, wasPlaying };
   }
@@ -1314,11 +1286,8 @@ export class VideoPost extends VideoPostBase {
 
   private async seekPlayerToStart(player: NativeVideoPlayer, startTime: number): Promise<void> {
     const clamped = Number.isFinite(startTime) ? Math.max(0, startTime) : 0;
-    const isMobile = isMobileDevice();
-    const timeout = isMobile ? 4000 : 2000; // Longer timeout on mobile for HD videos
-    
     try {
-      await player.waitForReady(timeout);
+      await player.waitForReady(4000);
     } catch (error) {
       console.warn('VideoPost: Player not ready before seeking', {
         error,
@@ -1327,26 +1296,18 @@ export class VideoPost extends VideoPostBase {
     }
     try {
       player.seekTo(clamped);
-      
-      // On mobile, also re-seek after a short delay and when video starts playing
-      // because mobile browsers sometimes reset currentTime when play() is called
-      if (isMobile) {
+
+      // Re-seek after a short delay and on the first playing event — some browsers
+      // reset currentTime when play() is called after seek.
+      if (isMobileDevice()) {
         const videoElement = player.getVideoElement();
         const reSeek = () => {
           if (Math.abs(videoElement.currentTime - clamped) > 0.5) {
             player.seekTo(clamped);
           }
         };
-        
-        // Re-seek after a short delay
         setTimeout(reSeek, 100);
-        
-        // Re-seek when video starts playing (mobile browsers may reset on play)
-        const onPlaying = () => {
-          reSeek();
-          videoElement.removeEventListener('playing', onPlaying);
-        };
-        videoElement.addEventListener('playing', onPlaying, { once: true });
+        videoElement.addEventListener('playing', () => reSeek(), { once: true });
       }
     } catch (error) {
       console.warn('VideoPost: Failed to seek player to marker start', {
@@ -1732,12 +1693,7 @@ export class VideoPost extends VideoPostBase {
       item.style.cursor = 'pointer';
       item.style.transition = 'background 0.15s ease';
 
-      item.addEventListener('mouseenter', () => {
-        item.style.background = THEME.colors.backgroundSecondary;
-      });
-      item.addEventListener('mouseleave', () => {
-        item.style.background = 'transparent';
-      });
+      applyMenuItemHover(item);
 
       item.addEventListener('click', () => {
         this.selectTagForMarker(tag.id, tag.name);
@@ -2115,9 +2071,7 @@ export class VideoPost extends VideoPostBase {
       return false;
     }
 
-    const currentPerformerIds = (this.data.marker.scene.performers || [])
-      .map((performer) => performer.id)
-      .filter((id): id is string => typeof id === 'string' && id.length > 0);
+    const currentPerformerIds = extractValidPerformerIds(this.data.marker.scene.performers || []);
 
     if (!currentPerformerIds.includes(performerId)) {
       showToast(`Performer "${performerName}" is not on this scene.`);

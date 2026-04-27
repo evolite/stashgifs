@@ -3,7 +3,7 @@
  * Displays GIFs, static images, and looping videos with support for looping and fullscreen
  */
 
-import { addCacheBusting, normalizeMediaUrl, setupLoopingVideoElement, THEME, subscribeWindowScroll } from './utils.js';
+import { addCacheBusting, normalizeMediaUrl, setupLoopingVideoElement, THEME, subscribeWindowScroll, createFullscreenWrapper } from './utils.js';
 
 export class ImagePlayer {
   private readonly container: HTMLElement;
@@ -45,15 +45,7 @@ export class ImagePlayer {
     spinner.className = 'spinner';
     this.loadingIndicator.appendChild(spinner);
     
-    const wrapper = document.createElement('div');
-    wrapper.className = 'image-player';
-    wrapper.style.position = 'absolute';
-    wrapper.style.top = '0';
-    wrapper.style.left = '0';
-    wrapper.style.width = '100%';
-    wrapper.style.height = '100%';
-    wrapper.style.zIndex = '1';
-    wrapper.style.backgroundColor = 'transparent';
+    const wrapper = createFullscreenWrapper('image-player');
     
     // Create video or image element based on file type
     if (this.isVideo) {
@@ -417,7 +409,6 @@ export class ImagePlayer {
     if (this.videoElement) {
       this.videoElement.pause();
       this.videoElement.removeAttribute('src');
-      this.videoElement.load();
       this.videoElement.load();
       this.videoElement = undefined;
     }
