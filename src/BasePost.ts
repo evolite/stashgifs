@@ -12,7 +12,7 @@ import { ADD_TAG_SVG, HEART_SVG_OUTLINE, HEART_SVG_FILLED, OCOUNT_SVG, EXTERNAL_
 import { setupTouchHandlers, preventClickAfterTouch } from './utils/touchHandlers.js';
 import { adjustImageDialogPosition, toggleImageFavorite } from './utils/imagePostUtils.js';
 import { PerformerExtended } from './graphql/types.js';
-import { Performer, Tag } from './types.js';
+import { Performer, Tag, VideoPostData, ImageBasedPostData, Image } from './types.js';
 
 export interface BasePostOptions {
   favoritesManager?: FavoritesManager;
@@ -53,17 +53,23 @@ export abstract class BasePost {
   private static readonly FAVORITE_TAG_NAME = 'StashGifs Favorite';
 
   /**
-   * Abstract property for post data (must be implemented by subclasses)
+   * Post data. Concrete subclasses narrow this to their specific type.
+   * BasePost's default implementations assume ImageBasedPostData; VideoPost overrides them all.
    */
-  protected abstract data: any;
+  protected abstract data: VideoPostData | ImageBasedPostData;
+
+  // Safe accessor for image-based posts. Only call from methods that VideoPost overrides.
+  private getImageData(): ImageBasedPostData {
+    return this.data as ImageBasedPostData;
+  }
 
   /**
    * Default header for image-based posts. VideoPost overrides with scene-specific header.
    */
   protected createHeader(): HTMLElement {
     return this.buildImageHeader({
-      performers: this.data.image.performers,
-      tags: this.data.image.tags,
+      performers: this.getImageData().image.performers,
+      tags: this.getImageData().image.tags,
       favoriteTagName: BasePost.FAVORITE_TAG_NAME
     });
   }
@@ -77,8 +83,6 @@ export abstract class BasePost {
     }
   }
 
-  // @ts-nocheck
-  // eslint-disable @typescript-eslint/no-explicit-any
   protected readonly container: HTMLElement;
   protected readonly favoritesManager?: FavoritesManager;
   protected readonly api?: StashAPI;
@@ -199,6 +203,8 @@ export abstract class BasePost {
   }
 
   destroy(): void {
+    this.cleanupAddTagDialogState();
+
     if (this.performerOverlayScrollCleanup) {
       this.performerOverlayScrollCleanup();
       this.performerOverlayScrollCleanup = undefined;
@@ -2219,12 +2225,12 @@ export abstract class BasePost {
         ratingSystemConfig: this.ratingSystemConfig,
         buildRatingDisplayButton: (options) => this.buildRatingDisplayButton(options),
         createRatingStarIcon: () => this.createRatingStarIcon(),
-        getRating100: () => this.data.image.rating100,
+        getRating100: () => this.getImageData().image.rating100,
         onUpdateRating100: (value) => {
-          this.data.image.rating100 = value;
+          this.getImageData().image.rating100 = value;
         },
         onSaveRating10: api
-          ? (rating10) => api.updateImageRating(this.data.image.id, rating10)
+          ? (rating10) => api.updateImageRating(this.getImageData().image.id, rating10)
           : undefined,
         onToast: (message) => showToast(message)
       });
@@ -2786,9 +2792,9 @@ export abstract class BasePost {
    */
   protected async removeTagAction(tagId: string, tagName: string): Promise<boolean> {
     return this.removeTagShared(tagId, tagName, {
-      getCurrentTags: () => this.data.image.tags || [],
-      apiCall: (nextTagIds) => this.api!.updateImageTags(this.data.image.id, nextTagIds),
-      updateLocalTags: (remainingTags) => { this.data.image.tags = remainingTags as any[]; },
+      getCurrentTags: () => this.getImageData().image.tags || [],
+      apiCall: (nextTagIds) => this.api!.updateImageTags(this.getImageData().image.id, nextTagIds),
+      updateLocalTags: (remainingTags) => { this.getImageData().image.tags = remainingTags as any[]; },
       entityType: 'image',
       logPrefix: this.constructor.name
     });
@@ -2846,8 +2852,9 @@ export abstract class BasePost {
     state.createButton.style.opacity = '0.6';
 
     try {
+      const imageData = this.getImageData();
       // Check for duplicate tag
-      const currentTagIds = (this.data.image.tags || []).map((tag: any) => tag.id).filter(Boolean);
+      const currentTagIds = (imageData.image.tags || []).map((tag: any) => tag.id).filter(Boolean);
       if (currentTagIds.includes(state.selectedTagId)) {
         showToast(`Tag "${state.selectedTagName}" is already added to this image.`);
         state.createButton.disabled = false;
@@ -2858,11 +2865,11 @@ export abstract class BasePost {
 
       // Update via API
       const nextTagIds = [...currentTagIds, state.selectedTagId];
-      await this.api.updateImageTags(this.data.image.id, nextTagIds);
+      await this.api.updateImageTags(imageData.image.id, nextTagIds);
 
       // Update local data
-      this.data.image.tags ??= [];
-      this.data.image.tags.push({ id: state.selectedTagId, name: state.selectedTagName });
+      imageData.image.tags ??= [];
+      imageData.image.tags.push({ id: state.selectedTagId, name: state.selectedTagName });
 
       // Success feedback and cleanup
       showToast(`Tag "${state.selectedTagName}" added to image`);
@@ -2907,11 +2914,11 @@ export abstract class BasePost {
       const nextPerformerIds = currentPerformerIds.filter((id) => id !== performerId);
       await options.apiMethod(options.itemId, nextPerformerIds);
 
-      // Update local data - subclasses handle their specific data structures
+      // Update local data - image branch runs for ImagePost/ImageVideoPost, scene branch for VideoPost
       if (options.itemType === 'image') {
-        (this.data.image.performers as any[]) = (options.performers || []).filter((performer) => performer.id !== performerId);
+        (this.getImageData().image.performers as any[]) = (options.performers || []).filter((performer) => performer.id !== performerId);
       } else if (options.itemType === 'scene') {
-        (this.data.marker.scene.performers as any[]) = (options.performers || []).filter((performer) => performer.id !== performerId);
+        ((this.data as VideoPostData).marker.scene.performers as any[]) = (options.performers || []).filter((performer) => performer.id !== performerId);
       }
 
       showToast(`Performer "${performerName}" removed from ${options.itemType}`);
@@ -2930,8 +2937,8 @@ export abstract class BasePost {
    */
   protected async removePerformerAction(performerId: string, performerName: string): Promise<boolean> {
     return this.removePerformerShared(performerId, performerName, {
-      performers: this.data.image.performers,
-      itemId: this.data.image.id,
+      performers: this.getImageData().image.performers,
+      itemId: this.getImageData().image.id,
       apiMethod: (id, performerIds) => this.api!.updateImagePerformers(id, performerIds),
       itemType: 'image',
       logPrefix: this.constructor.name
@@ -2943,7 +2950,7 @@ export abstract class BasePost {
    * VideoPost overrides this with its own implementation.
    */
   protected getFavoriteTagSource(): Array<{ name: string }> | undefined {
-    return this.data.image.tags;
+    return this.getImageData().image.tags;
   }
 
   /**
@@ -3061,14 +3068,14 @@ export abstract class BasePost {
     }
     try {
       const result = await toggleImageFavorite(
-        this.data.image.id,
-        this.data.image.tags,
+        this.getImageData().image.id,
+        this.getImageData().image.tags,
         this.api,
         this.favoritesManager,
         this.isFavorite,
         'StashGifs Favorite',
       );
-      this.data.image.tags = result.newTags as typeof this.data.image.tags;
+      this.getImageData().image.tags = result.newTags as Image['tags'];
       this.isFavorite = result.newIsFavorite;
       this.updateHeartButton();
     } catch (error) {

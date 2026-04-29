@@ -176,20 +176,25 @@ export interface Image {
 }
 
 /**
- * ImagePostData - Data structure for image posts in feed
+ * Shared base for image-backed post types (ImagePost, ImageVideoPost).
+ * BasePost's default method implementations operate on this shape.
+ * VideoPost does NOT extend this — it overrides those methods entirely.
  */
-export interface ImagePostData {
+export interface ImageBasedPostData {
   image: Image;
-  imageUrl?: string;
   aspectRatio?: number; // width/height
 }
 
+/**
+ * ImagePostData - Data structure for image posts in feed
+ */
+export interface ImagePostData extends ImageBasedPostData {
+  imageUrl?: string;
+}
 
 /**
  * ImageVideoPostData - Data structure for image videos (MP4/M4V images treated as videos)
  */
-export interface ImageVideoPostData {
-  image: Image;
+export interface ImageVideoPostData extends ImageBasedPostData {
   videoUrl?: string;
-  aspectRatio?: number; // width/height
 }

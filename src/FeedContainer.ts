@@ -115,6 +115,8 @@ export class FeedContainer {
   private hasMore: boolean = true;
   private seenSkipCount = 0;
   private currentPage: number = 1;
+  private appendRetryCount = 0;
+  private appendRetryTimeoutId?: ReturnType<typeof setTimeout>;
   private scrollObserver?: IntersectionObserver;
   private loadMoreTrigger?: HTMLElement;
   private postsContainer!: HTMLElement;
@@ -3761,6 +3763,8 @@ export class FeedContainer {
   private handleEmptyMarkers(append: boolean): void {
     if (!append) {
       this.showError("It's empty");
+    } else {
+      this.scheduleAppendRetry();
     }
     this.hideSkeletonLoaders();
   }
@@ -3769,6 +3773,7 @@ export class FeedContainer {
    * Finalize load state after rendering
    */
   private finalizeLoadState(append: boolean, page: number): void {
+    this.appendRetryCount = 0;
     if (append) {
       this.currentPage = page;
     }
@@ -3803,8 +3808,24 @@ export class FeedContainer {
     if (!append) {
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
       this.showError(`Failed to load scene markers: ${errorMessage}`);
+    } else {
+      this.scheduleAppendRetry();
     }
     this.hideSkeletonLoaders();
+  }
+
+  private readonly MAX_APPEND_RETRIES = 3;
+
+  private scheduleAppendRetry(): void {
+    if (this.appendRetryCount >= this.MAX_APPEND_RETRIES) return;
+    this.appendRetryCount++;
+    this.appendRetryTimeoutId = setTimeout(() => {
+      this.appendRetryTimeoutId = undefined;
+      this.hasMore = true;
+      this.loadVideos(undefined, true).catch((err) => {
+        console.error('Error on append retry:', err);
+      });
+    }, 1500);
   }
 
   /**
@@ -3850,6 +3871,11 @@ export class FeedContainer {
     this.shortFormUnfilteredOffset = 0;
     this.markerPageSize = 0;
     this.imagePageSize = 0;
+    this.appendRetryCount = 0;
+    if (this.appendRetryTimeoutId) {
+      clearTimeout(this.appendRetryTimeoutId);
+      this.appendRetryTimeoutId = undefined;
+    }
     
     // Reload feed with current filters
     await this.loadVideos(this.currentFilters, false, undefined, true);
@@ -6774,6 +6800,10 @@ export class FeedContainer {
       clearInterval(this.placeholderAnimationInterval);
       this.placeholderAnimationInterval = undefined;
     }
+    if (this.appendRetryTimeoutId) {
+      clearTimeout(this.appendRetryTimeoutId);
+      this.appendRetryTimeoutId = undefined;
+    }
 
     this.cleanupCardSnapping();
     this.cleanupLoadObservers();
@@ -6783,6 +6813,7 @@ export class FeedContainer {
     }
 
     this.clearPosts();
+    this.api.destroy();
   }
 
   /**

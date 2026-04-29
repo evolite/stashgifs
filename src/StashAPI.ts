@@ -135,6 +135,10 @@ export class StashAPI {
     });
   }
 
+  destroy(): void {
+    this.gqlClient.destroy();
+  }
+
   /**
    * Normalize a scene_marker_filter coming from a saved filter
    * Ensures fields like tags/scene_tags have numeric ID arrays
