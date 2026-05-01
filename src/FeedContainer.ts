@@ -6905,15 +6905,16 @@ export class FeedContainer {
     }
 
     const targetIndex = this.resolveTargetIndex(direction, currentIndex, cards.length);
-    if (targetIndex === null) {
-      return;
-    }
 
     if (direction === 'next') {
-      const remainingCards = cards.length - 1 - targetIndex;
-      if (remainingCards <= 2 && !this.isLoading && this.hasMore) {
+      const isAtOrNearEnd = targetIndex === null || cards.length - 1 - targetIndex <= 2;
+      if (isAtOrNearEnd && !this.isLoading && this.hasMore) {
         void this.loadVideos(undefined, true);
       }
+    }
+
+    if (targetIndex === null) {
+      return;
     }
 
     this.snapToCard(cards[targetIndex]);
@@ -7144,33 +7145,42 @@ export class FeedContainer {
 
     this.isSnapping = true;
     const targetPosition = this.calculateCardCenterPosition(card);
-
-    // Extract postId before scrolling
     const postId = this.getPostIdFromCard(card);
 
     this.scrollToPosition(targetPosition, 'smooth');
 
-    // After scroll animation completes, trigger autoplay and audio
-    setTimeout(() => {
+    const scrollTarget = this.isReelModeEnabled() && this.scrollContainer
+      ? this.scrollContainer
+      : (globalThis as unknown as Window);
+
+    const finishSnap = () => {
       this.isSnapping = false;
-      
-      // Only proceed if we have a valid postId
       if (postId) {
-        // Wait a bit for IntersectionObserver to update after scroll
         setTimeout(() => {
-          // Trigger autoplay for the snapped card (this will also handle audio focus)
           this.triggerAutoplayForSnappedCard(postId).catch((e) => {
             console.warn('Failed to trigger autoplay for snapped card', e);
           });
-          
-          // Also request audio focus after a delay to ensure video has started playing
-          // This is a backup in case the video takes longer to start
           setTimeout(() => {
             this.requestAudioFocusForSnappedCard(postId);
           }, 500);
         }, 200);
       }
-    }, 600);
+    };
+
+    let safetyTimeout: ReturnType<typeof setTimeout>;
+
+    const onScrollEnd = () => {
+      clearTimeout(safetyTimeout);
+      finishSnap();
+    };
+
+    scrollTarget.addEventListener('scrollend', onScrollEnd, { once: true });
+
+    // Safety fallback for browsers where scrollend may not fire
+    safetyTimeout = setTimeout(() => {
+      scrollTarget.removeEventListener('scrollend', onScrollEnd);
+      finishSnap();
+    }, 1200);
   }
 
   /**
