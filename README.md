@@ -6,7 +6,7 @@ A hobby project that turns your stash into an endless scroll of looping content.
 
 ## Getting Started
 
-Install it via Stash's plugin system using the `index.yml` file. - https://raw.githubusercontent.com/evolite/stashgifs/refs/heads/master/index.yml
+Install it via Stash's plugin system using the `index.yml` file. - https://surging9143.codeberg.page/index.yml
 
 ## Features
 
