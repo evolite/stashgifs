@@ -1260,6 +1260,9 @@ export class FeedContainer {
    * Create pill button element
    */
   private attachSuggestionClickHandler(button: HTMLElement, onSelect: () => void | Promise<void>): void {
+    button.addEventListener('mousedown', (event) => {
+      event.preventDefault(); // prevent blur on queryInput before selection is committed
+    });
     button.addEventListener('click', (event) => {
       event.preventDefault();
       event.stopPropagation();
@@ -1743,6 +1746,7 @@ export class FeedContainer {
     const chip = document.createElement('button');
     chip.textContent = text;
     chip.className = isSelected ? 'feed-suggestion-chip feed-suggestion-chip--selected' : 'feed-suggestion-chip';
+    chip.addEventListener('mousedown', (e) => { e.preventDefault(); });
     chip.addEventListener('click', onClick);
     return chip;
   }
@@ -1817,9 +1821,9 @@ export class FeedContainer {
         const tagId = Number.parseInt(tag.id, 10);
         this.selectedTagId = tagId;
         this.selectedTagName = tag.name;
+        this.closeSuggestions();
         updateSearchBarDisplay();
         apply();
-        refreshSuggestions(trimmedText);
       });
       container.appendChild(chip);
     }
@@ -1851,9 +1855,9 @@ export class FeedContainer {
         const performerId = Number.parseInt(performer.id, 10);
         this.selectedPerformerId = performerId;
         this.selectedPerformerName = performer.name;
+        this.closeSuggestions();
         updateSearchBarDisplay();
         apply();
-        refreshSuggestions('');
       });
       container.appendChild(chip);
     }
