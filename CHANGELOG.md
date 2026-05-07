@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [5.46.0] - 2026-05-07\n\n### Changed\n- Track scene play count and watch time via GraphQL
+- Fix autocomplete blur-before-click race condition in suggestion selection\n
+
 ## [5.45.2] - 2026-05-01\n\n### Changed\n- Auto-retry append loads when the feed fails to get more posts
 - Export BUILD_HASH from version.ts so settings page displays it\n
 

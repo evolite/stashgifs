@@ -5850,14 +5850,18 @@ export class FeedContainer {
       } catch {
         // Ignore readiness errors – cleanup happens in finally
       } finally {
-        this.activePreloadPosts.delete(postId);
-        this.currentlyPreloadingCount = Math.max(0, this.currentlyPreloadingCount - 1);
+        if (this.activePreloadPosts.has(postId)) {
+          this.activePreloadPosts.delete(postId);
+          this.currentlyPreloadingCount = Math.max(0, this.currentlyPreloadingCount - 1);
+        }
       }
     };
 
     waitForReady().catch(() => {
-      this.activePreloadPosts.delete(postId);
-      this.currentlyPreloadingCount = Math.max(0, this.currentlyPreloadingCount - 1);
+      if (this.activePreloadPosts.has(postId)) {
+        this.activePreloadPosts.delete(postId);
+        this.currentlyPreloadingCount = Math.max(0, this.currentlyPreloadingCount - 1);
+      }
     });
   }
 
