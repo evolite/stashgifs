@@ -42,8 +42,13 @@ export class VideoPost extends VideoPostBase {
   private tagSearchLoadingTimer?: ReturnType<typeof setTimeout>;
   private isTagSearchLoading: boolean = false;
   private hasCreatedMarker: boolean = false; // Track if marker has been created for this scene
-  
-  
+
+  // Watch tracking
+  private watchTrackingInterval: ReturnType<typeof setInterval> | undefined;
+  private accumulatedWatchSeconds: number = 0;
+  private viewCounted: boolean = false;
+  private lastActivitySubmitTime: number = 0;
+
   // Cached DOM elements
 
   private readonly onCancelRequests?: () => void; // Callback to cancel pending requests
@@ -678,6 +683,53 @@ export class VideoPost extends VideoPostBase {
   }
 
 
+  private getViewThresholdSeconds(): number {
+    const clipLen = (this.data.marker.end_seconds ?? 0) - this.data.marker.seconds;
+    return clipLen > 0 ? Math.min(10, clipLen * 0.5) : 10;
+  }
+
+  private resetWatchTracking(): void {
+    this.accumulatedWatchSeconds = 0;
+    this.viewCounted = false;
+    this.lastActivitySubmitTime = 0;
+  }
+
+  private startWatchTracking(): void {
+    if (!this.api || this.watchTrackingInterval !== undefined) return;
+    this.resetWatchTracking();
+    const sceneId = this.data.marker.scene.id;
+    this.watchTrackingInterval = setInterval(() => {
+      const player = this.player;
+      if (!player) return;
+      const state = player.getState();
+      if (!state.isPlaying) return;
+
+      this.accumulatedWatchSeconds++;
+
+      if (!this.viewCounted && this.accumulatedWatchSeconds >= this.getViewThresholdSeconds()) {
+        this.viewCounted = true;
+        void this.api!.incrementScenePlayCount(sceneId);
+      }
+
+      if (this.accumulatedWatchSeconds - this.lastActivitySubmitTime >= 30) {
+        this.lastActivitySubmitTime = this.accumulatedWatchSeconds;
+        void this.api!.saveSceneActivity(sceneId, state.currentTime, this.accumulatedWatchSeconds);
+      }
+    }, 1000);
+  }
+
+  private stopWatchTracking(): void {
+    if (this.watchTrackingInterval !== undefined) {
+      clearInterval(this.watchTrackingInterval);
+      this.watchTrackingInterval = undefined;
+    }
+    if (this.api && this.accumulatedWatchSeconds > 0) {
+      const sceneId = this.data.marker.scene.id;
+      const currentTime = this.player?.getState().currentTime;
+      void this.api.saveSceneActivity(sceneId, currentTime, this.accumulatedWatchSeconds);
+    }
+  }
+
   /**
    * Destroy the current player instance
    */
@@ -686,6 +738,7 @@ export class VideoPost extends VideoPostBase {
       return;
     }
 
+    this.stopWatchTracking();
     this.clearLoadErrorCheckTimeout();
     this.detachLoadErrorHandler();
     
@@ -779,6 +832,7 @@ export class VideoPost extends VideoPostBase {
         // Silently handle - playback may have succeeded despite error
       }
       await new Promise(resolve => setTimeout(resolve, checkDelay));
+      if (!this.player) return false;
       return this.player.isPlaying() ?? false;
     }
   }
@@ -815,6 +869,7 @@ export class VideoPost extends VideoPostBase {
       }
       
       // All retries exhausted, show error
+      if (!this.player) return;
       const videoElement = this.player.getVideoElement();
       console.warn('Failed to resume playback after upgrade - video not playing after retries', {
         retryCount,
@@ -1027,6 +1082,8 @@ export class VideoPost extends VideoPostBase {
       if (this.visibilityManager && this.data.marker.id) {
         this.visibilityManager.registerPlayer(this.data.marker.id, this.player);
       }
+
+      this.startWatchTracking();
 
     } catch (error) {
       console.error('VideoPost: Failed to create video player', {
@@ -1805,10 +1862,6 @@ export class VideoPost extends VideoPostBase {
           chip.style.background = THEME.colors.backgroundSecondary;
           chip.style.borderColor = THEME.colors.border;
         });
-        chip.addEventListener('mouseleave', () => {
-          chip.style.background = THEME.colors.backgroundSecondary;
-          chip.style.borderColor = THEME.colors.border;
-        });
 
         chip.addEventListener('click', () => {
           this.selectTagForMarker(tag.id, tag.name);
@@ -2241,6 +2294,8 @@ export class VideoPost extends VideoPostBase {
    * Destroy the post and clean up all resources
    */
   destroy(): void {
+    this.closeMarkerDialog();
+
     // Clear any pending retry
     if (this.retryTimeoutId) {
       clearTimeout(this.retryTimeoutId);

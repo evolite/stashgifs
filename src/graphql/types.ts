@@ -553,6 +553,20 @@ export interface SceneAddOResponse {
 }
 
 /**
+ * SceneIncrementPlayCount response
+ */
+export interface SceneIncrementPlayCountResponse {
+  sceneIncrementPlayCount: number | null;
+}
+
+/**
+ * SceneSaveActivity response
+ */
+export interface SceneSaveActivityResponse {
+  sceneSaveActivity: boolean | null;
+}
+
+/**
  * ImageUpdate input
  */
 interface ImageUpdateInput {

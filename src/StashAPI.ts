@@ -33,6 +33,8 @@ import {
   SceneMarkerCreateResponse,
   SceneUpdateResponse,
   SceneAddOResponse,
+  SceneIncrementPlayCountResponse,
+  SceneSaveActivityResponse,
   ImageUpdateResponse,
   ImageIncrementOResponse,
   TagCreateInput,
@@ -1853,6 +1855,38 @@ export class StashAPI {
       }
       this.logError('incrementOCount', error);
       throw error;
+    }
+  }
+
+  /**
+   * Increment the play count for a scene. Fire-and-forget — never throws.
+   */
+  async incrementScenePlayCount(sceneId: string): Promise<void> {
+    if (!sceneId) return;
+    try {
+      await this.gqlClient.mutate<SceneIncrementPlayCountResponse>({
+        mutation: mutations.SCENE_INCREMENT_PLAY_COUNT,
+        variables: { id: sceneId },
+      });
+    } catch (error) {
+      this.logError('incrementScenePlayCount', error);
+    }
+  }
+
+  /**
+   * Save scene watch activity. Fire-and-forget — never throws.
+   * @param resumeTime Current playback position in the scene (seconds), or undefined
+   * @param playDuration Seconds watched in this session
+   */
+  async saveSceneActivity(sceneId: string, resumeTime: number | undefined, playDuration: number): Promise<void> {
+    if (!sceneId || playDuration <= 0) return;
+    try {
+      await this.gqlClient.mutate<SceneSaveActivityResponse>({
+        mutation: mutations.SCENE_SAVE_ACTIVITY,
+        variables: { id: sceneId, resume_time: resumeTime, playDuration },
+      });
+    } catch (error) {
+      this.logError('saveSceneActivity', error);
     }
   }
 

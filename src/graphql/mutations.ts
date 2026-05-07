@@ -101,6 +101,24 @@ export const SCENE_ADD_O = `
 `;
 
 /**
+ * Increment the play count for a scene
+ */
+export const SCENE_INCREMENT_PLAY_COUNT = `
+  mutation SceneIncrementPlayCount($id: ID!) {
+    sceneIncrementPlayCount(id: $id)
+  }
+`;
+
+/**
+ * Save scene watch activity (resume position and total play duration)
+ */
+export const SCENE_SAVE_ACTIVITY = `
+  mutation SceneSaveActivity($id: ID!, $resume_time: Float, $playDuration: Float!) {
+    sceneSaveActivity(id: $id, resume_time: $resume_time, playDuration: $playDuration)
+  }
+`;
+
+/**
  * Update an image
  */
 export const IMAGE_UPDATE = `
