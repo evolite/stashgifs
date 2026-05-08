@@ -2,7 +2,7 @@
   name: StashGifs
   metadata:
     description: Social Media style browsing experience
-  version: 5.46.0
-  date: "2026-05-07 10:41:42"
-  path: https://codeberg.org/surging9143/stashgifs/releases/download/v5.46.0/stashgifs.zip
-  sha256: a01dff40231c6120d87049881886476f2db9a7ee9d5da286148b44323128f44b
+  version: 5.47.0
+  date: "2026-05-08 15:39:43"
+  path: https://codeberg.org/surging9143/stashgifs/releases/download/v5.47.0/stashgifs.zip
+  sha256: 381705c9a552c50f653efd6ae8a972520a7445dd2219ace0bd278dc6d3b170c9

@@ -89,6 +89,7 @@ export interface FilterOptions {
   orientationFilter?: ('landscape' | 'portrait' | 'square')[]; // Filter content by orientation
   sortSeed?: string; // Sort seed for consistent pagination (reused across pages)
   excludedTagIds?: string[]; // Tags to exclude (resolved IDs)
+  tagDepth?: number; // Depth for tag hierarchy traversal (-1 = all subtags, 0 = exact match only)
 }
 
 export interface FeedSettings {
@@ -128,6 +129,7 @@ export interface FeedSettings {
   galleryIds?: string[]; // Gallery IDs to filter to; empty = any gallery (NOT_NULL)
   seenHistorySize?: number; // Max IDs tracked in seen ring buffer (0 = disabled, default 500)
   contentLimit?: number; // Max items per content type to paginate through (default 5000)
+  includeSubtags?: boolean; // When true, tag search includes all descendant subtags
 }
 
 export interface VideoPostData {

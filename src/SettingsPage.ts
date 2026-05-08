@@ -1278,6 +1278,19 @@ export class SettingsPage {
     });
     filtersSection.appendChild(excludedTagsContainer);
 
+    // Include Subtags
+    const includeSubtagsContainer = document.createElement('div');
+    includeSubtagsContainer.style.display = 'flex';
+    includeSubtagsContainer.style.justifyContent = 'space-between';
+    includeSubtagsContainer.style.alignItems = 'center';
+    includeSubtagsContainer.style.marginBottom = '16px';
+    includeSubtagsContainer.appendChild(buildInfoLabel('Include Subtags', 'When searching by tag, also include content tagged with any descendant subtag.'));
+    const { container: includeSubtagsToggleContainer, input: includeSubtagsToggle } = this.createToggleSwitch(
+      this.settings.includeSubtags ?? false, () => this.saveSettings()
+    );
+    includeSubtagsContainer.appendChild(includeSubtagsToggleContainer);
+    filtersSection.appendChild(includeSubtagsContainer);
+
     // Recency Bias
     const seenHistoryContainer = document.createElement('div');
     seenHistoryContainer.style.marginBottom = '16px';
@@ -1339,6 +1352,7 @@ export class SettingsPage {
     (this as any).portraitToggle = portraitToggle;
     (this as any).landscapeToggle = landscapeToggle;
     (this as any).excludedTagsInput = excludedTagsInput;
+    (this as any).includeSubtagsToggle = includeSubtagsToggle;
 
     contentTabContent.appendChild(filtersSection);
 
@@ -1459,7 +1473,7 @@ export class SettingsPage {
       'portraitToggle', 'landscapeToggle',
       'themeBackgroundInput', 'themePrimaryInput', 'themeSecondaryInput', 'themeAccentInput',
       'showVerifiedCheckmarksToggle', 'showProductionAgeToggle', 'excludedTagsInput',
-      'seenHistorySizeInput', 'contentLimitInput',
+      'includeSubtagsToggle', 'seenHistorySizeInput', 'contentLimitInput',
     ];
     const inputs: Record<string, HTMLInputElement> = {};
     for (const name of inputNames) {
@@ -1517,6 +1531,7 @@ export class SettingsPage {
       showVerifiedCheckmarks: inputs.showVerifiedCheckmarksToggle.checked,
       showProductionAge: inputs.showProductionAgeToggle.checked,
       excludedTagNames,
+      includeSubtags: inputs.includeSubtagsToggle.checked,
       imagesInGalleryOnly: galleryOnlyToggle?.checked ?? false,
       galleryIds: gallerySelectedIds ? [...gallerySelectedIds] : [],
       seenHistorySize: Math.max(0, Math.min(2000, Number.parseInt(inputs.seenHistorySizeInput.value, 10) || 0)),

@@ -2950,6 +2950,7 @@ export class FeedContainer {
       savedFilterId: this.selectedSavedFilter?.id || undefined,
       limit: FeedContainer.CONTENT_LOAD_LIMIT,
       offset: 0,
+      tagDepth: this.settings.includeSubtags ? -1 : 0,
     };
     this.currentFilters = newFilters;
     await this.loadVideos(newFilters, false, loadSignal);
@@ -3029,6 +3030,7 @@ export class FeedContainer {
       savedFilterId: this.selectedSavedFilter?.id || undefined,
       limit: FeedContainer.CONTENT_LOAD_LIMIT,
       offset: 0,
+      tagDepth: this.settings.includeSubtags ? -1 : 0,
     };
     this.currentFilters = newFilters;
     this.loadVideos(newFilters, false).catch((e) => console.error('Apply filters failed', e));

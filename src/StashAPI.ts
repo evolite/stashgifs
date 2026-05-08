@@ -780,13 +780,13 @@ export class StashAPI {
   /**
    * Apply tag filters to a scene marker filter
    */
-  private applyTagsToMarkerFilter(targetFilter: SceneMarkerFilterInput, tagIds: string[]): void {
+  private applyTagsToMarkerFilter(targetFilter: SceneMarkerFilterInput, tagIds: string[], depth: number = 0): void {
     if (tagIds.length > 0) {
       targetFilter.tags = {
         value: tagIds,
         excludes: [],
         modifier: tagIds.length === 1 ? 'INCLUDES_ALL' : 'INCLUDES',
-        depth: 0
+        depth,
       };
     }
   }
@@ -794,11 +794,12 @@ export class StashAPI {
   /**
    * Apply tag filters to a scene filter
    */
-  private applyTagsToSceneFilter(targetFilter: SceneFilterInput, tagIds: string[]): void {
+  private applyTagsToSceneFilter(targetFilter: SceneFilterInput, tagIds: string[], depth: number = 0): void {
     if (tagIds.length > 0) {
       targetFilter.tags = {
         value: tagIds,
-        modifier: tagIds.length === 1 ? 'INCLUDES_ALL' : 'INCLUDES'
+        modifier: tagIds.length === 1 ? 'INCLUDES_ALL' : 'INCLUDES',
+        depth,
       };
     }
   }
@@ -904,10 +905,11 @@ export class StashAPI {
     const { tagIds, performerIds, excludedTagIds } = this.extractTagAndPerformerFilters(filters);
     
     if (tagIds.length > 0) {
+      const tagDepth = filters?.tagDepth ?? 0;
       if (options.isMarkerFilter) {
-        this.applyTagsToMarkerFilter(targetFilter as SceneMarkerFilterInput, tagIds);
+        this.applyTagsToMarkerFilter(targetFilter as SceneMarkerFilterInput, tagIds, tagDepth);
       } else {
-        this.applyTagsToSceneFilter(targetFilter as SceneFilterInput, tagIds);
+        this.applyTagsToSceneFilter(targetFilter as SceneFilterInput, tagIds, tagDepth);
       }
     }
 
