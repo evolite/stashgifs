@@ -666,7 +666,7 @@ export class StashAPI {
         countSceneFilter.tags = {
           value: tagIds.map(String),
           excludes: [],
-          modifier: tagIds.length === 1 ? 'INCLUDES_ALL' : 'INCLUDES',
+          modifier: 'INCLUDES_ALL',
           depth: 0
         };
       }
@@ -785,7 +785,7 @@ export class StashAPI {
       targetFilter.tags = {
         value: tagIds,
         excludes: [],
-        modifier: tagIds.length === 1 ? 'INCLUDES_ALL' : 'INCLUDES',
+        modifier: 'INCLUDES_ALL',
         depth,
       };
     }
@@ -798,7 +798,7 @@ export class StashAPI {
     if (tagIds.length > 0) {
       targetFilter.tags = {
         value: tagIds,
-        modifier: tagIds.length === 1 ? 'INCLUDES_ALL' : 'INCLUDES',
+        modifier: 'INCLUDES_ALL',
         depth,
       };
     }
@@ -2217,7 +2217,7 @@ export class StashAPI {
     if ((filters?.tagIds && filters.tagIds.length > 0) || excludedTagIds.length > 0) {
       imageFilter.tags = {
         value: filters?.tagIds ?? [],
-        modifier: 'INCLUDES',
+        modifier: 'INCLUDES_ALL',
       };
       (imageFilter.tags as { excludes?: string[] }).excludes = excludedTagIds;
     }

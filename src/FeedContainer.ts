@@ -108,10 +108,10 @@ export class FeedContainer {
   // Batch poster prefetching aligns with previous commit behavior
   private isLoading: boolean = false;
   private currentFilters?: FilterOptions;
-  private selectedTagId?: number;
-  private selectedTagName?: string;
-  private selectedPerformerId?: number;
-  private selectedPerformerName?: string;
+  private selectedTagIds: Map<number, string> = new Map();
+  private selectedPerformerIds: Map<number, string> = new Map();
+  private debouncedApplyFilters!: () => void;
+  private activePillsBar?: HTMLElement;
   private hasMore: boolean = true;
   private seenSkipCount = 0;
   private currentPage: number = 1;
@@ -206,6 +206,9 @@ export class FeedContainer {
     
     // Create header bar with unified search
     this.createHeaderBar();
+    this.debouncedApplyFilters = debounce(() => {
+      this.applyFilters().catch((e) => console.error('Apply filters failed', e));
+    }, 300);
     
     this.initializePostsContainer();
     this.applyReelModeLayout();
@@ -1419,10 +1422,8 @@ export class FeedContainer {
     withScroll: boolean
   ): void {
     this.selectedSavedFilter = { id: filter.id, name: filter.name };
-    this.selectedTagId = undefined;
-    this.selectedTagName = undefined;
-    this.selectedPerformerId = undefined;
-    this.selectedPerformerName = undefined;
+    this.selectedTagIds.clear();
+    this.selectedPerformerIds.clear();
     this.closeSuggestions();
     updateSearchBarDisplay();
     this.currentFilters = { savedFilterId: filter.id, limit: FeedContainer.CONTENT_LOAD_LIMIT, offset: 0 };
@@ -1453,25 +1454,22 @@ export class FeedContainer {
 
     pillRow.appendChild(this.createPillButton('Favorites', async () => {
       this.selectedSavedFilter = undefined;
-      this.selectedPerformerId = undefined;
-      this.selectedPerformerName = undefined;
       try {
         const favoriteTag = await this.api.findTagByName('StashGifs Favorite');
         if (favoriteTag) {
-          this.selectedTagId = Number.parseInt(favoriteTag.id, 10);
-          this.selectedTagName = 'Favorites';
-        } else {
-          this.selectedTagId = undefined;
-          this.selectedTagName = undefined;
+          const tagId = Number.parseInt(favoriteTag.id, 10);
+          if (this.selectedTagIds.has(tagId)) {
+            this.selectedTagIds.delete(tagId);
+          } else {
+            this.selectedTagIds.set(tagId, 'Favorites');
+          }
         }
       } catch (error) {
         console.error('Failed to load favorite tag', error);
-        this.selectedTagId = undefined;
-        this.selectedTagName = undefined;
       }
       this.closeSuggestions();
       updateSearchBarDisplay();
-      apply();
+      this.debouncedApplyFilters();
     }));
 
     for (const filter of this.savedFiltersCache) {
@@ -1503,18 +1501,24 @@ export class FeedContainer {
     tagsSection.appendChild(this.createSectionLabel(label));
 
     for (const tag of tags) {
-      tagsSection.appendChild(
-        this.createListButton(tag.name, () => {
-          this.selectedSavedFilter = undefined;
-          this.selectedPerformerId = undefined;
-          this.selectedPerformerName = undefined;
-          this.selectedTagId = Number.parseInt(tag.id, 10);
-          this.selectedTagName = tag.name;
-          this.closeSuggestions();
-          updateSearchBarDisplay();
-          apply();
-        }, { leadingText: '#' })
-      );
+      const tagId = Number.parseInt(tag.id, 10);
+      const btn = this.createListButton(tag.name, () => {
+        this.selectedSavedFilter = undefined;
+        if (this.selectedTagIds.has(tagId)) {
+          this.selectedTagIds.delete(tagId);
+          btn.classList.remove('feed-list-button--selected');
+        } else {
+          this.selectedTagIds.set(tagId, tag.name);
+          btn.classList.add('feed-list-button--selected');
+        }
+        updateSearchBarDisplay();
+        this.debouncedApplyFilters();
+        this.focusSearchInput();
+      }, { leadingText: '#' });
+      if (this.selectedTagIds.has(tagId)) {
+        btn.classList.add('feed-list-button--selected');
+      }
+      tagsSection.appendChild(btn);
     }
     container.appendChild(tagsSection);
   }
@@ -1547,22 +1551,27 @@ export class FeedContainer {
           ? performer.image_path
           : `${globalThis.location.origin}${performer.image_path}`;
       }
-      performersSection.appendChild(
-        this.createListButton(
-          performer.name,
-          () => {
-            this.selectedSavedFilter = undefined;
-            this.selectedTagId = undefined;
-            this.selectedTagName = undefined;
-            this.selectedPerformerId = performerId;
-            this.selectedPerformerName = performer.name;
-            this.closeSuggestions();
-            updateSearchBarDisplay();
-            apply();
-          },
-          { leadingImage: imageSrc, leadingText: imageSrc ? undefined : performer.name.charAt(0).toUpperCase() }
-        )
+      const btn = this.createListButton(
+        performer.name,
+        () => {
+          this.selectedSavedFilter = undefined;
+          if (this.selectedPerformerIds.has(performerId)) {
+            this.selectedPerformerIds.delete(performerId);
+            btn.classList.remove('feed-list-button--selected');
+          } else {
+            this.selectedPerformerIds.set(performerId, performer.name);
+            btn.classList.add('feed-list-button--selected');
+          }
+          updateSearchBarDisplay();
+          this.debouncedApplyFilters();
+          this.focusSearchInput();
+        },
+        { leadingImage: imageSrc, leadingText: imageSrc ? undefined : performer.name.charAt(0).toUpperCase() }
       );
+      if (this.selectedPerformerIds.has(performerId)) {
+        btn.classList.add('feed-list-button--selected');
+      }
+      performersSection.appendChild(btn);
     }
     container.appendChild(performersSection);
   }
@@ -1637,7 +1646,7 @@ export class FeedContainer {
     const availableTags = freshTags
       .filter((tag) => {
         const tagId = Number.parseInt(tag.id, 10);
-        return !Number.isNaN(tagId) && this.selectedTagId !== tagId;
+        return !Number.isNaN(tagId) && !this.selectedTagIds.has(tagId);
       })
       .slice(0, 3);
 
@@ -1646,7 +1655,7 @@ export class FeedContainer {
     const availablePerformers = freshPerformers
       .filter((performer) => {
         const performerId = Number.parseInt(performer.id, 10);
-        return !Number.isNaN(performerId) && this.selectedPerformerId !== performerId;
+        return !Number.isNaN(performerId) && !this.selectedPerformerIds.has(performerId);
       })
       .slice(0, 3);
 
@@ -1689,9 +1698,9 @@ export class FeedContainer {
       savedSection.style.marginLeft = `${alignmentOffsetForResults}px`;
       savedSection.appendChild(this.createSectionLabel('Matching Saved Marker Filters'));
       for (const filter of matchingSavedFilters) {
-        savedSection.appendChild(
-          this.createListButton(filter.name, () => this.applySavedFilter(filter, updateSearchBarDisplay, false))
-        );
+        const btn = this.createListButton(filter.name, () => this.applySavedFilter(filter, updateSearchBarDisplay, false));
+        btn.dataset.savedFilter = 'true';
+        savedSection.appendChild(btn);
       }
       container.appendChild(savedSection);
     }
@@ -1713,20 +1722,20 @@ export class FeedContainer {
     const filteredTags = tagItems
       .filter((tag) => {
         const tagId = Number.parseInt(tag.id, 10);
-        return !Number.isNaN(tagId) && this.selectedTagId !== tagId;
+        return !Number.isNaN(tagId) && !this.selectedTagIds.has(tagId);
       })
       .slice(0, 20);
 
-    this.createTagsSection(container, filteredTags, alignmentOffsetForResults, updateSearchBarDisplay, apply);
+    this.createTagsSection(container, this.sortByMatchAccuracy(filteredTags, trimmedText), alignmentOffsetForResults, updateSearchBarDisplay, apply);
 
     const filteredPerformers = performerItems
       .filter((performer) => {
         const performerId = Number.parseInt(performer.id, 10);
-        return !Number.isNaN(performerId) && this.selectedPerformerId !== performerId;
+        return !Number.isNaN(performerId) && !this.selectedPerformerIds.has(performerId);
       })
       .slice(0, 20);
 
-    this.createPerformersSection(container, filteredPerformers, alignmentOffsetForResults, updateSearchBarDisplay, apply);
+    this.createPerformersSection(container, this.sortByMatchAccuracy(filteredPerformers, trimmedText), alignmentOffsetForResults, updateSearchBarDisplay, apply);
 
     if (container.children.length === 0) {
       this.appendEmptyState(container, `No matches found for "${trimmedText}".`);
@@ -1770,6 +1779,22 @@ export class FeedContainer {
     return divider;
   }
 
+  private sortByMatchAccuracy<T extends { name: string }>(items: T[], query: string): T[] {
+    if (!query) return items;
+    const q = query.toLowerCase();
+    return [...items].sort((a, b) => {
+      const aName = a.name.toLowerCase();
+      const bName = b.name.toLowerCase();
+      const score = (name: string): number => {
+        if (name === q) return 0;
+        if (name.startsWith(q)) return 1;
+        return 2;
+      };
+      const diff = score(aName) - score(bName);
+      return diff !== 0 ? diff : aName.localeCompare(bName);
+    });
+  }
+
   /**
    * Render saved filters as suggestion chips
    */
@@ -1788,8 +1813,8 @@ export class FeedContainer {
       const chip = this.createSuggestionChip(f.name, () => {
         savedSelect.value = f.id;
         this.selectedSavedFilter = { id: f.id, name: f.name };
-        this.selectedTagId = undefined;
-        this.selectedTagName = undefined;
+        this.selectedTagIds.clear();
+        this.selectedPerformerIds.clear();
         queryInput.value = '';
         this.closeSuggestions();
         updateSearchBarDisplay();
@@ -1812,19 +1837,24 @@ export class FeedContainer {
     trimmedText: string
   ): void {
     for (const tag of tags) {
-      if (this.selectedTagId === Number.parseInt(tag.id, 10)) continue;
       if (tag.name === 'StashGifs Favorite' || tag.name === 'StashGifs Marker') continue;
+      const tagId = Number.parseInt(tag.id, 10);
+      const isSelected = this.selectedTagIds.has(tagId);
 
       const chip = this.createSuggestionChip(tag.name, () => {
         this.selectedSavedFilter = undefined;
         savedSelect.value = '';
-        const tagId = Number.parseInt(tag.id, 10);
-        this.selectedTagId = tagId;
-        this.selectedTagName = tag.name;
-        this.closeSuggestions();
+        if (this.selectedTagIds.has(tagId)) {
+          this.selectedTagIds.delete(tagId);
+          chip.classList.remove('feed-suggestion-chip--selected');
+        } else {
+          this.selectedTagIds.set(tagId, tag.name);
+          chip.classList.add('feed-suggestion-chip--selected');
+        }
         updateSearchBarDisplay();
-        apply();
-      });
+        this.debouncedApplyFilters();
+        this.focusSearchInput();
+      }, isSelected);
       container.appendChild(chip);
     }
   }
@@ -1847,18 +1877,23 @@ export class FeedContainer {
     }
 
     for (const performer of performers) {
-      if (this.selectedPerformerId === Number.parseInt(performer.id, 10)) continue;
+      const performerId = Number.parseInt(performer.id, 10);
+      const isSelected = this.selectedPerformerIds.has(performerId);
 
       const chip = this.createSuggestionChip(performer.name, () => {
         this.selectedSavedFilter = undefined;
         savedSelect.value = '';
-        const performerId = Number.parseInt(performer.id, 10);
-        this.selectedPerformerId = performerId;
-        this.selectedPerformerName = performer.name;
-        this.closeSuggestions();
+        if (this.selectedPerformerIds.has(performerId)) {
+          this.selectedPerformerIds.delete(performerId);
+          chip.classList.remove('feed-suggestion-chip--selected');
+        } else {
+          this.selectedPerformerIds.set(performerId, performer.name);
+          chip.classList.add('feed-suggestion-chip--selected');
+        }
         updateSearchBarDisplay();
-        apply();
-      });
+        this.debouncedApplyFilters();
+        this.focusSearchInput();
+      }, isSelected);
       container.appendChild(chip);
     }
   }
@@ -2087,10 +2122,8 @@ export class FeedContainer {
 
     brandContainer.addEventListener('click', () => {
       // Clear all filter properties
-      this.selectedTagId = undefined;
-      this.selectedTagName = undefined;
-      this.selectedPerformerId = undefined;
-      this.selectedPerformerName = undefined;
+      this.selectedTagIds.clear();
+      this.selectedPerformerIds.clear();
       this.selectedSavedFilter = undefined;
       this.currentFilters = undefined;
       
@@ -2415,6 +2448,16 @@ export class FeedContainer {
     headerInner.appendChild(searchAndSettingsContainer);
     header.appendChild(headerInner);
 
+    const activePillsBar = document.createElement('div');
+    activePillsBar.className = 'feed-filters__active-pills';
+    activePillsBar.style.display = 'none';
+    activePillsBar.style.flexWrap = 'wrap';
+    activePillsBar.style.gap = '6px';
+    activePillsBar.style.padding = '4px 0 4px';
+    activePillsBar.style.boxSizing = 'border-box';
+    header.appendChild(activePillsBar);
+    this.activePillsBar = activePillsBar;
+
     const tagHeader = this.createTagHeader();
 
     const inputSetup = this.setupSearchInput();
@@ -2474,6 +2517,7 @@ export class FeedContainer {
       }
       queryInput.style.opacity = '1';
       queryInput.style.paddingLeft = '14px';
+      this.updateActivePills();
     };
 
     const apply = async () => {
@@ -2501,10 +2545,18 @@ export class FeedContainer {
     // Suggestions with proper debouncing
     let suggestionsRequestId = 0;
     let suggestTerm = '';
-    
+    let pendingSuggestionsFetch: Promise<void> | null = null;
+
+    const triggerFetchSuggestions = (text: string, forceShow: boolean): Promise<void> => {
+      const p = fetchAndShowSuggestions(text, forceShow);
+      pendingSuggestionsFetch = p;
+      p.finally(() => { if (pendingSuggestionsFetch === p) pendingSuggestionsFetch = null; });
+      return p;
+    };
+
     // Debounced suggestion fetcher (150ms delay)
     const debouncedFetchSuggestions = debounce((text: string, forceShow: boolean) => {
-      fetchAndShowSuggestions(text, forceShow);
+      triggerFetchSuggestions(text, forceShow);
     }, 150);
     
     const prepareSuggestionsPanel = (panel: HTMLElement, ensureLatest: () => boolean): boolean => {
@@ -2522,6 +2574,7 @@ export class FeedContainer {
       }
 
       this.setHeaderOverlayState(true);
+      panel.style.setProperty('padding-top', this.getSuggestionsTopOffset(), 'important');
       panel.style.display = 'flex';
       this.lockBodyScroll();
 
@@ -2630,10 +2683,25 @@ export class FeedContainer {
       }
     };
     
-    queryInput.addEventListener('keydown', (e) => { 
-      if (e instanceof KeyboardEvent && e.key === 'Enter') {
+    queryInput.addEventListener('keydown', (e) => {
+      if (!(e instanceof KeyboardEvent) || e.key !== 'Enter') return;
+
+      const text = queryInput.value.trim();
+
+      if (!text) {
         apply();
+        return;
       }
+
+      e.preventDefault();
+
+      triggerFetchSuggestions(text, false).then(() => {
+        if (queryInput.value.trim() !== text) return;
+        const firstResult = suggestions.querySelector(
+          'button.feed-list-button:not(.feed-list-button--selected):not([data-saved-filter]), button.feed-suggestion-chip:not(.feed-suggestion-chip--selected)'
+        ) as HTMLButtonElement | null;
+        if (firstResult) firstResult.click();
+      });
     });
     
     // Handle focus and show suggestions
@@ -2649,10 +2717,6 @@ export class FeedContainer {
     };
 
     const clearSearchSelection = () => {
-      this.selectedTagId = undefined;
-      this.selectedTagName = undefined;
-      this.selectedPerformerId = undefined;
-      this.selectedPerformerName = undefined;
       this.selectedSavedFilter = undefined;
     };
 
@@ -2662,7 +2726,7 @@ export class FeedContainer {
       queryInput.style.borderColor = THEME.colors.border;
       clearSearchSelection();
       queryInput.value = '';
-      fetchAndShowSuggestions('', true);
+      triggerFetchSuggestions('', true);
     };
 
     const handleFocus = () => {
@@ -2721,12 +2785,8 @@ export class FeedContainer {
     
     queryInput.addEventListener('input', () => {
       const text = queryInput.value;
-      // Clear selected tag/filter when user types (they're searching for something new)
-      if (text !== this.selectedTagName && text !== this.selectedPerformerName && text !== this.selectedSavedFilter?.name) {
-        this.selectedTagId = undefined;
-        this.selectedTagName = undefined;
-        this.selectedPerformerId = undefined;
-        this.selectedPerformerName = undefined;
+      // Clear saved filter when user types something new
+      if (text !== this.selectedSavedFilter?.name) {
         this.selectedSavedFilter = undefined;
       }
       // Use debounced function for better performance - only fetch suggestions, don't apply
@@ -2735,7 +2795,8 @@ export class FeedContainer {
     });
 
     suggestions.addEventListener('click', (e) => {
-      if (e.target === suggestions) {
+      const target = e.target as HTMLElement;
+      if (!target.closest('button, input, a, select, textarea')) {
         this.closeSuggestions();
       }
     });
@@ -2786,36 +2847,34 @@ export class FeedContainer {
   }
 
   /**
-   * Handle performer chip click - clear filters and set performer filter
+   * Handle performer chip click - toggle performer in active filter set
    */
-  private async handlePerformerChipClick(performerId: number, performerName: string): Promise<void> {
-    // Clear all filters
-    this.selectedTagId = undefined;
-    this.selectedTagName = undefined;
+  private handlePerformerChipClick(performerId: number, performerName: string): void {
     this.selectedSavedFilter = undefined;
-    // Set performer filter
-    this.selectedPerformerId = performerId;
-    this.selectedPerformerName = performerName;
-    // Apply filters
-    await this.applyFilters();
-    // Scroll to top (same approach as refreshFeed)
+    if (this.selectedPerformerIds.has(performerId)) {
+      this.selectedPerformerIds.delete(performerId);
+    } else {
+      this.selectedPerformerIds.set(performerId, performerName);
+    }
+    this.updateActivePills();
+    this.updateQueryInputDisplay();
+    this.debouncedApplyFilters();
     this.scrollToTop();
   }
 
   /**
-   * Handle tag chip click - clear filters and set tag filter
+   * Handle tag chip click - toggle tag in active filter set
    */
-  private async handleTagChipClick(tagId: number, tagName: string): Promise<void> {
-    // Clear all filters
-    this.selectedPerformerId = undefined;
-    this.selectedPerformerName = undefined;
+  private handleTagChipClick(tagId: number, tagName: string): void {
     this.selectedSavedFilter = undefined;
-    // Set tag filter
-    this.selectedTagId = tagId;
-    this.selectedTagName = tagName;
-    // Apply filters
-    await this.applyFilters();
-    // Scroll to top (same approach as refreshFeed)
+    if (this.selectedTagIds.has(tagId)) {
+      this.selectedTagIds.delete(tagId);
+    } else {
+      this.selectedTagIds.set(tagId, tagName);
+    }
+    this.updateActivePills();
+    this.updateQueryInputDisplay();
+    this.debouncedApplyFilters();
     this.scrollToTop();
   }
 
@@ -2838,41 +2897,20 @@ export class FeedContainer {
 
 
   /**
-   * Build filter values from selected performer
+   * Build filter values from selected performers Map
    */
   private buildPerformerFilters(): { performers: string[] } {
     return {
-      performers: [String(this.selectedPerformerId)],
+      performers: [...this.selectedPerformerIds.keys()].map(String),
     };
   }
 
   /**
-   * Build filter values from selected tag
+   * Build filter values from selected tags Map
    */
-  private async buildTagFilters(loadSignal?: AbortSignal): Promise<{ tags?: string[] }> {
-    if (this.selectedTagId) {
-      return {
-        tags: [String(this.selectedTagId)],
-      };
-    }
-    
-    if (this.selectedTagName) {
-      try {
-        const exactTag = await this.api.findTagByName(this.selectedTagName);
-        if (loadSignal?.aborted) {
-          return {};
-        }
-        if (exactTag) {
-          return {
-            tags: [String(exactTag.id)],
-          };
-        }
-      } catch {
-        // If tag lookup fails, don't set tags filter
-      }
-    }
-    
-    return {};
+  private buildTagFilters(): { tags?: string[] } {
+    const ids = [...this.selectedTagIds.keys()].map(String);
+    return ids.length ? { tags: ids } : {};
   }
 
   /**
@@ -2889,26 +2927,20 @@ export class FeedContainer {
       }
       
       if (exactTag) {
-        this.selectedTagName = exactTag.name;
-        this.selectedTagId = Number.parseInt(exactTag.id, 10);
-        return {
-          tags: [String(exactTag.id)],
-        };
+        this.selectedTagIds.set(Number.parseInt(exactTag.id, 10), exactTag.name);
+        return {};
       }
-      
+
       const matchingPerformers = await this.api.searchPerformers(q, 10, loadSignal);
       if (loadSignal?.aborted) {
         return {};
       }
-      
+
       if (matchingPerformers && matchingPerformers.length > 0 && matchingPerformers[0]) {
-        this.selectedPerformerName = matchingPerformers[0].name;
-        this.selectedPerformerId = Number.parseInt(String(matchingPerformers[0].id), 10);
-        return {
-          performers: [String(matchingPerformers[0].id)],
-        };
+        this.selectedPerformerIds.set(Number.parseInt(String(matchingPerformers[0].id), 10), matchingPerformers[0].name);
+        return {};
       }
-      
+
       return {
         queryValue: q,
       };
@@ -2921,32 +2953,24 @@ export class FeedContainer {
 
   /**
    * Apply current search across UIs using unified logic
-   * Resolves selectedTagName to tag IDs, tries performer by name, or falls back to plain text.
+   * Resolves text query to tag/performer if Maps are empty, or falls back to plain text.
    */
   private async applyCurrentSearch(loadSignal?: AbortSignal): Promise<void> {
     const q = this.getCurrentQueryFromInput();
+    let queryValue: string | undefined;
 
-    let queryValue: string | undefined = undefined;
-    let tags: string[] | undefined = undefined;
-    let performers: string[] | undefined = undefined;
-
-    if (this.selectedPerformerId) {
-      const filters = this.buildPerformerFilters();
-      performers = filters.performers;
-    } else if (this.selectedTagId || this.selectedTagName) {
-      const filters = await this.buildTagFilters(loadSignal);
-      tags = filters.tags;
-    } else if (q && !this.selectedSavedFilter) {
-      const resolvedFilters = await this.resolveQueryToFilters(q, loadSignal);
-      tags = resolvedFilters.tags;
-      performers = resolvedFilters.performers;
-      queryValue = resolvedFilters.queryValue;
+    if (q && !this.selectedSavedFilter && this.selectedTagIds.size === 0 && this.selectedPerformerIds.size === 0) {
+      const resolved = await this.resolveQueryToFilters(q, loadSignal);
+      if (loadSignal?.aborted) return;
+      queryValue = resolved.queryValue;
+      this.updateActivePills();
     }
 
+    const filterValues = this.buildFiltersForApply();
     const newFilters: FilterOptions = {
       query: queryValue,
-      tags: tags,
-      performers: performers,
+      tags: filterValues.tags,
+      performers: filterValues.performers,
       savedFilterId: this.selectedSavedFilter?.id || undefined,
       limit: FeedContainer.CONTENT_LOAD_LIMIT,
       offset: 0,
@@ -2960,10 +2984,10 @@ export class FeedContainer {
    * Get display name for the current filter selection
    */
   private getSelectedFilterDisplayName(): string {
-    if (this.selectedTagName) return this.selectedTagName;
-    if (this.selectedPerformerName) return this.selectedPerformerName;
-    if (this.selectedSavedFilter) return this.selectedSavedFilter.name;
-    return '';
+    if (this.selectedTagIds.size > 0 || this.selectedPerformerIds.size > 0) {
+      return '';
+    }
+    return this.selectedSavedFilter ? this.selectedSavedFilter.name : '';
   }
 
   /**
@@ -2981,38 +3005,19 @@ export class FeedContainer {
     if (ph) {
       ph.style.display = 'none';
     }
+    this.updateActivePills();
   }
 
   /**
-   * Build filter values for applyFilters (with fallback tag ID logic)
+   * Build filter values from selected tag and performer Maps
    */
-  private async buildFiltersForApply(): Promise<{ tags?: string[]; performers?: string[] }> {
-    if (this.selectedPerformerId) {
-      return { performers: [String(this.selectedPerformerId)] };
-    }
-
-    const tagId = await this.resolveSelectedTagId();
-    if (tagId) {
-      return { tags: [tagId] };
-    }
-
-    return {};
-  }
-
-  private async resolveSelectedTagId(): Promise<string | null> {
-    if (this.selectedTagId) {
-      return String(this.selectedTagId);
-    }
-    if (!this.selectedTagName) return null;
-
-    try {
-      const exactTag = await this.api.findTagByName(this.selectedTagName);
-      if (exactTag) return String(exactTag.id);
-    } catch (error) {
-      console.error('Failed to find exact tag', error);
-    }
-
-    return this.selectedTagId ? String(this.selectedTagId) : null;
+  private buildFiltersForApply(): { tags?: string[]; performers?: string[] } {
+    const tags = [...this.selectedTagIds.keys()].map(String);
+    const performers = [...this.selectedPerformerIds.keys()].map(String);
+    return {
+      tags: tags.length ? tags : undefined,
+      performers: performers.length ? performers : undefined,
+    };
   }
 
   /**
@@ -3021,8 +3026,7 @@ export class FeedContainer {
   private async applyFilters(): Promise<void> {
     this.updateQueryInputDisplay();
 
-    const filterValues = await this.buildFiltersForApply();
-    
+    const filterValues = this.buildFiltersForApply();
     const newFilters: FilterOptions = {
       query: undefined,
       tags: filterValues.tags,
@@ -3036,6 +3040,124 @@ export class FeedContainer {
     this.loadVideos(newFilters, false).catch((e) => console.error('Apply filters failed', e));
   }
 
+  /**
+   * Render active filter pills bar from current Maps
+   */
+  private updateActivePills(): void {
+    if (!this.activePillsBar) return;
+
+    while (this.activePillsBar.firstChild) {
+      this.activePillsBar.firstChild.remove();
+    }
+
+    const total = this.selectedTagIds.size + this.selectedPerformerIds.size;
+    if (total === 0) {
+      this.activePillsBar.style.display = 'none';
+      return;
+    }
+
+    this.activePillsBar.style.display = 'flex';
+
+    for (const [id, name] of this.selectedTagIds) {
+      this.activePillsBar.appendChild(this.createActivePill(`#${name}`, () => {
+        this.selectedTagIds.delete(id);
+        this.updateActivePills();
+        this.updateQueryInputDisplay();
+        this.debouncedApplyFilters();
+      }));
+    }
+
+    for (const [id, name] of this.selectedPerformerIds) {
+      this.activePillsBar.appendChild(this.createActivePill(`@${name}`, () => {
+        this.selectedPerformerIds.delete(id);
+        this.updateActivePills();
+        this.updateQueryInputDisplay();
+        this.debouncedApplyFilters();
+      }));
+    }
+
+    if (total >= 2) {
+      const clearAll = this.createActivePill('Clear all', () => {
+        this.selectedTagIds.clear();
+        this.selectedPerformerIds.clear();
+        this.updateActivePills();
+        this.updateQueryInputDisplay();
+        this.debouncedApplyFilters();
+      }, true);
+      this.activePillsBar.appendChild(clearAll);
+    }
+
+    const panel = document.querySelector<HTMLElement>('.feed-filters__suggestions');
+    if (panel && panel.style.display !== 'none') {
+      panel.style.setProperty('padding-top', this.getSuggestionsTopOffset(), 'important');
+    }
+  }
+
+  private getSuggestionsTopOffset(): string {
+    const h = this.headerBar?.getBoundingClientRect().height ?? 80;
+    return `${Math.ceil(h)}px`;
+  }
+
+  private focusSearchInput(): void {
+    const qi = this.container.querySelector<HTMLInputElement>('.feed-filters__input');
+    if (!qi) return;
+    try {
+      qi.focus({ preventScroll: true } as FocusOptions);
+    } catch {
+      qi.focus();
+    }
+  }
+
+  /**
+   * Create a dismissible active-filter pill
+   */
+  private createActivePill(label: string, onRemove: () => void, isDestructive: boolean = false): HTMLElement {
+    const pill = document.createElement('button');
+    pill.type = 'button';
+    pill.style.display = 'inline-flex';
+    pill.style.alignItems = 'center';
+    pill.style.gap = '4px';
+    pill.style.padding = '3px 8px 3px 10px';
+    pill.style.borderRadius = '999px';
+    pill.style.border = 'none';
+    pill.style.fontSize = '12px';
+    pill.style.lineHeight = '1.4';
+    pill.style.cursor = 'pointer';
+    pill.style.whiteSpace = 'nowrap';
+    pill.style.maxWidth = '200px';
+    pill.style.overflow = 'hidden';
+    pill.style.textOverflow = 'ellipsis';
+    pill.style.transition = 'opacity 0.15s ease';
+
+    if (isDestructive) {
+      pill.style.background = THEME.colors.backgroundSecondary;
+      pill.style.color = THEME.colors.textSecondary;
+      pill.style.border = `1px solid ${THEME.colors.border}`;
+      pill.textContent = label;
+    } else {
+      pill.style.background = THEME.colors.accentPrimary;
+      pill.style.color = '#fff';
+
+      const labelSpan = document.createElement('span');
+      labelSpan.style.overflow = 'hidden';
+      labelSpan.style.textOverflow = 'ellipsis';
+      labelSpan.textContent = label;
+
+      const xBtn = document.createElement('span');
+      xBtn.textContent = '×';
+      xBtn.style.fontSize = '14px';
+      xBtn.style.lineHeight = '1';
+      xBtn.style.opacity = '0.8';
+      xBtn.style.flexShrink = '0';
+
+      pill.appendChild(labelSpan);
+      pill.appendChild(xBtn);
+    }
+
+    pill.addEventListener('mousedown', (e) => e.preventDefault());
+    pill.addEventListener('click', onRemove);
+    return pill;
+  }
 
   /**
    * Initialize the feed

@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [6.0.0] - 2026-05-08\n\n### Changed\n- Track scene play count and watch time via GraphQL
+- Fix autocomplete blur-before-click race condition in suggestion selection\n
+
 ## [5.47.0] - 2026-05-08\n\n### Changed\n- Track scene play count and watch time via GraphQL
 - Fix autocomplete blur-before-click race condition in suggestion selection\n
 

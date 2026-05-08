@@ -1870,7 +1870,6 @@ export class NativeVideoPlayer {
     }
   }
 
-  // fallow-ignore-next-line unused-class-member
   getState(): VideoPlayerState {
     return { ...this.state };
   }
