@@ -23,7 +23,7 @@ jobs:
           node -e "const fs=require('fs'),p=JSON.parse(fs.readFileSync('package.json','utf8')); p.version='$VERSION'; fs.writeFileSync('package.json',JSON.stringify(p,null,2)+'\n');"
 
       - name: Install deps
-        run: npm ci
+        run: npm ci --omit=optional
 
       - name: Build
         run: npm run build
