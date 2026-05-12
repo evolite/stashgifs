@@ -8,6 +8,8 @@ jobs:
     runs-on: orange-runner
     steps:
       - uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
 
       - name: Parse version
         id: ver
@@ -65,16 +67,19 @@ jobs:
       - name: Create release
         id: release
         run: |
-          NOTES=$(git log $(git describe --tags --abbrev=0 HEAD^ 2>/dev/null || echo '')..HEAD --pretty=format:"- %s" 2>/dev/null | grep -v -i "bump version" || echo "Release ${{ github.ref_name }}")
+          PREV_TAG=$(git describe --tags --abbrev=0 HEAD^ 2>/dev/null || echo '')
+          if [ -n "$PREV_TAG" ]; then
+            RELEASE_NOTES=$(git log "${PREV_TAG}..HEAD" --pretty=format:"- %s" \
+              | grep -viE "^- (bump version|release$)" || true)
+          fi
+          export RELEASE_NOTES="${RELEASE_NOTES:-No changelog available.}"
           SHA=$(git rev-parse HEAD)
           RESP=$(curl -sL -X POST \
             -H "Authorization: token ${{ secrets.CODEBERG_TOKEN }}" \
             -H "Content-Type: application/json" \
             "https://codeberg.org/api/v1/repos/surging9143/stashgifs/releases" \
-            -d "$(node -e "process.stdout.write(JSON.stringify({tag_name:'${{ github.ref_name }}',name:'${{ github.ref_name }}',body:process.env.NOTES,target_commitish:'$SHA',draft:false,prerelease:false}))" )")
+            -d "$(node -e "process.stdout.write(JSON.stringify({tag_name:'${{ github.ref_name }}',name:'${{ github.ref_name }}',body:process.env.RELEASE_NOTES,target_commitish:'$SHA',draft:false,prerelease:false}))" )")
           echo "id=$(echo "$RESP" | python3 -c "import sys,json; print(json.load(sys.stdin)['id'])")" >> $GITHUB_OUTPUT
-        env:
-          NOTES: ${{ steps.ver.outputs.version }}
 
       - name: Upload zip asset
         run: |
