@@ -19,7 +19,8 @@ jobs:
           DATE=$(date +"%Y-%m-%d %H:%M:%S")
           sed -i "s/^version: .*/version: $VERSION/" stashgifs/manifest
           sed -i "s/^date: .*/date: \"$DATE\"/" stashgifs/manifest
-          sed -i "s/^version: .*/version: $VERSION/" stashgifs/stashgifs.yml
+          sed -i "s/^  version: .*/  version: $VERSION/" index.yml
+          sed -i "s/^  date: .*/  date: \"$DATE\"/" index.yml
           node -e "const fs=require('fs'),p=JSON.parse(fs.readFileSync('package.json','utf8')); p.version='$VERSION'; fs.writeFileSync('package.json',JSON.stringify(p,null,2)+'\n');"
 
       - name: Install deps
@@ -35,7 +36,7 @@ jobs:
         run: |
           git config user.email "ci@codeberg.org"
           git config user.name "CI"
-          git add stashgifs/manifest stashgifs/stashgifs.yml package.json src/version.ts
+          git add stashgifs/manifest index.yml package.json src/version.ts
           git diff --staged --quiet || git commit -m "Bump version to ${{ steps.ver.outputs.version }}"
           git push origin HEAD:master
 
