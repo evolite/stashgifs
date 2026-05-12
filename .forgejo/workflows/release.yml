@@ -28,15 +28,12 @@ jobs:
       - name: Build
         run: npm run build
 
-      - name: Remove BUILD_HASH from version.ts
-        run: sed -i '/^export const BUILD_HASH/d' src/version.ts || true
-
       - name: Commit version bump
         run: |
           git config user.email "ci@codeberg.org"
           git config user.name "CI"
           git add -f stashgifs/manifest stashgifs/stashgifs.yml package.json src/version.ts
-          git diff --staged --quiet || git commit -m "Bump version to ${{ steps.ver.outputs.version }}"
+          git diff --staged --quiet || git commit -m "Bump version to ${{ steps.ver.outputs.version }} [skip ci]"
           git push origin HEAD:master
 
       - name: Create zip
