@@ -14,15 +14,15 @@ const versionTsPath = path.join(__dirname, '..', 'src', 'version.ts');
 
 const pkg = require(packageJsonPath);
 
-const isCI = !!process.env.CI;
-const buildHashLine = isCI ? '' : `export const BUILD_HASH = '${process.env.BUILD_HASH || crypto.randomBytes(4).toString('hex')}';\n`;
+const buildHash = process.env.BUILD_HASH || crypto.randomBytes(4).toString('hex');
 
 const versionTsContent = `/**
  * Version information - auto-generated from package.json
  * This file is updated automatically during the build process
  */
 export const VERSION = '${pkg.version}';
-${buildHashLine}`;
+export const BUILD_HASH = '${buildHash}';
+`;
 
 fs.writeFileSync(versionTsPath, versionTsContent);
-console.log(`Version file updated with: ${pkg.version}${isCI ? '' : ' (local build)'}`);
+console.log(`Version file updated with: ${pkg.version} (hash: ${buildHash})`);
