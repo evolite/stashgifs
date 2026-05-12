@@ -1,0 +1,106 @@
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+
+jobs:
+  release:
+    runs-on: orange-runner
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Parse version
+        id: ver
+        run: echo "version=${GITHUB_REF_NAME#v}" >> $GITHUB_OUTPUT
+
+      - name: Bump version
+        run: |
+          VERSION="${{ steps.ver.outputs.version }}"
+          DATE=$(date +"%Y-%m-%d %H:%M:%S")
+          sed -i "s/^version: .*/version: $VERSION/" stashgifs/manifest
+          sed -i "s/^date: .*/date: \"$DATE\"/" stashgifs/manifest
+          sed -i "s/^version: .*/version: $VERSION/" stashgifs/stashgifs.yml
+          node -e "const fs=require('fs'),p=JSON.parse(fs.readFileSync('package.json','utf8')); p.version='$VERSION'; fs.writeFileSync('package.json',JSON.stringify(p,null,2)+'\n');"
+
+      - name: Install deps
+        run: npm ci
+
+      - name: Build
+        run: npm run build
+
+      - name: Remove BUILD_HASH from version.ts
+        run: sed -i '/^export const BUILD_HASH/d' src/version.ts || true
+
+      - name: Commit version bump
+        run: |
+          git config user.email "ci@codeberg.org"
+          git config user.name "CI"
+          git add stashgifs/manifest stashgifs/stashgifs.yml package.json src/version.ts
+          git diff --staged --quiet || git commit -m "Bump version to ${{ steps.ver.outputs.version }}"
+          git push origin HEAD:main
+
+      - name: Create zip
+        run: |
+          python3 -c "
+          import zipfile, os
+          with zipfile.ZipFile('stashgifs.zip', 'w', zipfile.ZIP_DEFLATED) as zf:
+              for root, dirs, files in os.walk('stashgifs'):
+                  for f in files:
+                      zf.write(os.path.join(root, f))
+          "
+
+      - name: Compute sha256
+        id: sha
+        run: echo "hash=$(sha256sum stashgifs.zip | cut -d' ' -f1)" >> $GITHUB_OUTPUT
+
+      - name: Delete existing release
+        run: |
+          ID=$(curl -sL \
+            -H "Authorization: token ${{ secrets.CODEBERG_TOKEN }}" \
+            "https://codeberg.org/api/v1/repos/surging9143/stashgifs/releases/tags/${GITHUB_REF_NAME}" \
+            | python3 -c "import sys,json; r=json.load(sys.stdin); print(r.get('id',''))" 2>/dev/null || true)
+          if [ -n "$ID" ]; then
+            curl -sL -X DELETE \
+              -H "Authorization: token ${{ secrets.CODEBERG_TOKEN }}" \
+              "https://codeberg.org/api/v1/repos/surging9143/stashgifs/releases/$ID"
+          fi
+
+      - name: Create release
+        id: release
+        run: |
+          NOTES=$(git log $(git describe --tags --abbrev=0 HEAD^ 2>/dev/null || echo '')..HEAD --pretty=format:"- %s" 2>/dev/null | grep -v -i "bump version" || echo "Release ${{ github.ref_name }}")
+          SHA=$(git rev-parse HEAD)
+          RESP=$(curl -sL -X POST \
+            -H "Authorization: token ${{ secrets.CODEBERG_TOKEN }}" \
+            -H "Content-Type: application/json" \
+            "https://codeberg.org/api/v1/repos/surging9143/stashgifs/releases" \
+            -d "$(node -e "process.stdout.write(JSON.stringify({tag_name:'${{ github.ref_name }}',name:'${{ github.ref_name }}',body:process.env.NOTES,target_commitish:'$SHA',draft:false,prerelease:false}))" )")
+          echo "id=$(echo "$RESP" | python3 -c "import sys,json; print(json.load(sys.stdin)['id'])")" >> $GITHUB_OUTPUT
+        env:
+          NOTES: ${{ steps.ver.outputs.version }}
+
+      - name: Upload zip asset
+        run: |
+          curl -sL -X POST \
+            -H "Authorization: token ${{ secrets.CODEBERG_TOKEN }}" \
+            -H "Content-Type: application/octet-stream" \
+            "https://codeberg.org/api/v1/repos/surging9143/stashgifs/releases/${{ steps.release.outputs.id }}/assets?name=stashgifs.zip" \
+            --data-binary "@stashgifs.zip"
+
+      - name: Update pages index
+        env:
+          VERSION: ${{ steps.ver.outputs.version }}
+          HASH: ${{ steps.sha.outputs.hash }}
+          TAG: ${{ github.ref_name }}
+          CODEBERG_TOKEN: ${{ secrets.CODEBERG_TOKEN }}
+        run: |
+          git config --global user.email "ci@codeberg.org"
+          git config --global user.name "CI"
+          git clone "https://surging9143:${CODEBERG_TOKEN}@codeberg.org/surging9143/pages.git" /tmp/pages
+          export DATE=$(date +"%Y-%m-%d %H:%M:%S")
+          export URL="https://codeberg.org/surging9143/stashgifs/releases/download/${TAG}/stashgifs.zip"
+          python3 .forgejo/update_pages.py
+          cd /tmp/pages
+          git add index.yml
+          git diff --staged --quiet || git commit -m "Update stashgifs to v${VERSION}"
+          git push
