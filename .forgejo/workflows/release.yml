@@ -72,7 +72,7 @@ jobs:
           PREV_TAG=$(git tag --sort=-version:refname | grep -A1 "^${CURRENT_TAG}$" | tail -1)
           if [ -n "$PREV_TAG" ] && [ "$PREV_TAG" != "$CURRENT_TAG" ]; then
             RELEASE_NOTES=$(git log "${PREV_TAG}..${CURRENT_TAG}" --pretty=format:"- %s" \
-              -- src/ || true)
+              -- src/ | grep -viE "^- bump version" || true)
           fi
           export RELEASE_NOTES="${RELEASE_NOTES:-No changelog available.}"
           SHA=$(git rev-parse HEAD)
