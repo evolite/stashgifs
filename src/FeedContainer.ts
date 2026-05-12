@@ -1351,21 +1351,7 @@ export class FeedContainer {
   }
 
   /**
-   * Calculate alignment offset for suggestions
-   */
-  private calculateAlignmentOffset(container: HTMLElement, horizontalPadding: number): number {
-    const searchInput = this.container.querySelector('.feed-filters__input') as HTMLElement;
-    if (searchInput) {
-      const searchRect = searchInput.getBoundingClientRect();
-      const containerRect = container.getBoundingClientRect();
-      return searchRect.left - containerRect.left - horizontalPadding;
-    }
-    // Fallback: approximate alignment (header padding + logo + gap - filter padding)
-    const headerPadding = 12;
-    const logoWidth = 120; // Approximate logo width
-    const headerGap = 12;
-    return headerPadding + logoWidth + headerGap - horizontalPadding;
-  }
+
 
   /**
    * Create loading skeleton section
@@ -1436,7 +1422,6 @@ export class FeedContainer {
    */
   private createSavedFiltersSection(
     container: HTMLElement,
-    alignmentOffset: number,
     updateSearchBarDisplay: () => void,
     apply: () => Promise<void>
   ): void {
@@ -1444,7 +1429,6 @@ export class FeedContainer {
     filtersSection.style.display = 'flex';
     filtersSection.style.flexDirection = 'column';
     filtersSection.style.gap = '12px';
-    filtersSection.style.marginLeft = `${alignmentOffset}px`;
     filtersSection.appendChild(this.createSectionLabel('Saved Marker Filters', true));
 
     const pillRow = document.createElement('div');
@@ -1486,7 +1470,6 @@ export class FeedContainer {
   private createTagsSection(
     container: HTMLElement,
     tags: Array<{ id: string; name: string }>,
-    alignmentOffset: number,
     updateSearchBarDisplay: () => void,
     apply: () => Promise<void>,
     label: string = 'Tags'
@@ -1497,7 +1480,6 @@ export class FeedContainer {
     tagsSection.style.display = 'flex';
     tagsSection.style.flexDirection = 'column';
     tagsSection.style.gap = '8px';
-    tagsSection.style.marginLeft = `${alignmentOffset}px`;
     tagsSection.appendChild(this.createSectionLabel(label));
 
     for (const tag of tags) {
@@ -1529,7 +1511,6 @@ export class FeedContainer {
   private createPerformersSection(
     container: HTMLElement,
     performers: Array<{ id: string; name: string; image_path?: string }>,
-    alignmentOffset: number,
     updateSearchBarDisplay: () => void,
     apply: () => Promise<void>,
     label: string = 'Performers'
@@ -1540,7 +1521,6 @@ export class FeedContainer {
     performersSection.style.display = 'flex';
     performersSection.style.flexDirection = 'column';
     performersSection.style.gap = '8px';
-    performersSection.style.marginLeft = `${alignmentOffset}px`;
     performersSection.appendChild(this.createSectionLabel(label));
 
     for (const performer of performers) {
@@ -1582,7 +1562,6 @@ export class FeedContainer {
   private async renderDefaultSuggestionsView(
     container: HTMLElement,
     suggestions: HTMLElement,
-    horizontalPadding: number,
     ensureLatest: () => boolean,
     updateSearchBarDisplay: () => void,
     apply: () => Promise<void>
@@ -1591,12 +1570,10 @@ export class FeedContainer {
       container.firstChild.remove();
     }
 
-    const alignmentOffset = this.calculateAlignmentOffset(container, horizontalPadding);
-
     await this.loadSavedFiltersIfNeeded();
     if (!ensureLatest()) return;
 
-    this.createSavedFiltersSection(container, alignmentOffset, updateSearchBarDisplay, apply);
+    this.createSavedFiltersSection(container, updateSearchBarDisplay, apply);
 
     let loadingSection: HTMLElement | null = null;
     let loadingTimeout: ReturnType<typeof setTimeout> | null = null;
@@ -1650,7 +1627,7 @@ export class FeedContainer {
       })
       .slice(0, 3);
 
-    this.createTagsSection(container, availableTags, alignmentOffset, updateSearchBarDisplay, apply, 'Suggested Tags');
+    this.createTagsSection(container, availableTags, updateSearchBarDisplay, apply, 'Suggested Tags');
 
     const availablePerformers = freshPerformers
       .filter((performer) => {
@@ -1659,7 +1636,7 @@ export class FeedContainer {
       })
       .slice(0, 3);
 
-    this.createPerformersSection(container, availablePerformers, alignmentOffset, updateSearchBarDisplay, apply, 'Suggested Performers');
+    this.createPerformersSection(container, availablePerformers, updateSearchBarDisplay, apply, 'Suggested Performers');
 
     if (container.children.length === 0) {
       this.appendEmptyState(container, 'No suggestions available yet.');
@@ -1675,7 +1652,6 @@ export class FeedContainer {
     container: HTMLElement,
     suggestions: HTMLElement,
     trimmedText: string,
-    horizontalPadding: number,
     ensureLatest: () => boolean,
     updateSearchBarDisplay: () => void,
     apply: () => Promise<void>
@@ -1683,8 +1659,6 @@ export class FeedContainer {
     container.innerHTML = '';
 
     await this.loadSavedFiltersIfNeeded();
-
-    const alignmentOffsetForResults = this.calculateAlignmentOffset(container, horizontalPadding);
 
     const matchingSavedFilters = this.savedFiltersCache
       .filter((filter) => filter.name.toLowerCase().includes(trimmedText.toLowerCase()))
@@ -1695,7 +1669,6 @@ export class FeedContainer {
       savedSection.style.display = 'flex';
       savedSection.style.flexDirection = 'column';
       savedSection.style.gap = '8px';
-      savedSection.style.marginLeft = `${alignmentOffsetForResults}px`;
       savedSection.appendChild(this.createSectionLabel('Matching Saved Marker Filters'));
       for (const filter of matchingSavedFilters) {
         const btn = this.createListButton(filter.name, () => this.applySavedFilter(filter, updateSearchBarDisplay, false));
@@ -1726,7 +1699,7 @@ export class FeedContainer {
       })
       .slice(0, 20);
 
-    this.createTagsSection(container, this.sortByMatchAccuracy(filteredTags, trimmedText), alignmentOffsetForResults, updateSearchBarDisplay, apply);
+    this.createTagsSection(container, this.sortByMatchAccuracy(filteredTags, trimmedText), updateSearchBarDisplay, apply);
 
     const filteredPerformers = performerItems
       .filter((performer) => {
@@ -1735,7 +1708,7 @@ export class FeedContainer {
       })
       .slice(0, 20);
 
-    this.createPerformersSection(container, this.sortByMatchAccuracy(filteredPerformers, trimmedText), alignmentOffsetForResults, updateSearchBarDisplay, apply);
+    this.createPerformersSection(container, this.sortByMatchAccuracy(filteredPerformers, trimmedText), updateSearchBarDisplay, apply);
 
     if (container.children.length === 0) {
       this.appendEmptyState(container, `No matches found for "${trimmedText}".`);
@@ -2611,7 +2584,6 @@ export class FeedContainer {
     const renderDefaultSuggestions = async (
       container: HTMLElement,
       panel: HTMLElement,
-      horizontalPadding: number,
       ensureLatest: () => boolean,
       updateSearchBarDisplay: () => void,
       apply: () => Promise<void>
@@ -2619,7 +2591,6 @@ export class FeedContainer {
       await this.renderDefaultSuggestionsView(
         container,
         panel,
-        horizontalPadding,
         ensureLatest,
         updateSearchBarDisplay,
         apply
@@ -2630,7 +2601,6 @@ export class FeedContainer {
       container: HTMLElement,
       panel: HTMLElement,
       trimmedText: string,
-      horizontalPadding: number,
       ensureLatest: () => boolean,
       updateSearchBarDisplay: () => void,
       apply: () => Promise<void>
@@ -2639,7 +2609,6 @@ export class FeedContainer {
         container,
         panel,
         trimmedText,
-        horizontalPadding,
         ensureLatest,
         updateSearchBarDisplay,
         apply
@@ -2665,7 +2634,6 @@ export class FeedContainer {
         await renderDefaultSuggestions(
           container,
           suggestions,
-          viewportConfig.horizontalPadding,
           ensureLatest,
           updateSearchBarDisplay,
           apply
@@ -2675,7 +2643,6 @@ export class FeedContainer {
           container,
           suggestions,
           trimmedText,
-          viewportConfig.horizontalPadding,
           ensureLatest,
           updateSearchBarDisplay,
           apply
