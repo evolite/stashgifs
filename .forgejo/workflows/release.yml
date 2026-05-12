@@ -67,9 +67,11 @@ jobs:
       - name: Create release
         id: release
         run: |
-          PREV_TAG=$(git describe --tags --abbrev=0 HEAD^ 2>/dev/null || echo '')
-          if [ -n "$PREV_TAG" ]; then
-            RELEASE_NOTES=$(git log "${PREV_TAG}..HEAD" --pretty=format:"- %s" \
+          git fetch --tags --force
+          CURRENT_TAG="${{ github.ref_name }}"
+          PREV_TAG=$(git tag --sort=-version:refname | grep -A1 "^${CURRENT_TAG}$" | tail -1)
+          if [ -n "$PREV_TAG" ] && [ "$PREV_TAG" != "$CURRENT_TAG" ]; then
+            RELEASE_NOTES=$(git log "${PREV_TAG}..${CURRENT_TAG}" --pretty=format:"- %s" \
               | grep -viE "^- (bump version|release$)" || true)
           fi
           export RELEASE_NOTES="${RELEASE_NOTES:-No changelog available.}"
