@@ -2428,6 +2428,7 @@ export class FeedContainer {
     activePillsBar.style.gap = '6px';
     activePillsBar.style.padding = '4px 0 4px';
     activePillsBar.style.boxSizing = 'border-box';
+    activePillsBar.style.justifyContent = 'center';
     header.appendChild(activePillsBar);
     this.activePillsBar = activePillsBar;
 
@@ -3061,7 +3062,7 @@ export class FeedContainer {
   }
 
   private getSuggestionsTopOffset(): string {
-    const h = this.headerBar?.getBoundingClientRect().height ?? 80;
+    const h = this.headerBar?.getBoundingClientRect().bottom ?? 80;
     return `${Math.ceil(h)}px`;
   }
 
