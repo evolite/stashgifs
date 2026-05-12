@@ -37,7 +37,7 @@ jobs:
           git config user.name "CI"
           git add stashgifs/manifest stashgifs/stashgifs.yml package.json src/version.ts
           git diff --staged --quiet || git commit -m "Bump version to ${{ steps.ver.outputs.version }}"
-          git push origin HEAD:main
+          git push origin HEAD:master
 
       - name: Create zip
         run: |
