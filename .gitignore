@@ -22,7 +22,6 @@ Thumbs.db
 # Build artifacts
 stashgifs.zip
 stashgifs.zip.sha256
-stashgifs/app/assets/
 .debug/
 
 # Local tooling

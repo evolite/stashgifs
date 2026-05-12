@@ -8,10 +8,8 @@ requires: []
 source_repository: https://raw.githubusercontent.com/evolite/stashgifs/refs/heads/master/index.yml
 files:
 - stashgifs.yml
-- app\favicon.ico
-- app\favicon.png
-- app\apple-touch-icon.png
-- app\stashgifs-icon.png
+- app\favicon.svg
+- app\apple-touch-icon.svg
 - app\manifest.json
 - app\index.html
 - app\assets\FavoritesManager.js
