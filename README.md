@@ -1,6 +1,6 @@
 # StashGifs
 
-[![Quality Gate Status](https://sonarcloud.io/api/project_badges/measure?project=evolite_stashgifs&metric=alert_status)](https://sonarcloud.io/summary/new_code?id=evolite_stashgifs)
+[![Quality Gate Status](https://sonar.slashdir.net/api/project_badges/measure?project=stashgifs&metric=alert_status)](https://sonar.slashdir.net/dashboard?id=stashgifs)
 
 A hobby project that turns your stash into an endless scroll of looping content.
 
