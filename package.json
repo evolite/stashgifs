@@ -7,7 +7,7 @@
     "build": "tsc",
     "watch": "tsc --watch",
     "deploy": "rm -rf /home/evotech/Services/containers/data/stash/plugins/stashgifs/stashgifs/stashgifs/app/assets && mkdir -p /home/evotech/Services/containers/data/stash/plugins/stashgifs/stashgifs/stashgifs/app && cp -r stashgifs/app/assets /home/evotech/Services/containers/data/stash/plugins/stashgifs/stashgifs/stashgifs/app/ && cp stashgifs/app/index.html /home/evotech/Services/containers/data/stash/plugins/stashgifs/stashgifs/stashgifs/app/",
-    "release": "npm run build && npm run deploy",
+    "release": "pnpm run build && pnpm run deploy",
     "clean": "rm -rf app/assets/*.js app/assets/*.js.map",
     "codegen": "graphql-codegen --config codegen.yml",
     "codegen:watch": "graphql-codegen --config codegen.yml --watch",

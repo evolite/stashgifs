@@ -24,11 +24,16 @@ jobs:
           sed -i "s/^version: .*/version: $VERSION/" stashgifs/stashgifs.yml
           node -e "const fs=require('fs'),p=JSON.parse(fs.readFileSync('package.json','utf8')); p.version='$VERSION'; fs.writeFileSync('package.json',JSON.stringify(p,null,2)+'\n');"
 
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: latest
+
       - name: Install deps
-        run: npm ci --omit=optional
+        run: pnpm install --frozen-lockfile --ignore-scripts
 
       - name: Build
-        run: npm run build
+        run: pnpm run build
 
       - name: Commit version bump
         run: |
