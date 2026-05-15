@@ -231,7 +231,6 @@ export class NativeVideoPlayer {
    * Setup basic video element properties
    */
   private setupVideoElementBasicProperties(options?: { startTime?: number; muted?: boolean; posterUrl?: string; aggressivePreload?: boolean }): void {
-    const isMobile = isMobileDevice();
     this.applyPosterConfig(options?.posterUrl);
     
     // Set object-fit for proper video display

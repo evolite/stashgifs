@@ -413,7 +413,7 @@ export class StashAPI {
   async searchPerformers(term: string, limit: number = 10, signal?: AbortSignal): Promise<Array<{ id: string; name: string; image_path?: string }>> {
     const isEmptyTerm = !term || term.trim() === '';
     const cacheKey = this.buildCacheKey('performers-v2', term, limit);
-    const { hasSearchTerm, filter } = this.buildSearchFilter(term, limit);
+    const { filter } = this.buildSearchFilter(term, limit);
     
     return this.searchWithCache(
       cacheKey,

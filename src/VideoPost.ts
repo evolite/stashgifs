@@ -5,7 +5,6 @@
 
 import { VideoPostData, Scene, SceneMarker } from './types.js';
 import { NativeVideoPlayer } from './NativeVideoPlayer.js';
-import { FavoritesManager } from './FavoritesManager.js';
 import { StashAPI } from './StashAPI.js';
 import { VisibilityManager } from './VisibilityManager.js';
 import { calculateAspectRatio, getAspectRatioClass, normalizeMediaUrl, showToast, toAbsoluteUrl, isMobileDevice, THEME, applyMenuItemHover, extractValidPerformerIds } from './utils.js';

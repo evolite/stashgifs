@@ -108,9 +108,9 @@ export class FeedContainer {
   // Batch poster prefetching aligns with previous commit behavior
   private isLoading: boolean = false;
   private currentFilters?: FilterOptions;
-  private selectedTagIds: Map<number, string> = new Map();
-  private selectedPerformerIds: Map<number, string> = new Map();
-  private debouncedApplyFilters!: () => void;
+  private readonly selectedTagIds: Map<number, string> = new Map();
+  private readonly selectedPerformerIds: Map<number, string> = new Map();
+  private readonly debouncedApplyFilters!: () => void;
   private activePillsBar?: HTMLElement;
   private hasMore: boolean = true;
   private seenSkipCount = 0;
@@ -1764,7 +1764,7 @@ export class FeedContainer {
         return 2;
       };
       const diff = score(aName) - score(bName);
-      return diff !== 0 ? diff : aName.localeCompare(bName);
+      return diff === 0 ? aName.localeCompare(bName) : diff;
     });
   }
 
@@ -3467,8 +3467,8 @@ export class FeedContainer {
       favoritesManager: this.favoritesManager,
       api: this.api,
       visibilityManager: this.visibilityManager,
-      onPerformerChipClick: (performerId: number, performerName: string) => { void this.handlePerformerChipClick(performerId, performerName); },
-      onTagChipClick: (tagId: number, tagName: string) => { void this.handleTagChipClick(tagId, tagName); },
+      onPerformerChipClick: (performerId: number, performerName: string) => { this.handlePerformerChipClick(performerId, performerName); },
+      onTagChipClick: (tagId: number, tagName: string) => { this.handleTagChipClick(tagId, tagName); },
       showVerifiedCheckmarks: this.settings.showVerifiedCheckmarks !== false,
       showProductionAge: this.settings.showProductionAge === true,
       ratingSystemConfig: this.ratingSystemConfig,
@@ -3857,10 +3857,10 @@ export class FeedContainer {
    * Handle empty markers result
    */
   private handleEmptyMarkers(append: boolean): void {
-    if (!append) {
-      this.showError("It's empty");
-    } else {
+    if (append) {
       this.scheduleAppendRetry();
+    } else {
+      this.showError("It's empty");
     }
     this.hideSkeletonLoaders();
   }
@@ -3901,11 +3901,11 @@ export class FeedContainer {
    */
   private handleLoadError(error: unknown, append: boolean): void {
     console.error('Error loading scene markers:', error);
-    if (!append) {
+    if (append) {
+      this.scheduleAppendRetry();
+    } else {
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
       this.showError(`Failed to load scene markers: ${errorMessage}`);
-    } else {
-      this.scheduleAppendRetry();
     }
     this.hideSkeletonLoaders();
   }
