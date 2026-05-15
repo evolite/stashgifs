@@ -1,7 +1,7 @@
 name: StashGifs
 description: Social Media style browsing experience
 url: https://github.com/evolite/stashgifs/edit/master/stashgifs/
-version: 6.0.9
+version: 6.0.10
 ui:
   assets:
     /: .
