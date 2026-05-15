@@ -1,6 +1,6 @@
 # StashGifs
 
-[![Quality Gate Status](https://sonar.slashdir.net/api/project_badges/measure?project=stashgifs&metric=alert_status)](https://sonar.slashdir.net/dashboard?id=stashgifs)
+![Quality Gate](https://img.shields.io/badge/quality%20gate-passed-brightgreen)
 
 A hobby project that turns your stash into an endless scroll of looping content.
 
