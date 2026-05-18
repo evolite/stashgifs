@@ -32,7 +32,9 @@ export class FavoritesManager {
     }
 
     // Start a new request
-    this.favoriteTagPromise = this.findOrCreateFavoriteTag();
+    this.favoriteTagPromise = this.findOrCreateFavoriteTag().finally(() => {
+      this.favoriteTagPromise = null;
+    });
     const tagId = await this.favoriteTagPromise;
     this.favoriteTagId = tagId;
     return tagId;
