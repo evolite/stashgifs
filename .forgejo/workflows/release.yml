@@ -31,7 +31,7 @@ jobs:
           node -e "const fs=require('fs'),p=JSON.parse(fs.readFileSync('package.json','utf8')); p.version='$VERSION'; fs.writeFileSync('package.json',JSON.stringify(p,null,2)+'\n');"
 
       - name: Update changelog
-        run: git cliff --tag "${{ github.ref_name }}" -o CHANGELOG.md
+        run: git-cliff --tag "${{ github.ref_name }}" -o CHANGELOG.md
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
@@ -81,7 +81,7 @@ jobs:
       - name: Create release
         id: release
         run: |
-          export RELEASE_NOTES=$(git cliff --tag "${{ github.ref_name }}" --latest --strip all)
+          export RELEASE_NOTES=$(git-cliff --tag "${{ github.ref_name }}" --latest --strip all)
           SHA=$(git rev-parse HEAD)
           RESP=$(curl -sL -X POST \
             -H "Authorization: token ${{ secrets.CODEBERG_TOKEN }}" \
