@@ -15,6 +15,11 @@ jobs:
         id: ver
         run: echo "version=${GITHUB_REF_NAME#v}" >> $GITHUB_OUTPUT
 
+      - name: Install git-cliff
+        run: |
+          curl -sSfL https://github.com/orhun/git-cliff/releases/latest/download/git-cliff-x86_64-unknown-linux-musl.tar.gz \
+            | tar -xz --wildcards '*/git-cliff' --strip-components=1 -C /usr/local/bin/
+
       - name: Bump version
         run: |
           VERSION="${{ steps.ver.outputs.version }}"
@@ -23,6 +28,9 @@ jobs:
           sed -i "s/^date: .*/date: \"$DATE\"/" stashgifs/manifest
           sed -i "s/^version: .*/version: $VERSION/" stashgifs/stashgifs.yml
           node -e "const fs=require('fs'),p=JSON.parse(fs.readFileSync('package.json','utf8')); p.version='$VERSION'; fs.writeFileSync('package.json',JSON.stringify(p,null,2)+'\n');"
+
+      - name: Update changelog
+        run: git cliff --tag "${{ github.ref_name }}" -o CHANGELOG.md
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
@@ -39,8 +47,8 @@ jobs:
         run: |
           git config user.email "ci@codeberg.org"
           git config user.name "CI"
-          git add -f stashgifs/manifest stashgifs/stashgifs.yml package.json src/version.ts
-          git diff --staged --quiet || git commit -m "Bump version to ${{ steps.ver.outputs.version }}"
+          git add -f stashgifs/manifest stashgifs/stashgifs.yml package.json src/version.ts CHANGELOG.md
+          git diff --staged --quiet || git commit -m "chore(release): bump version to ${{ steps.ver.outputs.version }}"
           git push origin HEAD:master
 
       - name: Create zip
@@ -72,20 +80,13 @@ jobs:
       - name: Create release
         id: release
         run: |
-          git fetch --tags --force
-          CURRENT_TAG="${{ github.ref_name }}"
-          PREV_TAG=$(git tag --sort=-version:refname | grep -A1 "^${CURRENT_TAG}$" | tail -1)
-          if [ -n "$PREV_TAG" ] && [ "$PREV_TAG" != "$CURRENT_TAG" ]; then
-            RELEASE_NOTES=$(git log "${PREV_TAG}..${CURRENT_TAG}" --pretty=format:"- %s" \
-              -- src/ | grep -viE "^- bump version" || true)
-          fi
-          export RELEASE_NOTES="${RELEASE_NOTES:-No changelog available.}"
+          export RELEASE_NOTES=$(git cliff --tag "${{ github.ref_name }}" --latest --strip all)
           SHA=$(git rev-parse HEAD)
           RESP=$(curl -sL -X POST \
             -H "Authorization: token ${{ secrets.CODEBERG_TOKEN }}" \
             -H "Content-Type: application/json" \
             "https://codeberg.org/api/v1/repos/surging9143/stashgifs/releases" \
-            -d "$(node -e "process.stdout.write(JSON.stringify({tag_name:'${{ github.ref_name }}',name:'${{ github.ref_name }}',body:process.env.RELEASE_NOTES,target_commitish:'$SHA',draft:false,prerelease:false,make_latest:"true"}))" )")
+            -d "$(node -e "process.stdout.write(JSON.stringify({tag_name:'${{ github.ref_name }}',name:'${{ github.ref_name }}',body:process.env.RELEASE_NOTES,target_commitish:'$SHA',draft:false,prerelease:false,make_latest:'true'}))" )")
           echo "id=$(echo "$RESP" | python3 -c "import sys,json; print(json.load(sys.stdin)['id'])")" >> $GITHUB_OUTPUT
 
       - name: Upload zip asset
