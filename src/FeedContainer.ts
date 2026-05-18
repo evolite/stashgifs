@@ -4683,11 +4683,10 @@ export class FeedContainer {
     offset: number,
     totalContentLength: number,
     expectedLimit: number,
-    markerCount: number,
-    shortFormCount: number,
-    imageCount: number,
+    counts: { markerCount: number; shortFormCount: number; imageCount: number },
     shouldLoadRandom: boolean = false
   ): void {
+    const { markerCount, shortFormCount, imageCount } = counts;
     // Calculate total available content count
     const totalAvailable = markerCount + shortFormCount + imageCount;
 
@@ -4804,9 +4803,7 @@ export class FeedContainer {
         offset,
         totalContentLength,
         expectedLimit,
-        markerCount,
-        shortFormCount,
-        imageCount,
+        { markerCount, shortFormCount, imageCount },
         shouldLoadRandom ?? false
       );
     }
