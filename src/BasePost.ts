@@ -863,45 +863,14 @@ export abstract class BasePost {
       this.studioOverlayClickTime = Date.now();
       this.hideStudioOverlay(true);
     });
-    chip.addEventListener('mouseenter', () => {
-      chip.style.color = this.isReelMode ? '#ffffff' : THEME.colors.textPrimary;
-    });
-    chip.addEventListener('mouseleave', () => {
-      chip.style.color = this.isReelMode ? '#ffffff' : THEME.colors.textSecondary;
-    });
 
-    const imageContainer = document.createElement('div');
-    imageContainer.style.width = '40px';
-    imageContainer.style.height = '40px';
-    imageContainer.style.borderRadius = '4px';
-    imageContainer.style.background = 'transparent';
-    imageContainer.style.display = 'flex';
-    imageContainer.style.alignItems = 'center';
-    imageContainer.style.justifyContent = 'center';
-    imageContainer.style.fontSize = '24px';
-    imageContainer.style.fontWeight = THEME.typography.weightTitle;
-    imageContainer.style.color = THEME.colors.textSecondary;
-    imageContainer.style.flexShrink = '0';
-    imageContainer.style.overflow = 'hidden';
-
-    if (studio.image_path) {
-      const imageSrc = normalizeMediaUrl(studio.image_path);
-      if (imageSrc) {
-        const img = document.createElement('img');
-        img.src = imageSrc;
-        img.alt = studio.name;
-        img.style.width = '100%';
-        img.style.height = '100%';
-        img.style.objectFit = 'contain';
-        imageContainer.appendChild(img);
-      } else {
-        imageContainer.textContent = studio.name.charAt(0).toUpperCase();
-      }
-    } else {
-      imageContainer.textContent = studio.name.charAt(0).toUpperCase();
-    }
-
-    chip.appendChild(imageContainer);
+    chip.appendChild(this.buildChipImageContainer({
+      name: studio.name,
+      imagePath: studio.image_path,
+      borderRadius: '4px',
+      background: 'transparent',
+      objectFit: 'contain',
+    }));
     this.bindStudioHover(chip, studio);
 
     return chip;
@@ -954,7 +923,62 @@ export abstract class BasePost {
       chip.style.textShadow = '0 2px 8px rgba(0, 0, 0, 0.65)';
     }
 
+    chip.addEventListener('mouseenter', () => {
+      chip.style.color = this.isReelMode ? '#ffffff' : THEME.colors.textPrimary;
+    });
+    chip.addEventListener('mouseleave', () => {
+      chip.style.color = this.isReelMode ? '#ffffff' : THEME.colors.textSecondary;
+    });
+
     return chip;
+  }
+
+  private buildChipImageContainer(options: {
+    name: string;
+    imagePath?: string;
+    borderRadius: string;
+    background: string;
+    objectFit: string;
+    objectPosition?: string;
+  }): HTMLElement {
+    const imageContainer = document.createElement('div');
+    imageContainer.style.width = '40px';
+    imageContainer.style.height = '40px';
+    imageContainer.style.borderRadius = options.borderRadius;
+    imageContainer.style.background = options.background;
+    imageContainer.style.display = 'flex';
+    imageContainer.style.alignItems = 'center';
+    imageContainer.style.justifyContent = 'center';
+    imageContainer.style.fontSize = '24px';
+    imageContainer.style.fontWeight = THEME.typography.weightTitle;
+    imageContainer.style.color = THEME.colors.textSecondary;
+    imageContainer.style.flexShrink = '0';
+    imageContainer.style.overflow = 'hidden';
+
+    if (options.imagePath) {
+      const imageSrc = normalizeMediaUrl(options.imagePath);
+      if (imageSrc) {
+        const img = document.createElement('img');
+        img.src = imageSrc;
+        img.alt = options.name;
+        img.style.width = '100%';
+        img.style.height = '100%';
+        img.style.objectFit = options.objectFit as 'cover' | 'contain';
+        if (options.objectPosition) {
+          img.style.objectPosition = options.objectPosition;
+        }
+        imageContainer.appendChild(img);
+        return imageContainer;
+      }
+    }
+    imageContainer.textContent = options.name.charAt(0).toUpperCase();
+    return imageContainer;
+  }
+
+  private canHoverDevice(): boolean {
+    return typeof globalThis !== 'undefined'
+      && 'matchMedia' in globalThis
+      && globalThis.matchMedia('(hover: hover)').matches;
   }
 
   private buildPerformerChipBase(performer: { id: string; name: string }): HTMLElement {
@@ -985,50 +1009,17 @@ export abstract class BasePost {
       e.stopPropagation();
       handleClick(e);
     });
-
-    chip.addEventListener('mouseenter', () => {
-      chip.style.color = this.isReelMode ? '#ffffff' : THEME.colors.textPrimary;
-    });
-    chip.addEventListener('mouseleave', () => {
-      chip.style.color = this.isReelMode ? '#ffffff' : THEME.colors.textSecondary;
-    });
   }
 
   private buildPerformerImage(performer: { name: string; image_path?: string }): HTMLElement {
-    const imageContainer = document.createElement('div');
-    imageContainer.style.width = '40px';
-    imageContainer.style.height = '40px';
-    imageContainer.style.borderRadius = '50%';
-    imageContainer.style.background = THEME.colors.backgroundSecondary;
-    imageContainer.style.display = 'flex';
-    imageContainer.style.alignItems = 'center';
-    imageContainer.style.justifyContent = 'center';
-    imageContainer.style.fontSize = '24px';
-    imageContainer.style.fontWeight = THEME.typography.weightTitle;
-    imageContainer.style.color = THEME.colors.textSecondary;
-    imageContainer.style.flexShrink = '0';
-    imageContainer.style.overflow = 'hidden';
-
-    if (performer.image_path) {
-      const imageSrc = normalizeMediaUrl(performer.image_path);
-      if (imageSrc) {
-        const img = document.createElement('img');
-        img.src = imageSrc;
-        img.alt = performer.name;
-        img.style.width = '100%';
-        img.style.height = '100%';
-        img.style.objectFit = 'cover';
-        img.style.objectPosition = 'top center';
-        imageContainer.appendChild(img);
-      } else {
-        console.warn('BasePost: Invalid performer image URL', { url: performer.image_path, performer: performer.name });
-        imageContainer.textContent = performer.name.charAt(0).toUpperCase();
-      }
-    } else {
-      imageContainer.textContent = performer.name.charAt(0).toUpperCase();
-    }
-
-    return imageContainer;
+    return this.buildChipImageContainer({
+      name: performer.name,
+      imagePath: performer.image_path,
+      borderRadius: '50%',
+      background: THEME.colors.backgroundSecondary,
+      objectFit: 'cover',
+      objectPosition: 'top center',
+    });
   }
 
   private getPerformerFavoriteState(performer: { id: string; favorite?: boolean }): boolean {
@@ -1134,10 +1125,7 @@ export abstract class BasePost {
     chip: HTMLElement,
     performer: { id: string; name: string }
   ): void {
-    const canHover = typeof globalThis !== 'undefined'
-      && 'matchMedia' in globalThis
-      && globalThis.matchMedia('(hover: hover)').matches;
-    if (!this.api || !canHover) {
+    if (!this.api || !this.canHoverDevice()) {
       return;
     }
 
@@ -2224,10 +2212,7 @@ export abstract class BasePost {
     chip: HTMLElement,
     studio: { id: string; name: string }
   ): void {
-    const canHover = typeof globalThis !== 'undefined'
-      && 'matchMedia' in globalThis
-      && globalThis.matchMedia('(hover: hover)').matches;
-    if (!this.api || !canHover) {
+    if (!this.api || !this.canHoverDevice()) {
       return;
     }
 
@@ -2409,12 +2394,8 @@ export abstract class BasePost {
     });
     
     const isMobile = isMobileDevice();
-    const canHover = typeof globalThis !== 'undefined'
-      && 'matchMedia' in globalThis
-      && globalThis.matchMedia('(hover: hover)').matches;
-    
     // Add hover overlay handlers for tags (desktop only)
-    if (this.api && canHover) {
+    if (this.api && this.canHoverDevice()) {
       hashtag.addEventListener('mouseenter', () => {
         // Cancel any pending hide timeout (when moving from another chip)
         if (this.tagOverlayHideTimeout) {
