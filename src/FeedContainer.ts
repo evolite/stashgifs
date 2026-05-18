@@ -4034,6 +4034,7 @@ export class FeedContainer {
   }
 
 
+
   /**
    * Refresh the entire feed by clearing all posts and reloading from the beginning
    */
@@ -4413,25 +4414,32 @@ export class FeedContainer {
     append: boolean;
     shouldLoadMarkers: boolean;
     shouldLoadRandom?: boolean;
+    realMarkersCount?: number;
+    realShortFormCount?: number;
   }): Promise<Array<{ type: 'marker' | 'image'; data: SceneMarker | Image; date?: string }>> {
-    const { content, counts, currentFilters, offset, append, shouldLoadMarkers, shouldLoadRandom } = options;
+    const { content, counts, currentFilters, offset, append, shouldLoadMarkers, shouldLoadRandom, realMarkersCount, realShortFormCount } = options;
     const { markers, shortFormMarkers, images } = content;
     const { markerCount, shortFormCount, imageCount } = counts;
-    
+
     // Merge regular markers, short-form markers, and images, then filter seen items
     const mergedContent = this.filterSeenContent(this.mergeMarkersShortFormAndImages(markers, shortFormMarkers, images), append);
 
     const expectedLimit = currentFilters.limit || FeedContainer.CONTENT_LOAD_LIMIT;
-    
+
+    // Use real (non-synthetic) counts for pagination offsets so random markers
+    // don't inflate markersLoadedCount and push regular marker queries past the pool.
+    const trackableMarkers = realMarkersCount ?? markers.length;
+    const trackableShortForm = realShortFormCount ?? shortFormMarkers.length;
+
     // Track loaded counts for each content type separately
     if (append) {
-      this.markersLoadedCount += markers.length;
-      this.shortFormLoadedCount += shortFormMarkers.length;
+      this.markersLoadedCount += trackableMarkers;
+      this.shortFormLoadedCount += trackableShortForm;
       this.imagesLoadedCount += images.length;
     } else {
       // Reset counts when starting fresh
-      this.markersLoadedCount = markers.length;
-      this.shortFormLoadedCount = shortFormMarkers.length;
+      this.markersLoadedCount = trackableMarkers;
+      this.shortFormLoadedCount = trackableShortForm;
       this.imagesLoadedCount = images.length;
     }
     
@@ -4567,6 +4575,10 @@ export class FeedContainer {
           shortFormCount,
           imageCount
         },
+        // Track only real markers/shortform for pagination offsets — random synthetic
+        // markers don't paginate and must not inflate markersLoadedCount.
+        realMarkersCount: markers.length,
+        realShortFormCount: shortFormMarkers.length,
         currentFilters,
         offset,
         append,

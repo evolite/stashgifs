@@ -608,7 +608,13 @@ export class StashAPI {
    * Check if any active filters are present
    */
   private hasActiveFilters(filters?: FilterOptions): boolean {
-    return !!(filters?.tags?.length || filters?.savedFilterId || (filters?.query && filters.query.trim() !== ''));
+    return !!(
+      filters?.tags?.length ||
+      filters?.studios?.length ||
+      filters?.performers?.length ||
+      filters?.savedFilterId ||
+      (filters?.query && filters.query.trim() !== '')
+    );
   }
 
   /**
@@ -1175,8 +1181,9 @@ export class StashAPI {
    * @param idPrefix Prefix for marker IDs (default: 'synthetic')
    */
   private createSyntheticMarkers(scenes: Scene[], idPrefix: string = 'synthetic'): SceneMarker[] {
+    const nonce = Math.random().toString(36).slice(2, 7);
     return scenes.map((scene) => ({
-      id: `${idPrefix}-${scene.id}`,
+      id: `${idPrefix}-${scene.id}-${nonce}`,
       title: scene.title || 'Untitled',
       seconds: 0,
       end_seconds: undefined,
