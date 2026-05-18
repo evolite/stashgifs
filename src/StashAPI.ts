@@ -957,7 +957,7 @@ export class StashAPI {
       if (options.isMarkerFilter) {
         const markerFilter = targetFilter as SceneMarkerFilterInput;
         markerFilter.scene_filter ??= {};
-        this.applyStudiosToSceneFilter(markerFilter.scene_filter as SceneFilterInput, studioIds);
+        this.applyStudiosToSceneFilter(markerFilter.scene_filter, studioIds);
       } else {
         this.applyStudiosToSceneFilter(targetFilter as SceneFilterInput, studioIds);
       }
@@ -1040,14 +1040,14 @@ export class StashAPI {
       let page: number;
       let totalCount: number;
 
-      if (!filters?.offset) {
+      if (filters?.offset) {
+        page = Math.floor(filters.offset / limit) + 1;
+        totalCount = await this.getShuffleSceneCount(filters, signal);
+      } else {
         const result = await this.calculateRandomScenePage(filters, limit, signal);
         if (this.isAborted(signal)) return { markers: [], sortSeed: generateRandomSortSeed(), totalCount: 0 };
         page = result.page;
         totalCount = result.totalCount;
-      } else {
-        page = Math.floor(filters.offset / limit) + 1;
-        totalCount = await this.getShuffleSceneCount(filters, signal);
       }
 
       if (this.isAborted(signal)) return { markers: [], sortSeed: generateRandomSortSeed(), totalCount: 0 };
