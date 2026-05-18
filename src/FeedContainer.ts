@@ -2164,22 +2164,19 @@ export class FeedContainer {
     });
 
     brandContainer.addEventListener('click', () => {
-      // Clear all filter properties
       this.selectedTagIds.clear();
       this.selectedPerformerIds.clear();
+      this.selectedStudioIds.clear();
       this.selectedSavedFilter = undefined;
       this.currentFilters = undefined;
-      
-      // Clear search input and show helper text
-      const queryInput = this.container.querySelector('.feed-filters__input') as HTMLInputElement;
-      if (queryInput) {
-        queryInput.value = '';
-        if (this.updatePlaceholderVisibilityRef) {
-          this.updatePlaceholderVisibilityRef();
-        }
+
+      this.updateActivePills();
+      this.updateQueryInputDisplay();
+
+      if (this.updatePlaceholderVisibilityRef) {
+        this.updatePlaceholderVisibilityRef();
       }
-      
-      // Refresh feed (scrolls to top and reloads)
+
       this.refreshFeed().catch((e) => console.error('Failed to refresh feed', e));
     });
     
