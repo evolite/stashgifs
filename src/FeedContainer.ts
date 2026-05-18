@@ -4412,8 +4412,9 @@ export class FeedContainer {
     offset: number;
     append: boolean;
     shouldLoadMarkers: boolean;
+    shouldLoadRandom?: boolean;
   }): Promise<Array<{ type: 'marker' | 'image'; data: SceneMarker | Image; date?: string }>> {
-    const { content, counts, currentFilters, offset, append, shouldLoadMarkers } = options;
+    const { content, counts, currentFilters, offset, append, shouldLoadMarkers, shouldLoadRandom } = options;
     const { markers, shortFormMarkers, images } = content;
     const { markerCount, shortFormCount, imageCount } = counts;
     
@@ -4451,6 +4452,7 @@ export class FeedContainer {
         totalContentLength: markers.length + shortFormMarkers.length + images.length
       },
       shouldLoadMarkers,
+      shouldLoadRandom,
       append
     });
 
@@ -4568,7 +4570,8 @@ export class FeedContainer {
         currentFilters,
         offset,
         append,
-        shouldLoadMarkers: shouldLoadMarkers || shouldLoadRandom
+        shouldLoadMarkers: shouldLoadMarkers || shouldLoadRandom,
+        shouldLoadRandom
       });
 
       const totalUnfiltered = markers.length + shortFormMarkers.length + randomMarkers.length + images.length;
@@ -4673,14 +4676,15 @@ export class FeedContainer {
     expectedLimit: number,
     markerCount: number,
     shortFormCount: number,
-    imageCount: number
+    imageCount: number,
+    shouldLoadRandom: boolean = false
   ): void {
     // Calculate total available content count
     const totalAvailable = markerCount + shortFormCount + imageCount;
-    
+
     // Calculate total loaded so far
     const totalLoaded = offset + totalContentLength;
-    
+
     // Use count-based calculation if counts are available
     if (totalAvailable > 0) {
       this.hasMore = totalLoaded < totalAvailable;
@@ -4690,7 +4694,14 @@ export class FeedContainer {
       this.hasMore = totalContentLength >= expectedLimit;
       console.log(`[hasMore] Count unavailable, using length-based check: ${totalContentLength} >= ${expectedLimit}`);
     }
-    
+
+    // Random content is re-queryable at new positions on every fetch — treat as infinite
+    // as long as this fetch returned something. The 0-results guard below is the real stop.
+    if (shouldLoadRandom && !this.hasMore && totalContentLength > 0) {
+      this.hasMore = true;
+      console.log(`[hasMore] Random mode active with results — keeping hasMore true`);
+    }
+
     // Special case: if we got 0 results and it's not the first load, we've definitely reached the end
     if (append && totalContentLength === 0) {
       this.hasMore = false;
@@ -4717,6 +4728,7 @@ export class FeedContainer {
       totalContentLength: number;
     };
     shouldLoadMarkers: boolean;
+    shouldLoadRandom?: boolean;
     append: boolean;
   }): void {
     const {
@@ -4724,9 +4736,10 @@ export class FeedContainer {
       counts: { markerCount, shortFormCount, imageCount },
       pagination: { offset, expectedLimit, totalContentLength },
       shouldLoadMarkers,
+      shouldLoadRandom,
       append
     } = options;
-    
+
     if (append) {
       this.processMarkersAndImagesAppend(markers, images, shouldLoadMarkers);
     } else {
@@ -4747,7 +4760,8 @@ export class FeedContainer {
         shortFormCount,
         imageCount
       },
-      images
+      images,
+      shouldLoadRandom
     });
   }
 
@@ -4767,11 +4781,12 @@ export class FeedContainer {
       imageCount: number;
     };
     images: Image[];
+    shouldLoadRandom?: boolean;
   }): void {
-    const { pagination, counts, images } = options;
+    const { pagination, counts, images, shouldLoadRandom } = options;
     const { append, offset, totalContentLength, expectedLimit } = pagination;
     const { markerCount, shortFormCount, imageCount } = counts;
-    
+
     if (this.settings.imagesOnly) {
       this.calculateHasMoreForImagesOnly(images, append, offset, imageCount, expectedLimit);
     } else {
@@ -4782,7 +4797,8 @@ export class FeedContainer {
         expectedLimit,
         markerCount,
         shortFormCount,
-        imageCount
+        imageCount,
+        shouldLoadRandom ?? false
       );
     }
   }
