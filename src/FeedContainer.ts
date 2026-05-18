@@ -5457,23 +5457,7 @@ export class FeedContainer {
       return undefined; // Marker videos are pre-rendered clips
     }
 
-    if (typeof marker.id === 'string' && marker.id.startsWith('synthetic-')) {
-      return this.calculateRandomStartTime(marker);
-    }
-
     return marker.seconds;
-  }
-
-  /**
-   * Calculate random start time for shuffle mode
-   */
-  private calculateRandomStartTime(marker: SceneMarker): number {
-    const sceneDuration = marker.scene?.files?.[0]?.duration;
-    if (sceneDuration && sceneDuration > 0) {
-      const maxStartTime = Math.floor(sceneDuration * 0.9);
-      return Math.floor(Math.random() * maxStartTime);
-    }
-    return 0;
   }
 
   /**

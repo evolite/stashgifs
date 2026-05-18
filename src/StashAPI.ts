@@ -1082,7 +1082,7 @@ export class StashAPI {
 
       if (this.isAborted(signal)) return { markers: [], sortSeed, totalCount: 0 };
 
-      return { markers: this.createSyntheticMarkers(scenes), sortSeed, totalCount };
+      return { markers: this.createSyntheticMarkers(scenes, 'synthetic', limit), sortSeed, totalCount };
     } catch (error: unknown) {
       const emptyResult = { markers: [] as SceneMarker[], sortSeed: generateRandomSortSeed(), totalCount: 0 };
       return this.handleError('fetchScenesForShuffle', error, signal, emptyResult);
@@ -1180,18 +1180,33 @@ export class StashAPI {
    * @param scenes Scenes to convert to markers
    * @param idPrefix Prefix for marker IDs (default: 'synthetic')
    */
-  private createSyntheticMarkers(scenes: Scene[], idPrefix: string = 'synthetic'): SceneMarker[] {
+  private createSyntheticMarkers(scenes: Scene[], idPrefix: string = 'synthetic', limit: number = scenes.length): SceneMarker[] {
     const nonce = Math.random().toString(36).slice(2, 7);
-    return scenes.map((scene) => ({
-      id: `${idPrefix}-${scene.id}-${nonce}`,
-      title: scene.title || 'Untitled',
-      seconds: 0,
-      end_seconds: undefined,
-      stream: undefined,
-      scene: scene,
-      primary_tag: undefined,
-      tags: [],
-    }));
+    const perScene = Math.min(4, Math.max(1, Math.ceil((limit || 1) / Math.max(1, scenes.length))));
+    const markers: SceneMarker[] = [];
+    for (const scene of scenes) {
+      for (let i = 0; i < perScene; i++) {
+        markers.push({
+          id: `${idPrefix}-${scene.id}-${nonce}-${i}`,
+          title: scene.title || 'Untitled',
+          seconds: this.randomStartTime(scene),
+          end_seconds: undefined,
+          stream: undefined,
+          scene: scene,
+          primary_tag: undefined,
+          tags: [],
+        });
+      }
+    }
+    return markers;
+  }
+
+  private randomStartTime(scene: Scene): number {
+    const duration = scene.files?.[0]?.duration;
+    if (duration && duration > 0) {
+      return Math.floor(Math.random() * Math.floor(duration * 0.9));
+    }
+    return 0;
   }
 
   /**
