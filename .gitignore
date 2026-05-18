@@ -23,6 +23,10 @@ Thumbs.db
 stashgifs.zip
 stashgifs.zip.sha256
 .debug/
+src/version.ts
+
+# SonarQube scanner output
+.scannerwork/
 
 # Local tooling
 opencode.json
