@@ -127,6 +127,21 @@ export const FIND_TAGS_FOR_SELECT = `
 `;
 
 /**
+ * Find studios
+ */
+export const FIND_STUDIOS = `
+  query FindStudios($filter: FindFilterType) {
+    findStudios(filter: $filter) {
+      studios {
+        id
+        name
+        image_path
+      }
+    }
+  }
+`;
+
+/**
  * Find performers
  */
 export const FIND_PERFORMERS = `

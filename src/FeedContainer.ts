@@ -110,6 +110,7 @@ export class FeedContainer {
   private currentFilters?: FilterOptions;
   private readonly selectedTagIds: Map<number, string> = new Map();
   private readonly selectedPerformerIds: Map<number, string> = new Map();
+  private readonly selectedStudioIds: Map<number, string> = new Map();
   private readonly debouncedApplyFilters!: () => void;
   private activePillsBar?: HTMLElement;
   private hasMore: boolean = true;
@@ -1556,6 +1557,52 @@ export class FeedContainer {
     container.appendChild(performersSection);
   }
 
+  private createStudiosSection(
+    container: HTMLElement,
+    studios: Array<{ id: string; name: string; image_path?: string }>,
+    updateSearchBarDisplay: () => void,
+    apply: () => Promise<void>,
+    label: string = 'Studios'
+  ): void {
+    if (studios.length === 0) return;
+    const studiosSection = document.createElement('div');
+    studiosSection.style.display = 'flex';
+    studiosSection.style.flexDirection = 'column';
+    studiosSection.style.gap = '8px';
+    studiosSection.appendChild(this.createSectionLabel(label));
+    for (const studio of studios) {
+      const studioId = Number.parseInt(studio.id, 10);
+      let imageSrc: string | undefined;
+      if (studio.image_path) {
+        imageSrc = studio.image_path.startsWith('http')
+          ? studio.image_path
+          : `${globalThis.location.origin}${studio.image_path}`;
+      }
+      const btn = this.createListButton(
+        studio.name,
+        () => {
+          this.selectedSavedFilter = undefined;
+          if (this.selectedStudioIds.has(studioId)) {
+            this.selectedStudioIds.delete(studioId);
+            btn.classList.remove('feed-list-button--selected');
+          } else {
+            this.selectedStudioIds.set(studioId, studio.name);
+            btn.classList.add('feed-list-button--selected');
+          }
+          updateSearchBarDisplay();
+          this.debouncedApplyFilters();
+          this.focusSearchInput();
+        },
+        { leadingImage: imageSrc, leadingText: imageSrc ? undefined : studio.name.charAt(0).toUpperCase() }
+      );
+      if (this.selectedStudioIds.has(studioId)) {
+        btn.classList.add('feed-list-button--selected');
+      }
+      studiosSection.appendChild(btn);
+    }
+    container.appendChild(studiosSection);
+  }
+
   /**
    * Render default suggestions view
    */
@@ -1680,11 +1727,13 @@ export class FeedContainer {
 
     let tagItems: Array<{ id: string; name: string }> = [];
     let performerItems: Array<{ id: string; name: string; image_path?: string }> = [];
+    let studioItems: Array<{ id: string; name: string; image_path?: string }> = [];
 
     try {
-      [tagItems, performerItems] = await Promise.all([
+      [tagItems, performerItems, studioItems] = await Promise.all([
         this.api.searchMarkerTags(trimmedText, 20),
-        this.api.searchPerformers(trimmedText, 20)
+        this.api.searchPerformers(trimmedText, 20),
+        this.api.searchStudios(trimmedText, 20),
       ]);
     } catch (error) {
       console.warn('Failed to fetch search suggestions', error);
@@ -1709,6 +1758,15 @@ export class FeedContainer {
       .slice(0, 20);
 
     this.createPerformersSection(container, this.sortByMatchAccuracy(filteredPerformers, trimmedText), updateSearchBarDisplay, apply);
+
+    const filteredStudios = studioItems
+      .filter((studio) => {
+        const studioId = Number.parseInt(studio.id, 10);
+        return !Number.isNaN(studioId) && !this.selectedStudioIds.has(studioId);
+      })
+      .slice(0, 20);
+
+    this.createStudiosSection(container, this.sortByMatchAccuracy(filteredStudios, trimmedText), updateSearchBarDisplay, apply);
 
     if (container.children.length === 0) {
       this.appendEmptyState(container, `No matches found for "${trimmedText}".`);
@@ -2979,12 +3037,14 @@ export class FeedContainer {
   /**
    * Build filter values from selected tag and performer Maps
    */
-  private buildFiltersForApply(): { tags?: string[]; performers?: string[] } {
+  private buildFiltersForApply(): { tags?: string[]; performers?: string[]; studios?: string[] } {
     const tags = [...this.selectedTagIds.keys()].map(String);
     const performers = [...this.selectedPerformerIds.keys()].map(String);
+    const studios = [...this.selectedStudioIds.keys()].map(String);
     return {
       tags: tags.length ? tags : undefined,
       performers: performers.length ? performers : undefined,
+      studios: studios.length ? studios : undefined,
     };
   }
 
@@ -2999,6 +3059,7 @@ export class FeedContainer {
       query: undefined,
       tags: filterValues.tags,
       performers: filterValues.performers,
+      studios: filterValues.studios,
       savedFilterId: this.selectedSavedFilter?.id || undefined,
       limit: FeedContainer.CONTENT_LOAD_LIMIT,
       offset: 0,
@@ -3018,7 +3079,7 @@ export class FeedContainer {
       this.activePillsBar.firstChild.remove();
     }
 
-    const total = this.selectedTagIds.size + this.selectedPerformerIds.size;
+    const total = this.selectedTagIds.size + this.selectedPerformerIds.size + this.selectedStudioIds.size;
     if (total === 0) {
       this.activePillsBar.style.display = 'none';
       return;
@@ -3044,10 +3105,20 @@ export class FeedContainer {
       }));
     }
 
+    for (const [id, name] of this.selectedStudioIds) {
+      this.activePillsBar.appendChild(this.createActivePill(name, () => {
+        this.selectedStudioIds.delete(id);
+        this.updateActivePills();
+        this.updateQueryInputDisplay();
+        this.debouncedApplyFilters();
+      }));
+    }
+
     if (total >= 2) {
       const clearAll = this.createActivePill('Clear all', () => {
         this.selectedTagIds.clear();
         this.selectedPerformerIds.clear();
+        this.selectedStudioIds.clear();
         this.updateActivePills();
         this.updateQueryInputDisplay();
         this.debouncedApplyFilters();
@@ -4088,6 +4159,7 @@ export class FeedContainer {
     markerCount: number;
     imageCount: number;
     shortFormCount: number;
+    randomCount: number;
   }> {
     const { currentFilters, limits, signal, loadingFlags, append } = options;
     const { limit, markerLimit, shortFormLimit } = limits;
@@ -4129,7 +4201,8 @@ export class FeedContainer {
       randomMarkers: randomResult.markers,
       markerCount: markersResult.totalCount,
       imageCount: imagesResult.totalCount,
-      shortFormCount: shortFormResult.totalCount
+      shortFormCount: shortFormResult.totalCount,
+      randomCount: randomResult.totalCount,
     };
   }
 
@@ -4426,7 +4499,8 @@ export class FeedContainer {
         randomMarkers,
         markerCount,
         imageCount,
-        shortFormCount
+        shortFormCount,
+        randomCount,
       } = await this.fetchAllContent({
         currentFilters,
         limits: {
@@ -4460,7 +4534,7 @@ export class FeedContainer {
           images
         },
         counts: {
-          markerCount: markerCount + randomMarkers.length,
+          markerCount: markerCount + randomCount,
           shortFormCount,
           imageCount
         },
@@ -4764,12 +4838,13 @@ export class FeedContainer {
       const fileExtensions = this.settings.enabledFileTypes || ['.jpg', '.png', '.gif', '.mp4', '.m4v', '.webm'];
       
       // Use unified filter extraction for consistent filtering
-      const { tagIds, performerIds, excludedTagIds } = this.api.extractTagAndPerformerFilters(filters);
-      
+      const { tagIds, performerIds, excludedTagIds, studioIds } = this.api.extractTagAndPerformerFilters(filters);
+
       const imageFilters: {
         performerIds?: number[];
         tagIds?: string[];
         excludedTagIds?: string[];
+        studioIds?: string[];
       } = {};
 
       if (performerIds.length > 0) {
@@ -4782,6 +4857,10 @@ export class FeedContainer {
 
       if (excludedTagIds.length > 0) {
         imageFilters.excludedTagIds = excludedTagIds;
+      }
+
+      if (studioIds.length > 0) {
+        imageFilters.studioIds = studioIds;
       }
 
       const imageFiltersWithOrientation = {

@@ -135,6 +135,10 @@ export interface ImageFilterInput {
     value: string[];
     modifier: 'NOT_NULL' | 'IS_NULL' | 'INCLUDES' | 'EXCLUDES';
   };
+  studios?: {
+    value: string[];
+    modifier: FilterModifier;
+  };
   [key: string]: unknown; // Allow additional filter properties
 }
 
@@ -229,6 +233,15 @@ export interface FindTagsExtendedResponse {
         sort_name?: string;
       }>;
     }>;
+  };
+}
+
+/**
+ * FindStudios response
+ */
+export interface FindStudiosResponse {
+  findStudios: {
+    studios: Array<{ id: string; name: string; image_path?: string }>;
   };
 }
 

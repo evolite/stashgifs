@@ -17,6 +17,7 @@ import {
   FindScenesResponse,
   FindTagsResponse,
   FindTagsExtendedResponse,
+  FindStudiosResponse,
   FindPerformersResponse,
   FindPerformerResponse,
   PerformerExtended,
@@ -432,6 +433,27 @@ export class StashAPI {
     );
   }
 
+  async searchStudios(term: string, limit: number = 10, signal?: AbortSignal): Promise<Array<{ id: string; name: string; image_path?: string }>> {
+    const isEmptyTerm = !term || term.trim() === '';
+    const cacheKey = this.buildCacheKey('studios', term, limit);
+    const { filter } = this.buildSearchFilter(term, limit);
+
+    return this.searchWithCache(
+      cacheKey,
+      isEmptyTerm,
+      async () => {
+        const result = await this.gqlClient.query<FindStudiosResponse>({
+          query: queries.FIND_STUDIOS,
+          variables: { filter },
+          signal,
+        });
+        const studios = result.data?.findStudios?.studios ?? [];
+        return studios.slice(0, limit);
+      },
+      signal
+    );
+  }
+
   /**
    * Get detailed performer information by ID
    * Used for hover overlay display
@@ -529,10 +551,8 @@ export class StashAPI {
     // Fetching scene markers with filters
     
     if (filters?.shuffleMode) {
-      const { markers, sortSeed } = await this.fetchScenesForShuffle(filters, signal);
-      // For shuffle mode, we don't have a reliable count, so return markers with 0 count
-      // The caller should handle this case
-      return { markers, totalCount: 0, sortSeed };
+      const { markers, sortSeed, totalCount } = await this.fetchScenesForShuffle(filters, signal);
+      return { markers, totalCount, sortSeed };
     }
     
     const savedFilterCriteria = await this.getSavedFilterCriteria(filters, signal);
@@ -699,11 +719,12 @@ export class StashAPI {
     tagIds: string[];
     performerIds: number[];
     excludedTagIds: string[];
+    studioIds: string[];
   } {
     const tagIds: string[] = [];
     const performerIds: number[] = [];
     const excludedTagIds: string[] = [];
-    
+
     // Extract tags (include both tags and primary_tags)
     if (filters?.tags && filters.tags.length > 0) {
       const parsed = this.parseTagIds(filters.tags);
@@ -718,16 +739,19 @@ export class StashAPI {
       const parsed = this.parseTagIds(filters.excludedTagIds);
       excludedTagIds.push(...parsed.map(String));
     }
-    
+
     // Extract performers
     if (filters?.performers && filters.performers.length > 0) {
       performerIds.push(...this.parseTagIds(filters.performers));
     }
-    
+
+    const studioIds: string[] = filters?.studios && filters.studios.length > 0 ? [...filters.studios] : [];
+
     return {
       tagIds,
       performerIds,
-      excludedTagIds
+      excludedTagIds,
+      studioIds,
     };
   }
 
@@ -870,6 +894,12 @@ export class StashAPI {
       .filter((value): value is string => Boolean(value));
   }
 
+  private applyStudiosToSceneFilter(targetFilter: SceneFilterInput, studioIds: string[]): void {
+    if (studioIds.length > 0) {
+      targetFilter.studios = { value: studioIds, modifier: 'INCLUDES_ALL' };
+    }
+  }
+
   private applyOrientationToSceneFilter(targetFilter: SceneFilterInput, filters?: FilterOptions): void {
     const orientations = this.resolveOrientationEnumValues(filters);
     if (orientations.length === 0) {
@@ -902,8 +932,8 @@ export class StashAPI {
     targetFilter: SceneMarkerFilterInput | SceneFilterInput,
     options: { isMarkerFilter: boolean }
   ): void {
-    const { tagIds, performerIds, excludedTagIds } = this.extractTagAndPerformerFilters(filters);
-    
+    const { tagIds, performerIds, excludedTagIds, studioIds } = this.extractTagAndPerformerFilters(filters);
+
     if (tagIds.length > 0) {
       const tagDepth = filters?.tagDepth ?? 0;
       if (options.isMarkerFilter) {
@@ -920,8 +950,18 @@ export class StashAPI {
         this.applyExcludedTagsToSceneFilter(targetFilter as SceneFilterInput, excludedTagIds);
       }
     }
-    
+
     this.applyPerformersToFilter(targetFilter, performerIds);
+
+    if (studioIds.length > 0) {
+      if (options.isMarkerFilter) {
+        const markerFilter = targetFilter as SceneMarkerFilterInput;
+        markerFilter.scene_filter ??= {};
+        this.applyStudiosToSceneFilter(markerFilter.scene_filter as SceneFilterInput, studioIds);
+      } else {
+        this.applyStudiosToSceneFilter(targetFilter as SceneFilterInput, studioIds);
+      }
+    }
   }
 
   /**
@@ -994,72 +1034,87 @@ export class StashAPI {
    * @param signal Abort signal
    * @returns Array of synthetic scene markers (one per scene) and sortSeed
    */
-  private async fetchScenesForShuffle(filters?: FilterOptions, signal?: AbortSignal): Promise<{ markers: SceneMarker[]; sortSeed: string }> {
+  private async fetchScenesForShuffle(filters?: FilterOptions, signal?: AbortSignal): Promise<{ markers: SceneMarker[]; sortSeed: string; totalCount: number }> {
     try {
       const limit = filters?.limit || 20;
-      let page = filters?.offset ? Math.floor(filters?.offset / limit) + 1 : 1;
+      let page: number;
+      let totalCount: number;
 
       if (!filters?.offset) {
-        page = await this.calculateRandomScenePage(filters, limit, signal);
-        if (this.isAborted(signal)) return { markers: [], sortSeed: generateRandomSortSeed() };
+        const result = await this.calculateRandomScenePage(filters, limit, signal);
+        if (this.isAborted(signal)) return { markers: [], sortSeed: generateRandomSortSeed(), totalCount: 0 };
+        page = result.page;
+        totalCount = result.totalCount;
+      } else {
+        page = Math.floor(filters.offset / limit) + 1;
+        totalCount = await this.getShuffleSceneCount(filters, signal);
       }
 
-      if (this.isAborted(signal)) return { markers: [], sortSeed: generateRandomSortSeed() };
+      if (this.isAborted(signal)) return { markers: [], sortSeed: generateRandomSortSeed(), totalCount: 0 };
 
-      // Reuse existing sort seed for pagination, or generate new one for first page
       const sortSeed = filters?.sortSeed || generateRandomSortSeed();
-
-      const filter: FindFilterInput = {
-        per_page: limit,
-        page: page,
-        sort: sortSeed,
-      };
-
+      const filter: FindFilterInput = { per_page: limit, page, sort: sortSeed };
       const sceneFilter = this.buildShuffleSceneFilter(filters);
       const scenes = await this.fetchScenesQuery(filter, sceneFilter, signal);
-      
-      if (this.isAborted(signal)) return { markers: [], sortSeed };
 
-      let markers = this.createSyntheticMarkers(scenes);
-      
-      return { markers, sortSeed };
+      if (this.isAborted(signal)) return { markers: [], sortSeed, totalCount: 0 };
+
+      return { markers: this.createSyntheticMarkers(scenes), sortSeed, totalCount };
     } catch (error: unknown) {
-      const emptyResult = { markers: [] as SceneMarker[], sortSeed: generateRandomSortSeed() };
+      const emptyResult = { markers: [] as SceneMarker[], sortSeed: generateRandomSortSeed(), totalCount: 0 };
       return this.handleError('fetchScenesForShuffle', error, signal, emptyResult);
+    }
+  }
+
+  private async getShuffleSceneCount(filters?: FilterOptions, signal?: AbortSignal): Promise<number> {
+    const countFilter: FindFilterInput = { per_page: 1, page: 1 };
+    const sceneFilter = this.buildShuffleSceneFilter(filters);
+    try {
+      if (this.isAborted(signal)) return 0;
+      const result = await this.gqlClient.query<FindScenesResponse>({
+        query: queries.GET_SCENE_COUNT,
+        variables: { filter: countFilter, ...(sceneFilter && { scene_filter: sceneFilter }) },
+        signal,
+      });
+      return result.data?.findScenes?.count || 0;
+    } catch (e: unknown) {
+      if (isAbortError(e) || this.isAborted(signal)) return 0;
+      this.logError('getShuffleSceneCount', e);
+      return 0;
     }
   }
 
   /**
    * Calculate random page for shuffle mode
    */
-  private async calculateRandomScenePage(filters: FilterOptions | undefined, limit: number, signal?: AbortSignal): Promise<number> {
+  private async calculateRandomScenePage(filters: FilterOptions | undefined, limit: number, signal?: AbortSignal): Promise<{ page: number; totalCount: number }> {
     const countFilter: FindFilterInput = { per_page: 1, page: 1 };
     const sceneFilter = this.buildShuffleSceneFilter(filters);
 
     try {
-      if (this.isAborted(signal)) return 1;
-      
+      if (this.isAborted(signal)) return { page: 1, totalCount: 0 };
+
       const countResult = await this.gqlClient.query<FindScenesResponse>({
         query: queries.GET_SCENE_COUNT,
         variables: { filter: countFilter, ...(sceneFilter && { scene_filter: sceneFilter }) },
         signal,
       });
-      
-      if (this.isAborted(signal)) return 1;
-      
+
+      if (this.isAborted(signal)) return { page: 1, totalCount: 0 };
+
       const totalCount = countResult.data?.findScenes?.count || 0;
       if (totalCount > 0) {
         const totalPages = Math.ceil(totalCount / limit);
-        return Math.floor(Math.random() * totalPages) + 1;
+        return { page: Math.floor(Math.random() * totalPages) + 1, totalCount };
       }
     } catch (e: unknown) {
       if (isAbortError(e) || this.isAborted(signal)) {
-        return 1;
+        return { page: 1, totalCount: 0 };
       }
       this.logError('calculateRandomScenePage', e);
     }
-    
-    return 1;
+
+    return { page: 1, totalCount: 0 };
   }
 
   /**
@@ -2194,6 +2249,7 @@ export class StashAPI {
       performerIds?: number[];
       tagIds?: string[];
       excludedTagIds?: string[];
+      studioIds?: string[];
       orientationFilter?: ImageOrientation[];
       imagesInGalleryOnly?: boolean;
       galleryIds?: string[];
@@ -2237,6 +2293,10 @@ export class StashAPI {
       };
     }
 
+    if (filters?.studioIds && filters.studioIds.length > 0) {
+      imageFilter.studios = { value: filters.studioIds, modifier: 'INCLUDES_ALL' };
+    }
+
     return imageFilter;
   }
 
@@ -2254,6 +2314,7 @@ export class StashAPI {
       performerIds?: number[];
       tagIds?: string[];
       excludedTagIds?: string[];
+      studioIds?: string[];
       orientationFilter?: ImageOrientation[];
       sortSeed?: string;
       imagesInGalleryOnly?: boolean;
