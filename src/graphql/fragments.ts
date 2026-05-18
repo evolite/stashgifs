@@ -18,6 +18,7 @@ export const SceneFields = `
     studio {
       id
       name
+      image_path
     }
     performers {
       id

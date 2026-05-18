@@ -37,6 +37,7 @@ export interface SceneMarker {
 interface Studio {
   id: string;
   name: string;
+  image_path?: string;
 }
 
 export interface Performer {
@@ -130,6 +131,7 @@ export interface FeedSettings {
   seenHistorySize?: number; // Max IDs tracked in seen ring buffer (0 = disabled, default 500)
   contentLimit?: number; // Max items per content type to paginate through (default 5000)
   includeSubtags?: boolean; // When true, tag search includes all descendant subtags
+  showStudioChips?: boolean; // Show studio logo + name chips alongside performer chips, default: true
 }
 
 export interface VideoPostData {
@@ -166,6 +168,7 @@ export interface Image {
     preview?: string;
     image?: string;
   };
+  studio?: Studio;
   tags?: Tag[];
   performers?: Performer[];
   visualFiles?: Array<{

@@ -35,6 +35,7 @@ export class ImagePost extends BasePost {
       onTagChipClick?: (tagId: number, tagName: string) => void;
       showVerifiedCheckmarks?: boolean;
       showProductionAge?: boolean;
+      showStudioChips?: boolean;
       onLoadFullVideo?: () => void;
       ratingSystemConfig?: { type?: string; starPrecision?: string } | null;
       reelMode?: boolean;

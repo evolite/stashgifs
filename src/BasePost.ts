@@ -11,7 +11,7 @@ import { RatingControl } from './RatingControl.js';
 import { ADD_TAG_SVG, HEART_SVG_OUTLINE, HEART_SVG_FILLED, OCOUNT_SVG, EXTERNAL_LINK_SVG, STAR_SVG, STAR_SVG_OUTLINE, VERIFIED_SVG } from './icons.js';
 import { setupTouchHandlers, preventClickAfterTouch } from './utils/touchHandlers.js';
 import { adjustImageDialogPosition, toggleImageFavorite } from './utils/imagePostUtils.js';
-import { PerformerExtended } from './graphql/types.js';
+import { PerformerExtended, StudioExtended } from './graphql/types.js';
 import { Performer, Tag, VideoPostData, ImageBasedPostData, Image } from './types.js';
 
 export interface BasePostOptions {
@@ -22,6 +22,7 @@ export interface BasePostOptions {
   onTagChipClick?: (tagId: number, tagName: string) => void | Promise<void>;
   showVerifiedCheckmarks?: boolean;
   showProductionAge?: boolean;
+  showStudioChips?: boolean;
 }
 
 interface HoverHandlers {
@@ -70,6 +71,7 @@ export abstract class BasePost {
     return this.buildImageHeader({
       performers: this.getImageData().image.performers,
       tags: this.getImageData().image.tags,
+      studio: this.getImageData().image.studio,
       favoriteTagName: BasePost.FAVORITE_TAG_NAME
     });
   }
@@ -105,6 +107,7 @@ export abstract class BasePost {
   protected footer?: HTMLElement;
   protected showVerifiedCheckmarks: boolean = true;
   protected showProductionAge: boolean = false;
+  protected showStudioChips: boolean = true;
   // Performer overlay properties
   private performerOverlay?: HTMLElement;
   private performerOverlayTimeout?: number;
@@ -123,6 +126,13 @@ export abstract class BasePost {
   private tagOverlayAbortController?: AbortController;
   private hadTagOverlayBefore: boolean = false; // Track if tag overlay was showing before (for delay logic)
   private tagOverlayClickTime?: number; // Track when chip was clicked to prevent immediate re-show
+  // Studio overlay properties
+  private studioOverlay?: HTMLElement;
+  private studioOverlayTimeout?: number;
+  private studioOverlayHideTimeout?: number;
+  private currentHoveredStudioId?: string;
+  private studioOverlayAbortController?: AbortController;
+  private studioOverlayClickTime?: number;
 
   private static readonly favoritePerformerCache: Map<string, boolean> = new Map();
   private static favoriteCacheLoaded: boolean = false;
@@ -140,7 +150,8 @@ export abstract class BasePost {
     this.onTagChipClick = options?.onTagChipClick;
     this.showVerifiedCheckmarks = options?.showVerifiedCheckmarks !== false;
     this.showProductionAge = options?.showProductionAge === true;
-    
+    this.showStudioChips = options?.showStudioChips !== false;
+
     // Setup scroll listener to hide overlay when scrolling
     this.setupPerformerOverlayScrollListener();
   }
@@ -219,6 +230,10 @@ export abstract class BasePost {
       this.tagOverlayAbortController.abort();
       this.tagOverlayAbortController = undefined;
     }
+    if (this.studioOverlayAbortController) {
+      this.studioOverlayAbortController.abort();
+      this.studioOverlayAbortController = undefined;
+    }
 
     if (this.performerOverlayTimeout) {
       clearTimeout(this.performerOverlayTimeout);
@@ -236,6 +251,14 @@ export abstract class BasePost {
       clearTimeout(this.tagOverlayHideTimeout);
       this.tagOverlayHideTimeout = undefined;
     }
+    if (this.studioOverlayTimeout) {
+      clearTimeout(this.studioOverlayTimeout);
+      this.studioOverlayTimeout = undefined;
+    }
+    if (this.studioOverlayHideTimeout) {
+      clearTimeout(this.studioOverlayHideTimeout);
+      this.studioOverlayHideTimeout = undefined;
+    }
 
     if (this.performerOverlay) {
       this.performerOverlay.remove();
@@ -244,6 +267,10 @@ export abstract class BasePost {
     if (this.tagOverlay) {
       this.tagOverlay.remove();
       this.tagOverlay = undefined;
+    }
+    if (this.studioOverlay) {
+      this.studioOverlay.remove();
+      this.studioOverlay = undefined;
     }
 
     for (const [button] of this.hoverHandlers) {
@@ -594,6 +621,11 @@ export abstract class BasePost {
     }
   }
 
+  public setShowStudioChips(show: boolean): void {
+    this.showStudioChips = show;
+    this.refreshHeader();
+  }
+
   protected buildFooterContainer(): {
     footer: HTMLElement;
     info: HTMLElement;
@@ -690,8 +722,11 @@ export abstract class BasePost {
       if (this.tagOverlay) {
         this.hideTagOverlay(true);
       }
+      if (this.studioOverlay) {
+        this.hideStudioOverlay(true);
+      }
     };
-    
+
     this.performerOverlayScrollCleanup = subscribeWindowScroll(this.performerOverlayScrollHandler);
   }
 
@@ -816,6 +851,82 @@ export abstract class BasePost {
       chip.appendChild(verifiedBadge);
     }
     this.bindPerformerHover(chip, performer);
+
+    return chip;
+  }
+
+  protected createStudioChip(studio: { id: string; name: string; image_path?: string }): HTMLElement {
+    const chip = document.createElement('a');
+    chip.className = 'studio-chip';
+    chip.href = `${globalThis.location.origin}/studios/${studio.id}`;
+    chip.target = '_blank';
+    chip.rel = 'noopener noreferrer';
+    chip.style.display = 'inline-flex';
+    chip.style.alignItems = 'center';
+    chip.style.gap = '8px';
+    chip.style.fontSize = '16px';
+    chip.style.lineHeight = '1.2';
+    chip.style.color = THEME.colors.textSecondary;
+    chip.style.textDecoration = 'none';
+    chip.style.transition = 'color 0.2s ease, opacity 0.2s ease';
+    chip.style.cursor = 'pointer';
+    chip.style.minHeight = '44px';
+    chip.style.height = '44px';
+
+    if (this.isReelMode) {
+      chip.style.background = 'transparent';
+      chip.style.border = 'none';
+      chip.style.boxShadow = 'none';
+      chip.style.backdropFilter = 'none';
+      chip.style.color = '#ffffff';
+      chip.style.textShadow = '0 2px 8px rgba(0, 0, 0, 0.65)';
+    }
+
+    chip.addEventListener('click', (e) => {
+      e.stopPropagation();
+      this.studioOverlayClickTime = Date.now();
+      this.hideStudioOverlay(true);
+    });
+    chip.addEventListener('mouseenter', () => {
+      chip.style.color = this.isReelMode ? '#ffffff' : THEME.colors.textPrimary;
+    });
+    chip.addEventListener('mouseleave', () => {
+      chip.style.color = this.isReelMode ? '#ffffff' : THEME.colors.textSecondary;
+    });
+
+    const imageContainer = document.createElement('div');
+    imageContainer.style.width = '40px';
+    imageContainer.style.height = '40px';
+    imageContainer.style.borderRadius = '4px';
+    imageContainer.style.background = 'transparent';
+    imageContainer.style.display = 'flex';
+    imageContainer.style.alignItems = 'center';
+    imageContainer.style.justifyContent = 'center';
+    imageContainer.style.fontSize = '24px';
+    imageContainer.style.fontWeight = THEME.typography.weightTitle;
+    imageContainer.style.color = THEME.colors.textSecondary;
+    imageContainer.style.flexShrink = '0';
+    imageContainer.style.overflow = 'hidden';
+
+    if (studio.image_path) {
+      const imageSrc = normalizeMediaUrl(studio.image_path);
+      if (imageSrc) {
+        const img = document.createElement('img');
+        img.src = imageSrc;
+        img.alt = studio.name;
+        img.style.width = '100%';
+        img.style.height = '100%';
+        img.style.objectFit = 'contain';
+        imageContainer.appendChild(img);
+      } else {
+        imageContainer.textContent = studio.name.charAt(0).toUpperCase();
+      }
+    } else {
+      imageContainer.textContent = studio.name.charAt(0).toUpperCase();
+    }
+
+    chip.appendChild(imageContainer);
+    this.bindStudioHover(chip, studio);
 
     return chip;
   }
@@ -1179,14 +1290,15 @@ export abstract class BasePost {
    */
   private createOverlayImageSection(
     width: string, height: string, fallbackFontSize: string,
-    imagePath: string | undefined, name: string, logContext: string
+    imagePath: string | undefined, name: string, logContext: string,
+    objectFit: string = 'cover'
   ): HTMLElement {
     const imageSection = document.createElement('div');
     imageSection.style.width = width;
     imageSection.style.height = height;
     imageSection.style.minWidth = width;
     imageSection.style.minHeight = height;
-    imageSection.style.backgroundColor = THEME.colors.backgroundSecondary;
+    imageSection.style.backgroundColor = objectFit === 'contain' ? 'transparent' : THEME.colors.backgroundSecondary;
     imageSection.style.display = 'flex';
     imageSection.style.alignItems = 'center';
     imageSection.style.justifyContent = 'center';
@@ -1202,7 +1314,7 @@ export abstract class BasePost {
         img.alt = name;
         img.style.width = '100%';
         img.style.height = '100%';
-        img.style.objectFit = 'cover';
+        img.style.objectFit = objectFit as 'cover' | 'contain';
         img.style.objectPosition = 'center center';
         imageSection.appendChild(img);
         return imageSection;
@@ -2045,6 +2157,224 @@ export abstract class BasePost {
     }
   }
 
+  private createStudioOverlay(studioData: StudioExtended): HTMLElement {
+    const overlay = this.createOverlayContainer('studio-overlay', '400px', {
+      onMouseEnter: () => {
+        if (this.studioOverlayHideTimeout) {
+          clearTimeout(this.studioOverlayHideTimeout);
+          this.studioOverlayHideTimeout = undefined;
+        }
+      },
+      onMouseLeave: () => this.hideStudioOverlay(),
+      onClickBackground: () => this.hideStudioOverlay(true),
+    });
+
+    const imageSection = this.createOverlayImageSection(
+      '80px', '80px', '36px',
+      studioData.image_path, studioData.name, 'studio', 'contain'
+    );
+    imageSection.style.borderRadius = '4px';
+    overlay.appendChild(imageSection);
+
+    const contentSection = this.createOverlayContentSection();
+
+    const nameLink = this.createOverlayNameLink(
+      `${globalThis.location.origin}/studios/${studioData.id}`,
+      studioData.name
+    );
+    nameLink.style.marginBottom = '8px';
+    contentSection.appendChild(nameLink);
+
+    if (studioData.parent_studio) {
+      const parentRow = document.createElement('div');
+      parentRow.style.fontSize = '13px';
+      parentRow.style.color = THEME.colors.textSecondary;
+      parentRow.style.marginBottom = '6px';
+      const parentLink = document.createElement('a');
+      parentLink.href = `${globalThis.location.origin}/studios/${studioData.parent_studio.id}`;
+      parentLink.target = '_blank';
+      parentLink.rel = 'noopener noreferrer';
+      parentLink.textContent = studioData.parent_studio.name;
+      parentLink.style.color = THEME.colors.textSecondary;
+      parentLink.style.textDecoration = 'none';
+      parentLink.addEventListener('mouseenter', () => { parentLink.style.color = THEME.colors.accentPrimary; });
+      parentLink.addEventListener('mouseleave', () => { parentLink.style.color = THEME.colors.textSecondary; });
+      parentRow.appendChild(document.createTextNode('Part of '));
+      parentRow.appendChild(parentLink);
+      contentSection.appendChild(parentRow);
+    }
+
+    if (studioData.details) {
+      const details = document.createElement('p');
+      details.textContent = studioData.details;
+      details.style.margin = '0 0 6px';
+      details.style.fontSize = '13px';
+      details.style.color = THEME.colors.textSecondary;
+      details.style.lineHeight = '1.4';
+      details.style.overflow = 'hidden';
+      details.style.display = '-webkit-box';
+      details.style.webkitLineClamp = '3';
+      (details.style as CSSStyleDeclaration & { WebkitBoxOrient: string }).WebkitBoxOrient = 'vertical';
+      contentSection.appendChild(details);
+    }
+
+    if (studioData.url) {
+      const urlLink = document.createElement('a');
+      urlLink.href = studioData.url;
+      urlLink.target = '_blank';
+      urlLink.rel = 'noopener noreferrer';
+      urlLink.textContent = studioData.url.replace(/^https?:\/\//, '').replace(/\/$/, '');
+      urlLink.style.fontSize = '12px';
+      urlLink.style.color = THEME.colors.accentPrimary;
+      urlLink.style.textDecoration = 'none';
+      urlLink.style.overflow = 'hidden';
+      urlLink.style.textOverflow = 'ellipsis';
+      urlLink.style.whiteSpace = 'nowrap';
+      urlLink.style.display = 'block';
+      urlLink.addEventListener('mouseenter', () => { urlLink.style.textDecoration = 'underline'; });
+      urlLink.addEventListener('mouseleave', () => { urlLink.style.textDecoration = 'none'; });
+      contentSection.appendChild(urlLink);
+    }
+
+    overlay.appendChild(contentSection);
+    return overlay;
+  }
+
+  private bindStudioHover(
+    chip: HTMLElement,
+    studio: { id: string; name: string }
+  ): void {
+    const canHover = typeof globalThis !== 'undefined'
+      && 'matchMedia' in globalThis
+      && globalThis.matchMedia('(hover: hover)').matches;
+    if (!this.api || !canHover) {
+      return;
+    }
+
+    chip.addEventListener('mouseenter', () => {
+      if (this.studioOverlayHideTimeout) {
+        clearTimeout(this.studioOverlayHideTimeout);
+        this.studioOverlayHideTimeout = undefined;
+      }
+      this.showStudioOverlay(studio.id, chip);
+    });
+
+    chip.addEventListener('mouseleave', (e) => {
+      const relatedTarget = e.relatedTarget as HTMLElement | null;
+      const isMovingToAnotherChip = relatedTarget?.closest('.studio-chip') !== null;
+      if (!isMovingToAnotherChip) {
+        this.studioOverlayHideTimeout = setTimeout(() => {
+          if (!this.studioOverlay?.matches(':hover')) {
+            this.hideStudioOverlay();
+          }
+          this.studioOverlayHideTimeout = undefined;
+        }, 100) as unknown as number;
+      }
+    });
+  }
+
+  private showStudioOverlay(studioId: string, chipElement: HTMLElement): void {
+    if (this.studioOverlayClickTime && Date.now() - this.studioOverlayClickTime < 300) {
+      return;
+    }
+
+    if (this.studioOverlayTimeout) {
+      clearTimeout(this.studioOverlayTimeout);
+      this.studioOverlayTimeout = undefined;
+    }
+
+    if (this.currentHoveredStudioId === studioId && this.studioOverlay) {
+      return;
+    }
+
+    if (this.studioOverlayHideTimeout) {
+      clearTimeout(this.studioOverlayHideTimeout);
+      this.studioOverlayHideTimeout = undefined;
+    }
+
+    if (this.studioOverlayAbortController) {
+      this.studioOverlayAbortController.abort();
+      this.studioOverlayAbortController = undefined;
+    }
+
+    const hadOverlay = !!this.studioOverlay;
+    this.hideStudioOverlay(true);
+
+    this.currentHoveredStudioId = studioId;
+    const delay = hadOverlay ? 50 : 600;
+    const timeoutId = setTimeout(async () => {
+      if (this.currentHoveredStudioId !== studioId) return;
+      if (!this.api) return;
+
+      this.studioOverlayAbortController = new AbortController();
+
+      try {
+        const studioData = await this.api.getStudioDetails(studioId, this.studioOverlayAbortController.signal);
+
+        if (!studioData || this.currentHoveredStudioId !== studioId) return;
+
+        const overlay = this.createStudioOverlay(studioData);
+        this.studioOverlay = overlay;
+        document.body.appendChild(overlay);
+        this.positionOverlay(overlay, chipElement);
+
+        requestAnimationFrame(() => {
+          if (overlay.parentElement) {
+            overlay.style.opacity = '1';
+          }
+        });
+      } catch (error) {
+        if (error instanceof Error && error.name === 'AbortError') return;
+        console.warn('Failed to fetch studio details:', error);
+      }
+    }, delay) as unknown as number;
+    this.studioOverlayTimeout = timeoutId;
+  }
+
+  private hideStudioOverlay(immediate: boolean = false): void {
+    if (this.studioOverlayTimeout) {
+      clearTimeout(this.studioOverlayTimeout);
+      this.studioOverlayTimeout = undefined;
+    }
+
+    if (this.studioOverlayHideTimeout) {
+      clearTimeout(this.studioOverlayHideTimeout);
+      this.studioOverlayHideTimeout = undefined;
+    }
+
+    if (this.studioOverlay) {
+      if (immediate) {
+        if (this.studioOverlay.parentElement) {
+          try {
+            this.studioOverlay.remove();
+          } catch {
+            // Element may have already been removed
+          }
+        }
+        this.studioOverlay = undefined;
+      } else {
+        this.studioOverlay.style.opacity = '0';
+        setTimeout(() => {
+          if (this.studioOverlay?.parentElement) {
+            try {
+              this.studioOverlay.remove();
+            } catch {
+              // Element may have already been removed
+            }
+          }
+          this.studioOverlay = undefined;
+        }, 200) as unknown as number;
+      }
+    }
+
+    this.currentHoveredStudioId = undefined;
+
+    if (this.studioOverlayAbortController) {
+      this.studioOverlayAbortController.abort();
+      this.studioOverlayAbortController = undefined;
+    }
+  }
+
   /**
    * Create a tag chip element (displayed as hashtag with unique styling)
    */
@@ -2187,23 +2517,30 @@ export abstract class BasePost {
   protected buildImageHeader(options: {
     performers?: Performer[];
     tags?: Tag[];
+    studio?: { id: string; name: string; image_path?: string };
     favoriteTagName?: string;
   }): HTMLElement {
     const header = this.createHeaderContainer();
 
-    // Performer section - name and image
-    if (options.performers?.length) {
-      const performersSection = this.createPerformersContainer(options.performers.length);
-      this.appendPerformerChips(performersSection, options.performers);
+    // Performer chips section
+    const hasPerformers = !!options.performers?.length;
+    if (hasPerformers) {
+      const performersSection = this.createPerformersContainer(options.performers!.length);
+      this.appendPerformerChips(performersSection, options.performers!);
       header.appendChild(performersSection);
     }
 
-    // Tag chips section - clean line without box
-    if (options.tags?.length) {
+    // Tag chips section (includes studio chip at the start)
+    const hasStudio = !!options.studio && this.showStudioChips;
+    if (hasStudio || options.tags?.length) {
       const tagsSection = document.createElement('div');
       tagsSection.className = 'video-post__tags';
-      const hasPerformers = !!options.performers?.length;
-      this.appendTagChips(tagsSection, options.tags, options.favoriteTagName, hasPerformers);
+      if (hasStudio) {
+        tagsSection.appendChild(this.createStudioChip(options.studio!));
+      }
+      if (options.tags?.length) {
+        this.appendTagChips(tagsSection, options.tags, options.favoriteTagName, hasPerformers);
+      }
       if (this.isReelMode) {
         this.applyReelModeTagStyles(tagsSection);
       }

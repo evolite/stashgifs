@@ -48,6 +48,7 @@ const DEFAULT_SETTINGS: FeedSettings = {
   themeAccent: THEME_DEFAULTS.accentPrimary,
   showVerifiedCheckmarks: true,
   showProductionAge: false,
+  showStudioChips: true,
   excludedTagNames: [],
   imagesInGalleryOnly: false,
   galleryIds: [],
@@ -684,6 +685,7 @@ export class FeedContainer {
   private handleSettingsChange(newSettings: Partial<FeedSettings>): void {
     const previousShowVerified = this.settings.showVerifiedCheckmarks;
     const previousShowProductionAge = this.settings.showProductionAge;
+    const previousShowStudioChips = this.settings.showStudioChips;
     const previousExcludedTags = this.normalizeExcludedTagNames(this.settings.excludedTagNames ?? []);
     const previousOrientation = this.normalizeOrientationFilter(this.settings.orientationFilter ?? []);
 
@@ -703,7 +705,7 @@ export class FeedContainer {
 
     const reelModeChanged = newSettings.reelMode !== undefined;
     this.handleLayoutSettingsChange(newSettings, reelModeChanged);
-    this.handlePostDisplaySettingsChange(newSettings, updatedSettings, previousShowVerified, previousShowProductionAge);
+    this.handlePostDisplaySettingsChange(newSettings, updatedSettings, previousShowVerified, previousShowProductionAge, previousShowStudioChips);
 
     const excludedTagsChanged = !this.areExcludedTagNamesEqual(
       previousExcludedTags,
@@ -738,7 +740,8 @@ export class FeedContainer {
     newSettings: Partial<FeedSettings>,
     updatedSettings: FeedSettings,
     previousShowVerified: boolean | undefined,
-    previousShowProductionAge: boolean | undefined
+    previousShowProductionAge: boolean | undefined,
+    previousShowStudioChips: boolean | undefined
   ): void {
     if (newSettings.showVerifiedCheckmarks !== undefined && updatedSettings.showVerifiedCheckmarks !== previousShowVerified) {
       for (const post of this.posts.values()) {
@@ -748,6 +751,12 @@ export class FeedContainer {
     if (newSettings.showProductionAge !== undefined && updatedSettings.showProductionAge !== previousShowProductionAge) {
       for (const post of this.posts.values()) {
         post.setShowProductionAge?.(updatedSettings.showProductionAge === true);
+      }
+    }
+    if (newSettings.showStudioChips !== undefined) {
+      const show = updatedSettings.showStudioChips !== false;
+      for (const post of this.posts.values()) {
+        post.setShowStudioChips?.(show);
       }
     }
   }
@@ -1289,7 +1298,7 @@ export class FeedContainer {
   private createListButton(
     label: string,
     onSelect: () => void | Promise<void>,
-    options: { subtitle?: string; leadingText?: string; leadingImage?: string } = {}
+    options: { subtitle?: string; leadingText?: string; leadingImage?: string; imageObjectFit?: string } = {}
   ): HTMLElement {
     const button = document.createElement('button');
     button.type = 'button';
@@ -1305,6 +1314,9 @@ export class FeedContainer {
           const img = document.createElement('img');
           img.src = normalizedImage;
           img.alt = label;
+          if (options.imageObjectFit) {
+            img.style.objectFit = options.imageObjectFit as 'contain' | 'cover';
+          }
           leading.appendChild(img);
         } else {
           console.warn('FeedContainer: Invalid leading image URL', { url: options.leadingImage, label });
@@ -1593,7 +1605,7 @@ export class FeedContainer {
           this.debouncedApplyFilters();
           this.focusSearchInput();
         },
-        { leadingImage: imageSrc, leadingText: imageSrc ? undefined : studio.name.charAt(0).toUpperCase() }
+        { leadingImage: imageSrc, leadingText: imageSrc ? undefined : studio.name.charAt(0).toUpperCase(), imageObjectFit: 'contain' }
       );
       if (this.selectedStudioIds.has(studioId)) {
         btn.classList.add('feed-list-button--selected');
@@ -3542,6 +3554,7 @@ export class FeedContainer {
       onTagChipClick: (tagId: number, tagName: string) => { this.handleTagChipClick(tagId, tagName); },
       showVerifiedCheckmarks: this.settings.showVerifiedCheckmarks !== false,
       showProductionAge: this.settings.showProductionAge === true,
+      showStudioChips: this.settings.showStudioChips !== false,
       ratingSystemConfig: this.ratingSystemConfig,
       reelMode: this.settings.reelMode === true,
     };
@@ -4919,6 +4932,7 @@ export class FeedContainer {
       height,
       aspectRatio,
       paths: graphqlImage.paths,
+      studio: graphqlImage.studio,
       tags: graphqlImage.tags,
       performers: graphqlImage.performers?.map(p => ({
         id: p.id,
@@ -7632,6 +7646,7 @@ export class FeedContainer {
     const previousExcludedTags = this.normalizeExcludedTagNames(this.settings.excludedTagNames ?? []);
     const previousShowVerified = this.settings.showVerifiedCheckmarks;
     const previousShowProductionAge = this.settings.showProductionAge;
+    const previousShowStudioChips = this.settings.showStudioChips;
     const previousOrientation = this.normalizeOrientationFilter(this.settings.orientationFilter ?? []);
     this.settings = { ...this.settings, ...newSettings };
 
@@ -7644,7 +7659,7 @@ export class FeedContainer {
     }
     this.refreshAutoplayAfterLayout();
 
-    this.applyPostDisplaySettings(newSettings, previousShowVerified, previousShowProductionAge);
+    this.applyPostDisplaySettings(newSettings, previousShowVerified, previousShowProductionAge, previousShowStudioChips);
     this.reloadFeedIfFiltersChanged(newSettings, previousExcludedTags, previousOrientation);
   }
 
@@ -7657,7 +7672,8 @@ export class FeedContainer {
   private applyPostDisplaySettings(
     newSettings: Partial<FeedSettings>,
     previousShowVerified: boolean | undefined,
-    previousShowProductionAge: boolean | undefined
+    previousShowProductionAge: boolean | undefined,
+    previousShowStudioChips: boolean | undefined
   ): void {
     if (newSettings.showVerifiedCheckmarks !== undefined
       && this.settings.showVerifiedCheckmarks !== previousShowVerified) {
@@ -7669,6 +7685,13 @@ export class FeedContainer {
       && this.settings.showProductionAge !== previousShowProductionAge) {
       for (const post of this.posts.values()) {
         post.setShowProductionAge?.(this.settings.showProductionAge === true);
+      }
+    }
+    if (newSettings.showStudioChips !== undefined
+      && this.settings.showStudioChips !== previousShowStudioChips) {
+      const show = this.settings.showStudioChips !== false;
+      for (const post of this.posts.values()) {
+        post.setShowStudioChips?.(show);
       }
     }
   }

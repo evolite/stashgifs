@@ -21,6 +21,8 @@ import {
   FindPerformersResponse,
   FindPerformerResponse,
   PerformerExtended,
+  FindStudioResponse,
+  StudioExtended,
   FindSceneResponse,
   FindImagesResponse,
   FindGalleriesResponse,
@@ -474,6 +476,21 @@ export class StashAPI {
       return performers[0] ?? null;
     } catch (error: unknown) {
       return this.handleError('getPerformerDetails', error, signal, null);
+    }
+  }
+
+  async getStudioDetails(studioId: string, signal?: AbortSignal): Promise<StudioExtended | null> {
+    if (this.isAborted(signal)) return null;
+    try {
+      const result = await this.gqlClient.query<FindStudioResponse>({
+        query: queries.FIND_STUDIO,
+        variables: { id: studioId },
+        signal,
+      });
+      if (this.isAborted(signal)) return null;
+      return result.data?.findStudio ?? null;
+    } catch (error: unknown) {
+      return this.handleError('getStudioDetails', error, signal, null);
     }
   }
 

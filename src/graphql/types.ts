@@ -288,6 +288,29 @@ export interface FindPerformerResponse {
 }
 
 /**
+ * Extended Studio type (for hover overlay)
+ */
+export interface StudioExtended {
+  id: string;
+  name: string;
+  url?: string;
+  details?: string;
+  image_path?: string;
+  rating100?: number;
+  favorite?: boolean;
+  aliases?: string[];
+  parent_studio?: { id: string; name: string };
+  stash_ids?: Array<{ stash_id: string }>;
+}
+
+/**
+ * FindStudio response
+ */
+export interface FindStudioResponse {
+  findStudio: StudioExtended | null;
+}
+
+/**
  * FindScene response
  */
 export interface FindSceneResponse {

@@ -770,6 +770,27 @@ export class SettingsPage {
     layoutSection.appendChild(productionAgeContainer);
     (this as any).showProductionAgeToggle = productionAgeToggle;
 
+    const studioChipsContainer = document.createElement('div');
+    studioChipsContainer.style.display = 'flex';
+    studioChipsContainer.style.justifyContent = 'space-between';
+    studioChipsContainer.style.alignItems = 'center';
+    studioChipsContainer.style.marginBottom = '16px';
+
+    studioChipsContainer.appendChild(
+      buildInfoLabel(
+        'Studio Chips',
+        'Shows the studio logo and name alongside performer chips.'
+      )
+    );
+
+    const { container: studioChipsToggleContainer, input: studioChipsToggle } = this.createToggleSwitch(
+      this.settings.showStudioChips !== false,
+      () => this.saveSettings()
+    );
+    studioChipsContainer.appendChild(studioChipsToggleContainer);
+    layoutSection.appendChild(studioChipsContainer);
+    (this as any).showStudioChipsToggle = studioChipsToggle;
+
     // ── Content Types Section ──────────────────────────────────────────────
     const contentTypesSection = document.createElement('div');
     contentTypesSection.style.marginBottom = '24px';
@@ -1472,7 +1493,7 @@ export class SettingsPage {
       'shortFormIncludeToggle', 'reelModeToggle', 'hdVideoToggle',
       'portraitToggle', 'landscapeToggle',
       'themeBackgroundInput', 'themePrimaryInput', 'themeSecondaryInput', 'themeAccentInput',
-      'showVerifiedCheckmarksToggle', 'showProductionAgeToggle', 'excludedTagsInput',
+      'showVerifiedCheckmarksToggle', 'showProductionAgeToggle', 'showStudioChipsToggle', 'excludedTagsInput',
       'includeSubtagsToggle', 'seenHistorySizeInput', 'contentLimitInput',
     ];
     const inputs: Record<string, HTMLInputElement> = {};
@@ -1530,6 +1551,7 @@ export class SettingsPage {
       themeAccent: inputs.themeAccentInput.value,
       showVerifiedCheckmarks: inputs.showVerifiedCheckmarksToggle.checked,
       showProductionAge: inputs.showProductionAgeToggle.checked,
+      showStudioChips: inputs.showStudioChipsToggle.checked,
       excludedTagNames,
       includeSubtags: inputs.includeSubtagsToggle.checked,
       imagesInGalleryOnly: galleryOnlyToggle?.checked ?? false,

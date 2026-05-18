@@ -142,6 +142,31 @@ export const FIND_STUDIOS = `
 `;
 
 /**
+ * Find a single studio by ID (for hover overlay)
+ */
+export const FIND_STUDIO = `
+  query FindStudio($id: ID!) {
+    findStudio(id: $id) {
+      id
+      name
+      url
+      details
+      image_path
+      rating100
+      favorite
+      aliases
+      parent_studio {
+        id
+        name
+      }
+      stash_ids {
+        stash_id
+      }
+    }
+  }
+`;
+
+/**
  * Find performers
  */
 export const FIND_PERFORMERS = `

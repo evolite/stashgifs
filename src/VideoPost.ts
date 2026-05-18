@@ -217,22 +217,28 @@ export class VideoPost extends VideoPostBase {
   protected createHeader(): HTMLElement {
     const header = this.createHeaderContainer();
 
-    // Performer section - name and image
+    // Performer chips section
     if (this.data.marker.scene.performers && this.data.marker.scene.performers.length > 0) {
       const performersSection = this.createPerformersContainer(this.data.marker.scene.performers.length);
       for (const performer of this.data.marker.scene.performers) {
-        const chip = this.createPerformerChip(performer);
-        performersSection.appendChild(chip);
+        performersSection.appendChild(this.createPerformerChip(performer));
       }
       header.appendChild(performersSection);
     }
 
-    // Tag chips section - clean line without box
+    // Tag chips section (includes studio chip at the start)
     // Skip in shuffle mode UNLESS a marker has been created (to show the assigned tag)
-    if (!this.useShuffleMode || this.hasCreatedMarker) {
+    const studio = this.data.marker.scene.studio;
+    const hasStudio = !!studio && this.showStudioChips;
+    if (hasStudio || (!this.useShuffleMode || this.hasCreatedMarker)) {
       const tagsSection = document.createElement('div');
       tagsSection.className = 'video-post__tags';
-      this.addTagChips(tagsSection);
+      if (hasStudio) {
+        tagsSection.appendChild(this.createStudioChip(studio!));
+      }
+      if (!this.useShuffleMode || this.hasCreatedMarker) {
+        this.addTagChips(tagsSection);
+      }
       if (this.isReelMode) {
         this.applyReelModeTagStyles(tagsSection);
       }
