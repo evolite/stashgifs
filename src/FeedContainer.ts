@@ -2916,6 +2916,19 @@ export class FeedContainer {
     this.scrollToTop();
   }
 
+  private handleStudioChipClick(studioId: number, studioName: string): void {
+    this.selectedSavedFilter = undefined;
+    if (this.selectedStudioIds.has(studioId)) {
+      this.selectedStudioIds.delete(studioId);
+    } else {
+      this.selectedStudioIds.set(studioId, studioName);
+    }
+    this.updateActivePills();
+    this.updateQueryInputDisplay();
+    this.debouncedApplyFilters();
+    this.scrollToTop();
+  }
+
   /**
    * Get current query text from active input element
    */
@@ -3552,6 +3565,7 @@ export class FeedContainer {
       visibilityManager: this.visibilityManager,
       onPerformerChipClick: (performerId: number, performerName: string) => { this.handlePerformerChipClick(performerId, performerName); },
       onTagChipClick: (tagId: number, tagName: string) => { this.handleTagChipClick(tagId, tagName); },
+      onStudioChipClick: (studioId: number, studioName: string) => { this.handleStudioChipClick(studioId, studioName); },
       showVerifiedCheckmarks: this.settings.showVerifiedCheckmarks !== false,
       showProductionAge: this.settings.showProductionAge === true,
       showStudioChips: this.settings.showStudioChips !== false,

@@ -20,6 +20,7 @@ export interface BasePostOptions {
   visibilityManager?: VisibilityManager;
   onPerformerChipClick?: (performerId: number, performerName: string) => void | Promise<void>;
   onTagChipClick?: (tagId: number, tagName: string) => void | Promise<void>;
+  onStudioChipClick?: (studioId: number, studioName: string) => void | Promise<void>;
   showVerifiedCheckmarks?: boolean;
   showProductionAge?: boolean;
   showStudioChips?: boolean;
@@ -92,6 +93,7 @@ export abstract class BasePost {
   protected readonly hoverHandlers: Map<HTMLElement, HoverHandlers> = new Map();
   protected readonly onPerformerChipClick?: (performerId: number, performerName: string) => void | Promise<void>;
   protected readonly onTagChipClick?: (tagId: number, tagName: string) => void | Promise<void>;
+  protected readonly onStudioChipClick?: (studioId: number, studioName: string) => void | Promise<void>;
   protected addTagButton?: HTMLElement;
   protected heartButton?: HTMLElement;
   protected buttonGroup?: HTMLElement;
@@ -148,6 +150,7 @@ export abstract class BasePost {
     this.visibilityManager = options?.visibilityManager;
     this.onPerformerChipClick = options?.onPerformerChipClick;
     this.onTagChipClick = options?.onTagChipClick;
+    this.onStudioChipClick = options?.onStudioChipClick;
     this.showVerifiedCheckmarks = options?.showVerifiedCheckmarks !== false;
     this.showProductionAge = options?.showProductionAge === true;
     this.showStudioChips = options?.showStudioChips !== false;
@@ -859,9 +862,16 @@ export abstract class BasePost {
     const chip = this.buildBaseChipElement('studio-chip', `${globalThis.location.origin}/studios/${studio.id}`);
 
     chip.addEventListener('click', (e) => {
+      e.preventDefault();
       e.stopPropagation();
       this.studioOverlayClickTime = Date.now();
       this.hideStudioOverlay(true);
+      if (this.onStudioChipClick) {
+        const studioId = Number.parseInt(studio.id, 10);
+        if (!Number.isNaN(studioId)) {
+          this.onStudioChipClick(studioId, studio.name);
+        }
+      }
     });
 
     chip.appendChild(this.buildChipImageContainer({
