@@ -883,8 +883,22 @@ export class SettingsPage {
     randomHint.style.color = THEME.colors.textSecondary;
     randomHint.style.fontStyle = 'italic';
 
+    const randomMarkersRow = document.createElement('div');
+    randomMarkersRow.style.display = 'flex';
+    randomMarkersRow.style.justifyContent = 'space-between';
+    randomMarkersRow.style.alignItems = 'center';
+    randomMarkersRow.style.marginTop = '8px';
+    const { container: randomIncludeScenesWithMarkersContainer, input: randomIncludeScenesWithMarkersToggle } = this.createToggleSwitch(
+      this.settings.randomIncludeScenesWithMarkers === true,
+      () => this.saveSettings()
+    );
+    randomMarkersRow.appendChild(buildInfoLabel('Include scenes with markers', 'Also show scenes that already have markers, played from a random position.'));
+    randomMarkersRow.appendChild(randomIncludeScenesWithMarkersContainer);
+    (this as any).randomIncludeScenesWithMarkersToggle = randomIncludeScenesWithMarkersToggle;
+
     randomWrapper.appendChild(randomRow);
     randomWrapper.appendChild(randomHint);
+    randomWrapper.appendChild(randomMarkersRow);
     contentTypesSection.appendChild(randomWrapper);
 
     layoutContent.appendChild(contentTypesSection);
@@ -1489,7 +1503,7 @@ export class SettingsPage {
 
   private collectFormInputs(): Record<string, HTMLInputElement> | undefined {
     const inputNames = [
-      'fileTypesInput', 'maxDurationInput', 'includeMarkersToggle', 'includeRandomToggle', 'includeImagesToggle',
+      'fileTypesInput', 'maxDurationInput', 'includeMarkersToggle', 'includeRandomToggle', 'randomIncludeScenesWithMarkersToggle', 'includeImagesToggle',
       'shortFormIncludeToggle', 'reelModeToggle', 'hdVideoToggle',
       'portraitToggle', 'landscapeToggle',
       'themeBackgroundInput', 'themePrimaryInput', 'themeSecondaryInput', 'themeAccentInput',
@@ -1537,6 +1551,7 @@ export class SettingsPage {
       hdMode: inputs.hdVideoToggle.checked,
       includeMarkersInFeed: inputs.includeMarkersToggle.checked,
       includeRandomInFeed: inputs.includeRandomToggle.checked,
+      randomIncludeScenesWithMarkers: inputs.randomIncludeScenesWithMarkersToggle.checked,
       includeImagesInFeed: inputs.includeImagesToggle.checked,
       enabledFileTypes: extensions.length > 0 ? extensions : ['.jpg', '.png', '.gif', '.mp4', '.m4v', '.webm'],
       shortFormInHDMode: inputs.shortFormIncludeToggle.checked,

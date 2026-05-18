@@ -4318,7 +4318,7 @@ export class FeedContainer {
       ...currentFilters,
       limit,
       shuffleMode: true,
-      includeScenesWithoutMarkers: true
+      includeScenesWithoutMarkers: !this.settings.randomIncludeScenesWithMarkers
     };
     const result = await this.api.fetchSceneMarkers(filters, signal);
     return {

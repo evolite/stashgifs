@@ -109,6 +109,7 @@ export interface FeedSettings {
   enabledFileTypes?: string[]; // File extensions to include (e.g., ['.gif', '.webm']), default: ['.gif']
   includeMarkersInFeed?: boolean; // Whether to include scene markers in feed, default: true
   includeRandomInFeed?: boolean; // Include random scenes played from a random timeframe, default: false
+  randomIncludeScenesWithMarkers?: boolean; // Random mode includes scenes that have existing markers, default: false
   includeImagesInFeed?: boolean; // Whether to include images in feed, default: true
   imagesOnly?: boolean; // When true, only load images and skip videos
   orientationFilter?: ('landscape' | 'portrait' | 'square')[]; // Filter content by orientation
