@@ -234,7 +234,7 @@ export class VideoPost extends VideoPostBase {
       const tagsSection = document.createElement('div');
       tagsSection.className = 'video-post__tags';
       if (hasStudio) {
-        tagsSection.appendChild(this.createStudioChip(studio!));
+        tagsSection.appendChild(this.createStudioChip(studio));
       }
       if (!this.useShuffleMode || this.hasCreatedMarker) {
         this.addTagChips(tagsSection);

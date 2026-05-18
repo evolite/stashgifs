@@ -856,31 +856,7 @@ export abstract class BasePost {
   }
 
   protected createStudioChip(studio: { id: string; name: string; image_path?: string }): HTMLElement {
-    const chip = document.createElement('a');
-    chip.className = 'studio-chip';
-    chip.href = `${globalThis.location.origin}/studios/${studio.id}`;
-    chip.target = '_blank';
-    chip.rel = 'noopener noreferrer';
-    chip.style.display = 'inline-flex';
-    chip.style.alignItems = 'center';
-    chip.style.gap = '8px';
-    chip.style.fontSize = '16px';
-    chip.style.lineHeight = '1.2';
-    chip.style.color = THEME.colors.textSecondary;
-    chip.style.textDecoration = 'none';
-    chip.style.transition = 'color 0.2s ease, opacity 0.2s ease';
-    chip.style.cursor = 'pointer';
-    chip.style.minHeight = '44px';
-    chip.style.height = '44px';
-
-    if (this.isReelMode) {
-      chip.style.background = 'transparent';
-      chip.style.border = 'none';
-      chip.style.boxShadow = 'none';
-      chip.style.backdropFilter = 'none';
-      chip.style.color = '#ffffff';
-      chip.style.textShadow = '0 2px 8px rgba(0, 0, 0, 0.65)';
-    }
+    const chip = this.buildBaseChipElement('studio-chip', `${globalThis.location.origin}/studios/${studio.id}`);
 
     chip.addEventListener('click', (e) => {
       e.stopPropagation();
@@ -951,10 +927,10 @@ export abstract class BasePost {
     return verifiedBadge;
   }
 
-  private buildPerformerChipBase(performer: { id: string; name: string }): HTMLElement {
+  private buildBaseChipElement(className: string, href: string): HTMLElement {
     const chip = document.createElement('a');
-    chip.className = 'performer-chip';
-    chip.href = this.getPerformerLink(performer.id);
+    chip.className = className;
+    chip.href = href;
     chip.target = '_blank';
     chip.rel = 'noopener noreferrer';
     chip.style.display = 'inline-flex';
@@ -979,6 +955,10 @@ export abstract class BasePost {
     }
 
     return chip;
+  }
+
+  private buildPerformerChipBase(performer: { id: string; name: string }): HTMLElement {
+    return this.buildBaseChipElement('performer-chip', this.getPerformerLink(performer.id));
   }
 
   private bindPerformerChipInteractions(
