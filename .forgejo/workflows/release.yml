@@ -85,7 +85,7 @@ jobs:
             -H "Authorization: token ${{ secrets.CODEBERG_TOKEN }}" \
             -H "Content-Type: application/json" \
             "https://codeberg.org/api/v1/repos/surging9143/stashgifs/releases" \
-            -d "$(node -e "process.stdout.write(JSON.stringify({tag_name:'${{ github.ref_name }}',name:'${{ github.ref_name }}',body:process.env.RELEASE_NOTES,target_commitish:'$SHA',draft:false,prerelease:false}))" )")
+            -d "$(node -e "process.stdout.write(JSON.stringify({tag_name:'${{ github.ref_name }}',name:'${{ github.ref_name }}',body:process.env.RELEASE_NOTES,target_commitish:'$SHA',draft:false,prerelease:false,make_latest:"true"}))" )")
           echo "id=$(echo "$RESP" | python3 -c "import sys,json; print(json.load(sys.stdin)['id'])")" >> $GITHUB_OUTPUT
 
       - name: Upload zip asset
