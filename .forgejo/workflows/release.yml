@@ -17,9 +17,26 @@ jobs:
 
       - name: Install git-cliff
         run: |
+          set -euo pipefail
           GC_VER=$(curl -sSf https://api.github.com/repos/orhun/git-cliff/releases/latest | python3 -c "import sys,json; print(json.load(sys.stdin)['tag_name'][1:])")
+          INSTALL_DIR="$HOME/.local/bin"
+          mkdir -p "$INSTALL_DIR"
+          TMP_DIR=$(mktemp -d)
           curl -sSfL "https://github.com/orhun/git-cliff/releases/download/v${GC_VER}/git-cliff-${GC_VER}-x86_64-unknown-linux-musl.tar.gz" \
-            | tar -xz --wildcards '*/git-cliff' --strip-components=1 -C /usr/local/bin/
+            -o "$TMP_DIR/git-cliff.tar.gz"
+          tar -xzf "$TMP_DIR/git-cliff.tar.gz" -C "$TMP_DIR"
+          BIN_PATH=$(find "$TMP_DIR" -type f -name git-cliff | head -n1)
+          if [ -z "$BIN_PATH" ]; then
+            echo "git-cliff binary not found in extracted archive" >&2
+            exit 1
+          fi
+          install -m 0755 "$BIN_PATH" "$INSTALL_DIR/git-cliff"
+          rm -rf "$TMP_DIR"
+          # Register install dir on PATH for all subsequent steps (act/Forgejo native way).
+          echo "$INSTALL_DIR" >> "$GITHUB_PATH"
+          # Also export for the remainder of this step in case GITHUB_PATH is honored lazily.
+          export PATH="$INSTALL_DIR:$PATH"
+          "$INSTALL_DIR/git-cliff" --version
 
       - name: Bump version
         run: |
