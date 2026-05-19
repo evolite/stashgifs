@@ -3023,6 +3023,7 @@ export class FeedContainer {
       limit: FeedContainer.CONTENT_LOAD_LIMIT,
       offset: 0,
       tagDepth: this.settings.includeSubtags ? -1 : 0,
+      studioDepth: this.settings.includeSubtags ? -1 : 0,
     };
     this.currentFilters = newFilters;
     await this.loadVideos(newFilters, false, loadSignal);
@@ -3086,6 +3087,7 @@ export class FeedContainer {
       limit: FeedContainer.CONTENT_LOAD_LIMIT,
       offset: 0,
       tagDepth: this.settings.includeSubtags ? -1 : 0,
+      studioDepth: this.settings.includeSubtags ? -1 : 0,
     };
     this.currentFilters = newFilters;
     this.loadVideos(newFilters, false).catch((e) => console.error('Apply filters failed', e));
@@ -4894,6 +4896,7 @@ export class FeedContainer {
         tagIds?: string[];
         excludedTagIds?: string[];
         studioIds?: string[];
+        studioDepth?: number;
       } = {};
 
       if (performerIds.length > 0) {
@@ -4911,6 +4914,8 @@ export class FeedContainer {
       if (studioIds.length > 0) {
         imageFilters.studioIds = studioIds;
       }
+
+      imageFilters.studioDepth = this.settings.includeSubtags ? -1 : 0;
 
       const imageFiltersWithOrientation = {
         ...imageFilters,

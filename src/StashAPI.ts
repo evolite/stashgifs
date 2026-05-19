@@ -917,9 +917,9 @@ export class StashAPI {
       .filter((value): value is string => Boolean(value));
   }
 
-  private applyStudiosToSceneFilter(targetFilter: SceneFilterInput, studioIds: string[]): void {
+  private applyStudiosToSceneFilter(targetFilter: SceneFilterInput, studioIds: string[], depth: number = 0): void {
     if (studioIds.length > 0) {
-      targetFilter.studios = { value: studioIds, modifier: 'INCLUDES_ALL' };
+      targetFilter.studios = { value: studioIds, modifier: 'INCLUDES_ALL', depth };
     }
   }
 
@@ -977,12 +977,13 @@ export class StashAPI {
     this.applyPerformersToFilter(targetFilter, performerIds);
 
     if (studioIds.length > 0) {
+      const studioDepth = filters?.studioDepth ?? 0;
       if (options.isMarkerFilter) {
         const markerFilter = targetFilter as SceneMarkerFilterInput;
         markerFilter.scene_filter ??= {};
-        this.applyStudiosToSceneFilter(markerFilter.scene_filter, studioIds);
+        this.applyStudiosToSceneFilter(markerFilter.scene_filter, studioIds, studioDepth);
       } else {
-        this.applyStudiosToSceneFilter(targetFilter as SceneFilterInput, studioIds);
+        this.applyStudiosToSceneFilter(targetFilter as SceneFilterInput, studioIds, studioDepth);
       }
     }
   }
@@ -2289,6 +2290,7 @@ export class StashAPI {
       tagIds?: string[];
       excludedTagIds?: string[];
       studioIds?: string[];
+      studioDepth?: number;
       orientationFilter?: ImageOrientation[];
       imagesInGalleryOnly?: boolean;
       galleryIds?: string[];
@@ -2333,7 +2335,7 @@ export class StashAPI {
     }
 
     if (filters?.studioIds && filters.studioIds.length > 0) {
-      imageFilter.studios = { value: filters.studioIds, modifier: 'INCLUDES_ALL' };
+      imageFilter.studios = { value: filters.studioIds, modifier: 'INCLUDES_ALL', depth: filters.studioDepth ?? 0 };
     }
 
     return imageFilter;
@@ -2354,6 +2356,7 @@ export class StashAPI {
       tagIds?: string[];
       excludedTagIds?: string[];
       studioIds?: string[];
+      studioDepth?: number;
       orientationFilter?: ImageOrientation[];
       sortSeed?: string;
       imagesInGalleryOnly?: boolean;

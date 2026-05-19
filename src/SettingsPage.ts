@@ -1319,7 +1319,7 @@ export class SettingsPage {
     includeSubtagsContainer.style.justifyContent = 'space-between';
     includeSubtagsContainer.style.alignItems = 'center';
     includeSubtagsContainer.style.marginBottom = '16px';
-    includeSubtagsContainer.appendChild(buildInfoLabel('Include Subtags', 'When searching by tag, also include content tagged with any descendant subtag.'));
+    includeSubtagsContainer.appendChild(buildInfoLabel('Include Sub-hierarchy', 'When searching by tag or studio, also include content from descendant subtags and child studios.'));
     const { container: includeSubtagsToggleContainer, input: includeSubtagsToggle } = this.createToggleSwitch(
       this.settings.includeSubtags ?? false, () => this.saveSettings()
     );

@@ -78,6 +78,7 @@ export interface SceneFilterInput {
   studios?: {
     value: string[];
     modifier: FilterModifier;
+    depth?: number;
   };
   rating100?: {
     value: number;
@@ -138,6 +139,7 @@ export interface ImageFilterInput {
   studios?: {
     value: string[];
     modifier: FilterModifier;
+    depth?: number;
   };
   [key: string]: unknown; // Allow additional filter properties
 }
