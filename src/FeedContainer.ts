@@ -1615,6 +1615,13 @@ export class FeedContainer {
     container.appendChild(studiosSection);
   }
 
+  private filterUnselected<T extends { id: string }>(items: T[], selectedIds: Map<number, string>): T[] {
+    return items.filter((item) => {
+      const id = Number.parseInt(item.id, 10);
+      return !Number.isNaN(id) && !selectedIds.has(id);
+    });
+  }
+
   /**
    * Render default suggestions view
    */
@@ -1679,21 +1686,11 @@ export class FeedContainer {
       section.remove();
     }
 
-    const availableTags = freshTags
-      .filter((tag) => {
-        const tagId = Number.parseInt(tag.id, 10);
-        return !Number.isNaN(tagId) && !this.selectedTagIds.has(tagId);
-      })
-      .slice(0, 3);
+    const availableTags = this.filterUnselected(freshTags, this.selectedTagIds).slice(0, 3);
 
     this.createTagsSection(container, availableTags, updateSearchBarDisplay, apply, 'Suggested Tags');
 
-    const availablePerformers = freshPerformers
-      .filter((performer) => {
-        const performerId = Number.parseInt(performer.id, 10);
-        return !Number.isNaN(performerId) && !this.selectedPerformerIds.has(performerId);
-      })
-      .slice(0, 3);
+    const availablePerformers = this.filterUnselected(freshPerformers, this.selectedPerformerIds).slice(0, 3);
 
     this.createPerformersSection(container, availablePerformers, updateSearchBarDisplay, apply, 'Suggested Performers');
 
@@ -1753,30 +1750,15 @@ export class FeedContainer {
 
     if (!ensureLatest()) return;
 
-    const filteredTags = tagItems
-      .filter((tag) => {
-        const tagId = Number.parseInt(tag.id, 10);
-        return !Number.isNaN(tagId) && !this.selectedTagIds.has(tagId);
-      })
-      .slice(0, 20);
+    const filteredTags = this.filterUnselected(tagItems, this.selectedTagIds).slice(0, 20);
 
     this.createTagsSection(container, this.sortByMatchAccuracy(filteredTags, trimmedText), updateSearchBarDisplay, apply);
 
-    const filteredPerformers = performerItems
-      .filter((performer) => {
-        const performerId = Number.parseInt(performer.id, 10);
-        return !Number.isNaN(performerId) && !this.selectedPerformerIds.has(performerId);
-      })
-      .slice(0, 20);
+    const filteredPerformers = this.filterUnselected(performerItems, this.selectedPerformerIds).slice(0, 20);
 
     this.createPerformersSection(container, this.sortByMatchAccuracy(filteredPerformers, trimmedText), updateSearchBarDisplay, apply);
 
-    const filteredStudios = studioItems
-      .filter((studio) => {
-        const studioId = Number.parseInt(studio.id, 10);
-        return !Number.isNaN(studioId) && !this.selectedStudioIds.has(studioId);
-      })
-      .slice(0, 20);
+    const filteredStudios = this.filterUnselected(studioItems, this.selectedStudioIds).slice(0, 20);
 
     this.createStudiosSection(container, this.sortByMatchAccuracy(filteredStudios, trimmedText), updateSearchBarDisplay, apply);
 

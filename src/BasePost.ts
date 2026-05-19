@@ -3075,10 +3075,10 @@ export abstract class BasePost {
     await this.checkFavoriteStatus();
   }
 
-  /**
-   * Abstract method to increment O-count - must be implemented by subclasses
-   */
-  protected abstract incrementOCountAction(): Promise<void>;
+  protected async incrementOCountAction(): Promise<void> {
+    const newOCount = await this.doIncrementImageOCount(this.getImageData().image.id);
+    this.getImageData().image.o_counter = newOCount;
+  }
 
   protected async doIncrementImageOCount(imageId: string): Promise<number> {
     if (!this.api) {
@@ -3089,10 +3089,9 @@ export abstract class BasePost {
     return newOCount;
   }
 
-  /**
-   * Get the production date of the scene/image for age-at-production calculation.
-   */
-  protected abstract getProductionDate(): string | undefined;
+  protected getProductionDate(): string | undefined {
+    return this.getImageData().image.date;
+  }
 
   /**
    * Default tag removal action for image-based posts.

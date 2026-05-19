@@ -349,18 +349,6 @@ export class ImageVideoPost extends VideoPostBase {
   }
 
   /**
-   * Perform O-count increment action for ImageVideoPost
-   */
-  protected getProductionDate(): string | undefined {
-    return this.data.image.date;
-  }
-
-  protected async incrementOCountAction(): Promise<void> {
-    const newOCount = await this.doIncrementImageOCount(this.data.image.id);
-    this.data.image.o_counter = newOCount;
-  }
-
-  /**
    * Gray out mute button when not in HQ mode (image videos don't have audio in preview)
    */
   protected applyMuteButtonHQState(btn: HTMLElement): void {

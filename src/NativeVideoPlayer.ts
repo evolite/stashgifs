@@ -1078,6 +1078,14 @@ export class NativeVideoPlayer {
     }
   }
 
+  private isLeavingToChrome(relatedTarget: HTMLElement | null): boolean {
+    return relatedTarget !== null && (
+      relatedTarget.closest('.video-post__footer') !== null ||
+      relatedTarget.closest('.video-post__header') !== null ||
+      relatedTarget.closest('button') !== null
+    );
+  }
+
   /**
    * Setup hover handlers for video player overlay
    */
@@ -1091,23 +1099,9 @@ export class NativeVideoPlayer {
     };
     
     this.hoverLeaveHandler = (e: MouseEvent) => {
-      // Check if we're leaving to go to buttons/footer/header
-      const relatedTarget = e.relatedTarget as HTMLElement | null;
-      if (relatedTarget) {
-        // If moving to footer, header, or button elements, don't clear hover yet
-        // This prevents flicker when moving mouse from video to buttons
-        if (relatedTarget.closest('.video-post__footer') || 
-            relatedTarget.closest('.video-post__header') ||
-            relatedTarget.closest('button')) {
-          // Keep hover state but hide overlay since we're not over video anymore
-          this.isHovered = false;
-          this.updateOverlayState();
-          return;
-        }
-      }
-      // Leaving video area - clear hover
       this.isHovered = false;
       this.updateOverlayState();
+      if (this.isLeavingToChrome(e.relatedTarget as HTMLElement | null)) return;
     };
     
     // Attach to video element itself - this ensures we only detect hover over the actual video
@@ -1142,29 +1136,10 @@ export class NativeVideoPlayer {
       }
     };
     
-    const containerLeaveHandler = (e: MouseEvent) => {
-      // Check if we're leaving to go to buttons/footer/header
-      const relatedTarget = e.relatedTarget as HTMLElement | null;
-      if (relatedTarget) {
-        // If moving to footer, header, or button elements, disable pointer-events
-        if (relatedTarget.closest('.video-post__footer') || 
-            relatedTarget.closest('.video-post__header') ||
-            relatedTarget.closest('button')) {
-          if (this.playerWrapper) {
-            this.playerWrapper.style.pointerEvents = 'none';
-          }
-          // Also disable pointer-events on the video element
-          if (this.isVideoElementValid()) {
-            this.videoElement.style.pointerEvents = 'none';
-          }
-          return;
-        }
-      }
-      // Leaving container area - disable pointer-events
+    const containerLeaveHandler = (_e: MouseEvent) => {
       if (this.playerWrapper) {
         this.playerWrapper.style.pointerEvents = 'none';
       }
-      // Also disable pointer-events on the video element
       if (this.isVideoElementValid()) {
         this.videoElement.style.pointerEvents = 'none';
       }

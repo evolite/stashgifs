@@ -166,16 +166,8 @@ export class ImagePost extends BasePost {
   }
 
 
-  /**
-   * Perform O-count increment action for ImagePost
-   */
-  protected getProductionDate(): string | undefined {
-    return this.data.image.date;
-  }
-
-  protected async incrementOCountAction(): Promise<void> {
-    const newOCount = await this.doIncrementImageOCount(this.data.image.id);
-    this.data.image.o_counter = newOCount;
+  protected override async incrementOCountAction(): Promise<void> {
+    await super.incrementOCountAction();
     if (this.oCountButton) {
       const digitCount = this.oCount > 0 ? this.oCount.toString().length : 0;
       this.oCountButton.style.paddingRight = `${digitCount >= 3 ? OCOUNT_THREE_DIGIT_PADDING : OCOUNT_DEFAULT_PADDING}px`;
