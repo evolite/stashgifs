@@ -148,7 +148,7 @@ export class SettingsPage {
     slider.style.left = '0';
     slider.style.right = '0';
     slider.style.bottom = '0';
-    slider.style.backgroundColor = checked ? THEME.colors.success : THEME.colors.border;
+    slider.style.backgroundColor = checked ? THEME.colors.accentPrimary : THEME.colors.border;
     slider.style.transition = 'background-color 0.3s ease';
     slider.style.borderRadius = '28px';
     slider.style.cursor = 'pointer';
@@ -167,7 +167,7 @@ export class SettingsPage {
 
     const updateVisualState = () => {
       const isChecked = input.checked;
-      slider.style.backgroundColor = isChecked ? THEME.colors.success : THEME.colors.border;
+      slider.style.backgroundColor = isChecked ? THEME.colors.accentPrimary : THEME.colors.border;
       thumb.style.left = isChecked ? '26px' : '3px';
     };
 
@@ -813,7 +813,7 @@ export class SettingsPage {
     contentTypesTitleRow.appendChild(this.createInfoButton(
       'Select which content types appear in your feed.\n\n' +
       'Markers — Scene marker clips from your Stash library.\n' +
-      'Random — Full scenes played from a random position. Filters and search do not apply.\n' +
+      'Random — Full scenes played from a random position. Tag filters and search do not apply.\n' +
       'Short-Form — Full scenes shorter than a set length (default 120 seconds).\n' +
       'Images — Images and image-video files (GIFs, MP4s, etc.).'
     ));
@@ -872,32 +872,26 @@ export class SettingsPage {
     randomRow.style.display = 'flex';
     randomRow.style.justifyContent = 'space-between';
     randomRow.style.alignItems = 'center';
-    randomRow.appendChild(buildInfoLabel('Random', 'Full scenes from your library played from a random position. Filters and search do not apply — scenes are selected randomly regardless of any active tag, performer, or text filters.'));
+    randomRow.appendChild(buildInfoLabel('Random', 'Full scenes from your library played from a random position. Tag filters and search do not apply.'));
     randomRow.appendChild(includeRandomToggleContainer);
-
-    const randomHint = document.createElement('span');
-    randomHint.textContent = 'Filters and search do not apply to random content';
-    randomHint.style.display = 'block';
-    randomHint.style.marginTop = '4px';
-    randomHint.style.fontSize = THEME.typography.sizeMeta;
-    randomHint.style.color = THEME.colors.textSecondary;
-    randomHint.style.fontStyle = 'italic';
 
     const randomMarkersRow = document.createElement('div');
     randomMarkersRow.style.display = 'flex';
     randomMarkersRow.style.justifyContent = 'space-between';
     randomMarkersRow.style.alignItems = 'center';
-    randomMarkersRow.style.marginTop = '8px';
+    randomMarkersRow.style.marginTop = '6px';
+    randomMarkersRow.style.padding = '8px 0 8px 12px';
+    randomMarkersRow.style.background = THEME.colors.backgroundSecondary;
+    randomMarkersRow.style.borderRadius = THEME.radius.card;
     const { container: randomIncludeScenesWithMarkersContainer, input: randomIncludeScenesWithMarkersToggle } = this.createToggleSwitch(
       this.settings.randomIncludeScenesWithMarkers === true,
       () => this.saveSettings()
     );
-    randomMarkersRow.appendChild(buildInfoLabel('Include scenes with markers', 'Also show scenes that already have markers, played from a random position.'));
+    randomMarkersRow.appendChild(buildInfoLabel('Marked scenes', 'Also include scenes that have markers, played from a random position.'));
     randomMarkersRow.appendChild(randomIncludeScenesWithMarkersContainer);
     (this as any).randomIncludeScenesWithMarkersToggle = randomIncludeScenesWithMarkersToggle;
 
     randomWrapper.appendChild(randomRow);
-    randomWrapper.appendChild(randomHint);
     randomWrapper.appendChild(randomMarkersRow);
     contentTypesSection.appendChild(randomWrapper);
 
