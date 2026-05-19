@@ -5467,7 +5467,7 @@ export class FeedContainer {
       marker,
       videoUrl: safeVideoUrl,
       startTime: startTime,
-      endTime: marker.end_seconds,
+      endTime: marker.end_seconds ?? (marker.seconds + 20),
     };
 
     const post = new VideoPost(

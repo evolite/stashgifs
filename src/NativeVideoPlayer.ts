@@ -787,7 +787,8 @@ export class NativeVideoPlayer {
     this.videoElement.addEventListener('loadedmetadata', () => {
       if (!this.isVideoElementValid()) return;
       this.state.duration = this.videoElement.duration;
-      this.progressBar.max = this.videoElement.duration.toString();
+      this.progressBar.min = (this.originalStartTime ?? 0).toString();
+      this.progressBar.max = (this.originalEndTime ?? this.videoElement.duration).toString();
       this.updateTimeDisplay();
       this.applyStartTimeFromMetadata();
       this.notifyStateChange();
@@ -1304,8 +1305,10 @@ export class NativeVideoPlayer {
   }
 
   private updateTimeDisplay(): void {
-    const current = formatDuration(this.state.currentTime);
-    const total = formatDuration(this.state.duration);
+    const startOffset = this.originalStartTime ?? 0;
+    const endBoundary = this.originalEndTime ?? this.state.duration;
+    const current = formatDuration(Math.max(0, this.state.currentTime - startOffset));
+    const total = formatDuration(Math.max(0, endBoundary - startOffset));
     this.timeDisplay.textContent = `${current} / ${total}`;
   }
 
