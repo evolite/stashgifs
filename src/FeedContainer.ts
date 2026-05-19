@@ -3093,6 +3093,14 @@ export class FeedContainer {
 
     this.activePillsBar.style.display = 'flex';
 
+    const addOrSeparator = (): void => {
+      const sep = document.createElement('span');
+      sep.textContent = 'or';
+      sep.setAttribute('aria-hidden', 'true');
+      sep.style.cssText = `font-size:11px;color:${THEME.colors.textSecondary};align-self:center;flex-shrink:0;padding:0 2px;`;
+      this.activePillsBar!.appendChild(sep);
+    };
+
     for (const [id, name] of this.selectedTagIds) {
       this.activePillsBar.appendChild(this.createActivePill(`#${name}`, () => {
         this.selectedTagIds.delete(id);
@@ -3111,7 +3119,9 @@ export class FeedContainer {
       }));
     }
 
+    let i = 0;
     for (const [id, name] of this.selectedStudioIds) {
+      if (i++ > 0) addOrSeparator();
       this.activePillsBar.appendChild(this.createActivePill(name, () => {
         this.selectedStudioIds.delete(id);
         this.updateActivePills();

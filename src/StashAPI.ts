@@ -919,7 +919,7 @@ export class StashAPI {
 
   private applyStudiosToSceneFilter(targetFilter: SceneFilterInput, studioIds: string[], depth: number = 0): void {
     if (studioIds.length > 0) {
-      targetFilter.studios = { value: studioIds, modifier: 'INCLUDES_ALL', depth };
+      targetFilter.studios = { value: studioIds, modifier: 'INCLUDES', depth };
     }
   }
 
@@ -2335,7 +2335,7 @@ export class StashAPI {
     }
 
     if (filters?.studioIds && filters.studioIds.length > 0) {
-      imageFilter.studios = { value: filters.studioIds, modifier: 'INCLUDES_ALL', depth: filters.studioDepth ?? 0 };
+      imageFilter.studios = { value: filters.studioIds, modifier: 'INCLUDES', depth: filters.studioDepth ?? 0 };
     }
 
     return imageFilter;
