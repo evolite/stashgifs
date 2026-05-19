@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.3.0] - 2026-05-19
+
+### Features
+
+- Restrict marker video playback and seek bar to marker duration
+- Extend include subtags toggle to also traverse child studio hierarchy
+
+### Refactoring
+
+- Group count params in calculateHasMoreForMixedContent to satisfy S107
+
 ## [6.2.0] - 2026-05-18
 
 ### Bug Fixes
