@@ -3093,14 +3093,15 @@ export class FeedContainer {
 
     this.activePillsBar.style.display = 'flex';
 
-    const addOrSeparator = (): void => {
+    const addWord = (text: string): void => {
       const sep = document.createElement('span');
-      sep.textContent = 'or';
+      sep.textContent = text;
       sep.setAttribute('aria-hidden', 'true');
       sep.style.cssText = `font-size:11px;color:${THEME.colors.textSecondary};align-self:center;flex-shrink:0;padding:0 2px;`;
       this.activePillsBar!.appendChild(sep);
     };
 
+    // Tags — AND, no connector between them
     for (const [id, name] of this.selectedTagIds) {
       this.activePillsBar.appendChild(this.createActivePill(`#${name}`, () => {
         this.selectedTagIds.delete(id);
@@ -3110,7 +3111,15 @@ export class FeedContainer {
       }));
     }
 
+    // Performers — "with" before group, "and" between each
+    let perfFirst = true;
     for (const [id, name] of this.selectedPerformerIds) {
+      if (perfFirst) {
+        if (this.selectedTagIds.size > 0) addWord('with');
+        perfFirst = false;
+      } else {
+        addWord('and');
+      }
       this.activePillsBar.appendChild(this.createActivePill(`@${name}`, () => {
         this.selectedPerformerIds.delete(id);
         this.updateActivePills();
@@ -3119,9 +3128,15 @@ export class FeedContainer {
       }));
     }
 
-    let i = 0;
+    // Studios — ", by" before group, "or" between each
+    let studioFirst = true;
     for (const [id, name] of this.selectedStudioIds) {
-      if (i++ > 0) addOrSeparator();
+      if (studioFirst) {
+        if (this.selectedTagIds.size > 0 || this.selectedPerformerIds.size > 0) addWord('by');
+        studioFirst = false;
+      } else {
+        addWord('or');
+      }
       this.activePillsBar.appendChild(this.createActivePill(name, () => {
         this.selectedStudioIds.delete(id);
         this.updateActivePills();

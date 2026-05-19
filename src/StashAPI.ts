@@ -895,7 +895,7 @@ export class StashAPI {
     if (performerIds.length > 0) {
       targetFilter.performers = {
         value: performerIds,
-        modifier: performerIds.length === 1 ? 'INCLUDES_ALL' : 'INCLUDES'
+        modifier: 'INCLUDES_ALL'
       };
     }
   }
