@@ -563,19 +563,7 @@ export class FeedContainer {
     const brandContainer = header.querySelector<HTMLElement>('.feed-brand-container');
     const settingsButton = header.querySelector<HTMLElement>('[aria-label="Open settings"]');
 
-    this.applyReelHeaderElementStyles(isReelMode, header, headerInner, inputWrapper, queryInput, brandContainer, settingsButton);
-  }
-
-  private applyReelHeaderElementStyles(
-    active: boolean,
-    header: HTMLElement,
-    headerInner: HTMLElement | null,
-    inputWrapper: HTMLElement | null,
-    queryInput: HTMLInputElement | null,
-    brandContainer: HTMLElement | null,
-    settingsButton: HTMLElement | null
-  ): void {
-    if (active) {
+    if (isReelMode) {
       this.setReelHeaderActive(header, headerInner, inputWrapper, queryInput, brandContainer, settingsButton);
     } else {
       this.setReelHeaderDefault(header, headerInner, inputWrapper, queryInput, brandContainer, settingsButton);
