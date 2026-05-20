@@ -11,6 +11,7 @@ import { RatingControl } from './RatingControl.js';
 import { ADD_TAG_SVG, HEART_SVG_OUTLINE, HEART_SVG_FILLED, OCOUNT_SVG, EXTERNAL_LINK_SVG, STAR_SVG, STAR_SVG_OUTLINE, VERIFIED_SVG, EYE_SVG } from './icons.js';
 import { setupTouchHandlers, preventClickAfterTouch } from './utils/touchHandlers.js';
 import { adjustImageDialogPosition, toggleImageFavorite } from './utils/imagePostUtils.js';
+import { OverlayManager } from './utils/OverlayManager.js';
 import { PerformerExtended, StudioExtended } from './graphql/types.js';
 import { Performer, Tag, VideoPostData, ImageBasedPostData, Image } from './types.js';
 
@@ -110,31 +111,10 @@ export abstract class BasePost {
   protected showVerifiedCheckmarks: boolean = true;
   protected showProductionAge: boolean = false;
   protected showStudioChips: boolean = true;
-  // Performer overlay properties
-  private performerOverlay?: HTMLElement;
-  private performerOverlayTimeout?: number;
-  private performerOverlayHideTimeout?: number;
-  private currentHoveredPerformerId?: string;
-  private performerOverlayAbortController?: AbortController;
-  private hadOverlayBefore: boolean = false; // Track if overlay was showing before (for delay logic)
-  private performerOverlayScrollHandler?: () => void;
-  private performerOverlayScrollCleanup?: () => void;
-  private performerOverlayClickTime?: number; // Track when chip was clicked to prevent immediate re-show
-  // Tag overlay properties
-  private tagOverlay?: HTMLElement;
-  private tagOverlayTimeout?: number;
-  private tagOverlayHideTimeout?: number;
-  private currentHoveredTagId?: string;
-  private tagOverlayAbortController?: AbortController;
-  private hadTagOverlayBefore: boolean = false; // Track if tag overlay was showing before (for delay logic)
-  private tagOverlayClickTime?: number; // Track when chip was clicked to prevent immediate re-show
-  // Studio overlay properties
-  private studioOverlay?: HTMLElement;
-  private studioOverlayTimeout?: number;
-  private studioOverlayHideTimeout?: number;
-  private currentHoveredStudioId?: string;
-  private studioOverlayAbortController?: AbortController;
-  private studioOverlayClickTime?: number;
+  private readonly performerOverlayMgr: OverlayManager<PerformerExtended>;
+  private readonly tagOverlayMgr: OverlayManager<Tag>;
+  private readonly studioOverlayMgr: OverlayManager<StudioExtended>;
+  private overlayScrollCleanup?: () => void;
   // Add performer dialog
   private addPerformerDialog: HTMLElement | null = null;
   private addPerformerDialogInput: HTMLInputElement | null = null;
@@ -167,8 +147,27 @@ export abstract class BasePost {
     this.showProductionAge = options?.showProductionAge === true;
     this.showStudioChips = options?.showStudioChips !== false;
 
-    // Setup scroll listener to hide overlay when scrolling
-    this.setupPerformerOverlayScrollListener();
+    this.performerOverlayMgr = new OverlayManager<PerformerExtended>(
+      (id, signal) => this.api!.getPerformerDetails(id, signal),
+      (data, onRemove) => this.createPerformerOverlay(data, onRemove),
+      (overlay, chip) => this.positionOverlay(overlay, chip)
+    );
+    this.tagOverlayMgr = new OverlayManager<Tag>(
+      (id, signal) => this.api!.getTagDetails(id, signal),
+      (data, onRemove) => this.createTagOverlay(data, onRemove),
+      (overlay, chip) => this.positionOverlay(overlay, chip)
+    );
+    this.studioOverlayMgr = new OverlayManager<StudioExtended>(
+      (id, signal) => this.api!.getStudioDetails(id, signal),
+      (data) => this.createStudioOverlay(data),
+      (overlay, chip) => this.positionOverlay(overlay, chip)
+    );
+
+    this.overlayScrollCleanup = subscribeWindowScroll(() => {
+      this.performerOverlayMgr.hide(true);
+      this.tagOverlayMgr.hide(true);
+      this.studioOverlayMgr.hide(true);
+    });
   }
 
   protected renderBasePost(config: {
@@ -236,61 +235,12 @@ export abstract class BasePost {
     }
     this.cleanupAddTagDialogState();
 
-    if (this.performerOverlayScrollCleanup) {
-      this.performerOverlayScrollCleanup();
-      this.performerOverlayScrollCleanup = undefined;
-    }
-    this.performerOverlayScrollHandler = undefined;
-
-    if (this.performerOverlayAbortController) {
-      this.performerOverlayAbortController.abort();
-      this.performerOverlayAbortController = undefined;
-    }
-    if (this.tagOverlayAbortController) {
-      this.tagOverlayAbortController.abort();
-      this.tagOverlayAbortController = undefined;
-    }
-    if (this.studioOverlayAbortController) {
-      this.studioOverlayAbortController.abort();
-      this.studioOverlayAbortController = undefined;
-    }
-
-    if (this.performerOverlayTimeout) {
-      clearTimeout(this.performerOverlayTimeout);
-      this.performerOverlayTimeout = undefined;
-    }
-    if (this.performerOverlayHideTimeout) {
-      clearTimeout(this.performerOverlayHideTimeout);
-      this.performerOverlayHideTimeout = undefined;
-    }
-    if (this.tagOverlayTimeout) {
-      clearTimeout(this.tagOverlayTimeout);
-      this.tagOverlayTimeout = undefined;
-    }
-    if (this.tagOverlayHideTimeout) {
-      clearTimeout(this.tagOverlayHideTimeout);
-      this.tagOverlayHideTimeout = undefined;
-    }
-    if (this.studioOverlayTimeout) {
-      clearTimeout(this.studioOverlayTimeout);
-      this.studioOverlayTimeout = undefined;
-    }
-    if (this.studioOverlayHideTimeout) {
-      clearTimeout(this.studioOverlayHideTimeout);
-      this.studioOverlayHideTimeout = undefined;
-    }
-
-    if (this.performerOverlay) {
-      this.performerOverlay.remove();
-      this.performerOverlay = undefined;
-    }
-    if (this.tagOverlay) {
-      this.tagOverlay.remove();
-      this.tagOverlay = undefined;
-    }
-    if (this.studioOverlay) {
-      this.studioOverlay.remove();
-      this.studioOverlay = undefined;
+    this.performerOverlayMgr.destroy();
+    this.tagOverlayMgr.destroy();
+    this.studioOverlayMgr.destroy();
+    if (this.overlayScrollCleanup) {
+      this.overlayScrollCleanup();
+      this.overlayScrollCleanup = undefined;
     }
 
     for (const [button] of this.hoverHandlers) {
@@ -754,25 +704,6 @@ export abstract class BasePost {
   }
 
   /**
-   * Setup scroll listener to hide performer and tag overlays when user scrolls
-   */
-  private setupPerformerOverlayScrollListener(): void {
-    this.performerOverlayScrollHandler = () => {
-      if (this.performerOverlay) {
-        this.hidePerformerOverlay(true);
-      }
-      if (this.tagOverlay) {
-        this.hideTagOverlay(true);
-      }
-      if (this.studioOverlay) {
-        this.hideStudioOverlay(true);
-      }
-    };
-
-    this.performerOverlayScrollCleanup = subscribeWindowScroll(this.performerOverlayScrollHandler);
-  }
-
-  /**
    * Get link to performer page
    */
   protected getPerformerLink(performerId: string): string {
@@ -857,8 +788,8 @@ export abstract class BasePost {
     const chip = this.buildPerformerChipBase(performer);
     chip.dataset.performerId = performer.id;
     const handleClick = (event?: Event): void => {
-      this.hidePerformerOverlay(true);
-      this.performerOverlayClickTime = Date.now();
+      this.performerOverlayMgr.hide(true);
+      this.performerOverlayMgr.recordClick();
       if (this.onPerformerChipClick) {
         const performerId = Number.parseInt(performer.id, 10);
         if (!Number.isNaN(performerId)) {
@@ -903,8 +834,8 @@ export abstract class BasePost {
     chip.addEventListener('click', (e) => {
       e.preventDefault();
       e.stopPropagation();
-      this.studioOverlayClickTime = Date.now();
-      this.hideStudioOverlay(true);
+      this.studioOverlayMgr.recordClick();
+      this.studioOverlayMgr.hide(true);
       if (this.onStudioChipClick) {
         const studioId = Number.parseInt(studio.id, 10);
         if (!Number.isNaN(studioId)) {
@@ -1174,30 +1105,13 @@ export abstract class BasePost {
     chip: HTMLElement,
     performer: { id: string; name: string }
   ): void {
-    if (!this.api || !this.canHoverDevice()) {
-      return;
-    }
-
-    chip.addEventListener('mouseenter', () => {
-      if (this.performerOverlayHideTimeout) {
-        clearTimeout(this.performerOverlayHideTimeout);
-        this.performerOverlayHideTimeout = undefined;
-      }
-      this.showPerformerOverlay(performer.id, chip, () => this.removePerformerAction(performer.id, performer.name));
-    });
-
-    chip.addEventListener('mouseleave', (e) => {
-      const relatedTarget = e.relatedTarget as HTMLElement | null;
-      const isMovingToAnotherChip = relatedTarget?.closest('.performer-chip') !== null;
-      if (!isMovingToAnotherChip) {
-        this.performerOverlayHideTimeout = setTimeout(() => {
-          if (!this.performerOverlay?.matches(':hover')) {
-            this.hidePerformerOverlay();
-          }
-          this.performerOverlayHideTimeout = undefined;
-        }, 100) as unknown as number;
-      }
-    });
+    if (!this.api || !this.canHoverDevice()) return;
+    this.performerOverlayMgr.bindHover(
+      chip,
+      performer.id,
+      '.performer-chip',
+      () => this.removePerformerAction(performer.id, performer.name)
+    );
   }
 
   /**
@@ -1732,14 +1646,9 @@ export abstract class BasePost {
    */
   private createPerformerOverlay(performerData: PerformerExtended, onRemove?: () => Promise<boolean>): HTMLElement {
     const overlay = this.createOverlayContainer('performer-overlay', '480px', {
-      onMouseEnter: () => {
-        if (this.performerOverlayHideTimeout) {
-          clearTimeout(this.performerOverlayHideTimeout);
-          this.performerOverlayHideTimeout = undefined;
-        }
-      },
-      onMouseLeave: () => this.hidePerformerOverlay(),
-      onClickBackground: () => this.hidePerformerOverlay(true),
+      onMouseEnter: () => this.performerOverlayMgr.cancelHide(),
+      onMouseLeave: () => this.performerOverlayMgr.hide(),
+      onClickBackground: () => this.performerOverlayMgr.hide(true),
     }, { maxHeight: '80vh', overflowY: 'auto' });
 
     overlay.appendChild(this.createPerformerOverlayImageSection(performerData));
@@ -1766,145 +1675,11 @@ export abstract class BasePost {
    * Show performer overlay on hover
    */
   private showPerformerOverlay(performerId: string, chipElement: HTMLElement, onRemove?: () => Promise<boolean>): void {
-    // Prevent showing overlay immediately after a click (within 300ms)
-    if (this.performerOverlayClickTime && Date.now() - this.performerOverlayClickTime < 300) {
-      return;
-    }
-
-    // Clear any existing timeout
-    if (this.performerOverlayTimeout) {
-      clearTimeout(this.performerOverlayTimeout);
-      this.performerOverlayTimeout = undefined;
-    }
-
-    // If already showing this performer, don't do anything
-    if (this.currentHoveredPerformerId === performerId && this.performerOverlay) {
-      return;
-    }
-
-    // Cancel any pending hide timeout (when moving from another chip)
-    if (this.performerOverlayHideTimeout) {
-      clearTimeout(this.performerOverlayHideTimeout);
-      this.performerOverlayHideTimeout = undefined;
-    }
-
-    // Cancel any pending fetch
-    if (this.performerOverlayAbortController) {
-      this.performerOverlayAbortController.abort();
-      this.performerOverlayAbortController = undefined;
-    }
-
-    // Track if we had an overlay before hiding (for delay logic)
-    const hadOverlay = !!this.performerOverlay;
-    
-    // Hide existing overlay immediately (for rapid hover changes)
-    this.hidePerformerOverlay(true);
-
-    // Set timeout to show overlay (debounce - longer delay on first hover to avoid popping while scrolling)
-    this.currentHoveredPerformerId = performerId;
-    const isFirstHover = !hadOverlay; // Check if this is truly the first hover (no overlay was showing before)
-    const delay = isFirstHover ? 600 : 50; // 600ms for first hover, 50ms for subsequent hovers
-    const timeoutId = setTimeout(async () => {
-      if (this.currentHoveredPerformerId !== performerId) {
-        return; // User moved to different performer
-      }
-
-      if (!this.api) {
-        return;
-      }
-
-      // Create abort controller for this request
-      this.performerOverlayAbortController = new AbortController();
-
-      try {
-        // Fetch performer details
-        const performerData = await this.api.getPerformerDetails(
-          performerId,
-          this.performerOverlayAbortController.signal
-        );
-
-        if (!performerData || this.currentHoveredPerformerId !== performerId) {
-          return; // User moved to different performer or fetch failed
-        }
-
-        // Create overlay
-        const overlay = this.createPerformerOverlay(performerData, onRemove);
-        this.performerOverlay = overlay;
-        document.body.appendChild(overlay);
-
-        // Position overlay
-        this.positionOverlay(overlay, chipElement);
-
-        // Show with fade-in
-        requestAnimationFrame(() => {
-          if (overlay.parentElement) {
-            overlay.style.opacity = '1';
-          }
-        });
-        
-        // Mark that we now have an overlay
-        this.hadOverlayBefore = true;
-      } catch (error) {
-        // Ignore abort errors
-        if (error instanceof Error && error.name === 'AbortError') {
-          return;
-        }
-        console.warn('Failed to fetch performer details:', error);
-      }
-    }, delay) as unknown as number;
-    this.performerOverlayTimeout = timeoutId;
+    this.performerOverlayMgr.show(performerId, chipElement, onRemove);
   }
 
-  /**
-   * Hide performer overlay
-   */
-  private hidePerformerOverlay(immediate: boolean = false): void {
-    if (this.performerOverlayTimeout) {
-      clearTimeout(this.performerOverlayTimeout);
-      this.performerOverlayTimeout = undefined;
-    }
-
-    if (this.performerOverlayHideTimeout) {
-      clearTimeout(this.performerOverlayHideTimeout);
-      this.performerOverlayHideTimeout = undefined;
-    }
-
-    if (this.performerOverlay) {
-      if (immediate) {
-        // Immediately remove from DOM (for rapid hover changes)
-        if (this.performerOverlay.parentElement) {
-          try {
-            this.performerOverlay.remove();
-          } catch {
-            // Element may have already been removed
-          }
-        }
-        this.performerOverlay = undefined;
-      } else {
-        // Fade out then remove (for normal mouse leave)
-        this.performerOverlay.style.opacity = '0';
-        setTimeout(() => {
-          if (this.performerOverlay?.parentElement) {
-            try {
-              this.performerOverlay.remove();
-            } catch {
-              // Element may have already been removed
-            }
-          }
-          this.performerOverlay = undefined;
-        }, 200) as unknown as number;
-      }
-    }
-
-    // Always clear hover state to prevent re-showing overlay after click
-    this.currentHoveredPerformerId = undefined;
-    this.hadOverlayBefore = false; // Reset when fully hiding
-
-    // Cancel any pending fetch
-    if (this.performerOverlayAbortController) {
-      this.performerOverlayAbortController.abort();
-      this.performerOverlayAbortController = undefined;
-    }
+  private hidePerformerOverlay(immediate = false): void {
+    this.performerOverlayMgr.hide(immediate);
   }
 
   /**
@@ -1994,13 +1769,10 @@ export abstract class BasePost {
   ): HTMLElement {
     const overlay = this.createOverlayContainer('tag-overlay', '280px', {
       onMouseEnter: () => {
-        if (this.tagOverlayHideTimeout) {
-          clearTimeout(this.tagOverlayHideTimeout);
-          this.tagOverlayHideTimeout = undefined;
-        }
+        this.tagOverlayMgr.cancelHide();
       },
-      onMouseLeave: () => this.hideTagOverlay(),
-      onClickBackground: () => this.hideTagOverlay(true),
+      onMouseLeave: () => this.tagOverlayMgr.hide(),
+      onClickBackground: () => this.tagOverlayMgr.hide(true),
     });
 
     overlay.appendChild(this.createTagOverlayImageSection(tagData));
@@ -2029,161 +1801,19 @@ export abstract class BasePost {
     return overlay;
   }
 
-  /**
-   * Show tag overlay on hover
-   */
   private showTagOverlay(tagId: string, chipElement: HTMLElement, onRemove?: () => Promise<boolean>): void {
-    // Prevent showing overlay immediately after a click (within 300ms)
-    if (this.tagOverlayClickTime && Date.now() - this.tagOverlayClickTime < 300) {
-      return;
-    }
-
-    // Clear any existing timeout
-    if (this.tagOverlayTimeout) {
-      clearTimeout(this.tagOverlayTimeout);
-      this.tagOverlayTimeout = undefined;
-    }
-
-    // If already showing this tag, don't do anything
-    if (this.currentHoveredTagId === tagId && this.tagOverlay) {
-      return;
-    }
-
-    // Cancel any pending hide timeout (when moving from another chip)
-    if (this.tagOverlayHideTimeout) {
-      clearTimeout(this.tagOverlayHideTimeout);
-      this.tagOverlayHideTimeout = undefined;
-    }
-
-    // Cancel any pending fetch
-    if (this.tagOverlayAbortController) {
-      this.tagOverlayAbortController.abort();
-      this.tagOverlayAbortController = undefined;
-    }
-
-    // Track if we had an overlay before hiding (for delay logic)
-    const hadOverlay = !!this.tagOverlay;
-    
-    // Hide existing overlay immediately (for rapid hover changes)
-    this.hideTagOverlay(true);
-
-    // Set timeout to show overlay (debounce - longer delay on first hover to avoid popping while scrolling)
-    this.currentHoveredTagId = tagId;
-    const isFirstHover = !hadOverlay; // Check if this is truly the first hover (no overlay was showing before)
-    const delay = isFirstHover ? 600 : 50; // 600ms for first hover, 50ms for subsequent hovers
-    const timeoutId = setTimeout(async () => {
-      if (this.currentHoveredTagId !== tagId) {
-        return; // User moved to different tag
-      }
-
-      if (!this.api) {
-        return;
-      }
-
-      // Create abort controller for this request
-      this.tagOverlayAbortController = new AbortController();
-
-      try {
-        // Fetch tag details
-        const tagData = await this.api.getTagDetails(
-          tagId,
-          this.tagOverlayAbortController.signal
-        );
-
-        if (!tagData || this.currentHoveredTagId !== tagId) {
-          return; // User moved to different tag or fetch failed
-        }
-
-        // Create overlay
-        const overlay = this.createTagOverlay(tagData, onRemove);
-        this.tagOverlay = overlay;
-        document.body.appendChild(overlay);
-
-        // Position overlay
-        this.positionOverlay(overlay, chipElement);
-
-        // Show with fade-in
-        requestAnimationFrame(() => {
-          if (overlay.parentElement) {
-            overlay.style.opacity = '1';
-          }
-        });
-        
-        // Mark that we now have an overlay
-        this.hadTagOverlayBefore = true;
-      } catch (error) {
-        // Ignore abort errors
-        if (error instanceof Error && error.name === 'AbortError') {
-          return;
-        }
-        console.warn('Failed to fetch tag details:', error);
-      }
-    }, delay) as unknown as number;
-    this.tagOverlayTimeout = timeoutId;
+    this.tagOverlayMgr.show(tagId, chipElement, onRemove);
   }
 
-  /**
-   * Hide tag overlay
-   */
-  private hideTagOverlay(immediate: boolean = false): void {
-    if (this.tagOverlayTimeout) {
-      clearTimeout(this.tagOverlayTimeout);
-      this.tagOverlayTimeout = undefined;
-    }
-
-    if (this.tagOverlayHideTimeout) {
-      clearTimeout(this.tagOverlayHideTimeout);
-      this.tagOverlayHideTimeout = undefined;
-    }
-
-    if (this.tagOverlay) {
-      if (immediate) {
-        // Immediately remove from DOM (for rapid hover changes)
-        if (this.tagOverlay.parentElement) {
-          try {
-            this.tagOverlay.remove();
-          } catch {
-            // Element may have already been removed
-          }
-        }
-        this.tagOverlay = undefined;
-      } else {
-        // Fade out then remove (for normal mouse leave)
-        this.tagOverlay.style.opacity = '0';
-        setTimeout(() => {
-          if (this.tagOverlay?.parentElement) {
-            try {
-              this.tagOverlay.remove();
-            } catch {
-              // Element may have already been removed
-            }
-          }
-          this.tagOverlay = undefined;
-        }, 200) as unknown as number;
-      }
-    }
-
-    // Always clear hover state to prevent re-showing overlay after click
-    this.currentHoveredTagId = undefined;
-    this.hadTagOverlayBefore = false; // Reset when fully hiding
-
-    // Cancel any pending fetch
-    if (this.tagOverlayAbortController) {
-      this.tagOverlayAbortController.abort();
-      this.tagOverlayAbortController = undefined;
-    }
+  private hideTagOverlay(immediate = false): void {
+    this.tagOverlayMgr.hide(immediate);
   }
 
   private createStudioOverlay(studioData: StudioExtended): HTMLElement {
     const overlay = this.createOverlayContainer('studio-overlay', '400px', {
-      onMouseEnter: () => {
-        if (this.studioOverlayHideTimeout) {
-          clearTimeout(this.studioOverlayHideTimeout);
-          this.studioOverlayHideTimeout = undefined;
-        }
-      },
-      onMouseLeave: () => this.hideStudioOverlay(),
-      onClickBackground: () => this.hideStudioOverlay(true),
+      onMouseEnter: () => this.studioOverlayMgr.cancelHide(),
+      onMouseLeave: () => this.studioOverlayMgr.hide(),
+      onClickBackground: () => this.studioOverlayMgr.hide(true),
     });
 
     const imageSection = this.createOverlayImageSection(
@@ -2261,132 +1891,16 @@ export abstract class BasePost {
     chip: HTMLElement,
     studio: { id: string; name: string }
   ): void {
-    if (!this.api || !this.canHoverDevice()) {
-      return;
-    }
-
-    chip.addEventListener('mouseenter', () => {
-      if (this.studioOverlayHideTimeout) {
-        clearTimeout(this.studioOverlayHideTimeout);
-        this.studioOverlayHideTimeout = undefined;
-      }
-      this.showStudioOverlay(studio.id, chip);
-    });
-
-    chip.addEventListener('mouseleave', (e) => {
-      const relatedTarget = e.relatedTarget as HTMLElement | null;
-      const isMovingToAnotherChip = relatedTarget?.closest('.studio-chip') !== null;
-      if (!isMovingToAnotherChip) {
-        this.studioOverlayHideTimeout = setTimeout(() => {
-          if (!this.studioOverlay?.matches(':hover')) {
-            this.hideStudioOverlay();
-          }
-          this.studioOverlayHideTimeout = undefined;
-        }, 100) as unknown as number;
-      }
-    });
+    if (!this.api || !this.canHoverDevice()) return;
+    this.studioOverlayMgr.bindHover(chip, studio.id, '.studio-chip');
   }
 
   private showStudioOverlay(studioId: string, chipElement: HTMLElement): void {
-    if (this.studioOverlayClickTime && Date.now() - this.studioOverlayClickTime < 300) {
-      return;
-    }
-
-    if (this.studioOverlayTimeout) {
-      clearTimeout(this.studioOverlayTimeout);
-      this.studioOverlayTimeout = undefined;
-    }
-
-    if (this.currentHoveredStudioId === studioId && this.studioOverlay) {
-      return;
-    }
-
-    if (this.studioOverlayHideTimeout) {
-      clearTimeout(this.studioOverlayHideTimeout);
-      this.studioOverlayHideTimeout = undefined;
-    }
-
-    if (this.studioOverlayAbortController) {
-      this.studioOverlayAbortController.abort();
-      this.studioOverlayAbortController = undefined;
-    }
-
-    const hadOverlay = !!this.studioOverlay;
-    this.hideStudioOverlay(true);
-
-    this.currentHoveredStudioId = studioId;
-    const delay = hadOverlay ? 50 : 600;
-    const timeoutId = setTimeout(async () => {
-      if (this.currentHoveredStudioId !== studioId) return;
-      if (!this.api) return;
-
-      this.studioOverlayAbortController = new AbortController();
-
-      try {
-        const studioData = await this.api.getStudioDetails(studioId, this.studioOverlayAbortController.signal);
-
-        if (!studioData || this.currentHoveredStudioId !== studioId) return;
-
-        const overlay = this.createStudioOverlay(studioData);
-        this.studioOverlay = overlay;
-        document.body.appendChild(overlay);
-        this.positionOverlay(overlay, chipElement);
-
-        requestAnimationFrame(() => {
-          if (overlay.parentElement) {
-            overlay.style.opacity = '1';
-          }
-        });
-      } catch (error) {
-        if (error instanceof Error && error.name === 'AbortError') return;
-        console.warn('Failed to fetch studio details:', error);
-      }
-    }, delay) as unknown as number;
-    this.studioOverlayTimeout = timeoutId;
+    this.studioOverlayMgr.show(studioId, chipElement);
   }
 
-  private hideStudioOverlay(immediate: boolean = false): void {
-    if (this.studioOverlayTimeout) {
-      clearTimeout(this.studioOverlayTimeout);
-      this.studioOverlayTimeout = undefined;
-    }
-
-    if (this.studioOverlayHideTimeout) {
-      clearTimeout(this.studioOverlayHideTimeout);
-      this.studioOverlayHideTimeout = undefined;
-    }
-
-    if (this.studioOverlay) {
-      if (immediate) {
-        if (this.studioOverlay.parentElement) {
-          try {
-            this.studioOverlay.remove();
-          } catch {
-            // Element may have already been removed
-          }
-        }
-        this.studioOverlay = undefined;
-      } else {
-        this.studioOverlay.style.opacity = '0';
-        setTimeout(() => {
-          if (this.studioOverlay?.parentElement) {
-            try {
-              this.studioOverlay.remove();
-            } catch {
-              // Element may have already been removed
-            }
-          }
-          this.studioOverlay = undefined;
-        }, 200) as unknown as number;
-      }
-    }
-
-    this.currentHoveredStudioId = undefined;
-
-    if (this.studioOverlayAbortController) {
-      this.studioOverlayAbortController.abort();
-      this.studioOverlayAbortController = undefined;
-    }
+  private hideStudioOverlay(immediate = false): void {
+    this.studioOverlayMgr.hide(immediate);
   }
 
   /**
@@ -2422,11 +1936,9 @@ export abstract class BasePost {
     }
     
     const handleClick = () => {
-      // Hide overlay when clicking to filter
-      this.hideTagOverlay(true);
-      // Record click time to prevent immediate re-show on hover
-      this.tagOverlayClickTime = Date.now();
-      
+      this.tagOverlayMgr.hide(true);
+      this.tagOverlayMgr.recordClick();
+
       if (this.onTagChipClick) {
         const tagId = Number.parseInt(tag.id, 10);
         if (!Number.isNaN(tagId)) {
@@ -2445,29 +1957,12 @@ export abstract class BasePost {
     const isMobile = isMobileDevice();
     // Add hover overlay handlers for tags (desktop only)
     if (this.api && this.canHoverDevice()) {
-      hashtag.addEventListener('mouseenter', () => {
-        // Cancel any pending hide timeout (when moving from another chip)
-        if (this.tagOverlayHideTimeout) {
-          clearTimeout(this.tagOverlayHideTimeout);
-          this.tagOverlayHideTimeout = undefined;
-        }
-        this.showTagOverlay(tag.id, hashtag, () => this.removeTagAction(tag.id, tag.name));
-      });
-      hashtag.addEventListener('mouseleave', (e) => {
-        // Check if we're moving to another tag chip
-        const relatedTarget = e.relatedTarget as HTMLElement | null;
-        const isMovingToAnotherChip = relatedTarget?.closest('.tag-chip') !== null;
-        
-        if (!isMovingToAnotherChip) {
-          // Small delay to allow mouse to move to overlay
-          this.tagOverlayHideTimeout = setTimeout(() => {
-            if (!this.tagOverlay?.matches(':hover')) {
-              this.hideTagOverlay();
-            }
-            this.tagOverlayHideTimeout = undefined;
-          }, 100) as unknown as number;
-        }
-      });
+      this.tagOverlayMgr.bindHover(
+        hashtag,
+        tag.id,
+        '.tag-chip',
+        () => this.removeTagAction(tag.id, tag.name)
+      );
     }
     
     if (isMobile) {
