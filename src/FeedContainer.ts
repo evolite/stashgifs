@@ -563,15 +563,11 @@ export class FeedContainer {
     const brandContainer = header.querySelector<HTMLElement>('.feed-brand-container');
     const settingsButton = header.querySelector<HTMLElement>('[aria-label="Open settings"]');
 
-    if (isReelMode) {
-      this.applyReelHeaderActiveStyles(header, headerInner, inputWrapper, queryInput, brandContainer, settingsButton);
-      return;
-    }
-
-    this.applyReelHeaderDefaultStyles(header, headerInner, inputWrapper, queryInput, brandContainer, settingsButton);
+    this.applyReelHeaderElementStyles(isReelMode, header, headerInner, inputWrapper, queryInput, brandContainer, settingsButton);
   }
 
-  private applyReelHeaderActiveStyles(
+  private applyReelHeaderElementStyles(
+    active: boolean,
     header: HTMLElement,
     headerInner: HTMLElement | null,
     inputWrapper: HTMLElement | null,
@@ -579,97 +575,46 @@ export class FeedContainer {
     brandContainer: HTMLElement | null,
     settingsButton: HTMLElement | null
   ): void {
-    header.style.position = 'fixed';
-    header.style.left = '0';
-    header.style.right = '0';
-    header.style.width = '100%';
-    header.style.maxWidth = '100%';
-    header.style.zIndex = '900';
-    header.style.background = 'transparent';
+    header.style.position = active ? 'fixed' : '';
+    header.style.left = active ? '0' : '';
+    header.style.right = active ? '0' : '';
+    header.style.width = active ? '100%' : '';
+    header.style.maxWidth = active ? '100%' : `${this.settings.cardMaxWidth + 24}px`;
+    header.style.zIndex = active ? '900' : '';
+    header.style.background = active ? 'transparent' : '';
     header.style.backdropFilter = '';
-    header.style.borderRadius = '0';
-    header.style.padding = '8px 16px';
-    header.style.display = 'flex';
-    header.style.justifyContent = 'center';
-    header.style.alignItems = 'center';
+    header.style.borderRadius = active ? '0' : '';
+    header.style.padding = active ? '8px 16px' : '';
+    header.style.display = active ? 'flex' : '';
+    header.style.justifyContent = active ? 'center' : '';
+    header.style.alignItems = active ? 'center' : '';
 
     if (headerInner) {
       headerInner.style.maxWidth = `${this.settings.cardMaxWidth}px`;
-      headerInner.style.width = '100%';
-      headerInner.style.margin = '0 auto';
+      headerInner.style.width = active ? '100%' : '';
+      headerInner.style.margin = active ? '0 auto' : '';
     }
 
     if (inputWrapper) {
-      inputWrapper.style.background = 'transparent';
+      inputWrapper.style.background = active ? 'transparent' : '';
     }
 
     if (queryInput) {
-      queryInput.style.background = 'rgba(0, 0, 0, 0.35)';
-      queryInput.style.border = '1px solid rgba(255, 255, 255, 0.2)';
-      queryInput.style.color = THEME.colors.textPrimary;
-      queryInput.style.backdropFilter = 'blur(8px)';
+      queryInput.style.background = active ? 'rgba(0, 0, 0, 0.35)' : '';
+      queryInput.style.border = active ? '1px solid rgba(255, 255, 255, 0.2)' : '';
+      queryInput.style.color = active ? THEME.colors.textPrimary : '';
+      queryInput.style.backdropFilter = active ? 'blur(8px)' : '';
     }
 
     if (brandContainer) {
-      brandContainer.style.background = 'rgba(0, 0, 0, 0.35)';
-      brandContainer.style.border = '1px solid rgba(255, 255, 255, 0.2)';
+      brandContainer.style.background = active ? 'rgba(0, 0, 0, 0.35)' : '';
+      brandContainer.style.border = active ? '1px solid rgba(255, 255, 255, 0.2)' : `1px solid ${THEME.colors.border}`;
     }
 
     if (settingsButton) {
-      settingsButton.style.background = 'rgba(0, 0, 0, 0.35)';
-      settingsButton.style.border = '1px solid rgba(255, 255, 255, 0.2)';
-      settingsButton.style.color = THEME.colors.textPrimary;
-    }
-  }
-
-  private applyReelHeaderDefaultStyles(
-    header: HTMLElement,
-    headerInner: HTMLElement | null,
-    inputWrapper: HTMLElement | null,
-    queryInput: HTMLInputElement | null,
-    brandContainer: HTMLElement | null,
-    settingsButton: HTMLElement | null
-  ): void {
-    header.style.position = '';
-    header.style.left = '';
-    header.style.right = '';
-    header.style.width = '';
-    header.style.maxWidth = `${this.settings.cardMaxWidth + 24}px`;
-    header.style.zIndex = '';
-    header.style.background = '';
-    header.style.backdropFilter = '';
-    header.style.borderRadius = '';
-    header.style.padding = '';
-    header.style.display = '';
-    header.style.justifyContent = '';
-    header.style.alignItems = '';
-
-    if (headerInner) {
-      headerInner.style.maxWidth = `${this.settings.cardMaxWidth}px`;
-      headerInner.style.width = '';
-      headerInner.style.margin = '';
-    }
-
-    if (inputWrapper) {
-      inputWrapper.style.background = '';
-    }
-
-    if (queryInput) {
-      queryInput.style.background = '';
-      queryInput.style.border = '';
-      queryInput.style.color = '';
-      queryInput.style.backdropFilter = '';
-    }
-
-    if (brandContainer) {
-      brandContainer.style.background = '';
-      brandContainer.style.border = `1px solid ${THEME.colors.border}`;
-    }
-
-    if (settingsButton) {
-      settingsButton.style.background = THEME.colors.backgroundSecondary;
-      settingsButton.style.border = `1px solid ${THEME.colors.border}`;
-      settingsButton.style.color = THEME.colors.iconInactive;
+      settingsButton.style.background = active ? 'rgba(0, 0, 0, 0.35)' : THEME.colors.backgroundSecondary;
+      settingsButton.style.border = active ? '1px solid rgba(255, 255, 255, 0.2)' : `1px solid ${THEME.colors.border}`;
+      settingsButton.style.color = active ? THEME.colors.textPrimary : THEME.colors.iconInactive;
     }
   }
 

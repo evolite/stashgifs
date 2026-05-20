@@ -2061,25 +2061,33 @@ export abstract class BasePost {
    * Default rating section for image-based posts. VideoPost overrides with scene-specific version.
    */
   protected createRatingSection(): HTMLElement {
+    return this.buildRatingSection(
+      'image',
+      () => this.getImageData().image.rating100,
+      (value) => { this.getImageData().image.rating100 = value; },
+      this.api ? (rating10) => this.api!.updateImageRating(this.getImageData().image.id, rating10) : undefined
+    );
+  }
+
+  protected buildRatingSection(
+    subjectLabel: 'image' | 'scene',
+    getRating100: () => number | null | undefined,
+    onUpdateRating100: (value: number | undefined) => void,
+    onSaveRating10: ((rating10: number) => Promise<number>) | undefined
+  ): HTMLElement {
     if (!this.ratingControl) {
-      const api = this.api;
       this.ratingControl = new RatingControl({
         container: this.container,
-        subjectLabel: 'image',
+        subjectLabel,
         ratingSystemConfig: this.ratingSystemConfig,
         buildRatingDisplayButton: (options) => this.buildRatingDisplayButton(options),
         createRatingStarIcon: () => this.createRatingStarIcon(),
-        getRating100: () => this.getImageData().image.rating100,
-        onUpdateRating100: (value) => {
-          this.getImageData().image.rating100 = value;
-        },
-        onSaveRating10: api
-          ? (rating10) => api.updateImageRating(this.getImageData().image.id, rating10)
-          : undefined,
+        getRating100,
+        onUpdateRating100,
+        onSaveRating10,
         onToast: (message) => showToast(message)
       });
     }
-
     return this.ratingControl.render();
   }
 
@@ -2115,19 +2123,26 @@ export abstract class BasePost {
   }
 
   protected createImageButton(imageId: string): HTMLElement {
-    const imageLink = this.getImageLink(imageId);
+    return this.buildExternalLinkButton(
+      this.getImageLink(imageId),
+      'icon-btn--image',
+      'View full image',
+      'Open image in Stash'
+    );
+  }
+
+  protected buildExternalLinkButton(href: string, extraClass: string, ariaLabel: string, title: string): HTMLAnchorElement {
     const iconBtn = document.createElement('a');
-    iconBtn.className = 'icon-btn icon-btn--image';
-    iconBtn.href = imageLink;
+    iconBtn.className = `icon-btn ${extraClass}`;
+    iconBtn.href = href;
     iconBtn.target = '_blank';
     iconBtn.rel = 'noopener noreferrer';
-    iconBtn.setAttribute('aria-label', 'View full image');
-    iconBtn.title = 'Open image in Stash';
+    iconBtn.setAttribute('aria-label', ariaLabel);
+    iconBtn.title = title;
     this.applyIconButtonStyles(iconBtn);
     iconBtn.style.color = THEME.colors.accentPrimary;
     iconBtn.style.padding = '0';
     iconBtn.innerHTML = EXTERNAL_LINK_SVG;
-
     this.addHoverEffect(iconBtn);
     return iconBtn;
   }
@@ -2484,6 +2499,39 @@ export abstract class BasePost {
     return { inputWrapper, input, suggestions };
   }
 
+  protected createDialogCancelButton(onClick: () => void): HTMLButtonElement {
+    const cancelBtn = document.createElement('button');
+    cancelBtn.type = 'button';
+    cancelBtn.textContent = 'Cancel';
+    cancelBtn.style.padding = '8px 16px';
+    cancelBtn.style.background = THEME.colors.backgroundSecondary;
+    cancelBtn.style.border = `1px solid ${THEME.colors.border}`;
+    cancelBtn.style.color = THEME.colors.textSecondary;
+    cancelBtn.style.fontSize = '14px';
+    cancelBtn.style.cursor = 'pointer';
+    cancelBtn.style.borderRadius = THEME.radius.button;
+    cancelBtn.addEventListener('click', onClick);
+    return cancelBtn;
+  }
+
+  protected createMenuSuggestionItem(label: string, onClick: () => void): HTMLButtonElement {
+    const item = document.createElement('button');
+    item.type = 'button';
+    item.textContent = label;
+    item.style.width = '100%';
+    item.style.padding = '10px 12px';
+    item.style.textAlign = 'left';
+    item.style.background = 'transparent';
+    item.style.border = 'none';
+    item.style.color = THEME.colors.textPrimary;
+    item.style.fontSize = '14px';
+    item.style.cursor = 'pointer';
+    item.style.transition = 'background 0.15s ease';
+    applyMenuItemHover(item);
+    item.addEventListener('click', onClick);
+    return item;
+  }
+
   private createAddTagDialogBase(options: {
     state: AddTagDialogState;
     onSearch: (searchTerm: string) => void;
@@ -2798,18 +2846,7 @@ export abstract class BasePost {
     buttons.style.gap = '8px';
     buttons.style.justifyContent = 'flex-end';
     buttons.style.marginTop = '12px';
-    const cancelBtn = document.createElement('button');
-    cancelBtn.type = 'button';
-    cancelBtn.textContent = 'Cancel';
-    cancelBtn.style.padding = '8px 16px';
-    cancelBtn.style.background = THEME.colors.backgroundSecondary;
-    cancelBtn.style.border = `1px solid ${THEME.colors.border}`;
-    cancelBtn.style.color = THEME.colors.textSecondary;
-    cancelBtn.style.fontSize = '14px';
-    cancelBtn.style.cursor = 'pointer';
-    cancelBtn.style.borderRadius = THEME.radius.button;
-    cancelBtn.addEventListener('click', () => this.closeAddPerformerDialog());
-    buttons.appendChild(cancelBtn);
+    buttons.appendChild(this.createDialogCancelButton(() => this.closeAddPerformerDialog()));
     const addBtn = document.createElement('button');
     addBtn.type = 'button';
     addBtn.textContent = 'Add';
@@ -2946,20 +2983,7 @@ export abstract class BasePost {
     }
     this.addPerformerDialogSuggestions.style.display = 'block';
     for (const performer of performers) {
-      const item = document.createElement('button');
-      item.type = 'button';
-      item.textContent = performer.name;
-      item.style.width = '100%';
-      item.style.padding = '10px 12px';
-      item.style.textAlign = 'left';
-      item.style.background = 'transparent';
-      item.style.border = 'none';
-      item.style.color = THEME.colors.textPrimary;
-      item.style.fontSize = '14px';
-      item.style.cursor = 'pointer';
-      item.style.transition = 'background 0.15s ease';
-      applyMenuItemHover(item);
-      item.addEventListener('click', () => { this.selectPerformerForAdd(performer.id, performer.name, performer.image_path); });
+      const item = this.createMenuSuggestionItem(performer.name, () => this.selectPerformerForAdd(performer.id, performer.name, performer.image_path));
       this.addPerformerDialogSuggestions.appendChild(item);
     }
   }

@@ -169,9 +169,21 @@ export class NativeVideoPlayer {
    * Check if video element exists and is still valid (not removed from DOM)
    */
   private isVideoElementValid(): boolean {
-    return this.videoElement != null && 
+    return this.videoElement != null &&
            this.videoElement instanceof HTMLVideoElement &&
            document.contains(this.videoElement);
+  }
+
+  private checkStallError(label: string): void {
+    if (!this.isVideoElementValid()) return;
+    if (this.videoElement.readyState === 0 || this.videoElement.networkState === 2) {
+      this.errorHandled = true;
+      console.warn(`NativeVideoPlayer: ${label}`, {
+        src: this.videoElement.src,
+        networkState: this.videoElement.networkState,
+        readyState: this.videoElement.readyState,
+      });
+    }
   }
 
   waitForReady(timeoutMs: number = 3000): Promise<void> {
@@ -802,51 +814,22 @@ export class NativeVideoPlayer {
     };
     this.videoElement.addEventListener('progress', this.progressHandler);
 
-    // Handle stalled event (video stops loading)
+    // Handle stalled/waiting events (video stops loading or is buffering)
     this.stalledHandler = () => {
       if (!this.isVideoElementValid()) return;
       this.startRebuffering('stalled');
       this.showLoadingIndicator();
-      // Clear any existing stalled timeout
-      if (this.stalledTimeoutId) {
-        clearTimeout(this.stalledTimeoutId);
-      }
-      // Set timeout - if still stalled after 10 seconds, mark as error
-      this.stalledTimeoutId = setTimeout(() => {
-        if (!this.isVideoElementValid()) return;
-        if (this.videoElement.readyState === 0 || this.videoElement.networkState === 2) {
-          this.errorHandled = true;
-          console.warn('NativeVideoPlayer: Video stalled for >10 seconds', {
-            src: this.videoElement.src,
-            networkState: this.videoElement.networkState,
-            readyState: this.videoElement.readyState,
-          });
-        }
-      }, 10000);
+      if (this.stalledTimeoutId) clearTimeout(this.stalledTimeoutId);
+      this.stalledTimeoutId = setTimeout(() => this.checkStallError('Video stalled for >10 seconds'), 10000);
     };
     this.videoElement.addEventListener('stalled', this.stalledHandler);
 
-    // Handle waiting event (video is buffering)
     this.waitingHandler = () => {
       if (!this.isVideoElementValid()) return;
       this.startRebuffering('waiting');
       this.showLoadingIndicator();
-      // Clear any existing waiting timeout
-      if (this.waitingTimeoutId) {
-        clearTimeout(this.waitingTimeoutId);
-      }
-      // Set timeout - if still waiting after 10 seconds, mark as error
-      this.waitingTimeoutId = setTimeout(() => {
-        if (!this.isVideoElementValid()) return;
-        if (this.videoElement.readyState === 0 || this.videoElement.networkState === 2) {
-          this.errorHandled = true;
-          console.warn('NativeVideoPlayer: Video waiting/buffering for >10 seconds', {
-            src: this.videoElement.src,
-            networkState: this.videoElement.networkState,
-            readyState: this.videoElement.readyState,
-          });
-        }
-      }, 10000);
+      if (this.waitingTimeoutId) clearTimeout(this.waitingTimeoutId);
+      this.waitingTimeoutId = setTimeout(() => this.checkStallError('Video waiting/buffering for >10 seconds'), 10000);
     };
     this.videoElement.addEventListener('waiting', this.waitingHandler);
 

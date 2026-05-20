@@ -454,20 +454,12 @@ export class VideoPost extends VideoPostBase {
    * Create play button to open scene in Stash
    */
   private createPlayButton(): HTMLElement {
-    const sceneLink = this.getSceneLink();
-    const iconBtn = document.createElement('a');
-    iconBtn.className = 'icon-btn icon-btn--play';
-    iconBtn.href = sceneLink;
-    iconBtn.target = '_blank';
-    iconBtn.rel = 'noopener noreferrer';
-    iconBtn.setAttribute('aria-label', 'View full scene');
-    iconBtn.title = 'Open scene in Stash';
-    this.applyIconButtonStyles(iconBtn);
-    iconBtn.style.color = THEME.colors.accentPrimary;
-    iconBtn.style.padding = '0';
-    iconBtn.innerHTML = EXTERNAL_LINK_SVG;
-    
-    this.addHoverEffect(iconBtn);
+    const iconBtn = this.buildExternalLinkButton(
+      this.getSceneLink(),
+      'icon-btn--play',
+      'View full scene',
+      'Open scene in Stash'
+    );
     this.playButton = iconBtn;
     return iconBtn;
   }
@@ -674,26 +666,12 @@ export class VideoPost extends VideoPostBase {
    * Create rating section with dialog (scene-based override)
    */
   protected createRatingSection(): HTMLElement {
-    if (!this.ratingControl) {
-      const api = this.api;
-      this.ratingControl = new RatingControl({
-        container: this.container,
-        subjectLabel: 'scene',
-        ratingSystemConfig: this.ratingSystemConfig,
-        buildRatingDisplayButton: (options) => this.buildRatingDisplayButton(options),
-        createRatingStarIcon: () => this.createRatingStarIcon(),
-        getRating100: () => this.data.marker.scene.rating100,
-        onUpdateRating100: (value) => {
-          this.data.marker.scene.rating100 = value;
-        },
-        onSaveRating10: api
-          ? (rating10) => api.updateSceneRating(this.data.marker.scene.id, rating10)
-          : undefined,
-        onToast: (message) => showToast(message)
-      });
-    }
-
-    return this.ratingControl.render();
+    return this.buildRatingSection(
+      'scene',
+      () => this.data.marker.scene.rating100,
+      (value) => { this.data.marker.scene.rating100 = value; },
+      this.api ? (rating10) => this.api!.updateSceneRating(this.data.marker.scene.id, rating10) : undefined
+    );
   }
 
 
@@ -1452,17 +1430,7 @@ export class VideoPost extends VideoPostBase {
     buttons.style.gap = '8px';
     buttons.style.justifyContent = 'flex-end';
 
-    const cancelBtn = document.createElement('button');
-    cancelBtn.type = 'button';
-    cancelBtn.textContent = 'Cancel';
-    cancelBtn.style.padding = '8px 16px';
-    cancelBtn.style.background = THEME.colors.backgroundSecondary;
-    cancelBtn.style.border = `1px solid ${THEME.colors.border}`;
-    cancelBtn.style.color = THEME.colors.textSecondary;
-    cancelBtn.style.fontSize = '14px';
-    cancelBtn.style.cursor = 'pointer';
-    cancelBtn.addEventListener('click', () => this.closeMarkerDialog());
-    buttons.appendChild(cancelBtn);
+    buttons.appendChild(this.createDialogCancelButton(() => this.closeMarkerDialog()));
 
     const createBtn = document.createElement('button');
     createBtn.type = 'button';
@@ -1751,25 +1719,7 @@ export class VideoPost extends VideoPostBase {
     }
 
     for (const tag of tags) {
-      const item = document.createElement('button');
-      item.type = 'button';
-      item.textContent = tag.name;
-      item.style.width = '100%';
-      item.style.padding = '10px 12px';
-      item.style.textAlign = 'left';
-      item.style.background = 'transparent';
-      item.style.border = 'none';
-      item.style.color = THEME.colors.textPrimary;
-      item.style.fontSize = '14px';
-      item.style.cursor = 'pointer';
-      item.style.transition = 'background 0.15s ease';
-
-      applyMenuItemHover(item);
-
-      item.addEventListener('click', () => {
-        this.selectTagForMarker(tag.id, tag.name);
-      });
-
+      const item = this.createMenuSuggestionItem(tag.name, () => this.selectTagForMarker(tag.id, tag.name));
       if (this.markerDialogSuggestions) {
         this.markerDialogSuggestions.appendChild(item);
       }
