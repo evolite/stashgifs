@@ -15,6 +15,7 @@ export const SceneFields = `
     url
     rating100
     o_counter
+    play_count
     studio {
       id
       name

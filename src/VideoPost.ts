@@ -425,6 +425,9 @@ export class VideoPost extends VideoPostBase {
     // Add buttons in order
     this.addActionButtons(buttonGroup);
 
+    const viewCount = this.data.marker.scene.play_count ?? 0;
+    buttonGroup.appendChild(this.createViewCountBadge(viewCount));
+
     if (this.api) {
       const oCountBtn = this.createOCountButton();
       buttonGroup.appendChild(oCountBtn);

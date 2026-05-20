@@ -6,9 +6,9 @@
 import { FavoritesManager } from './FavoritesManager.js';
 import { StashAPI } from './StashAPI.js';
 import { VisibilityManager } from './VisibilityManager.js';
-import { normalizeMediaUrl, showToast, isMobileDevice, THEME, subscribeWindowScroll, applyMenuItemHover, extractValidPerformerIds, initPopoverDialog } from './utils.js';
+import { normalizeMediaUrl, showToast, isMobileDevice, THEME, subscribeWindowScroll, applyMenuItemHover, extractValidPerformerIds, initPopoverDialog, formatViewCount } from './utils.js';
 import { RatingControl } from './RatingControl.js';
-import { ADD_TAG_SVG, HEART_SVG_OUTLINE, HEART_SVG_FILLED, OCOUNT_SVG, EXTERNAL_LINK_SVG, STAR_SVG, STAR_SVG_OUTLINE, VERIFIED_SVG } from './icons.js';
+import { ADD_TAG_SVG, HEART_SVG_OUTLINE, HEART_SVG_FILLED, OCOUNT_SVG, EXTERNAL_LINK_SVG, STAR_SVG, STAR_SVG_OUTLINE, VERIFIED_SVG, EYE_SVG } from './icons.js';
 import { setupTouchHandlers, preventClickAfterTouch } from './utils/touchHandlers.js';
 import { adjustImageDialogPosition, toggleImageFavorite } from './utils/imagePostUtils.js';
 import { PerformerExtended, StudioExtended } from './graphql/types.js';
@@ -547,14 +547,6 @@ export abstract class BasePost {
       element.style.textShadow = '0 2px 8px rgba(0, 0, 0, 0.65)';
     }
 
-    const footerIcons = footer.querySelectorAll<SVGElement>('svg');
-    for (const icon of footerIcons) {
-      if (icon.closest('.rating-dialog')) {
-        continue;
-      }
-      icon.style.filter = 'drop-shadow(0 2px 6px rgba(0, 0, 0, 0.6))';
-    }
-
     this.applyReelFooterStack(footer, isMobile);
 
     const activeRatingIcons = footer.querySelectorAll<HTMLElement>(
@@ -713,8 +705,38 @@ export abstract class BasePost {
       this.oCountButton = this.createOCountButton();
       buttonGroup.appendChild(this.oCountButton);
     }
+    const viewCount = this.getAndIncrementLocalViewCount(imageId);
+    buttonGroup.appendChild(this.createViewCountBadge(viewCount));
     const ratingControl = this.createRatingSection();
     buttonGroup.appendChild(ratingControl);
+  }
+
+  private static readonly VIEW_COUNT_LS_PREFIX = 'stashgifs_views_';
+
+  private getAndIncrementLocalViewCount(imageId: string): number {
+    const key = `${BasePost.VIEW_COUNT_LS_PREFIX}${imageId}`;
+    const prev = parseInt(localStorage.getItem(key) ?? '0', 10) || 0;
+    const next = prev + 1;
+    try { localStorage.setItem(key, String(next)); } catch { /* ignore quota errors */ }
+    return next;
+  }
+
+  protected createViewCountBadge(count: number): HTMLElement {
+    const badge = document.createElement('span');
+    badge.className = 'icon-btn icon-btn--views';
+    badge.setAttribute('aria-label', `${count} views`);
+    badge.title = `${count} views`;
+    this.applyIconButtonStyles(badge);
+    badge.style.padding = '0';
+    badge.style.flexShrink = '1';
+    badge.style.flexDirection = 'column';
+    badge.style.alignItems = 'center';
+    badge.style.gap = '1px';
+    badge.style.cursor = 'default';
+    badge.style.pointerEvents = 'none';
+    badge.style.color = THEME.colors.textMuted;
+    badge.innerHTML = `${EYE_SVG}<span style="font-size:10px;line-height:1;font-family:${THEME.typography.fontFamily};font-weight:500;letter-spacing:0.03em;pointer-events:none">${formatViewCount(count)}</span>`;
+    return badge;
   }
 
   protected cleanupAddTagDialogState(): void {
@@ -3667,9 +3689,6 @@ export abstract class BasePost {
       btn.title = 'Add to favorites';
     }
 
-    if (this.isReelMode) {
-      btn.style.filter = 'drop-shadow(0 2px 6px rgba(0, 0, 0, 0.6))';
-    }
   }
 
   protected async toggleFavorite(): Promise<void> {
@@ -3709,8 +3728,10 @@ export abstract class BasePost {
     this.applyIconButtonStyles(oCountBtn);
     oCountBtn.style.padding = '0';
     oCountBtn.style.flexShrink = '1';
-    oCountBtn.style.fontSize = THEME.typography.sizeBody;
-    
+    oCountBtn.style.flexDirection = 'column';
+    oCountBtn.style.alignItems = 'center';
+    oCountBtn.style.gap = '1px';
+
     this.oCountButton = oCountBtn;
     this.updateOCountButton();
 
@@ -3747,7 +3768,8 @@ export abstract class BasePost {
   protected updateOCountButton(): void {
     if (!this.oCountButton) return;
 
-    this.oCountButton.innerHTML = OCOUNT_SVG;
+    const label = this.oCount > 0 ? formatViewCount(this.oCount) : '0';
+    this.oCountButton.innerHTML = `${OCOUNT_SVG}<span style="font-size:10px;line-height:1;font-family:${THEME.typography.fontFamily};font-weight:500;letter-spacing:0.03em;color:${THEME.colors.textMuted};pointer-events:none">${label}</span>`;
   }
 
   /**

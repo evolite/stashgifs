@@ -678,7 +678,6 @@
 /* Active/Selected State */
 .rating-dialog__star--active {
   color: var(--color-star);
-  filter: drop-shadow(0 0 8px rgba(255, 215, 0, 0.5));
 }
 
 /* Tooltip arrow (Optional addition) */
@@ -841,6 +840,7 @@
   background: transparent;
   border: none;
   cursor: pointer;
+  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.3));
   /* Hover effects will be applied to icons only, not container */
   transition: none;
   touch-action: manipulation;
