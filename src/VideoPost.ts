@@ -676,7 +676,7 @@ export class VideoPost extends VideoPostBase {
 
   private getViewThresholdSeconds(): number {
     const clipLen = (this.data.marker.end_seconds ?? 0) - this.data.marker.seconds;
-    return clipLen > 0 ? Math.min(10, clipLen * 0.5) : 10;
+    return clipLen > 0 ? Math.min(3, clipLen * 0.5) : 3;
   }
 
   private resetWatchTracking(): void {
