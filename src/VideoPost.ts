@@ -42,6 +42,7 @@ export class VideoPost extends VideoPostBase {
   private isTagSearchLoading: boolean = false;
   private hasCreatedMarker: boolean = false; // Track if marker has been created for this scene
 
+
   // Watch tracking
   private watchTrackingInterval: ReturnType<typeof setInterval> | undefined;
   private accumulatedWatchSeconds: number = 0;
@@ -217,14 +218,19 @@ export class VideoPost extends VideoPostBase {
   protected createHeader(): HTMLElement {
     const header = this.createHeaderContainer();
 
-    // Performer chips section
-    if (this.data.marker.scene.performers && this.data.marker.scene.performers.length > 0) {
-      const performersSection = this.createPerformersContainer(this.data.marker.scene.performers.length);
-      for (const performer of this.data.marker.scene.performers) {
+    // Performer chips section — filter to valid entries (id + name required)
+    const performers = (this.data.marker.scene.performers ?? []).filter(
+      (p) => p?.id && p?.name
+    );
+    const performersSection = this.createPerformersContainer(performers.length);
+    if (performers.length > 0) {
+      for (const performer of performers) {
         performersSection.appendChild(this.createPerformerChip(performer));
       }
-      header.appendChild(performersSection);
+    } else {
+      performersSection.appendChild(this.createAddPerformerPlaceholder());
     }
+    header.appendChild(performersSection);
 
     // Tag chips section (includes studio chip at the start)
     // Skip in shuffle mode UNLESS a marker has been created (to show the assigned tag)
@@ -2293,6 +2299,18 @@ export class VideoPost extends VideoPostBase {
     // Update dialog position using transform offset instead of changing left
     dialog.style.left = '50%';
     dialog.style.transform = `translateX(calc(-50% + ${offsetX}px)) translateY(0) scale(1)`;
+  }
+
+  // ─── Add Performer (scene override) ─────────────────────────────────────
+
+  protected async doAddPerformerApiCall(performerId: string, performerName: string): Promise<void> {
+    const sceneId = this.data.marker.scene.id;
+    const currentIds = extractValidPerformerIds(this.data.marker.scene.performers ?? []);
+    await this.api!.updateScenePerformers(sceneId, [...currentIds, performerId]);
+    this.data.marker.scene.performers = [
+      ...(this.data.marker.scene.performers ?? []),
+      { id: performerId, name: performerName, image_path: this.selectedPerformerImagePath },
+    ];
   }
 
   /**

@@ -135,6 +135,18 @@ export abstract class BasePost {
   private currentHoveredStudioId?: string;
   private studioOverlayAbortController?: AbortController;
   private studioOverlayClickTime?: number;
+  // Add performer dialog
+  private addPerformerDialog: HTMLElement | null = null;
+  private addPerformerDialogInput: HTMLInputElement | null = null;
+  private addPerformerDialogSuggestions: HTMLElement | null = null;
+  private addPerformerDialogAddButton: HTMLButtonElement | null = null;
+  private isAddPerformerDialogOpen = false;
+  private selectedPerformerId: string | undefined;
+  private selectedPerformerName: string | undefined;
+  protected selectedPerformerImagePath: string | undefined;
+  private addPerformerDebounceTimer: ReturnType<typeof setTimeout> | undefined;
+  private onAddPerformerDialogOutsideClick: (e: Event) => void = () => {};
+  private onAddPerformerDialogKeydown: (e: KeyboardEvent) => void = () => {};
 
   private static readonly favoritePerformerCache: Map<string, boolean> = new Map();
   private static favoriteCacheLoaded: boolean = false;
@@ -217,6 +229,11 @@ export abstract class BasePost {
   }
 
   destroy(): void {
+    this.closeAddPerformerDialog();
+    if (this.addPerformerDebounceTimer) {
+      clearTimeout(this.addPerformerDebounceTimer);
+      this.addPerformerDebounceTimer = undefined;
+    }
     this.cleanupAddTagDialogState();
 
     if (this.performerOverlayScrollCleanup) {
@@ -2493,13 +2510,15 @@ export abstract class BasePost {
   }): HTMLElement {
     const header = this.createHeaderContainer();
 
-    // Performer chips section
-    const hasPerformers = !!options.performers?.length;
-    if (hasPerformers) {
-      const performersSection = this.createPerformersContainer(options.performers!.length);
-      this.appendPerformerChips(performersSection, options.performers!);
-      header.appendChild(performersSection);
+    // Performer chips section — filter to valid entries (id + name required)
+    const performers = (options.performers ?? []).filter((p) => p?.id && p?.name);
+    const performersSection = this.createPerformersContainer(performers.length);
+    if (performers.length > 0) {
+      this.appendPerformerChips(performersSection, performers);
+    } else {
+      performersSection.appendChild(this.createAddPerformerPlaceholder());
     }
+    header.appendChild(performersSection);
 
     // Tag chips section (includes studio chip at the start)
     const hasStudio = !!options.studio && this.showStudioChips;
@@ -2510,7 +2529,7 @@ export abstract class BasePost {
         tagsSection.appendChild(this.createStudioChip(options.studio!));
       }
       if (options.tags?.length) {
-        this.appendTagChips(tagsSection, options.tags, options.favoriteTagName, hasPerformers);
+        this.appendTagChips(tagsSection, options.tags, options.favoriteTagName, performers.length > 0);
       }
       if (this.isReelMode) {
         this.applyReelModeTagStyles(tagsSection);
@@ -3189,6 +3208,291 @@ export abstract class BasePost {
       state.createButton.textContent = 'Add';
       state.createButton.style.opacity = '1';
     }
+  }
+
+  // ─── Add Performer dialog (shared by all post types) ──────────────────────
+
+  protected createAddPerformerPlaceholder(): HTMLElement {
+    const chip = document.createElement('div');
+    chip.setAttribute('role', 'button');
+    chip.setAttribute('tabindex', '0');
+    chip.setAttribute('aria-label', 'Add performer');
+    chip.title = 'Add performer';
+    chip.textContent = '?';
+    chip.style.width = '40px';
+    chip.style.height = '40px';
+    chip.style.borderRadius = '50%';
+    chip.style.flexShrink = '0';
+    chip.style.display = 'flex';
+    chip.style.alignItems = 'center';
+    chip.style.justifyContent = 'center';
+    chip.style.fontSize = '20px';
+    chip.style.fontWeight = THEME.typography.weightTitle;
+    chip.style.cursor = 'pointer';
+    chip.style.background = THEME.colors.backgroundSecondary;
+    chip.style.border = `2px dashed ${THEME.colors.textMuted}`;
+    chip.style.color = THEME.colors.textMuted;
+    chip.style.transition = 'border-color 0.15s ease, color 0.15s ease';
+    chip.style.position = 'relative';
+    chip.addEventListener('mouseenter', () => {
+      chip.style.borderColor = THEME.colors.accentPrimary;
+      chip.style.color = THEME.colors.accentPrimary;
+    });
+    chip.addEventListener('mouseleave', () => {
+      chip.style.borderColor = THEME.colors.textMuted;
+      chip.style.color = THEME.colors.textMuted;
+    });
+    const open = () => this.openAddPerformerDialog(chip);
+    chip.addEventListener('click', open);
+    chip.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault();
+        open();
+      }
+    });
+    return chip;
+  }
+
+  private createAddPerformerDialog(): HTMLElement {
+    const dialog = this.createDialogContainer('add-performer-dialog');
+    this.addPerformerDialog = dialog;
+    dialog.appendChild(this.createDialogTitle('Add Performer', 'add-performer-dialog-title'));
+    const { inputWrapper, input, suggestions } = this.createDialogInputSection({
+      placeholder: 'Search performers...',
+      ariaLabel: 'Performer name',
+      suggestionsClassName: 'add-performer-dialog__suggestions',
+    });
+    suggestions.style.boxShadow = '0 4px 16px rgba(0, 0, 0, 0.3)';
+    this.addPerformerDialogInput = input;
+    this.addPerformerDialogSuggestions = suggestions;
+    input.addEventListener('input', () => this.handleAddPerformerInput());
+    input.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' && this.selectedPerformerId && this.addPerformerDialogAddButton && !this.addPerformerDialogAddButton.disabled) {
+        e.preventDefault();
+        void this.commitAddPerformer();
+      } else if (e.key === 'Escape') {
+        e.preventDefault();
+        this.closeAddPerformerDialog();
+      }
+    });
+    dialog.appendChild(inputWrapper);
+    const buttons = document.createElement('div');
+    buttons.style.display = 'flex';
+    buttons.style.gap = '8px';
+    buttons.style.justifyContent = 'flex-end';
+    buttons.style.marginTop = '12px';
+    const cancelBtn = document.createElement('button');
+    cancelBtn.type = 'button';
+    cancelBtn.textContent = 'Cancel';
+    cancelBtn.style.padding = '8px 16px';
+    cancelBtn.style.background = THEME.colors.backgroundSecondary;
+    cancelBtn.style.border = `1px solid ${THEME.colors.border}`;
+    cancelBtn.style.color = THEME.colors.textSecondary;
+    cancelBtn.style.fontSize = '14px';
+    cancelBtn.style.cursor = 'pointer';
+    cancelBtn.style.borderRadius = THEME.radius.button;
+    cancelBtn.addEventListener('click', () => this.closeAddPerformerDialog());
+    buttons.appendChild(cancelBtn);
+    const addBtn = document.createElement('button');
+    addBtn.type = 'button';
+    addBtn.textContent = 'Add';
+    addBtn.disabled = true;
+    addBtn.style.padding = '8px 16px';
+    addBtn.style.background = THEME.colors.accentPrimary;
+    addBtn.style.border = `1px solid ${THEME.colors.accentPrimary}`;
+    addBtn.style.color = THEME.colors.textMuted;
+    addBtn.style.fontSize = '14px';
+    addBtn.style.cursor = 'not-allowed';
+    addBtn.style.borderRadius = THEME.radius.button;
+    addBtn.style.transition = 'all 0.2s ease';
+    addBtn.addEventListener('click', () => { void this.commitAddPerformer(); });
+    this.addPerformerDialogAddButton = addBtn;
+    buttons.appendChild(addBtn);
+    dialog.appendChild(buttons);
+    return dialog;
+  }
+
+  private openAddPerformerDialog(anchor: HTMLElement): void {
+    if (!this.addPerformerDialog) {
+      const dialog = this.createAddPerformerDialog();
+      this.container.appendChild(dialog);
+    }
+    if (this.isAddPerformerDialogOpen) return;
+    this.isAddPerformerDialogOpen = true;
+    this.selectedPerformerId = undefined;
+    this.selectedPerformerName = undefined;
+    this.selectedPerformerImagePath = undefined;
+    if (this.addPerformerDialogInput) this.addPerformerDialogInput.value = '';
+    if (this.addPerformerDialogSuggestions) this.addPerformerDialogSuggestions.style.display = 'none';
+    this.updateAddPerformerDialogState();
+    if (this.addPerformerDialog) {
+      this.addPerformerDialog.hidden = false;
+      this.addPerformerDialog.setAttribute('aria-hidden', 'false');
+      this.addPerformerDialog.style.pointerEvents = 'auto';
+      requestAnimationFrame(() => {
+        if (!this.addPerformerDialog) return;
+        const cardRect = this.container.getBoundingClientRect();
+        const anchorRect = anchor.getBoundingClientRect();
+        // Place BELOW anchor so the dialog stays inside the card (overflow:hidden clips above)
+        const topPx = anchorRect.bottom - cardRect.top + 6;
+        this.addPerformerDialog.style.bottom = 'auto';
+        this.addPerformerDialog.style.top = `${topPx}px`;
+        this.addPerformerDialog.style.left = '14px';
+        this.addPerformerDialog.style.transform = 'translateY(0) scale(1)';
+        this.addPerformerDialog.style.opacity = '1';
+      });
+    }
+    this.onAddPerformerDialogOutsideClick = (event: Event) => {
+      if (!this.isAddPerformerDialogOpen || !this.addPerformerDialog) return;
+      const target = event.target as Node | null;
+      if (target && this.addPerformerDialog.contains(target)) return;
+      if (target && anchor.contains(target)) return;
+      this.closeAddPerformerDialog();
+    };
+    this.onAddPerformerDialogKeydown = (event: KeyboardEvent) => {
+      if (!this.isAddPerformerDialogOpen) return;
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        this.closeAddPerformerDialog();
+      }
+    };
+    document.addEventListener('mousedown', this.onAddPerformerDialogOutsideClick);
+    document.addEventListener('touchstart', this.onAddPerformerDialogOutsideClick);
+    document.addEventListener('keydown', this.onAddPerformerDialogKeydown);
+    requestAnimationFrame(() => { this.addPerformerDialogInput?.focus(); });
+  }
+
+  private closeAddPerformerDialog(): void {
+    if (!this.isAddPerformerDialogOpen) return;
+    this.isAddPerformerDialogOpen = false;
+    if (this.addPerformerDebounceTimer) {
+      clearTimeout(this.addPerformerDebounceTimer);
+      this.addPerformerDebounceTimer = undefined;
+    }
+    if (this.addPerformerDialog) {
+      this.addPerformerDialog.style.opacity = '0';
+      this.addPerformerDialog.style.transform = 'translateY(4px) scale(0.96)';
+      this.addPerformerDialog.style.pointerEvents = 'none';
+      setTimeout(() => {
+        if (this.addPerformerDialog && !this.isAddPerformerDialogOpen) {
+          this.addPerformerDialog.hidden = true;
+          this.addPerformerDialog.setAttribute('aria-hidden', 'true');
+        }
+      }, 200);
+    }
+    if (this.addPerformerDialogSuggestions) this.addPerformerDialogSuggestions.style.display = 'none';
+    document.removeEventListener('mousedown', this.onAddPerformerDialogOutsideClick);
+    document.removeEventListener('touchstart', this.onAddPerformerDialogOutsideClick);
+    document.removeEventListener('keydown', this.onAddPerformerDialogKeydown);
+  }
+
+  private handleAddPerformerInput(): void {
+    if (!this.addPerformerDialogInput) return;
+    const searchTerm = this.addPerformerDialogInput.value.trim();
+    this.selectedPerformerId = undefined;
+    this.selectedPerformerName = undefined;
+    this.selectedPerformerImagePath = undefined;
+    this.updateAddPerformerDialogState();
+    if (this.addPerformerDebounceTimer) clearTimeout(this.addPerformerDebounceTimer);
+    if (searchTerm.length === 0) {
+      if (this.addPerformerDialogSuggestions) this.addPerformerDialogSuggestions.style.display = 'none';
+      return;
+    }
+    this.addPerformerDebounceTimer = setTimeout(() => {
+      void this.searchPerformersForAdd(searchTerm);
+    }, 250);
+  }
+
+  private async searchPerformersForAdd(searchTerm: string): Promise<void> {
+    if (!this.api) return;
+    if (!this.addPerformerDialogSuggestions) return;
+    try {
+      const performers = await this.api.searchPerformers(searchTerm, 20);
+      this.displayPerformerSuggestions(performers);
+    } catch {
+      if (this.addPerformerDialogSuggestions) this.addPerformerDialogSuggestions.style.display = 'none';
+    }
+  }
+
+  private displayPerformerSuggestions(performers: Array<{ id: string; name: string; image_path?: string }>): void {
+    if (!this.addPerformerDialogSuggestions) return;
+    this.addPerformerDialogSuggestions.innerHTML = '';
+    if (performers.length === 0) {
+      const noResults = document.createElement('div');
+      noResults.textContent = 'No performers found';
+      noResults.style.padding = '12px';
+      noResults.style.color = THEME.colors.textMuted;
+      noResults.style.fontSize = '14px';
+      this.addPerformerDialogSuggestions.appendChild(noResults);
+      this.addPerformerDialogSuggestions.style.display = 'block';
+      return;
+    }
+    this.addPerformerDialogSuggestions.style.display = 'block';
+    for (const performer of performers) {
+      const item = document.createElement('button');
+      item.type = 'button';
+      item.textContent = performer.name;
+      item.style.width = '100%';
+      item.style.padding = '10px 12px';
+      item.style.textAlign = 'left';
+      item.style.background = 'transparent';
+      item.style.border = 'none';
+      item.style.color = THEME.colors.textPrimary;
+      item.style.fontSize = '14px';
+      item.style.cursor = 'pointer';
+      item.style.transition = 'background 0.15s ease';
+      applyMenuItemHover(item);
+      item.addEventListener('click', () => { this.selectPerformerForAdd(performer.id, performer.name, performer.image_path); });
+      this.addPerformerDialogSuggestions.appendChild(item);
+    }
+  }
+
+  private selectPerformerForAdd(id: string, name: string, imagePath?: string): void {
+    this.selectedPerformerId = id;
+    this.selectedPerformerName = name;
+    this.selectedPerformerImagePath = imagePath;
+    if (this.addPerformerDialogInput) this.addPerformerDialogInput.value = name;
+    if (this.addPerformerDialogSuggestions) this.addPerformerDialogSuggestions.style.display = 'none';
+    this.updateAddPerformerDialogState();
+  }
+
+  private updateAddPerformerDialogState(): void {
+    if (!this.addPerformerDialogAddButton) return;
+    const hasPerformer = !!this.selectedPerformerId;
+    this.addPerformerDialogAddButton.disabled = !hasPerformer;
+    this.addPerformerDialogAddButton.style.color = hasPerformer ? THEME.colors.textPrimary : THEME.colors.textMuted;
+    this.addPerformerDialogAddButton.style.cursor = hasPerformer ? 'pointer' : 'not-allowed';
+  }
+
+  private async commitAddPerformer(): Promise<void> {
+    const performerId = this.selectedPerformerId;
+    const performerName = this.selectedPerformerName;
+    if (!performerId || !performerName || !this.api) return;
+    const addBtn = this.addPerformerDialogAddButton;
+    if (addBtn) {
+      addBtn.disabled = true;
+      addBtn.textContent = 'Adding...';
+      addBtn.style.cursor = 'not-allowed';
+    }
+    try {
+      await this.doAddPerformerApiCall(performerId, performerName);
+      showToast(`Added "${performerName}"`);
+      this.closeAddPerformerDialog();
+      this.refreshHeader();
+    } catch {
+      showToast('Failed to add performer. Please try again.');
+      if (addBtn) {
+        addBtn.textContent = 'Add';
+        this.updateAddPerformerDialogState();
+      }
+    }
+  }
+
+  protected async doAddPerformerApiCall(performerId: string, performerName: string): Promise<void> {
+    const imageData = this.getImageData();
+    const currentIds = extractValidPerformerIds(imageData.image.performers ?? []);
+    await this.api!.updateImagePerformers(imageData.image.id, [...currentIds, performerId]);
+    imageData.image.performers = [...(imageData.image.performers ?? []), { id: performerId, name: performerName, image_path: this.selectedPerformerImagePath }];
   }
 
   /**
