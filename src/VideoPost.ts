@@ -11,7 +11,6 @@ import { calculateAspectRatio, getAspectRatioClass, normalizeMediaUrl, showToast
 import { posterPreloader } from './PosterPreloader.js';
 import { EXTERNAL_LINK_SVG, MARKER_SVG } from './icons.js';
 import { VideoPostBase, BaseVideoPostOptions } from './VideoPostBase.js';
-import { RatingControl } from './RatingControl.js';
 
 // Constants for magic numbers and strings
 const FAVORITE_TAG_NAME = 'StashGifs Favorite';
