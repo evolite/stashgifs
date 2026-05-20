@@ -4,7 +4,7 @@
  */
 
 import { VideoPlayerState } from './types.js';
-import { addCacheBusting, stripApiKey, formatDuration, normalizeMediaUrl, hasWebkitFullscreen, hasMozFullscreen, hasMsFullscreen, hasWebkitFullscreenHTMLElement, hasMozFullscreenHTMLElement, hasMsFullscreenHTMLElement, hasWebkitFullscreenDocument, hasMozFullscreenDocument, hasMsFullscreenDocument, type ElementWebkitFullscreen, type ElementMozFullscreen, type ElementMsFullscreen, isMobileDevice, THEME, subscribeWindowScroll, createFullscreenWrapper } from './utils.js';
+import { addCacheBusting, stripApiKey, formatDuration, normalizeMediaUrl, hasWebkitFullscreen, hasMozFullscreen, hasMsFullscreen, hasWebkitFullscreenHTMLElement, hasMozFullscreenHTMLElement, hasMsFullscreenHTMLElement, hasWebkitFullscreenDocument, hasMozFullscreenDocument, hasMsFullscreenDocument, type ElementWebkitFullscreen, type ElementMozFullscreen, type ElementMsFullscreen, isMobileDevice, THEME, subscribeWindowScroll, createFullscreenWrapper, createCoverDiv } from './utils.js';
 import { VOLUME_MUTED_SVG, VOLUME_UNMUTED_SVG, PLAY_BUTTON_SVG, PAUSE_SVG, FULLSCREEN_SVG } from './icons.js';
 import { setupTouchHandlers, createTouchState, type TouchState } from './utils/touchHandlers.js';
 
@@ -353,13 +353,7 @@ export class NativeVideoPlayer {
       return;
     }
 
-    const placeholder = document.createElement('div');
-    placeholder.className = 'video-player__placeholder';
-    placeholder.style.position = 'absolute';
-    placeholder.style.top = '0';
-    placeholder.style.left = '0';
-    placeholder.style.width = '100%';
-    placeholder.style.height = '100%';
+    const placeholder = createCoverDiv('video-player__placeholder');
     placeholder.style.background = 'var(--color-bg, #1F2A33)';
     placeholder.style.zIndex = '0';
     placeholder.style.opacity = '1';

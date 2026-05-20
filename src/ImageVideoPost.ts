@@ -5,7 +5,7 @@
 
 import { ImageVideoPostData } from './types.js';
 import { NativeVideoPlayer } from './NativeVideoPlayer.js';
-import { calculateAspectRatio, getAspectRatioClass, normalizeMediaUrl, toAbsoluteUrl, THEME } from './utils.js';
+import { calculateAspectRatio, getAspectRatioClass, normalizeMediaUrl, toAbsoluteUrl, THEME, createCoverDiv } from './utils.js';
 import { VideoPostBase, BaseVideoPostOptions } from './VideoPostBase.js';
 interface ImageVideoPostOptions extends BaseVideoPostOptions {}
 
@@ -331,13 +331,7 @@ export class ImageVideoPost extends VideoPostBase {
   private showErrorPlaceholder(): void {
     if (this.errorPlaceholder || !this.playerContainer) return;
 
-    const placeholder = document.createElement('div');
-    placeholder.className = 'video-post__error-placeholder';
-    placeholder.style.position = 'absolute';
-    placeholder.style.top = '0';
-    placeholder.style.left = '0';
-    placeholder.style.width = '100%';
-    placeholder.style.height = '100%';
+    const placeholder = createCoverDiv('video-post__error-placeholder');
     placeholder.style.display = 'flex';
     placeholder.style.alignItems = 'center';
     placeholder.style.justifyContent = 'center';

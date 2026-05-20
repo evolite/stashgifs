@@ -3,7 +3,7 @@
  * Displays GIFs, static images, and looping videos with support for looping and fullscreen
  */
 
-import { addCacheBusting, normalizeMediaUrl, setupLoopingVideoElement, THEME, subscribeWindowScroll, createFullscreenWrapper } from './utils.js';
+import { addCacheBusting, normalizeMediaUrl, setupLoopingVideoElement, THEME, subscribeWindowScroll, createFullscreenWrapper, createCoverDiv } from './utils.js';
 
 export class ImagePlayer {
   private readonly container: HTMLElement;
@@ -301,13 +301,7 @@ export class ImagePlayer {
     const details = customDetails;
 
     // Create error message element
-    this.errorMessage = document.createElement('div');
-    this.errorMessage.className = 'image-player__error';
-    this.errorMessage.style.position = 'absolute';
-    this.errorMessage.style.top = '0';
-    this.errorMessage.style.left = '0';
-    this.errorMessage.style.width = '100%';
-    this.errorMessage.style.height = '100%';
+    this.errorMessage = createCoverDiv('image-player__error');
     this.errorMessage.style.display = 'flex';
     this.errorMessage.style.flexDirection = 'column';
     this.errorMessage.style.alignItems = 'center';

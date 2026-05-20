@@ -864,6 +864,17 @@ export function createFullscreenWrapper(className: string): HTMLDivElement {
   return wrapper;
 }
 
+export function createCoverDiv(className: string): HTMLDivElement {
+  const el = document.createElement('div');
+  el.className = className;
+  el.style.position = 'absolute';
+  el.style.top = '0';
+  el.style.left = '0';
+  el.style.width = '100%';
+  el.style.height = '100%';
+  return el;
+}
+
 export function applyMenuItemHover(item: HTMLElement): void {
   item.addEventListener('mouseenter', () => {
     item.style.background = THEME.colors.backgroundSecondary;
