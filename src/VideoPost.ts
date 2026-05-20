@@ -7,9 +7,9 @@ import { VideoPostData, Scene, SceneMarker } from './types.js';
 import { NativeVideoPlayer } from './NativeVideoPlayer.js';
 import { StashAPI } from './StashAPI.js';
 import { VisibilityManager } from './VisibilityManager.js';
-import { calculateAspectRatio, getAspectRatioClass, normalizeMediaUrl, showToast, toAbsoluteUrl, isMobileDevice, THEME, applyMenuItemHover, extractValidPerformerIds } from './utils.js';
+import { calculateAspectRatio, getAspectRatioClass, normalizeMediaUrl, showToast, toAbsoluteUrl, isMobileDevice, THEME, extractValidPerformerIds } from './utils.js';
 import { posterPreloader } from './PosterPreloader.js';
-import { EXTERNAL_LINK_SVG, MARKER_SVG } from './icons.js';
+import { MARKER_SVG } from './icons.js';
 import { VideoPostBase, BaseVideoPostOptions } from './VideoPostBase.js';
 
 // Constants for magic numbers and strings

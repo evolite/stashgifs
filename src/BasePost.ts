@@ -665,7 +665,7 @@ export abstract class BasePost {
 
   private getAndIncrementLocalViewCount(imageId: string): number {
     const key = `${BasePost.VIEW_COUNT_LS_PREFIX}${imageId}`;
-    const prev = parseInt(localStorage.getItem(key) ?? '0', 10) || 0;
+    const prev = Number.parseInt(localStorage.getItem(key) ?? '0', 10) || 0;
     const next = prev + 1;
     try { localStorage.setItem(key, String(next)); } catch { /* ignore quota errors */ }
     return next;
@@ -2075,19 +2075,17 @@ export abstract class BasePost {
     onUpdateRating100: (value: number | undefined) => void,
     onSaveRating10: ((rating10: number) => Promise<number>) | undefined
   ): HTMLElement {
-    if (!this.ratingControl) {
-      this.ratingControl = new RatingControl({
-        container: this.container,
-        subjectLabel,
-        ratingSystemConfig: this.ratingSystemConfig,
-        buildRatingDisplayButton: (options) => this.buildRatingDisplayButton(options),
-        createRatingStarIcon: () => this.createRatingStarIcon(),
-        getRating100,
-        onUpdateRating100,
-        onSaveRating10,
-        onToast: (message) => showToast(message)
-      });
-    }
+    this.ratingControl ??= new RatingControl({
+      container: this.container,
+      subjectLabel,
+      ratingSystemConfig: this.ratingSystemConfig,
+      buildRatingDisplayButton: (options) => this.buildRatingDisplayButton(options),
+      createRatingStarIcon: () => this.createRatingStarIcon(),
+      getRating100,
+      onUpdateRating100,
+      onSaveRating10,
+      onToast: (message) => showToast(message)
+    });
     return this.ratingControl.render();
   }
 
