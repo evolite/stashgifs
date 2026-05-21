@@ -71,4 +71,8 @@ files:
 - app\assets\graphql\queries.js.map
 - app\assets\graphql\types.js
 - app\assets\graphql\types.js.map
+- app\assets\DiscoveryManager.js
+- app\assets\DiscoveryManager.js.map
+- app\assets\DiscoveryPanel.js
+- app\assets\DiscoveryPanel.js.map
 - stashgifs.mjs
