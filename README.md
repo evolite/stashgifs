@@ -17,7 +17,7 @@ Install it via Stash's plugin system using the `index.yml` file. - https://surgi
 - **Interactions** - Favorite content with a tap, add tags to content, rate scenes and images. Each post links back to the content in Stash.
 - **Mobile-friendly** - Touch-optimized interface that works great on phones and tablets.
 
-Includes detailed customization.
+Includes detailed customization!
 
 ## AI Usage Disclaimer
 Large parts of this codebase is Vibe coded
