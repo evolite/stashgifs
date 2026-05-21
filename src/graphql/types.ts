@@ -252,7 +252,7 @@ export interface FindStudiosResponse {
  */
 export interface FindPerformersResponse {
   findPerformers: {
-    performers: Array<{ id: string; name: string; image_path?: string; stash_ids?: Array<{ stash_id: string }> }>;
+    performers: Array<{ id: string; name: string; image_path?: string; stash_ids?: Array<{ stash_id: string; endpoint: string }> }>;
   };
 }
 
@@ -276,7 +276,7 @@ export interface PerformerExtended {
   eye_color?: string;
   country?: string;
   rating100?: number;
-  stash_ids?: Array<{ stash_id: string }>;
+  stash_ids?: Array<{ stash_id: string; endpoint: string }>;
   tags?: Array<{ id: string; name: string }>;
 }
 
@@ -302,7 +302,7 @@ export interface StudioExtended {
   favorite?: boolean;
   aliases?: string[];
   parent_studio?: { id: string; name: string };
-  stash_ids?: Array<{ stash_id: string }>;
+  stash_ids?: Array<{ stash_id: string; endpoint: string }>;
 }
 
 /**
@@ -420,7 +420,7 @@ export interface GQLImage {
     gender?: string;
     favorite?: boolean;
     image_path?: string;
-    stash_ids?: Array<{ stash_id: string }>;
+    stash_ids?: Array<{ stash_id: string; endpoint: string }>;
   }>;
   visual_files?: Array<VisualFile>;
 }
@@ -684,6 +684,39 @@ export interface GraphQLMutationOptions<TVariables = Record<string, unknown>, _T
   signal?: AbortSignal;
 }
 
+
+// ============================================================================
+// StashBox / Discovery Types
+// ============================================================================
+
+export interface StashBox {
+  endpoint: string;
+  api_key: string;
+  name: string;
+}
+
+export interface GetStashBoxConfigResponse {
+  configuration: {
+    general: {
+      stashBoxes: StashBox[];
+    };
+  };
+}
+
+export interface StashBoxScene {
+  id: string;
+  title?: string;
+  date?: string;
+  images?: Array<{ url: string }>;
+  studio?: { name: string };
+}
+
+export interface StashBoxScenesResponse {
+  queryScenes: {
+    count: number;
+    scenes: StashBoxScene[];
+  };
+}
 
 /**
  * Typed GraphQL client interface

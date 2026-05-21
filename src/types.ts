@@ -47,7 +47,7 @@ export interface Performer {
   image_path?: string;
   favorite?: boolean;
   birthdate?: string;
-  stash_ids?: Array<{ stash_id: string }>;
+  stash_ids?: Array<{ stash_id: string; endpoint: string }>;
 }
 
 export interface Tag {
@@ -135,6 +135,9 @@ export interface FeedSettings {
   contentLimit?: number; // Max items per content type to paginate through (default 5000)
   includeSubtags?: boolean; // When true, tag and studio search includes all descendants
   showStudioChips?: boolean; // Show studio logo + name chips alongside performer chips, default: true
+  enableDiscoveryPanel?: boolean; // Show StashDB discovery sidebar panel, default: true
+  discoveryPanelSize?: number; // Panel width in px (1–1000), default 260
+  discoverySceneOrder?: 'latest' | 'random'; // Scene selection: latest (default) or random
 }
 
 export interface VideoPostData {

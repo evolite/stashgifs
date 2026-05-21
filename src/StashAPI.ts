@@ -47,6 +47,8 @@ import {
   UIConfigurationResponse,
   PluginConfigurationResponse,
   ConfigurePluginResponse,
+  StashBox,
+  GetStashBoxConfigResponse,
 } from './graphql/types.js';
 import {
   GraphQLRequestError,
@@ -435,6 +437,7 @@ export class StashAPI {
     );
   }
 
+  // fallow-ignore-next-line unused-class-member
   async searchStudios(term: string, limit: number = 10, signal?: AbortSignal): Promise<Array<{ id: string; name: string; image_path?: string }>> {
     const isEmptyTerm = !term || term.trim() === '';
     const cacheKey = this.buildCacheKey('studios', term, limit);
@@ -479,6 +482,7 @@ export class StashAPI {
     }
   }
 
+  // fallow-ignore-next-line unused-class-member
   async getStudioDetails(studioId: string, signal?: AbortSignal): Promise<StudioExtended | null> {
     if (this.isAborted(signal)) return null;
     try {
@@ -1958,6 +1962,7 @@ export class StashAPI {
   /**
    * Increment the play count for a scene. Fire-and-forget — never throws.
    */
+  // fallow-ignore-next-line unused-class-member
   async incrementScenePlayCount(sceneId: string): Promise<void> {
     if (!sceneId) return;
     try {
@@ -1975,6 +1980,7 @@ export class StashAPI {
    * @param resumeTime Current playback position in the scene (seconds), or undefined
    * @param playDuration Seconds watched in this session
    */
+  // fallow-ignore-next-line unused-class-member
   async saveSceneActivity(sceneId: string, resumeTime: number | undefined, playDuration: number): Promise<void> {
     if (!sceneId || playDuration <= 0) return;
     try {
@@ -2496,6 +2502,24 @@ export class StashAPI {
     } catch (error) {
       this.handleError('savePluginSettings', error, signal, false);
       return false;
+    }
+  }
+
+  // fallow-ignore-next-line unused-class-member
+  async getStashBoxes(signal?: AbortSignal): Promise<StashBox[]> {
+    if (this.isAborted(signal)) return [];
+
+    try {
+      const result = await this.gqlClient.query<GetStashBoxConfigResponse>({
+        query: queries.GET_STASH_BOX_CONFIG,
+        signal,
+      });
+
+      if (this.isAborted(signal)) return [];
+
+      return result.data?.configuration?.general?.stashBoxes ?? [];
+    } catch (error: unknown) {
+      return this.handleError('getStashBoxes', error, signal, []) ?? [];
     }
   }
 

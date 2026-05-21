@@ -61,6 +61,10 @@ export abstract class BasePost {
    */
   protected abstract data: VideoPostData | ImageBasedPostData;
 
+  getPerformers(): Performer[] {
+    return (this.data as ImageBasedPostData).image?.performers ?? [];
+  }
+
   // Safe accessor for image-based posts. Only call from methods that VideoPost overrides.
   private getImageData(): ImageBasedPostData {
     return this.data as ImageBasedPostData;

@@ -1160,6 +1160,10 @@ export class VideoPost extends VideoPostBase {
     return this.player;
   }
 
+  override getPerformers() {
+    return this.data.marker.scene.performers ?? [];
+  }
+
   protected getEntityLogId(): string {
     return this.data.marker.id;
   }

@@ -32,7 +32,7 @@
     "updatePerformerFavorite", "incrementOCount", "incrementImageOCount"
   ],
   "duplicates": {
-    "mode": "strict"
+    "mode": "semantic"
   },
   "health": {
     "maxCyclomatic": 20,

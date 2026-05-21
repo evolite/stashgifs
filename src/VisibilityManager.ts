@@ -54,6 +54,8 @@ export class VisibilityManager {
   private rectCacheFrame: number = 0;
   private readonly onHoverLoadRequest?: (postId: string) => void; // Callback to trigger video loading on hover
   private readonly onPlaybackStarted?: (postId: string) => void; // Callback when playback starts
+  private readonly onPrimaryPostChanged?: (postId: string) => void; // Callback when most-centered post changes
+  private lastPrimaryPostId?: string;
   private scrollCleanup?: () => void; // Cleanup function for scroll velocity tracking
   private autoplayBlocked: boolean = false;
   private readonly options: {
@@ -72,6 +74,7 @@ export class VisibilityManager {
     logger?: (event: string, payload?: Record<string, unknown>) => void;
     onHoverLoadRequest?: (postId: string) => void; // Callback to trigger video loading when hovered before loaded
     onPlaybackStarted?: (postId: string) => void; // Callback when playback starts
+    onPrimaryPostChanged?: (postId: string) => void; // Callback when most-centered post changes
     isReelMode?: boolean; // When true, autoplay works without hover requirement
     root?: Element | null; // Optional root for IntersectionObserver and viewport checks
   }) {
@@ -92,6 +95,7 @@ export class VisibilityManager {
     this.logger = options?.logger;
     this.onHoverLoadRequest = options?.onHoverLoadRequest;
     this.onPlaybackStarted = options?.onPlaybackStarted;
+    this.onPrimaryPostChanged = options?.onPrimaryPostChanged;
 
     // Initialize AudioManager
     this.audioManager = new AudioManager(this.entries, {
@@ -148,11 +152,13 @@ export class VisibilityManager {
 
       if (now - this.lastAudioFocusUpdate > 120) {
         this.audioManager.updateAudioFocus();
+        this.notifyPrimaryPostIfChanged();
         this.lastAudioFocusUpdate = now;
       }
 
       if (now - this.lastScrollEventTime > 140) {
         this.audioManager.updateAudioFocus();
+        this.notifyPrimaryPostIfChanged();
         stopLoop();
         return;
       }
@@ -625,6 +631,38 @@ export class VisibilityManager {
     return bestId;
   }
 
+  private getMostCenteredVisiblePost(): string | undefined {
+    let bestId: string | undefined;
+    let bestScore = Number.POSITIVE_INFINITY;
+    const viewport = this.getViewportRect();
+    const viewportCenterY = viewport.top + viewport.height / 2;
+    const viewportCenterX = viewport.left + viewport.width / 2;
+
+    for (const [postId, entry] of this.entries) {
+      if (!entry.isVisible) continue;
+      const rect = this.getCachedRect(entry.element);
+      if (rect.bottom < viewport.top || rect.top > viewport.top + viewport.height) continue;
+      if (rect.right < viewport.left || rect.left > viewport.left + viewport.width) continue;
+      const dy = (rect.top + rect.height / 2) - viewportCenterY;
+      const dx = (rect.left + rect.width / 2) - viewportCenterX;
+      const distance = Math.hypot(dx, dy);
+      if (distance < bestScore) {
+        bestScore = distance;
+        bestId = postId;
+      }
+    }
+    return bestId;
+  }
+
+  private notifyPrimaryPostIfChanged(): void {
+    if (!this.onPrimaryPostChanged) return;
+    const id = this.getMostCenteredVisiblePost();
+    if (id && id !== this.lastPrimaryPostId) {
+      this.lastPrimaryPostId = id;
+      this.onPrimaryPostChanged(id);
+    }
+  }
+
   /**
    * Check if a video should play based on AudioManager priority logic (for HD mode)
    */
@@ -731,6 +769,7 @@ export class VisibilityManager {
           this.audioManager.onVisibilityChange(postId, changedEntry.isVisible);
         }
       }
+      this.notifyPrimaryPostIfChanged();
     }
   }
 

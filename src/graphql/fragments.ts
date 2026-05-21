@@ -29,6 +29,7 @@ export const SceneFields = `
       birthdate
       stash_ids {
         stash_id
+        endpoint
       }
     }
     tags {
@@ -122,6 +123,7 @@ export const PerformerFields = `
     image_path
     stash_ids {
       stash_id
+      endpoint
     }
   }
 `;
@@ -150,6 +152,7 @@ export const PerformerFieldsExtended = `
     rating100
     stash_ids {
       stash_id
+      endpoint
     }
     tags {
       id

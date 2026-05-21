@@ -28,6 +28,23 @@ export const GET_PLUGIN_CONFIGURATION = `
 `;
 
 /**
+ * Get stash-box (StashDB, ThePornDB, etc.) configuration
+ */
+export const GET_STASH_BOX_CONFIG = `
+  query GetStashBoxConfig {
+    configuration {
+      general {
+        stashBoxes {
+          endpoint
+          api_key
+          name
+        }
+      }
+    }
+  }
+`;
+
+/**
  * Check if tags have markers
  */
 const CHECK_TAGS_HAVE_MARKERS = `

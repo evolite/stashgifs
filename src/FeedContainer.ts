@@ -19,6 +19,8 @@ import { debounce, normalizeMediaUrl, detectDeviceCapabilities, DeviceCapabiliti
 import { posterPreloader } from './PosterPreloader.js';
 import { GQLImage } from './graphql/types.js';
 import { SETTINGS_SVG, STASHGIFS_LOGO_SVG } from './icons.js';
+import { DiscoveryPanel } from './DiscoveryPanel.js';
+import { DiscoveryManager } from './DiscoveryManager.js';
 
 const DEFAULT_SETTINGS: FeedSettings = {
   autoPlay: true, // Enable autoplay for markers
@@ -54,6 +56,7 @@ const DEFAULT_SETTINGS: FeedSettings = {
   galleryIds: [],
   seenHistorySize: 500,
   contentLimit: 5000,
+  enableDiscoveryPanel: true,
 };
 
 /**
@@ -92,6 +95,8 @@ export class FeedContainer {
   private readonly settingsManager: PluginSettingsManager;
   private visibilityManager: VisibilityManager;
   private favoritesManager: FavoritesManager;
+  private discoveryPanel?: DiscoveryPanel;
+  private discoveryManager?: DiscoveryManager;
   private posts: Map<string, PostType>;
   private postOrder: string[];
   private images: Image[] = [];
@@ -704,10 +709,32 @@ export class FeedContainer {
         this.normalizeOrientationFilter(updatedSettings.orientationFilter ?? [])
       );
 
+    if (newSettings.enableDiscoveryPanel !== undefined) {
+      this.applyDiscoveryPanelSetting(updatedSettings.enableDiscoveryPanel === true);
+    }
+    if (newSettings.discoveryPanelSize !== undefined && this.discoveryPanel) {
+      this.discoveryPanel.setSize(updatedSettings.discoveryPanelSize ?? 260);
+    }
+    if (newSettings.discoverySceneOrder !== undefined && this.discoveryManager) {
+      this.discoveryManager.setSceneOrder(updatedSettings.discoverySceneOrder ?? 'latest');
+    }
+
     if (this.shouldReloadFeed(newSettings, excludedTagsChanged, orientationFilterChanged, reelModeChanged)) {
       this.loadVideos(this.currentFilters, false, undefined, true).catch((e) => {
         console.error('Failed to reload feed after settings change', e);
       });
+    }
+  }
+
+  private applyDiscoveryPanelSetting(enable: boolean): void {
+    if (enable && !this.discoveryPanel) {
+      this.discoveryPanel = new DiscoveryPanel(this.container, this.settings.discoveryPanelSize ?? 260);
+      this.discoveryManager = new DiscoveryManager(this.api, this.discoveryPanel, this.settings.discoverySceneOrder ?? 'latest');
+    } else if (!enable && this.discoveryPanel) {
+      this.discoveryManager?.destroy();
+      this.discoveryPanel.destroy();
+      this.discoveryManager = undefined;
+      this.discoveryPanel = undefined;
     }
   }
 
@@ -1081,6 +1108,10 @@ export class FeedContainer {
       debug: this.shouldEnableVisibilityDebug(),
       onHoverLoadRequest: (postId: string) => this.triggerVideoLoadOnHover(postId),
       onPlaybackStarted: (postId: string) => this.handleReelPlaybackStarted(postId),
+      onPrimaryPostChanged: (postId: string) => {
+        if (!this.discoveryManager) return;
+        this.discoveryManager.onPrimaryPostChanged(postId, this.getPerformersForPost(postId));
+      },
       isReelMode: this.settings.reelMode, // Pass reel mode state
       root: this.settings.reelMode ? this.scrollContainer : null,
     });
@@ -1101,6 +1132,12 @@ export class FeedContainer {
 
     // Initialize favorites manager
     this.favoritesManager = new FavoritesManager(this.api);
+
+    // Initialize discovery panel (opt-out via setting)
+    if (this.settings.enableDiscoveryPanel === true) {
+      this.discoveryPanel = new DiscoveryPanel(this.container, this.settings.discoveryPanelSize ?? 260);
+      this.discoveryManager = new DiscoveryManager(this.api, this.discoveryPanel, this.settings.discoverySceneOrder ?? 'latest');
+    }
   }
   
   /**
@@ -4488,6 +4525,15 @@ export class FeedContainer {
       this.prefetchPosters(allMarkers, append, currentFilters);
     }
 
+    // Pre-warm discovery cache with performers from this batch
+    if (this.discoveryManager) {
+      const performers = mergedContent.flatMap(item => {
+        if (item.type === 'marker') return (item.data as SceneMarker).scene.performers ?? [];
+        return (item.data as Image).performers ?? [];
+      });
+      this.discoveryManager.prefetch(performers);
+    }
+
     const renderChunkSize = 6;
     const renderDelay = 8;
     await this.renderPostsProgressively(mergedContent, append, signal, renderChunkSize, renderDelay);
@@ -5783,6 +5829,11 @@ export class FeedContainer {
     }
   }
 
+  private getPerformersForPost(postId: string) {
+    const post = this.posts.get(postId);
+    return post?.getPerformers() ?? [];
+  }
+
   private handleReelPlaybackStarted(postId: string): void {
     if (!this.isReelModeEnabled()) {
       return;
@@ -7032,6 +7083,8 @@ export class FeedContainer {
     }
 
     this.clearPosts();
+    this.discoveryManager?.destroy();
+    this.discoveryPanel?.destroy();
     this.api.destroy();
   }
 

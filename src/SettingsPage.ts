@@ -898,6 +898,63 @@ export class SettingsPage {
     layoutContent.appendChild(contentTypesSection);
     layoutContent.appendChild(layoutSection);
 
+    // ── StashDB Discovery Section ──────────────────────────────────────────
+    const discoverySection = document.createElement('div');
+    discoverySection.style.cssText = `margin-bottom: 24px; border: 1px solid ${THEME.colors.border}; border-radius: ${THEME.radius.card}; padding: 16px;`;
+
+    const discoverySectionTitle = document.createElement('h3');
+    discoverySectionTitle.textContent = 'StashDB Discovery';
+    discoverySectionTitle.style.cssText = `margin: 0 0 16px 0; color: ${THEME.colors.textPrimary}; font-size: ${THEME.typography.sizeTitle}; font-weight: ${THEME.typography.weightTitle};`;
+    discoverySection.appendChild(discoverySectionTitle);
+
+    const discoveryPanelContainer = document.createElement('div');
+    discoveryPanelContainer.style.cssText = 'display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;';
+    discoveryPanelContainer.appendChild(buildInfoLabel(
+      'Enable Discovery Panel',
+      'Shows a pull-out sidebar with new scenes from StashDB for the performer currently in view. Requires a StashDB stash-box configured in Stash settings.'
+    ));
+    const { container: discoveryPanelToggleContainer, input: discoveryPanelToggle } = this.createToggleSwitch(
+      this.settings.enableDiscoveryPanel === true,
+      () => this.saveSettings()
+    );
+    discoveryPanelContainer.appendChild(discoveryPanelToggleContainer);
+    discoverySection.appendChild(discoveryPanelContainer);
+    (this as any).discoveryPanelToggle = discoveryPanelToggle;
+
+    const discoverySizeContainer = document.createElement('div');
+    discoverySizeContainer.style.cssText = 'margin-bottom: 16px;';
+    discoverySizeContainer.appendChild(buildInfoLabel('Panel Width', 'Width of the discovery sidebar.'));
+    const currentSize = this.settings.discoveryPanelSize ?? 260;
+    const discoverySizeSlider = document.createElement('input');
+    discoverySizeSlider.type = 'range';
+    discoverySizeSlider.min = '40';
+    discoverySizeSlider.max = '440';
+    discoverySizeSlider.value = String(Math.min(440, Math.max(40, currentSize)));
+    discoverySizeSlider.style.cssText = 'width: 100%; cursor: pointer; margin-top: 6px;';
+    discoverySizeSlider.addEventListener('input', () => this.saveSettings());
+    discoverySizeContainer.appendChild(discoverySizeSlider);
+    discoverySection.appendChild(discoverySizeContainer);
+    (this as any).discoverySizeSlider = discoverySizeSlider;
+
+    const discoveryOrderContainer = document.createElement('div');
+    discoveryOrderContainer.style.cssText = 'display: flex; justify-content: space-between; align-items: center;';
+    discoveryOrderContainer.appendChild(buildInfoLabel('Scene Order', 'Show the latest scenes from StashDB, or pick randomly.'));
+    const discoveryOrderSelect = document.createElement('select');
+    discoveryOrderSelect.style.cssText = `padding: 6px 10px; border-radius: ${THEME.radius.button}; border: 1px solid ${THEME.colors.border}; background: ${THEME.colors.surface}; color: ${THEME.colors.textPrimary}; font-size: ${THEME.typography.sizeBody}; cursor: pointer;`;
+    for (const [val, label] of [['latest', 'Latest'], ['random', 'Random']] as const) {
+      const opt = document.createElement('option');
+      opt.value = val;
+      opt.textContent = label;
+      if ((this.settings.discoverySceneOrder ?? 'latest') === val) opt.selected = true;
+      discoveryOrderSelect.appendChild(opt);
+    }
+    discoveryOrderSelect.addEventListener('change', () => this.saveSettings());
+    discoveryOrderContainer.appendChild(discoveryOrderSelect);
+    discoverySection.appendChild(discoveryOrderContainer);
+    (this as any).discoveryOrderSelect = discoveryOrderSelect;
+
+    layoutContent.appendChild(discoverySection);
+
     // ── Short-Form ─────────────────────────────────────────────────
     const shortFormSection = document.createElement('div');
     shortFormSection.style.marginBottom = '24px';
@@ -1501,7 +1558,7 @@ export class SettingsPage {
       'shortFormIncludeToggle', 'reelModeToggle', 'hdVideoToggle',
       'portraitToggle', 'landscapeToggle',
       'themeBackgroundInput', 'themePrimaryInput', 'themeSecondaryInput', 'themeAccentInput',
-      'showVerifiedCheckmarksToggle', 'showProductionAgeToggle', 'showStudioChipsToggle', 'excludedTagsInput',
+      'showVerifiedCheckmarksToggle', 'showProductionAgeToggle', 'showStudioChipsToggle', 'discoveryPanelToggle', 'excludedTagsInput',
       'includeSubtagsToggle', 'seenHistorySizeInput', 'contentLimitInput',
     ];
     const inputs: Record<string, HTMLInputElement> = {};
@@ -1561,6 +1618,9 @@ export class SettingsPage {
       showVerifiedCheckmarks: inputs.showVerifiedCheckmarksToggle.checked,
       showProductionAge: inputs.showProductionAgeToggle.checked,
       showStudioChips: inputs.showStudioChipsToggle.checked,
+      enableDiscoveryPanel: inputs.discoveryPanelToggle.checked,
+      discoveryPanelSize: Number(((this as any).discoverySizeSlider as HTMLInputElement)?.value ?? 260),
+      discoverySceneOrder: ((this as any).discoveryOrderSelect as HTMLSelectElement)?.value as 'latest' | 'random' ?? 'latest',
       excludedTagNames,
       includeSubtags: inputs.includeSubtagsToggle.checked,
       imagesInGalleryOnly: galleryOnlyToggle?.checked ?? false,
