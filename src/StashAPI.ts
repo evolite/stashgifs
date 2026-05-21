@@ -2506,6 +2506,38 @@ export class StashAPI {
   }
 
   // fallow-ignore-next-line unused-class-member
+  async findLocalSceneIdByStashDbId(stashId: string, signal?: AbortSignal): Promise<string | null> {
+    if (this.isAborted(signal)) return null;
+
+    const QUERY = `
+      query FindSceneByStashId($scene_filter: SceneFilterType) {
+        findScenes(scene_filter: $scene_filter) {
+          scenes { id }
+        }
+      }
+    `;
+
+    try {
+      const result = await this.gqlClient.query<{
+        findScenes?: { scenes: Array<{ id: string }> };
+      }>({
+        query: QUERY,
+        variables: {
+          scene_filter: {
+            stash_id_endpoint: { stash_id: stashId, endpoint: '', modifier: 'EQUALS' },
+          },
+        },
+        signal,
+      });
+
+      if (this.isAborted(signal)) return null;
+      return result.data?.findScenes?.scenes[0]?.id ?? null;
+    } catch (error: unknown) {
+      return this.handleError('findLocalSceneIdByStashDbId', error, signal, null);
+    }
+  }
+
+  // fallow-ignore-next-line unused-class-member
   async getStashBoxes(signal?: AbortSignal): Promise<StashBox[]> {
     if (this.isAborted(signal)) return [];
 

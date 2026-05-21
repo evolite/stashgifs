@@ -288,7 +288,7 @@ export class DiscoveryPanel {
   }
 
   // fallow-ignore-next-line unused-class-member
-  showScenes(scenes: Array<{ scene: StashBoxScene; baseUrl: string; performerName: string }>): void {
+  showScenes(scenes: Array<{ scene: StashBoxScene; baseUrl: string; performerName: string; localStashId?: string }>): void {
     this.status.style.display = 'none';
     this.title.textContent = 'StashDB Discovery';
 
@@ -300,8 +300,8 @@ export class DiscoveryPanel {
       return;
     }
 
-    this.swapCards(scenes.map(({ scene, baseUrl, performerName }) =>
-      this.buildCard(scene, baseUrl, performerName)
+    this.swapCards(scenes.map(({ scene, baseUrl, performerName, localStashId }) =>
+      this.buildCard(scene, baseUrl, performerName, localStashId)
     ));
     this.hasScenes = true;
   }
@@ -331,7 +331,7 @@ export class DiscoveryPanel {
     });
   }
 
-  private buildCard(scene: StashBoxScene, baseUrl: string, performerName: string): HTMLElement {
+  private buildCard(scene: StashBoxScene, baseUrl: string, performerName: string, localStashId?: string): HTMLElement {
     const card = document.createElement('div');
     Object.assign(card.style, {
       background: THEME.colors.surface,
@@ -388,10 +388,21 @@ export class DiscoveryPanel {
     }
 
     const link = document.createElement('a');
-    link.href = `${baseUrl}/scenes/${scene.id}`;
-    link.target = '_blank';
-    link.rel = 'noopener noreferrer';
-    link.textContent = 'View on StashDB →';
+    if (localStashId) {
+      link.href = `/scenes/${localStashId}`;
+      link.target = '_self';
+      link.rel = '';
+      const icon = document.createElement('span');
+      icon.textContent = '▶';
+      icon.style.cssText = `color: ${THEME.colors.accentPrimary}; margin-right: 3px; font-size: 8px; vertical-align: middle;`;
+      link.appendChild(icon);
+      link.appendChild(document.createTextNode('Play in Stash'));
+    } else {
+      link.href = `${baseUrl}/scenes/${scene.id}`;
+      link.target = '_blank';
+      link.rel = 'noopener noreferrer';
+      link.textContent = 'View on StashDB →';
+    }
     link.style.cssText = `font-size: 10px; color: ${THEME.colors.accentPrimary}; text-decoration: none; margin-top: 2px; display: inline-block; white-space: nowrap;`;
 
     info.appendChild(nameEl);

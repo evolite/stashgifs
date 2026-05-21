@@ -112,7 +112,8 @@ export class DiscoveryManager {
       if (resolved.length) {
         const allCached = resolved.every(r => this.lruCache.has(`${r.box.endpoint}::${r.stashId}`));
         if (allCached) {
-          this.panel.showScenes(this.buildScenesPayload(resolved));
+          const payload = this.buildScenesPayload(resolved);
+          void this.enrichAndShow(payload);
           return;
         }
       }
@@ -222,7 +223,7 @@ export class DiscoveryManager {
       }
 
       const counts = sceneCounts(resolved.length);
-      const allScenes: Array<{ scene: import('./graphql/types.js').StashBoxScene; baseUrl: string; performerName: string }> = [];
+      const allScenes: Array<{ scene: import('./graphql/types.js').StashBoxScene; baseUrl: string; performerName: string; localStashId?: string }> = [];
 
       for (let i = 0; i < resolved.length; i++) {
         const { performer, stashId, box } = resolved[i];
@@ -239,6 +240,13 @@ export class DiscoveryManager {
           allScenes.push({ scene, baseUrl, performerName: performer.name });
         }
       }
+
+      await Promise.all(allScenes.map(async (item) => {
+        if (ac.signal.aborted) return;
+        const localId = await this.api.findLocalSceneIdByStashDbId(item.scene.id, ac.signal);
+        if (localId) item.localStashId = localId;
+      }));
+      if (ac.signal.aborted) return;
 
       this.panel.hideSpinner();
       this.panel.showScenes(allScenes);
@@ -285,11 +293,23 @@ export class DiscoveryManager {
     return results;
   }
 
+  private async enrichAndShow(
+    scenes: Array<{ scene: import('./graphql/types.js').StashBoxScene; baseUrl: string; performerName: string; localStashId?: string }>,
+    signal?: AbortSignal,
+  ): Promise<void> {
+    await Promise.all(scenes.map(async (item) => {
+      if (signal?.aborted) return;
+      const localId = await this.api.findLocalSceneIdByStashDbId(item.scene.id, signal);
+      if (localId) item.localStashId = localId;
+    }));
+    if (!signal?.aborted) this.panel.showScenes(scenes);
+  }
+
   private buildScenesPayload(
     resolved: Array<{ performer: Performer; stashId: string; box: StashBox }>
-  ): Array<{ scene: import('./graphql/types.js').StashBoxScene; baseUrl: string; performerName: string }> {
+  ): Array<{ scene: import('./graphql/types.js').StashBoxScene; baseUrl: string; performerName: string; localStashId?: string }> {
     const counts = sceneCounts(resolved.length);
-    const result: Array<{ scene: import('./graphql/types.js').StashBoxScene; baseUrl: string; performerName: string }> = [];
+    const result: Array<{ scene: import('./graphql/types.js').StashBoxScene; baseUrl: string; performerName: string; localStashId?: string }> = [];
     for (let i = 0; i < resolved.length; i++) {
       const { performer, stashId, box } = resolved[i];
       const cached = this.lruCache.get(`${box.endpoint}::${stashId}`);
