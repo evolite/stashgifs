@@ -249,24 +249,8 @@ export class DiscoveryManager {
         return;
       }
 
-      const counts = sceneCounts(resolved.length);
-      const allScenes: Array<{ scene: import('./graphql/types.js').StashBoxScene; baseUrl: string; performerName: string; localStashId?: string }> = [];
-
-      for (let i = 0; i < resolved.length; i++) {
-        const { performer, stashId, box } = resolved[i];
-        const cacheKey = `${box.endpoint}::${stashId}`;
-        const cached = this.lruGet(cacheKey);
-        let scenes = cached?.scenes;
-        if (!scenes) {
-          scenes = await this.fetchScenesFromStashBox(box, stashId, ac.signal);
-          if (ac.signal.aborted) return;
-          this.lruSet(cacheKey, { scenes, endpoint: box.endpoint });
-        }
-        const baseUrl = box.endpoint.replace('/graphql', '');
-        for (const scene of scenes.slice(0, counts[i])) {
-          allScenes.push({ scene, baseUrl, performerName: performer.name });
-        }
-      }
+      const allScenes = await this.fetchAllScenes(resolved, ac.signal);
+      if (ac.signal.aborted) return;
 
       await Promise.all(allScenes.map(async (item) => {
         if (ac.signal.aborted) return;
@@ -284,11 +268,43 @@ export class DiscoveryManager {
     }
   }
 
+  private async fetchAllScenes(
+    resolved: Array<{ performer: Performer; stashId: string; box: StashBox }>,
+    signal: AbortSignal,
+  ): Promise<Array<{ scene: StashBoxScene; baseUrl: string; performerName: string; localStashId?: string }>> {
+    const counts = sceneCounts(resolved.length);
+    const allScenes: Array<{ scene: StashBoxScene; baseUrl: string; performerName: string; localStashId?: string }> = [];
+    for (let i = 0; i < resolved.length; i++) {
+      const { performer, stashId, box } = resolved[i];
+      const cacheKey = `${box.endpoint}::${stashId}`;
+      const cached = this.lruGet(cacheKey);
+      let scenes = cached?.scenes;
+      if (!scenes) {
+        scenes = await this.fetchScenesFromStashBox(box, stashId, signal);
+        if (signal.aborted) return allScenes;
+        this.lruSet(cacheKey, { scenes, endpoint: box.endpoint });
+      }
+      const baseUrl = box.endpoint.replace('/graphql', '');
+      for (const scene of scenes.slice(0, counts[i])) {
+        allScenes.push({ scene, baseUrl, performerName: performer.name });
+      }
+    }
+    return allScenes;
+  }
+
   private resolvePerformers(performers: Performer[]): Array<{ performer: Performer; stashId: string; box: StashBox }> {
     const results: Array<{ performer: Performer; stashId: string; box: StashBox }> = [];
     const seen = new Set<string>();
+    this.resolveByEndpoint(performers, results, seen);
+    if (!results.length) this.resolveByUUID(performers, results, seen);
+    return results;
+  }
 
-    // Pass 1: exact endpoint match
+  private resolveByEndpoint(
+    performers: Performer[],
+    results: Array<{ performer: Performer; stashId: string; box: StashBox }>,
+    seen: Set<string>,
+  ): void {
     for (const performer of performers) {
       if (results.length >= 3) break;
       for (const sid of performer.stash_ids ?? []) {
@@ -300,24 +316,25 @@ export class DiscoveryManager {
         }
       }
     }
+  }
 
-    // Pass 2: UUID fallback to first stash-box (only if pass 1 found nothing)
-    if (!results.length) {
-      const defaultBox = this.stashBoxes[0];
-      if (!defaultBox) return results;
-      for (const performer of performers) {
-        if (results.length >= 3) break;
-        for (const sid of performer.stash_ids ?? []) {
-          if (UUID_RE.test(sid.stash_id) && !seen.has(sid.stash_id)) {
-            seen.add(sid.stash_id);
-            results.push({ performer, stashId: sid.stash_id, box: defaultBox });
-            break;
-          }
+  private resolveByUUID(
+    performers: Performer[],
+    results: Array<{ performer: Performer; stashId: string; box: StashBox }>,
+    seen: Set<string>,
+  ): void {
+    const defaultBox = this.stashBoxes[0];
+    if (!defaultBox) return;
+    for (const performer of performers) {
+      if (results.length >= 3) break;
+      for (const sid of performer.stash_ids ?? []) {
+        if (UUID_RE.test(sid.stash_id) && !seen.has(sid.stash_id)) {
+          seen.add(sid.stash_id);
+          results.push({ performer, stashId: sid.stash_id, box: defaultBox });
+          break;
         }
       }
     }
-
-    return results;
   }
 
   private async enrichAndShow(

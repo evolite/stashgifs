@@ -710,7 +710,11 @@ export class FeedContainer {
       );
 
     if (newSettings.enableDiscoveryPanel !== undefined) {
-      this.applyDiscoveryPanelSetting(updatedSettings.enableDiscoveryPanel === true);
+      if (updatedSettings.enableDiscoveryPanel === true) {
+        this.mountDiscoveryPanel();
+      } else {
+        this.unmountDiscoveryPanel();
+      }
     }
     if (newSettings.discoveryPanelSize !== undefined && this.discoveryPanel) {
       this.discoveryPanel.setSize(updatedSettings.discoveryPanelSize ?? 260);
@@ -726,16 +730,18 @@ export class FeedContainer {
     }
   }
 
-  private applyDiscoveryPanelSetting(enable: boolean): void {
-    if (enable && !this.discoveryPanel) {
-      this.discoveryPanel = new DiscoveryPanel(this.container, this.settings.discoveryPanelSize ?? 260);
-      this.discoveryManager = new DiscoveryManager(this.api, this.discoveryPanel, this.settings.discoverySceneOrder ?? 'latest');
-    } else if (!enable && this.discoveryPanel) {
-      this.discoveryManager?.destroy();
-      this.discoveryPanel.destroy();
-      this.discoveryManager = undefined;
-      this.discoveryPanel = undefined;
-    }
+  private mountDiscoveryPanel(): void {
+    if (this.discoveryPanel) return;
+    this.discoveryPanel = new DiscoveryPanel(this.container, this.settings.discoveryPanelSize ?? 260);
+    this.discoveryManager = new DiscoveryManager(this.api, this.discoveryPanel, this.settings.discoverySceneOrder ?? 'latest');
+  }
+
+  private unmountDiscoveryPanel(): void {
+    if (!this.discoveryPanel) return;
+    this.discoveryManager?.destroy();
+    this.discoveryPanel.destroy();
+    this.discoveryManager = undefined;
+    this.discoveryPanel = undefined;
   }
 
   private handleLayoutSettingsChange(newSettings: Partial<FeedSettings>, reelModeChanged: boolean): void {

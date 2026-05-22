@@ -108,7 +108,7 @@ export class DiscoveryPanel {
       border-top-color: ${THEME.colors.accentPrimary};
       animation: stashgifs-spin 0.7s linear infinite;
       display: none; flex-shrink: 0;
-    `.replace(/\s+/g, ' ').trim();
+    `.replaceAll(/\s+/g, ' ').trim();
 
     if (!document.getElementById('stashgifs-spin-style')) {
       const style = document.createElement('style');
@@ -314,7 +314,8 @@ export class DiscoveryPanel {
       card.style.transition = 'none';
       this.scenes.appendChild(card);
     }
-    void this.scenes.offsetHeight;
+    // Force reflow so initial opacity/transform are applied before the transition kicks in
+    this.scenes.getBoundingClientRect();
 
     // Shuffle indices so cards fade+slide in one-by-one in a random order
     const order = newCards.map((_, i) => i);
