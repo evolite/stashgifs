@@ -4,6 +4,7 @@ import type { Performer } from './types.js';
 import type { StashBox, StashBoxScene } from './graphql/types.js';
 
 type ScenePayloadItem = { scene: StashBoxScene; baseUrl: string; performerName: string; localStashId?: string };
+type SceneOrder = 'latest' | 'random' | 'trending';
 
 const SCENES_PER_PERFORMER = 3;
 const PREFETCH_BATCH_SIZE = 5;
@@ -11,7 +12,7 @@ const DEBOUNCE_MS = 500;
 const STASHBOX_MIN_INTERVAL_MS = 300;
 
 function sceneCounts(n: number): number[] {
-  return Array(Math.min(n, 3)).fill(1);
+  return new Array(Math.min(n, 3)).fill(1) as number[];
 }
 const LRU_MAX = 100;
 const PREFETCH_INTERVAL_MS = 600;
@@ -51,7 +52,7 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 export class DiscoveryManager {
   private readonly api: StashAPI;
   private readonly panel: DiscoveryPanel;
-  private sceneOrder: 'latest' | 'random' | 'trending' = 'latest';
+  private sceneOrder: SceneOrder = 'latest';
   private stashBoxes: StashBox[] = [];
   private stashBoxesLoaded = false;
   private stashBoxLoadPromise?: Promise<void>;
@@ -71,14 +72,14 @@ export class DiscoveryManager {
   // Pending state when panel is collapsed
   private pendingPerformers?: Performer[];
 
-  constructor(api: StashAPI, panel: DiscoveryPanel, sceneOrder: 'latest' | 'random' | 'trending' = 'latest') {
+  constructor(api: StashAPI, panel: DiscoveryPanel, sceneOrder: SceneOrder = 'latest') {
     this.api = api;
     this.panel = panel;
     this.sceneOrder = sceneOrder;
     panel.setOnOpen(() => this.onPanelOpened());
   }
 
-  setSceneOrder(order: 'latest' | 'random' | 'trending'): void {
+  setSceneOrder(order: SceneOrder): void {
     if (order === this.sceneOrder) return;
     this.sceneOrder = order;
     // Clear cache so next fetch uses the new order
