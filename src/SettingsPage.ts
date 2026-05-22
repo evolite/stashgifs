@@ -941,7 +941,7 @@ export class SettingsPage {
     discoveryOrderContainer.appendChild(buildInfoLabel('Scene Order', 'Show the latest scenes from StashDB, or pick randomly.'));
     const discoveryOrderSelect = document.createElement('select');
     discoveryOrderSelect.style.cssText = `padding: 6px 10px; border-radius: ${THEME.radius.button}; border: 1px solid ${THEME.colors.border}; background: ${THEME.colors.surface}; color: ${THEME.colors.textPrimary}; font-size: ${THEME.typography.sizeBody}; cursor: pointer;`;
-    for (const [val, label] of [['latest', 'Latest'], ['random', 'Random']] as const) {
+    for (const [val, label] of [['latest', 'Latest'], ['random', 'Random'], ['trending', 'Trending']] as const) {
       const opt = document.createElement('option');
       opt.value = val;
       opt.textContent = label;
@@ -1620,7 +1620,7 @@ export class SettingsPage {
       showStudioChips: inputs.showStudioChipsToggle.checked,
       enableDiscoveryPanel: inputs.discoveryPanelToggle.checked,
       discoveryPanelSize: Number(((this as any).discoverySizeSlider as HTMLInputElement)?.value ?? 260),
-      discoverySceneOrder: ((this as any).discoveryOrderSelect as HTMLSelectElement)?.value as 'latest' | 'random' ?? 'latest',
+      discoverySceneOrder: ((this as any).discoveryOrderSelect as HTMLSelectElement)?.value as 'latest' | 'random' | 'trending' ?? 'latest',
       excludedTagNames,
       includeSubtags: inputs.includeSubtagsToggle.checked,
       imagesInGalleryOnly: galleryOnlyToggle?.checked ?? false,

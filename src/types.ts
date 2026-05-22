@@ -137,7 +137,7 @@ export interface FeedSettings {
   showStudioChips?: boolean; // Show studio logo + name chips alongside performer chips, default: true
   enableDiscoveryPanel?: boolean; // Show StashDB discovery sidebar panel, default: true
   discoveryPanelSize?: number; // Panel width in px (1–1000), default 260
-  discoverySceneOrder?: 'latest' | 'random'; // Scene selection: latest (default) or random
+  discoverySceneOrder?: 'latest' | 'random' | 'trending'; // Scene selection: latest (default), random, or trending
 }
 
 export interface VideoPostData {

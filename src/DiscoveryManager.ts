@@ -51,7 +51,7 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 export class DiscoveryManager {
   private readonly api: StashAPI;
   private readonly panel: DiscoveryPanel;
-  private sceneOrder: 'latest' | 'random' = 'latest';
+  private sceneOrder: 'latest' | 'random' | 'trending' = 'latest';
   private stashBoxes: StashBox[] = [];
   private stashBoxesLoaded = false;
   private stashBoxLoadPromise?: Promise<void>;
@@ -71,14 +71,14 @@ export class DiscoveryManager {
   // Pending state when panel is collapsed
   private pendingPerformers?: Performer[];
 
-  constructor(api: StashAPI, panel: DiscoveryPanel, sceneOrder: 'latest' | 'random' = 'latest') {
+  constructor(api: StashAPI, panel: DiscoveryPanel, sceneOrder: 'latest' | 'random' | 'trending' = 'latest') {
     this.api = api;
     this.panel = panel;
     this.sceneOrder = sceneOrder;
     panel.setOnOpen(() => this.onPanelOpened());
   }
 
-  setSceneOrder(order: 'latest' | 'random'): void {
+  setSceneOrder(order: 'latest' | 'random' | 'trending'): void {
     if (order === this.sceneOrder) return;
     this.sceneOrder = order;
     // Clear cache so next fetch uses the new order
@@ -409,8 +409,9 @@ export class DiscoveryManager {
     await this.stashBoxRateLimiter.wait(signal);
     this.stashBoxRateLimiter.stamp();
 
+    const sort = this.sceneOrder === 'trending' ? 'TRENDING' : 'DATE';
     const aliases = stashIds.map((id, i) =>
-      `p${i}: queryScenes(input: { performers: { value: ["${id}"], modifier: INCLUDES }, per_page: ${perPage}, sort: DATE, direction: DESC }) { scenes { id title date images { url } studio { name } } }`
+      `p${i}: queryScenes(input: { performers: { value: ["${id}"], modifier: INCLUDES }, per_page: ${perPage}, sort: ${sort}, direction: DESC }) { scenes { id title date images { url } studio { name } } }`
     );
     const query = `query BatchDiscovery { ${aliases.join(' ')} }`;
 
