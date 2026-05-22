@@ -147,12 +147,6 @@ export class DiscoveryPanel {
   }
 
   // fallow-ignore-next-line unused-class-member
-  showSpinner(): void {}
-
-  // fallow-ignore-next-line unused-class-member
-  hideSpinner(): void {}
-
-  // fallow-ignore-next-line unused-class-member
   isCollapsed(): boolean { return this.collapsed; }
 
   // fallow-ignore-next-line unused-class-member

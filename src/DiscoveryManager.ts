@@ -78,7 +78,6 @@ export class DiscoveryManager {
     this.panel = panel;
     this.sceneOrder = sceneOrder;
     panel.setOnOpen(() => this.onPanelOpened());
-    void this.ensureStashBoxes(); // warm up stash-box config immediately
   }
 
   setSceneOrder(order: 'latest' | 'random'): void {
@@ -91,6 +90,7 @@ export class DiscoveryManager {
   }
 
   onPrimaryPostChanged(postId: string, performers: Performer[]): void {
+    void this.ensureStashBoxes(); // warm up as soon as first post is seen
     if (postId === this.currentPostId) return;
     this.currentPostId = postId;
 
@@ -120,7 +120,7 @@ export class DiscoveryManager {
       return;
     }
 
-    const key = relevant.flatMap(p => p.stash_ids!.map(s => s.stash_id)).sort().join(',');
+    const key = relevant.flatMap(p => p.stash_ids!.map(s => s.stash_id)).sort((a, b) => a.localeCompare(b)).join(',');
     if (key === this.shownDiscoveryKey) return;
     this.pendingDiscoveryKey = key;
 
@@ -141,7 +141,6 @@ export class DiscoveryManager {
 
     this.debounceTimer = setTimeout(() => {
       this.panel.showLoading();
-      this.panel.showSpinner();
       void this.runDiscovery(relevant);
     }, DEBOUNCE_MS);
   }
@@ -233,16 +232,14 @@ export class DiscoveryManager {
 
   private ensureStashBoxes(signal?: AbortSignal): Promise<void> {
     if (this.stashBoxesLoaded) return Promise.resolve();
-    if (!this.stashBoxLoadPromise) {
-      this.stashBoxLoadPromise = this.api.getStashBoxes()
-        .then(boxes => {
-          this.stashBoxes = boxes;
-          this.stashBoxesLoaded = true;
-        })
-        .catch(() => {
-          this.stashBoxLoadPromise = undefined; // allow retry on failure
-        });
-    }
+    this.stashBoxLoadPromise ??= this.api.getStashBoxes()
+      .then(boxes => {
+        this.stashBoxes = boxes;
+        this.stashBoxesLoaded = true;
+      })
+      .catch(() => {
+        this.stashBoxLoadPromise = undefined; // allow retry on failure
+      });
     if (!signal) return this.stashBoxLoadPromise;
     return Promise.race([
       this.stashBoxLoadPromise,
@@ -281,10 +278,8 @@ export class DiscoveryManager {
       }));
       if (ac.signal.aborted) return;
 
-      this.panel.hideSpinner();
       this.showScenes(allScenes);
     } catch (e) {
-      this.panel.hideSpinner();
       if (ac.signal.aborted || (e instanceof Error && e.name === 'AbortError')) return;
       this.panel.showError('Failed to load discovery data');
     }
@@ -315,8 +310,8 @@ export class DiscoveryManager {
       const stashIds = indices.map(i => resolved[i].stashId);
       const batchResult = await this.fetchBatchedScenes(box, stashIds, perPage, signal);
       if (signal.aborted) return [];
-      for (let k = 0; k < indices.length; k++) {
-        const { stashId } = resolved[indices[k]];
+      for (const idx of indices) {
+        const { stashId } = resolved[idx];
         const scenes = batchResult.get(stashId) ?? [];
         this.lruSet(`${box.endpoint}::${stashId}`, { scenes, endpoint: box.endpoint });
       }
