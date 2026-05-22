@@ -5,6 +5,27 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.4.0] - 2026-05-22
+
+### Bug Fixes
+
+- Lower view threshold to half-clip or 3 seconds, whichever is smaller
+- Resolve all SonarQube reported issues
+- Eliminate boolean selector param in applyReelHeaderStyles (S2301)
+- Resolve all SonarQube cognitive complexity and void operator issues
+- Resolve SonarQube issues in discovery feature
+
+### Features
+
+- Add performer placeholder and search dialog for posts with no performers
+- Add view count badge with eye icon to scene and image feeds
+- Add StashDB discovery panel sidebar
+- Show play in stash link on discovery cards when scene is locally available
+- Add rate limiter to StashBox discovery requests
+- Improve discovery panel UX and StashDB request efficiency
+- Per-slot discovery card updates with random slot selection
+- Add trending sort option to discovery panel scene order
+
 ## [6.3.1] - 2026-05-19
 
 ### Bug Fixes
