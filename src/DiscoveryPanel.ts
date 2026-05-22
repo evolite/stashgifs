@@ -8,7 +8,6 @@ export class DiscoveryPanel {
   private readonly outer: HTMLElement;  // slides right; tab hangs off its left edge
   private readonly tab: HTMLButtonElement;
   private readonly title: HTMLElement;
-  private readonly spinner: HTMLElement;
   private readonly scenes: HTMLElement;
   private readonly status: HTMLElement;
   private collapsed: boolean;
@@ -49,20 +48,19 @@ export class DiscoveryPanel {
       right: '100%',
       top: '50%',
       transform: 'translateY(-50%)',
-      width: '24px',
+      width: '44px',
       height: '48px',
       border: 'none',
       borderRadius: '6px 0 0 6px',
       background: THEME.colors.surface,
       color: THEME.colors.accentPrimary,
       cursor: 'pointer',
-      fontSize: '12px',
       display: 'flex',
       alignItems: 'center',
       justifyContent: 'center',
       boxShadow: '-2px 0 8px rgba(0,0,0,0.35)',
     });
-    this.tab.textContent = this.collapsed ? '◀' : '▶';
+    this.tab.innerHTML = this.tabIcon(this.collapsed);
     this.tab.addEventListener('click', () => this.toggle());
 
     // Inner panel — clipping container for the scrollable content.
@@ -89,26 +87,14 @@ export class DiscoveryPanel {
       borderBottom: `1px solid ${THEME.colors.border}`,
     });
 
-    const headerRow = document.createElement('div');
-    headerRow.style.cssText = 'display: flex; align-items: center; gap: 6px;';
-
     this.title = document.createElement('span');
     Object.assign(this.title.style, {
       fontWeight: THEME.typography.weightBodyStrong,
       fontSize: THEME.typography.sizeMeta,
       color: THEME.colors.textSecondary,
-      flex: '1',
     });
     this.title.textContent = 'StashDB Discovery';
-
-    this.spinner = document.createElement('span');
-    this.spinner.style.cssText = `
-      width: 10px; height: 10px; border-radius: 50%;
-      border: 2px solid ${THEME.colors.border};
-      border-top-color: ${THEME.colors.accentPrimary};
-      animation: stashgifs-spin 0.7s linear infinite;
-      display: none; flex-shrink: 0;
-    `.replaceAll(/\s+/g, ' ').trim();
+    header.appendChild(this.title);
 
     if (!document.getElementById('stashgifs-spin-style')) {
       const style = document.createElement('style');
@@ -119,10 +105,6 @@ export class DiscoveryPanel {
       ].join(' ');
       document.head.appendChild(style);
     }
-
-    headerRow.appendChild(this.title);
-    headerRow.appendChild(this.spinner);
-    header.appendChild(headerRow);
 
     const body = document.createElement('div');
     Object.assign(body.style, {
@@ -165,14 +147,10 @@ export class DiscoveryPanel {
   }
 
   // fallow-ignore-next-line unused-class-member
-  showSpinner(): void {
-    this.spinner.style.display = 'inline-block';
-  }
+  showSpinner(): void {}
 
   // fallow-ignore-next-line unused-class-member
-  hideSpinner(): void {
-    this.spinner.style.display = 'none';
-  }
+  hideSpinner(): void {}
 
   // fallow-ignore-next-line unused-class-member
   isCollapsed(): boolean { return this.collapsed; }
@@ -191,7 +169,7 @@ export class DiscoveryPanel {
     this.collapsed = !this.collapsed;
     localStorage.setItem(LS_KEY, this.collapsed ? '1' : '0');
     this.outer.style.right = this.collapsed ? `-${this.panelWidth}px` : '0';
-    this.tab.textContent = this.collapsed ? '◀' : '▶';
+    this.tab.innerHTML = this.tabIcon(this.collapsed);
     if (wasCollapsed && !this.collapsed) this.onOpen?.();
   }
 
@@ -224,14 +202,14 @@ export class DiscoveryPanel {
     const thumb = document.createElement('div');
     thumb.style.cssText = `width: 100%; aspect-ratio: 16/9; background: ${THEME.colors.backgroundPrimary}; display: flex; align-items: center; justify-content: center;`;
     const spinner = document.createElement('span');
-    spinner.style.cssText = `width: 20px; height: 20px; border-radius: 50%; border: 2px solid ${THEME.colors.border}; border-top-color: ${THEME.colors.accentPrimary}; animation: stashgifs-spin 0.7s linear infinite; display: inline-block;`;
+    spinner.style.cssText = `width: 18px; height: 18px; border-radius: 50%; border: 2px solid ${THEME.colors.border}; border-top-color: ${THEME.colors.accentPrimary}; animation: stashgifs-spin 0.7s linear infinite; display: inline-block;`;
     thumb.appendChild(spinner);
 
     const info = document.createElement('div');
-    info.style.cssText = `padding: 10px 8px; height: 72px; box-sizing: border-box; display: flex; flex-direction: column; gap: 7px;`;
+    info.style.cssText = `padding: 6px 8px 7px; display: flex; flex-direction: column; gap: 5px;`;
     for (const width of ['55%', '80%', '40%']) {
       const bar = document.createElement('div');
-      bar.style.cssText = `height: 9px; border-radius: 4px; background: ${THEME.colors.border}; width: ${width}; animation: stashgifs-pulse 1.5s ease-in-out infinite;`;
+      bar.style.cssText = `height: 8px; border-radius: 4px; background: ${THEME.colors.border}; width: ${width}; animation: stashgifs-pulse 1.5s ease-in-out infinite;`;
       info.appendChild(bar);
     }
 
@@ -275,12 +253,12 @@ export class DiscoveryPanel {
     const thumb = document.createElement('div');
     thumb.style.cssText = `width: 100%; aspect-ratio: 16/9; background: ${THEME.colors.backgroundPrimary}; display: flex; align-items: center; justify-content: center;`;
     const sym = document.createElement('span');
-    sym.style.cssText = `font-size: 26px; color: ${THEME.colors.textMuted};`;
+    sym.style.cssText = `font-size: 24px; color: ${THEME.colors.textMuted};`;
     sym.textContent = symbol;
     thumb.appendChild(sym);
 
     const info = document.createElement('div');
-    info.style.cssText = `height: 72px; box-sizing: border-box;`;
+    info.style.cssText = `height: 44px; box-sizing: border-box;`;
 
     card.appendChild(thumb);
     card.appendChild(info);
@@ -363,7 +341,7 @@ export class DiscoveryPanel {
     }
 
     const info = document.createElement('div');
-    info.style.cssText = `padding: 6px 8px 7px; display: flex; flex-direction: column; gap: 2px; height: 72px; overflow: hidden; box-sizing: border-box;`;
+    info.style.cssText = `padding: 4px 8px 6px; display: flex; flex-direction: column; gap: 1px; overflow: hidden;`;
 
     const nameEl = document.createElement('div');
     nameEl.style.cssText = `font-size: 10px; color: ${THEME.colors.accentPrimary}; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;`;
@@ -374,19 +352,11 @@ export class DiscoveryPanel {
     titleEl.textContent = scene.title ?? 'Untitled';
 
     const meta = document.createElement('div');
-    meta.style.cssText = `font-size: 10px; color: ${THEME.colors.textMuted}; display: flex; gap: 6px; white-space: nowrap; overflow: hidden;`;
-
-    if (scene.date) {
-      const dateEl = document.createElement('span');
-      dateEl.textContent = scene.date;
-      meta.appendChild(dateEl);
-    }
-    if (scene.studio?.name) {
-      const studioEl = document.createElement('span');
-      studioEl.textContent = scene.studio.name;
-      studioEl.style.cssText = `color: ${THEME.colors.textSecondary}; overflow: hidden; text-overflow: ellipsis;`;
-      meta.appendChild(studioEl);
-    }
+    meta.style.cssText = `font-size: 10px; color: ${THEME.colors.textMuted}; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;`;
+    const parts: string[] = [];
+    if (scene.date) parts.push(scene.date);
+    if (scene.studio?.name) parts.push(scene.studio.name);
+    meta.textContent = parts.join(' · ');
 
     const link = document.createElement('a');
     if (localStashId) {
@@ -414,6 +384,11 @@ export class DiscoveryPanel {
     card.appendChild(info);
 
     return card;
+  }
+
+  private tabIcon(collapsed: boolean): string {
+    const d = collapsed ? 'M8 3 L2 9 L8 15' : 'M2 3 L8 9 L2 15';
+    return `<svg xmlns="http://www.w3.org/2000/svg" width="10" height="18" viewBox="0 0 10 18" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="${d}"/></svg>`;
   }
 
   destroy(): void {

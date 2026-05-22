@@ -1,11 +1,14 @@
 import type { StashAPI } from './StashAPI.js';
 import type { DiscoveryPanel } from './DiscoveryPanel.js';
 import type { Performer } from './types.js';
-import type { StashBox, StashBoxScene, StashBoxScenesResponse } from './graphql/types.js';
+import type { StashBox, StashBoxScene } from './graphql/types.js';
+
+type ScenePayloadItem = { scene: StashBoxScene; baseUrl: string; performerName: string; localStashId?: string };
 
 const SCENES_PER_PERFORMER = 3;
-const DEBOUNCE_MS = 2000;
-const STASHBOX_MIN_INTERVAL_MS = 300; // minimum gap between outgoing StashBox requests
+const PREFETCH_BATCH_SIZE = 5;
+const DEBOUNCE_MS = 500;
+const STASHBOX_MIN_INTERVAL_MS = 300;
 
 function sceneCounts(n: number): number[] {
   if (n === 1) return [3];
@@ -13,7 +16,7 @@ function sceneCounts(n: number): number[] {
   return [1, 1, 1];
 }
 const LRU_MAX = 100;
-const PREFETCH_INTERVAL_MS = 600; // delay between background prefetch requests
+const PREFETCH_INTERVAL_MS = 600;
 
 class RateLimiter {
   private readonly minIntervalMs: number;
@@ -45,26 +48,6 @@ interface LRUEntry {
   endpoint: string;
 }
 
-const STASHBOX_SCENES_QUERY = `
-  query DiscoveryScenes($performerId: ID!, $perPage: Int!) {
-    queryScenes(input: {
-      performers: { value: [$performerId], modifier: INCLUDES }
-      per_page: $perPage
-      sort: DATE
-      direction: DESC
-    }) {
-      count
-      scenes {
-        id
-        title
-        date
-        images { url }
-        studio { name }
-      }
-    }
-  }
-`;
-
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 export class DiscoveryManager {
@@ -73,7 +56,9 @@ export class DiscoveryManager {
   private sceneOrder: 'latest' | 'random' = 'latest';
   private stashBoxes: StashBox[] = [];
   private stashBoxesLoaded = false;
-  private stashBoxesLoading = false;
+  private stashBoxLoadPromise?: Promise<void>;
+  private shownDiscoveryKey?: string;
+  private pendingDiscoveryKey = '';
   private readonly lruCache: Map<string, LRUEntry> = new Map();
   private readonly stashBoxRateLimiter = new RateLimiter(STASHBOX_MIN_INTERVAL_MS);
   private debounceTimer?: ReturnType<typeof setTimeout>;
@@ -93,6 +78,7 @@ export class DiscoveryManager {
     this.panel = panel;
     this.sceneOrder = sceneOrder;
     panel.setOnOpen(() => this.onPanelOpened());
+    void this.ensureStashBoxes(); // warm up stash-box config immediately
   }
 
   setSceneOrder(order: 'latest' | 'random'): void {
@@ -101,6 +87,7 @@ export class DiscoveryManager {
     // Clear cache so next fetch uses the new order
     this.lruCache.clear();
     this.currentPostId = undefined;
+    this.shownDiscoveryKey = undefined;
   }
 
   onPrimaryPostChanged(postId: string, performers: Performer[]): void {
@@ -133,14 +120,20 @@ export class DiscoveryManager {
       return;
     }
 
+    const key = relevant.flatMap(p => p.stash_ids!.map(s => s.stash_id)).sort().join(',');
+    if (key === this.shownDiscoveryKey) return;
+    this.pendingDiscoveryKey = key;
+
     // If already cached, show immediately with no delay or loading state
     if (this.stashBoxesLoaded && this.stashBoxes.length) {
       const resolved = this.resolvePerformers(relevant);
       if (resolved.length) {
         const allCached = resolved.every(r => this.lruCache.has(`${r.box.endpoint}::${r.stashId}`));
         if (allCached) {
+          const ac = new AbortController();
+          this.currentAbortController = ac;
           const payload = this.buildScenesPayload(resolved);
-          void this.enrichAndShow(payload);
+          void this.enrichAndShow(payload, ac.signal);
           return;
         }
       }
@@ -155,14 +148,11 @@ export class DiscoveryManager {
 
   prefetch(performers: Performer[]): void {
     if (!performers.length) return;
-    // Queue performers that have a UUID stash_id and aren't already cached/queued
     for (const performer of performers) {
       for (const sid of performer.stash_ids ?? []) {
         if (!UUID_RE.test(sid.stash_id)) continue;
-        // Use a placeholder key to check cache (endpoint may not be known yet)
         const alreadyQueued = this.prefetchQueue.some(e => e.stashId === sid.stash_id);
         if (alreadyQueued) continue;
-        // Check if any cache key contains this stash_id
         const alreadyCached = [...this.lruCache.keys()].some(k => k.endsWith(`::${sid.stash_id}`));
         if (alreadyCached) continue;
         this.prefetchQueue.push({ performer, stashId: sid.stash_id });
@@ -184,26 +174,45 @@ export class DiscoveryManager {
     this.prefetchRunning = true;
 
     try {
-      // Ensure stash-boxes are loaded (share with the main discovery flow)
-      if (!this.stashBoxesLoaded && !this.stashBoxesLoading) {
-        this.stashBoxesLoading = true;
-        this.stashBoxes = await this.api.getStashBoxes();
-        this.stashBoxesLoaded = true;
-        this.stashBoxesLoading = false;
-      }
+      await this.ensureStashBoxes();
       if (!this.stashBoxes.length) return;
 
-      const item = this.prefetchQueue.shift();
-      if (!item) return;
+      // Peek at up to PREFETCH_BATCH_SIZE items; resolve boxes for each
+      const batch = this.prefetchQueue.slice(0, PREFETCH_BATCH_SIZE);
+      const withBoxes = batch.map(item => ({ item, box: this.resolveBox(item.performer, item.stashId) }));
 
-      const box = this.resolveBox(item.performer, item.stashId);
-      if (!box) return;
+      // Split into items that need fetching vs already cached/unresolvable
+      const toFetch = withBoxes.filter(
+        (e): e is { item: { performer: Performer; stashId: string }; box: StashBox } =>
+          e.box !== undefined && !this.lruCache.has(`${e.box.endpoint}::${e.item.stashId}`),
+      );
 
-      const cacheKey = `${box.endpoint}::${item.stashId}`;
-      if (this.lruCache.has(cacheKey)) return; // already cached between schedule and run
+      if (!toFetch.length) {
+        this.prefetchQueue.splice(0, batch.length);
+        return;
+      }
 
-      const scenes = await this.fetchScenesFromStashBox(box, item.stashId);
-      this.lruSet(cacheKey, { scenes, endpoint: box.endpoint });
+      // Group by endpoint for batched fetching
+      const byEndpoint = new Map<string, { box: StashBox; items: typeof toFetch }>();
+      for (const entry of toFetch) {
+        let group = byEndpoint.get(entry.box.endpoint);
+        if (!group) {
+          group = { box: entry.box, items: [] };
+          byEndpoint.set(entry.box.endpoint, group);
+        }
+        group.items.push(entry);
+      }
+
+      const perPage = this.sceneOrder === 'random' ? 20 : SCENES_PER_PERFORMER;
+      for (const { box, items } of byEndpoint.values()) {
+        const batchResult = await this.fetchBatchedScenes(box, items.map(e => e.item.stashId), perPage);
+        for (const { item } of items) {
+          const scenes = batchResult.get(item.stashId) ?? [];
+          this.lruSet(`${box.endpoint}::${item.stashId}`, { scenes, endpoint: box.endpoint });
+        }
+      }
+
+      this.prefetchQueue.splice(0, batch.length);
     } catch {
       // prefetch failure is silent
     } finally {
@@ -213,15 +222,34 @@ export class DiscoveryManager {
   }
 
   private resolveBox(performer: Performer, stashId: string): StashBox | undefined {
-    // Exact endpoint match first
     for (const sid of performer.stash_ids ?? []) {
       if (sid.stash_id === stashId) {
         const box = this.stashBoxes.find(b => b.endpoint === sid.endpoint);
         if (box) return box;
       }
     }
-    // Fallback: first configured stash-box
     return this.stashBoxes[0];
+  }
+
+  private ensureStashBoxes(signal?: AbortSignal): Promise<void> {
+    if (this.stashBoxesLoaded) return Promise.resolve();
+    if (!this.stashBoxLoadPromise) {
+      this.stashBoxLoadPromise = this.api.getStashBoxes()
+        .then(boxes => {
+          this.stashBoxes = boxes;
+          this.stashBoxesLoaded = true;
+        })
+        .catch(() => {
+          this.stashBoxLoadPromise = undefined; // allow retry on failure
+        });
+    }
+    if (!signal) return this.stashBoxLoadPromise;
+    return Promise.race([
+      this.stashBoxLoadPromise,
+      new Promise<void>((_, reject) =>
+        signal.addEventListener('abort', () => reject(new DOMException('Aborted', 'AbortError')), { once: true })
+      ),
+    ]);
   }
 
   private async runDiscovery(performers: Performer[]): Promise<void> {
@@ -229,14 +257,8 @@ export class DiscoveryManager {
     this.currentAbortController = ac;
 
     try {
-      if (!this.stashBoxesLoaded) {
-        this.stashBoxesLoading = true;
-        const boxes = await this.api.getStashBoxes(ac.signal);
-        if (ac.signal.aborted) return;
-        this.stashBoxes = boxes;
-        this.stashBoxesLoaded = true;
-        this.stashBoxesLoading = false;
-      }
+      await this.ensureStashBoxes(ac.signal);
+      if (ac.signal.aborted) return;
 
       if (!this.stashBoxes.length) {
         this.panel.showEmpty('No stash-box configured in Stash');
@@ -260,7 +282,7 @@ export class DiscoveryManager {
       if (ac.signal.aborted) return;
 
       this.panel.hideSpinner();
-      this.panel.showScenes(allScenes);
+      this.showScenes(allScenes);
     } catch (e) {
       this.panel.hideSpinner();
       if (ac.signal.aborted || (e instanceof Error && e.name === 'AbortError')) return;
@@ -271,19 +293,42 @@ export class DiscoveryManager {
   private async fetchAllScenes(
     resolved: Array<{ performer: Performer; stashId: string; box: StashBox }>,
     signal: AbortSignal,
-  ): Promise<Array<{ scene: StashBoxScene; baseUrl: string; performerName: string; localStashId?: string }>> {
+  ): Promise<ScenePayloadItem[]> {
     const counts = sceneCounts(resolved.length);
-    const allScenes: Array<{ scene: StashBoxScene; baseUrl: string; performerName: string; localStashId?: string }> = [];
+    const perPage = this.sceneOrder === 'random' ? 20 : SCENES_PER_PERFORMER;
+
+    // Group uncached performers by endpoint for batched fetching
+    const byEndpoint = new Map<string, { box: StashBox; indices: number[] }>();
+    for (let i = 0; i < resolved.length; i++) {
+      const { stashId, box } = resolved[i];
+      if (this.lruCache.has(`${box.endpoint}::${stashId}`)) continue;
+      let group = byEndpoint.get(box.endpoint);
+      if (!group) {
+        group = { box, indices: [] };
+        byEndpoint.set(box.endpoint, group);
+      }
+      group.indices.push(i);
+    }
+
+    // One batched request per endpoint group
+    for (const { box, indices } of byEndpoint.values()) {
+      const stashIds = indices.map(i => resolved[i].stashId);
+      const batchResult = await this.fetchBatchedScenes(box, stashIds, perPage, signal);
+      if (signal.aborted) return [];
+      for (let k = 0; k < indices.length; k++) {
+        const { stashId } = resolved[indices[k]];
+        const scenes = batchResult.get(stashId) ?? [];
+        this.lruSet(`${box.endpoint}::${stashId}`, { scenes, endpoint: box.endpoint });
+      }
+    }
+    if (signal.aborted) return [];
+
+    // Assemble in resolved order
+    const allScenes: ScenePayloadItem[] = [];
     for (let i = 0; i < resolved.length; i++) {
       const { performer, stashId, box } = resolved[i];
-      const cacheKey = `${box.endpoint}::${stashId}`;
-      const cached = this.lruGet(cacheKey);
-      let scenes = cached?.scenes;
-      if (!scenes) {
-        scenes = await this.fetchScenesFromStashBox(box, stashId, signal);
-        if (signal.aborted) return allScenes;
-        this.lruSet(cacheKey, { scenes, endpoint: box.endpoint });
-      }
+      const cached = this.lruGet(`${box.endpoint}::${stashId}`);
+      const scenes = cached?.scenes ?? [];
       const baseUrl = box.endpoint.replace('/graphql', '');
       for (const scene of scenes.slice(0, counts[i])) {
         allScenes.push({ scene, baseUrl, performerName: performer.name });
@@ -337,23 +382,25 @@ export class DiscoveryManager {
     }
   }
 
-  private async enrichAndShow(
-    scenes: Array<{ scene: import('./graphql/types.js').StashBoxScene; baseUrl: string; performerName: string; localStashId?: string }>,
-    signal?: AbortSignal,
-  ): Promise<void> {
+  private async enrichAndShow(scenes: ScenePayloadItem[], signal?: AbortSignal): Promise<void> {
     await Promise.all(scenes.map(async (item) => {
       if (signal?.aborted) return;
       const localId = await this.api.findLocalSceneIdByStashDbId(item.scene.id, signal);
       if (localId) item.localStashId = localId;
     }));
-    if (!signal?.aborted) this.panel.showScenes(scenes);
+    if (!signal?.aborted) this.showScenes(scenes);
+  }
+
+  private showScenes(scenes: ScenePayloadItem[]): void {
+    this.shownDiscoveryKey = this.pendingDiscoveryKey;
+    this.panel.showScenes(scenes);
   }
 
   private buildScenesPayload(
     resolved: Array<{ performer: Performer; stashId: string; box: StashBox }>
-  ): Array<{ scene: import('./graphql/types.js').StashBoxScene; baseUrl: string; performerName: string; localStashId?: string }> {
+  ): ScenePayloadItem[] {
     const counts = sceneCounts(resolved.length);
-    const result: Array<{ scene: import('./graphql/types.js').StashBoxScene; baseUrl: string; performerName: string; localStashId?: string }> = [];
+    const result: ScenePayloadItem[] = [];
     for (let i = 0; i < resolved.length; i++) {
       const { performer, stashId, box } = resolved[i];
       const cached = this.lruCache.get(`${box.endpoint}::${stashId}`);
@@ -366,9 +413,19 @@ export class DiscoveryManager {
     return result;
   }
 
-  private async fetchScenesFromStashBox(box: StashBox, stashId: string, signal?: AbortSignal): Promise<StashBoxScene[]> {
+  private async fetchBatchedScenes(
+    box: StashBox,
+    stashIds: string[],
+    perPage: number,
+    signal?: AbortSignal,
+  ): Promise<Map<string, StashBoxScene[]>> {
     await this.stashBoxRateLimiter.wait(signal);
     this.stashBoxRateLimiter.stamp();
+
+    const aliases = stashIds.map((id, i) =>
+      `p${i}: queryScenes(input: { performers: { value: ["${id}"], modifier: INCLUDES }, per_page: ${perPage}, sort: DATE, direction: DESC }) { scenes { id title date images { url } studio { name } } }`
+    );
+    const query = `query BatchDiscovery { ${aliases.join(' ')} }`;
 
     const response = await fetch(box.endpoint, {
       method: 'POST',
@@ -376,29 +433,27 @@ export class DiscoveryManager {
         'Content-Type': 'application/json',
         'ApiKey': box.api_key,
       },
-      body: JSON.stringify({
-        query: STASHBOX_SCENES_QUERY,
-        variables: {
-          performerId: stashId,
-          perPage: this.sceneOrder === 'random' ? 20 : SCENES_PER_PERFORMER,
-        },
-      }),
+      body: JSON.stringify({ query }),
       signal,
     });
 
     if (!response.ok) throw new Error(`stash-box fetch failed: ${response.status}`);
 
-    const json = await response.json() as { data?: StashBoxScenesResponse; errors?: unknown[] };
+    const json = await response.json() as { data?: Record<string, { scenes: StashBoxScene[] }>; errors?: unknown[] };
     if (json.errors?.length) throw new Error('stash-box GraphQL error');
 
-    const scenes = json.data?.queryScenes?.scenes ?? [];
-    if (this.sceneOrder === 'random') {
-      for (let i = scenes.length - 1; i > 0; i--) {
-        const j = Math.floor(Math.random() * (i + 1));
-        [scenes[i], scenes[j]] = [scenes[j], scenes[i]];
+    const result = new Map<string, StashBoxScene[]>();
+    for (let i = 0; i < stashIds.length; i++) {
+      let scenes = json.data?.[`p${i}`]?.scenes ?? [];
+      if (this.sceneOrder === 'random') {
+        for (let j = scenes.length - 1; j > 0; j--) {
+          const k = Math.floor(Math.random() * (j + 1));
+          [scenes[j], scenes[k]] = [scenes[k], scenes[j]];
+        }
       }
+      result.set(stashIds[i], scenes);
     }
-    return scenes;
+    return result;
   }
 
   private lruGet(key: string): LRUEntry | undefined {
