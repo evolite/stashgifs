@@ -5,6 +5,7 @@ import type { StashBox, StashBoxScene, StashBoxScenesResponse } from './graphql/
 
 const SCENES_PER_PERFORMER = 3;
 const DEBOUNCE_MS = 2000;
+const STASHBOX_MIN_INTERVAL_MS = 300; // minimum gap between outgoing StashBox requests
 
 function sceneCounts(n: number): number[] {
   if (n === 1) return [3];
@@ -13,6 +14,31 @@ function sceneCounts(n: number): number[] {
 }
 const LRU_MAX = 100;
 const PREFETCH_INTERVAL_MS = 600; // delay between background prefetch requests
+
+class RateLimiter {
+  private readonly minIntervalMs: number;
+  private lastTime = 0;
+
+  constructor(minIntervalMs: number) {
+    this.minIntervalMs = minIntervalMs;
+  }
+
+  async wait(signal?: AbortSignal): Promise<void> {
+    const delay = this.minIntervalMs - (Date.now() - this.lastTime);
+    if (delay <= 0) return;
+    await new Promise<void>((resolve, reject) => {
+      const timer = setTimeout(resolve, delay);
+      signal?.addEventListener('abort', () => {
+        clearTimeout(timer);
+        reject(new DOMException('Aborted', 'AbortError'));
+      }, { once: true });
+    });
+  }
+
+  stamp(): void {
+    this.lastTime = Date.now();
+  }
+}
 
 interface LRUEntry {
   scenes: StashBoxScene[];
@@ -49,6 +75,7 @@ export class DiscoveryManager {
   private stashBoxesLoaded = false;
   private stashBoxesLoading = false;
   private readonly lruCache: Map<string, LRUEntry> = new Map();
+  private readonly stashBoxRateLimiter = new RateLimiter(STASHBOX_MIN_INTERVAL_MS);
   private debounceTimer?: ReturnType<typeof setTimeout>;
   private currentAbortController?: AbortController;
   private currentPostId?: string;
@@ -323,6 +350,9 @@ export class DiscoveryManager {
   }
 
   private async fetchScenesFromStashBox(box: StashBox, stashId: string, signal?: AbortSignal): Promise<StashBoxScene[]> {
+    await this.stashBoxRateLimiter.wait(signal);
+    this.stashBoxRateLimiter.stamp();
+
     const response = await fetch(box.endpoint, {
       method: 'POST',
       headers: {
