@@ -9,6 +9,8 @@ export class DiscoveryPanel {
   private readonly tab: HTMLButtonElement;
   private readonly title: HTMLElement;
   private readonly scenes: HTMLElement;
+  private readonly slots: HTMLElement[] = [];
+  private readonly slotHasContent: boolean[] = [false, false, false];
   private readonly status: HTMLElement;
   private collapsed: boolean;
   private hasScenes = false;
@@ -135,6 +137,14 @@ export class DiscoveryPanel {
       display: 'none',
     });
 
+    for (let i = 0; i < 3; i++) {
+      const slot = document.createElement('div');
+      slot.style.cssText = 'width: 100%; min-width: 0;';
+      slot.appendChild(this.buildGhostCard());
+      this.slots.push(slot);
+      this.scenes.appendChild(slot);
+    }
+
     body.appendChild(this.status);
     body.appendChild(this.scenes);
     inner.appendChild(header);
@@ -142,8 +152,6 @@ export class DiscoveryPanel {
     this.outer.appendChild(this.tab);
     this.outer.appendChild(inner);
     mountTarget.appendChild(this.outer);
-
-    this.showGhosts();
   }
 
   // fallow-ignore-next-line unused-class-member
@@ -175,9 +183,10 @@ export class DiscoveryPanel {
 
   private showGhosts(): void {
     this.status.style.display = 'none';
-    this.scenes.innerHTML = '';
-    for (let i = 0; i < 3; i++) {
-      this.scenes.appendChild(this.buildGhostCard());
+    this.slotHasContent.fill(false);
+    for (const slot of this.slots) {
+      slot.innerHTML = '';
+      slot.appendChild(this.buildGhostCard());
     }
   }
 
@@ -229,8 +238,11 @@ export class DiscoveryPanel {
   }
 
   private showPlaceholders(symbol: string): void {
-    const cards = [0, 1, 2].map(() => this.buildPlaceholderCard(symbol));
-    this.swapCards(cards);
+    this.slotHasContent.fill(false);
+    for (const slot of this.slots) {
+      slot.innerHTML = '';
+      slot.appendChild(this.buildPlaceholderCard(symbol));
+    }
   }
 
   private buildPlaceholderCard(symbol: string): HTMLElement {
@@ -265,43 +277,57 @@ export class DiscoveryPanel {
     this.title.textContent = 'StashDB Discovery';
 
     if (!scenes.length) {
-      this.scenes.innerHTML = '';
       this.hasScenes = false;
       this.status.textContent = 'No scenes found';
       this.status.style.display = 'block';
       return;
     }
 
-    this.swapCards(scenes.map(({ scene, baseUrl, performerName, localStashId }) =>
+    const newCards = scenes.map(({ scene, baseUrl, performerName, localStashId }) =>
       this.buildCard(scene, baseUrl, performerName, localStashId)
-    ));
-    this.hasScenes = true;
-  }
+    );
 
-  private swapCards(newCards: HTMLElement[]): void {
-    this.scenes.innerHTML = '';
     for (const card of newCards) {
       card.style.opacity = '0';
       card.style.transform = 'translateX(40px)';
       card.style.transition = 'none';
-      this.scenes.appendChild(card);
     }
+
+    // Prefer replacing slots without real content; shuffle within each group
+    const emptySlots = this.slotHasContent.map((has, i) => ({ has, i })).filter(s => !s.has).map(s => s.i);
+    const filledSlots = this.slotHasContent.map((has, i) => ({ has, i })).filter(s => s.has).map(s => s.i);
+    this.shuffleInPlace(emptySlots);
+    this.shuffleInPlace(filledSlots);
+    const targetSlots = [...emptySlots, ...filledSlots].slice(0, newCards.length);
+
+    for (let i = 0; i < newCards.length; i++) {
+      const si = targetSlots[i];
+      this.slots[si].innerHTML = '';
+      this.slots[si].appendChild(newCards[i]);
+      this.slotHasContent[si] = true;
+    }
+
     // Force reflow so initial opacity/transform are applied before the transition kicks in
     this.scenes.getBoundingClientRect();
 
     // Shuffle indices so cards fade+slide in one-by-one in a random order
     const order = newCards.map((_, i) => i);
-    for (let i = order.length - 1; i > 0; i--) {
-      const j = Math.floor(Math.random() * (i + 1));
-      [order[i], order[j]] = [order[j], order[i]];
-    }
+    this.shuffleInPlace(order);
     order.forEach((cardIndex, step) => {
-      const card = newCards[cardIndex];
       const delay = `${step * 400}ms`;
-      card.style.transition = `opacity 1s ease ${delay}, transform 1s cubic-bezier(0.25, 0.46, 0.45, 0.94) ${delay}`;
-      card.style.opacity = '1';
-      card.style.transform = 'translateX(0)';
+      newCards[cardIndex].style.transition = `opacity 1s ease ${delay}, transform 1s cubic-bezier(0.25, 0.46, 0.45, 0.94) ${delay}`;
+      newCards[cardIndex].style.opacity = '1';
+      newCards[cardIndex].style.transform = 'translateX(0)';
     });
+
+    this.hasScenes = true;
+  }
+
+  private shuffleInPlace<T>(arr: T[]): void {
+    for (let i = arr.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [arr[i], arr[j]] = [arr[j], arr[i]];
+    }
   }
 
   private buildCard(scene: StashBoxScene, baseUrl: string, performerName: string, localStashId?: string): HTMLElement {

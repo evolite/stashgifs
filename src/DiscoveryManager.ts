@@ -11,9 +11,7 @@ const DEBOUNCE_MS = 500;
 const STASHBOX_MIN_INTERVAL_MS = 300;
 
 function sceneCounts(n: number): number[] {
-  if (n === 1) return [3];
-  if (n === 2) return [2, 1];
-  return [1, 1, 1];
+  return Array(Math.min(n, 3)).fill(1);
 }
 const LRU_MAX = 100;
 const PREFETCH_INTERVAL_MS = 600;
@@ -115,10 +113,7 @@ export class DiscoveryManager {
   }
 
   private triggerDiscovery(relevant: Performer[]): void {
-    if (!relevant.length) {
-      this.panel.showEmpty('No StashDB data for this performer');
-      return;
-    }
+    if (!relevant.length) return;
 
     const key = relevant.flatMap(p => p.stash_ids!.map(s => s.stash_id)).sort((a, b) => a.localeCompare(b)).join(',');
     if (key === this.shownDiscoveryKey) return;
@@ -263,10 +258,7 @@ export class DiscoveryManager {
       }
 
       const resolved = this.resolvePerformers(performers);
-      if (!resolved.length) {
-        this.panel.showEmpty('Performer not found on any configured stash-box');
-        return;
-      }
+      if (!resolved.length) return;
 
       const allScenes = await this.fetchAllScenes(resolved, ac.signal);
       if (ac.signal.aborted) return;
