@@ -791,6 +791,27 @@ export class SettingsPage {
     layoutSection.appendChild(studioChipsContainer);
     (this as any).showStudioChipsToggle = studioChipsToggle;
 
+    const sceneTitleContainer = document.createElement('div');
+    sceneTitleContainer.style.display = 'flex';
+    sceneTitleContainer.style.justifyContent = 'space-between';
+    sceneTitleContainer.style.alignItems = 'center';
+    sceneTitleContainer.style.marginBottom = '16px';
+
+    sceneTitleContainer.appendChild(
+      buildInfoLabel(
+        'Scene Title',
+        'Shows the scene or image title above performers in each post.'
+      )
+    );
+
+    const { container: sceneTitleToggleContainer, input: sceneTitleToggle } = this.createToggleSwitch(
+      this.settings.showSceneTitle === true,
+      () => this.saveSettings()
+    );
+    sceneTitleContainer.appendChild(sceneTitleToggleContainer);
+    layoutSection.appendChild(sceneTitleContainer);
+    (this as any).sceneTitleToggle = sceneTitleToggle;
+
     // ── Content Types Section ──────────────────────────────────────────────
     const contentTypesSection = document.createElement('div');
     contentTypesSection.style.marginBottom = '24px';
@@ -1558,7 +1579,7 @@ export class SettingsPage {
       'shortFormIncludeToggle', 'reelModeToggle', 'hdVideoToggle',
       'portraitToggle', 'landscapeToggle',
       'themeBackgroundInput', 'themePrimaryInput', 'themeSecondaryInput', 'themeAccentInput',
-      'showVerifiedCheckmarksToggle', 'showProductionAgeToggle', 'showStudioChipsToggle', 'discoveryPanelToggle', 'excludedTagsInput',
+      'showVerifiedCheckmarksToggle', 'showProductionAgeToggle', 'showStudioChipsToggle', 'sceneTitleToggle', 'discoveryPanelToggle', 'excludedTagsInput',
       'includeSubtagsToggle', 'seenHistorySizeInput', 'contentLimitInput',
     ];
     const inputs: Record<string, HTMLInputElement> = {};
@@ -1618,6 +1639,7 @@ export class SettingsPage {
       showVerifiedCheckmarks: inputs.showVerifiedCheckmarksToggle.checked,
       showProductionAge: inputs.showProductionAgeToggle.checked,
       showStudioChips: inputs.showStudioChipsToggle.checked,
+      showSceneTitle: inputs.sceneTitleToggle.checked,
       enableDiscoveryPanel: inputs.discoveryPanelToggle.checked,
       discoveryPanelSize: Number(((this as any).discoverySizeSlider as HTMLInputElement)?.value ?? 260),
       discoverySceneOrder: ((this as any).discoveryOrderSelect as HTMLSelectElement)?.value as 'latest' | 'random' | 'trending' ?? 'latest',

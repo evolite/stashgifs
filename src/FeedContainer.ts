@@ -51,6 +51,7 @@ const DEFAULT_SETTINGS: FeedSettings = {
   showVerifiedCheckmarks: true,
   showProductionAge: false,
   showStudioChips: true,
+  showSceneTitle: false,
   excludedTagNames: [],
   imagesInGalleryOnly: false,
   galleryIds: [],
@@ -678,6 +679,7 @@ export class FeedContainer {
     const previousShowVerified = this.settings.showVerifiedCheckmarks;
     const previousShowProductionAge = this.settings.showProductionAge;
     const previousShowStudioChips = this.settings.showStudioChips;
+    const previousShowSceneTitle = this.settings.showSceneTitle;
     const previousExcludedTags = this.normalizeExcludedTagNames(this.settings.excludedTagNames ?? []);
     const previousOrientation = this.normalizeOrientationFilter(this.settings.orientationFilter ?? []);
 
@@ -697,7 +699,7 @@ export class FeedContainer {
 
     const reelModeChanged = newSettings.reelMode !== undefined;
     this.handleLayoutSettingsChange(newSettings, reelModeChanged);
-    this.handlePostDisplaySettingsChange(newSettings, updatedSettings, previousShowVerified, previousShowProductionAge, previousShowStudioChips);
+    this.handlePostDisplaySettingsChange(newSettings, updatedSettings, previousShowVerified, previousShowProductionAge, previousShowStudioChips, previousShowSceneTitle);
 
     const excludedTagsChanged = !this.areExcludedTagNamesEqual(
       previousExcludedTags,
@@ -761,7 +763,8 @@ export class FeedContainer {
     updatedSettings: FeedSettings,
     previousShowVerified: boolean | undefined,
     previousShowProductionAge: boolean | undefined,
-    previousShowStudioChips: boolean | undefined
+    previousShowStudioChips: boolean | undefined,
+    previousShowSceneTitle: boolean | undefined
   ): void {
     if (newSettings.showVerifiedCheckmarks !== undefined && updatedSettings.showVerifiedCheckmarks !== previousShowVerified) {
       for (const post of this.posts.values()) {
@@ -777,6 +780,12 @@ export class FeedContainer {
       const show = updatedSettings.showStudioChips !== false;
       for (const post of this.posts.values()) {
         post.setShowStudioChips?.(show);
+      }
+    }
+    if (newSettings.showSceneTitle !== undefined && updatedSettings.showSceneTitle !== previousShowSceneTitle) {
+      const show = updatedSettings.showSceneTitle === true;
+      for (const post of this.posts.values()) {
+        post.setShowSceneTitle?.(show);
       }
     }
   }
@@ -3612,6 +3621,7 @@ export class FeedContainer {
       showVerifiedCheckmarks: this.settings.showVerifiedCheckmarks !== false,
       showProductionAge: this.settings.showProductionAge === true,
       showStudioChips: this.settings.showStudioChips !== false,
+      showSceneTitle: this.settings.showSceneTitle === true,
       ratingSystemConfig: this.ratingSystemConfig,
       reelMode: this.settings.reelMode === true,
     };
@@ -7732,6 +7742,7 @@ export class FeedContainer {
     const previousShowVerified = this.settings.showVerifiedCheckmarks;
     const previousShowProductionAge = this.settings.showProductionAge;
     const previousShowStudioChips = this.settings.showStudioChips;
+    const previousShowSceneTitle = this.settings.showSceneTitle;
     const previousOrientation = this.normalizeOrientationFilter(this.settings.orientationFilter ?? []);
     this.settings = { ...this.settings, ...newSettings };
 
@@ -7744,7 +7755,7 @@ export class FeedContainer {
     }
     this.refreshAutoplayAfterLayout();
 
-    this.applyPostDisplaySettings(newSettings, previousShowVerified, previousShowProductionAge, previousShowStudioChips);
+    this.applyPostDisplaySettings(newSettings, previousShowVerified, previousShowProductionAge, previousShowStudioChips, previousShowSceneTitle);
     this.reloadFeedIfFiltersChanged(newSettings, previousExcludedTags, previousOrientation);
   }
 
@@ -7758,7 +7769,8 @@ export class FeedContainer {
     newSettings: Partial<FeedSettings>,
     previousShowVerified: boolean | undefined,
     previousShowProductionAge: boolean | undefined,
-    previousShowStudioChips: boolean | undefined
+    previousShowStudioChips: boolean | undefined,
+    previousShowSceneTitle: boolean | undefined
   ): void {
     if (newSettings.showVerifiedCheckmarks !== undefined
       && this.settings.showVerifiedCheckmarks !== previousShowVerified) {
@@ -7777,6 +7789,13 @@ export class FeedContainer {
       const show = this.settings.showStudioChips !== false;
       for (const post of this.posts.values()) {
         post.setShowStudioChips?.(show);
+      }
+    }
+    if (newSettings.showSceneTitle !== undefined
+      && this.settings.showSceneTitle !== previousShowSceneTitle) {
+      const show = this.settings.showSceneTitle === true;
+      for (const post of this.posts.values()) {
+        post.setShowSceneTitle?.(show);
       }
     }
   }

@@ -138,6 +138,7 @@ export interface FeedSettings {
   enableDiscoveryPanel?: boolean; // Show StashDB discovery sidebar panel, default: true
   discoveryPanelSize?: number; // Panel width in px (1–1000), default 260
   discoverySceneOrder?: 'latest' | 'random' | 'trending'; // Scene selection: latest (default), random, or trending
+  showSceneTitle?: boolean; // Show scene/image title above performers in each post, default: false
 }
 
 export interface VideoPostData {

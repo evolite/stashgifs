@@ -8,7 +8,7 @@ import { StashAPI } from './StashAPI.js';
 import { VisibilityManager } from './VisibilityManager.js';
 import { normalizeMediaUrl, showToast, isMobileDevice, THEME, subscribeWindowScroll, applyMenuItemHover, extractValidPerformerIds, initPopoverDialog, formatViewCount } from './utils.js';
 import { RatingControl } from './RatingControl.js';
-import { ADD_TAG_SVG, HEART_SVG_OUTLINE, HEART_SVG_FILLED, OCOUNT_SVG, EXTERNAL_LINK_SVG, STAR_SVG, STAR_SVG_OUTLINE, VERIFIED_SVG, EYE_SVG } from './icons.js';
+import { ADD_TAG_SVG, HEART_SVG_OUTLINE, HEART_SVG_FILLED, OCOUNT_SVG, EXTERNAL_LINK_SVG, STAR_SVG, STAR_SVG_OUTLINE, VERIFIED_SVG, EYE_SVG, CLAPPERBOARD_SVG } from './icons.js';
 import { setupTouchHandlers, preventClickAfterTouch } from './utils/touchHandlers.js';
 import { adjustImageDialogPosition, toggleImageFavorite } from './utils/imagePostUtils.js';
 import { OverlayManager } from './utils/OverlayManager.js';
@@ -25,6 +25,7 @@ export interface BasePostOptions {
   showVerifiedCheckmarks?: boolean;
   showProductionAge?: boolean;
   showStudioChips?: boolean;
+  showSceneTitle?: boolean;
 }
 
 interface HoverHandlers {
@@ -78,7 +79,8 @@ export abstract class BasePost {
       performers: this.getImageData().image.performers,
       tags: this.getImageData().image.tags,
       studio: this.getImageData().image.studio,
-      favoriteTagName: BasePost.FAVORITE_TAG_NAME
+      favoriteTagName: BasePost.FAVORITE_TAG_NAME,
+      title: this.getImageData().image.title,
     });
   }
 
@@ -115,6 +117,7 @@ export abstract class BasePost {
   protected showVerifiedCheckmarks: boolean = true;
   protected showProductionAge: boolean = false;
   protected showStudioChips: boolean = true;
+  protected showSceneTitle: boolean = false;
   private readonly performerOverlayMgr: OverlayManager<PerformerExtended>;
   private readonly tagOverlayMgr: OverlayManager<Tag>;
   private readonly studioOverlayMgr: OverlayManager<StudioExtended>;
@@ -150,6 +153,7 @@ export abstract class BasePost {
     this.showVerifiedCheckmarks = options?.showVerifiedCheckmarks !== false;
     this.showProductionAge = options?.showProductionAge === true;
     this.showStudioChips = options?.showStudioChips !== false;
+    this.showSceneTitle = options?.showSceneTitle === true;
 
     this.performerOverlayMgr = new OverlayManager<PerformerExtended>(
       (id, signal) => this.api!.getPerformerDetails(id, signal),
@@ -590,6 +594,47 @@ export abstract class BasePost {
   public setShowStudioChips(show: boolean): void {
     this.showStudioChips = show;
     this.refreshHeader();
+  }
+
+  public setShowSceneTitle(show: boolean): void {
+    this.showSceneTitle = show;
+    this.refreshHeader();
+  }
+
+  protected buildTitleElement(title: string): HTMLElement {
+    const color = this.isReelMode ? THEME.colors.textPrimary : THEME.colors.textSecondary;
+
+    const el = document.createElement('div');
+    el.className = 'video-post__scene-title';
+    el.title = title;
+    el.style.display = 'flex';
+    el.style.alignItems = 'center';
+    el.style.gap = '5px';
+    el.style.maxWidth = '100%';
+    el.style.margin = '2px 0 4px';
+    el.style.color = color;
+    el.style.minWidth = '0';
+
+    const icon = document.createElement('span');
+    icon.innerHTML = CLAPPERBOARD_SVG;
+    icon.style.flexShrink = '0';
+    icon.style.display = 'flex';
+    icon.style.alignItems = 'center';
+    icon.style.opacity = '0.7';
+
+    const text = document.createElement('span');
+    text.textContent = title;
+    text.style.fontSize = '14px';
+    text.style.fontWeight = THEME.typography.weightBody;
+    text.style.lineHeight = THEME.typography.lineHeight;
+    text.style.overflow = 'hidden';
+    text.style.textOverflow = 'ellipsis';
+    text.style.whiteSpace = 'nowrap';
+    text.style.minWidth = '0';
+
+    el.appendChild(icon);
+    el.appendChild(text);
+    return el;
   }
 
   protected buildFooterContainer(): {
@@ -2028,6 +2073,7 @@ export abstract class BasePost {
     tags?: Tag[];
     studio?: { id: string; name: string; image_path?: string };
     favoriteTagName?: string;
+    title?: string;
   }): HTMLElement {
     const header = this.createHeaderContainer();
 
@@ -2040,6 +2086,10 @@ export abstract class BasePost {
       performersSection.appendChild(this.createAddPerformerPlaceholder());
     }
     header.appendChild(performersSection);
+
+    if (this.showSceneTitle && options.title) {
+      header.appendChild(this.buildTitleElement(options.title));
+    }
 
     // Tag chips section (includes studio chip at the start)
     const hasStudio = !!options.studio && this.showStudioChips;

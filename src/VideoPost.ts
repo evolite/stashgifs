@@ -231,6 +231,10 @@ export class VideoPost extends VideoPostBase {
     }
     header.appendChild(performersSection);
 
+    if (this.showSceneTitle && this.data.marker.scene.title) {
+      header.appendChild(this.buildTitleElement(this.data.marker.scene.title));
+    }
+
     // Tag chips section (includes studio chip at the start)
     // Skip in shuffle mode UNLESS a marker has been created (to show the assigned tag)
     const studio = this.data.marker.scene.studio;
