@@ -20,6 +20,7 @@ import { posterPreloader } from './PosterPreloader.js';
 import { GQLImage } from './graphql/types.js';
 import { SETTINGS_SVG, STASHGIFS_LOGO_SVG } from './icons.js';
 import { DiscoveryPanel } from './DiscoveryPanel.js';
+import { WhisparrClient } from './WhisparrClient.js';
 import { DiscoveryManager } from './DiscoveryManager.js';
 
 const DEFAULT_SETTINGS: FeedSettings = {
@@ -724,6 +725,15 @@ export class FeedContainer {
     if (newSettings.discoverySceneOrder !== undefined && this.discoveryManager) {
       this.discoveryManager.setSceneOrder(updatedSettings.discoverySceneOrder ?? 'latest');
     }
+    if (
+      this.discoveryPanel
+      && (newSettings.whisparrBaseUrl !== undefined
+        || newSettings.whisparrApiKey !== undefined
+        || newSettings.whisparrRootFolderPath !== undefined
+        || newSettings.whisparrQualityProfileId !== undefined)
+    ) {
+      this.discoveryPanel.setWhisparrClient(WhisparrClient.fromSettings(updatedSettings));
+    }
 
     if (this.shouldReloadFeed(newSettings, excludedTagsChanged, orientationFilterChanged, reelModeChanged)) {
       this.loadVideos(this.currentFilters, false, undefined, true).catch((e) => {
@@ -734,7 +744,11 @@ export class FeedContainer {
 
   private mountDiscoveryPanel(): void {
     if (this.discoveryPanel) return;
-    this.discoveryPanel = new DiscoveryPanel(this.container, this.settings.discoveryPanelSize ?? 260);
+    this.discoveryPanel = new DiscoveryPanel(
+      this.container,
+      this.settings.discoveryPanelSize ?? 260,
+      WhisparrClient.fromSettings(this.settings),
+    );
     this.discoveryManager = new DiscoveryManager(this.api, this.discoveryPanel, this.settings.discoverySceneOrder ?? 'latest');
   }
 
@@ -1150,7 +1164,11 @@ export class FeedContainer {
 
     // Initialize discovery panel (opt-out via setting)
     if (this.settings.enableDiscoveryPanel === true) {
-      this.discoveryPanel = new DiscoveryPanel(this.container, this.settings.discoveryPanelSize ?? 260);
+      this.discoveryPanel = new DiscoveryPanel(
+        this.container,
+        this.settings.discoveryPanelSize ?? 260,
+        WhisparrClient.fromSettings(this.settings),
+      );
       this.discoveryManager = new DiscoveryManager(this.api, this.discoveryPanel, this.settings.discoverySceneOrder ?? 'latest');
     }
   }

@@ -7,6 +7,7 @@ import { INFO_SVG } from './icons.js';
 import { FeedSettings } from './types.js';
 import * as version from './version.js';
 import { THEME, THEME_DEFAULTS, normalizeHexColor } from './utils.js';
+import { WhisparrClient } from './WhisparrClient.js';
 
 export class SettingsPage {
   private readonly container: HTMLElement;
@@ -293,9 +294,11 @@ export class SettingsPage {
     const layoutTabButton = createTabButton('Layout');
     const contentTabButton = createTabButton('Options');
     const themeTabButton = createTabButton('Theme');
+    const whisparrTabButton = createTabButton('Whisparr');
     tabBar.appendChild(layoutTabButton);
     tabBar.appendChild(contentTabButton);
     tabBar.appendChild(themeTabButton);
+    tabBar.appendChild(whisparrTabButton);
     modal.appendChild(tabBar);
 
     const contentWrapper = document.createElement('div');
@@ -309,16 +312,20 @@ export class SettingsPage {
     contentTabContent.style.display = 'none';
     const themeContent = document.createElement('div');
     themeContent.style.display = 'none';
+    const whisparrContent = document.createElement('div');
+    whisparrContent.style.display = 'none';
 
-    const setActiveTab = (active: 'layout' | 'content' | 'theme') => {
-      layoutContent.style.display     = active === 'layout'  ? 'block' : 'none';
-      contentTabContent.style.display = active === 'content' ? 'block' : 'none';
-      themeContent.style.display      = active === 'theme'   ? 'block' : 'none';
+    const setActiveTab = (active: 'layout' | 'content' | 'theme' | 'whisparr') => {
+      layoutContent.style.display     = active === 'layout'   ? 'block' : 'none';
+      contentTabContent.style.display = active === 'content'  ? 'block' : 'none';
+      themeContent.style.display      = active === 'theme'    ? 'block' : 'none';
+      whisparrContent.style.display   = active === 'whisparr' ? 'block' : 'none';
 
       const tabs = [
-        { btn: layoutTabButton,  key: 'layout'  },
-        { btn: contentTabButton, key: 'content' },
-        { btn: themeTabButton,   key: 'theme'   },
+        { btn: layoutTabButton,   key: 'layout'   },
+        { btn: contentTabButton,  key: 'content'  },
+        { btn: themeTabButton,    key: 'theme'    },
+        { btn: whisparrTabButton, key: 'whisparr' },
       ];
       for (const { btn, key } of tabs) {
         const on = active === key;
@@ -328,14 +335,16 @@ export class SettingsPage {
       }
     };
 
-    layoutTabButton.addEventListener('click',  () => setActiveTab('layout'));
-    contentTabButton.addEventListener('click', () => setActiveTab('content'));
-    themeTabButton.addEventListener('click',   () => setActiveTab('theme'));
+    layoutTabButton.addEventListener('click',   () => setActiveTab('layout'));
+    contentTabButton.addEventListener('click',  () => setActiveTab('content'));
+    themeTabButton.addEventListener('click',    () => setActiveTab('theme'));
+    whisparrTabButton.addEventListener('click', () => setActiveTab('whisparr'));
     setActiveTab('layout');
 
     contentWrapper.appendChild(layoutContent);
     contentWrapper.appendChild(contentTabContent);
     contentWrapper.appendChild(themeContent);
+    contentWrapper.appendChild(whisparrContent);
     modal.appendChild(contentWrapper);
 
     // Theme Section
@@ -1463,6 +1472,9 @@ export class SettingsPage {
 
     contentTabContent.appendChild(filtersSection);
 
+    // Whisparr tab content
+    whisparrContent.appendChild(this.buildWhisparrSection(buildInputLabel));
+
     // Version footer
     const versionFooter = document.createElement('div');
     versionFooter.style.marginTop = '32px';
@@ -1564,6 +1576,235 @@ export class SettingsPage {
       }
     };
     document.addEventListener('keydown', escapeHandler);
+  }
+
+  private saveWhisparrPartial(partial: Partial<FeedSettings>): void {
+    if (this.onSave) this.onSave(partial);
+  }
+
+  private styleTextInput(input: HTMLInputElement): void {
+    input.style.width = '100%';
+    input.style.padding = '12px';
+    input.style.borderRadius = THEME.radius.button;
+    input.style.border = `1px solid ${THEME.colors.border}`;
+    input.style.backgroundColor = THEME.colors.surface;
+    input.style.color = THEME.colors.textPrimary;
+    input.style.fontSize = THEME.typography.sizeBody;
+    input.style.boxSizing = 'border-box';
+  }
+
+  private styleSelect(select: HTMLSelectElement): void {
+    select.style.width = '100%';
+    select.style.padding = '10px 12px';
+    select.style.borderRadius = THEME.radius.button;
+    select.style.border = `1px solid ${THEME.colors.border}`;
+    select.style.backgroundColor = THEME.colors.surface;
+    select.style.color = THEME.colors.textPrimary;
+    select.style.fontSize = THEME.typography.sizeBody;
+    select.style.boxSizing = 'border-box';
+  }
+
+  private buildWhisparrSection(
+    buildInputLabel: (labelText: string, tooltipText: string) => { container: HTMLElement; label: HTMLLabelElement }
+  ): HTMLElement {
+    const section = document.createElement('div');
+    section.style.marginTop = '24px';
+    section.style.marginBottom = '24px';
+    section.style.border = `1px solid ${THEME.colors.border}`;
+    section.style.borderRadius = THEME.radius.card;
+    section.style.padding = '16px';
+
+    const title = document.createElement('h3');
+    title.textContent = 'Whisparr';
+    title.style.margin = '0 0 8px 0';
+    title.style.color = THEME.colors.textPrimary;
+    title.style.fontSize = THEME.typography.sizeTitle;
+    title.style.fontWeight = THEME.typography.weightTitle;
+    section.appendChild(title);
+
+    const description = document.createElement('p');
+    description.textContent = 'Configure Whisparr to enable an "Add to Whisparr" button on each StashDB discovery card. Test the connection to populate root folder and quality profile.';
+    description.style.margin = '0 0 16px 0';
+    description.style.color = THEME.colors.textMuted;
+    description.style.fontSize = THEME.typography.sizeMeta;
+    section.appendChild(description);
+
+    // URL
+    const urlContainer = document.createElement('div');
+    urlContainer.style.marginBottom = '12px';
+    urlContainer.appendChild(buildInputLabel(
+      'Whisparr URL',
+      'Base URL of your Whisparr instance, e.g. http://localhost:6969'
+    ).container);
+    const urlInput = document.createElement('input');
+    urlInput.type = 'url';
+    urlInput.placeholder = 'http://localhost:6969';
+    urlInput.value = this.settings.whisparrBaseUrl ?? '';
+    this.styleTextInput(urlInput);
+    urlInput.addEventListener('input', () => {
+      clearTimeout((urlInput as any).saveTimeout);
+      (urlInput as any).saveTimeout = setTimeout(() => {
+        this.saveWhisparrPartial({ whisparrBaseUrl: urlInput.value.trim() || undefined });
+      }, 500);
+    });
+    urlContainer.appendChild(urlInput);
+    section.appendChild(urlContainer);
+
+    // API Key
+    const apiKeyContainer = document.createElement('div');
+    apiKeyContainer.style.marginBottom = '12px';
+    apiKeyContainer.appendChild(buildInputLabel(
+      'API Key',
+      'Whisparr API key. Found in Whisparr → Settings → General.'
+    ).container);
+    const apiKeyInput = document.createElement('input');
+    apiKeyInput.type = 'password';
+    apiKeyInput.autocomplete = 'off';
+    apiKeyInput.value = this.settings.whisparrApiKey ?? '';
+    this.styleTextInput(apiKeyInput);
+    apiKeyInput.addEventListener('input', () => {
+      clearTimeout((apiKeyInput as any).saveTimeout);
+      (apiKeyInput as any).saveTimeout = setTimeout(() => {
+        this.saveWhisparrPartial({ whisparrApiKey: apiKeyInput.value.trim() || undefined });
+      }, 500);
+    });
+    apiKeyContainer.appendChild(apiKeyInput);
+    section.appendChild(apiKeyContainer);
+
+    // Test connection button + status
+    const testRow = document.createElement('div');
+    testRow.style.display = 'flex';
+    testRow.style.alignItems = 'center';
+    testRow.style.gap = '12px';
+    testRow.style.marginBottom = '12px';
+
+    const testButton = document.createElement('button');
+    testButton.type = 'button';
+    testButton.textContent = 'Test Connection';
+    testButton.style.padding = '10px 16px';
+    testButton.style.borderRadius = THEME.radius.button;
+    testButton.style.border = `1px solid ${THEME.colors.accentPrimary}`;
+    testButton.style.background = THEME.colors.accentPrimary;
+    testButton.style.color = THEME.colors.textPrimary;
+    testButton.style.cursor = 'pointer';
+    testButton.style.fontSize = THEME.typography.sizeBody;
+    testButton.style.fontWeight = THEME.typography.weightBodyStrong;
+
+    const testStatus = document.createElement('span');
+    testStatus.style.color = THEME.colors.textMuted;
+    testStatus.style.fontSize = THEME.typography.sizeMeta;
+
+    testRow.appendChild(testButton);
+    testRow.appendChild(testStatus);
+    section.appendChild(testRow);
+
+    // Root folder select
+    const rootFolderContainer = document.createElement('div');
+    rootFolderContainer.style.marginBottom = '12px';
+    rootFolderContainer.appendChild(buildInputLabel(
+      'Root Folder',
+      'Where Whisparr should download scenes added from StashGifs.'
+    ).container);
+    const rootFolderSelect = document.createElement('select');
+    this.styleSelect(rootFolderSelect);
+    rootFolderSelect.disabled = true;
+    const placeholderRoot = document.createElement('option');
+    placeholderRoot.value = '';
+    placeholderRoot.textContent = this.settings.whisparrRootFolderPath
+      ? this.settings.whisparrRootFolderPath
+      : '— Test connection to populate —';
+    rootFolderSelect.appendChild(placeholderRoot);
+    rootFolderContainer.appendChild(rootFolderSelect);
+    section.appendChild(rootFolderContainer);
+
+    // Quality profile select
+    const qualityContainer = document.createElement('div');
+    qualityContainer.style.marginBottom = '0';
+    qualityContainer.appendChild(buildInputLabel(
+      'Quality Profile',
+      'Whisparr quality profile to use for scenes added from StashGifs.'
+    ).container);
+    const qualitySelect = document.createElement('select');
+    this.styleSelect(qualitySelect);
+    qualitySelect.disabled = true;
+    const placeholderQuality = document.createElement('option');
+    placeholderQuality.value = '';
+    placeholderQuality.textContent = typeof this.settings.whisparrQualityProfileId === 'number'
+      ? `Profile #${this.settings.whisparrQualityProfileId}`
+      : '— Test connection to populate —';
+    qualitySelect.appendChild(placeholderQuality);
+    qualityContainer.appendChild(qualitySelect);
+    section.appendChild(qualityContainer);
+
+    rootFolderSelect.addEventListener('change', () => {
+      this.saveWhisparrPartial({ whisparrRootFolderPath: rootFolderSelect.value || undefined });
+    });
+    qualitySelect.addEventListener('change', () => {
+      const v = Number.parseInt(qualitySelect.value, 10);
+      this.saveWhisparrPartial({ whisparrQualityProfileId: Number.isNaN(v) ? undefined : v });
+    });
+
+    testButton.addEventListener('click', async () => {
+      const baseUrl = urlInput.value.trim();
+      const apiKey = apiKeyInput.value.trim();
+      if (!baseUrl || !apiKey) {
+        testStatus.textContent = 'Enter URL and API key first.';
+        testStatus.style.color = '#e57373';
+        return;
+      }
+      testButton.disabled = true;
+      testStatus.textContent = 'Testing…';
+      testStatus.style.color = THEME.colors.textMuted;
+      try {
+        const client = new WhisparrClient({ baseUrl, apiKey });
+        const [folders, profiles] = await Promise.all([
+          client.getRootFolders(),
+          client.getQualityProfiles(),
+        ]);
+        rootFolderSelect.innerHTML = '';
+        for (const folder of folders) {
+          const opt = document.createElement('option');
+          opt.value = folder.path;
+          opt.textContent = folder.path;
+          rootFolderSelect.appendChild(opt);
+        }
+        rootFolderSelect.disabled = folders.length === 0;
+        if (this.settings.whisparrRootFolderPath
+            && folders.some((f) => f.path === this.settings.whisparrRootFolderPath)) {
+          rootFolderSelect.value = this.settings.whisparrRootFolderPath;
+        } else if (folders.length > 0) {
+          rootFolderSelect.value = folders[0].path;
+          this.saveWhisparrPartial({ whisparrRootFolderPath: folders[0].path });
+        }
+
+        qualitySelect.innerHTML = '';
+        for (const profile of profiles) {
+          const opt = document.createElement('option');
+          opt.value = String(profile.id);
+          opt.textContent = profile.name;
+          qualitySelect.appendChild(opt);
+        }
+        qualitySelect.disabled = profiles.length === 0;
+        const existingId = this.settings.whisparrQualityProfileId;
+        if (typeof existingId === 'number' && profiles.some((p) => p.id === existingId)) {
+          qualitySelect.value = String(existingId);
+        } else if (profiles.length > 0) {
+          qualitySelect.value = String(profiles[0].id);
+          this.saveWhisparrPartial({ whisparrQualityProfileId: profiles[0].id });
+        }
+
+        testStatus.textContent = `Connected · ${folders.length} folder(s), ${profiles.length} profile(s)`;
+        testStatus.style.color = THEME.colors.accentPrimary;
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        testStatus.textContent = `Failed: ${message}`;
+        testStatus.style.color = '#e57373';
+      } finally {
+        testButton.disabled = false;
+      }
+    });
+
+    return section;
   }
 
   /**

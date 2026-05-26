@@ -1,8 +1,17 @@
-import { THEME } from './utils.js';
+import { THEME, showToast } from './utils.js';
 import type { StashBoxScene } from './graphql/types.js';
+import type { WhisparrClient, WhisparrScene, WhisparrQueueItem } from './WhisparrClient.js';
 
 const LS_KEY = 'stashgifs-discovery-collapsed';
 const DEFAULT_PANEL_WIDTH = 260;
+
+type WhisparrButtonState =
+  | { kind: 'loading' }
+  | { kind: 'add' }
+  | { kind: 'downloading'; movieId: number; percent?: number }
+  | { kind: 'monitored'; movieId: number }
+  | { kind: 'downloaded'; movieId: number }
+  | { kind: 'error'; message: string };
 
 export class DiscoveryPanel {
   private readonly outer: HTMLElement;  // slides right; tab hangs off its left edge
@@ -16,8 +25,10 @@ export class DiscoveryPanel {
   private hasScenes = false;
   private panelWidth: number;
   private onOpen?: () => void;
+  private whisparr?: WhisparrClient;
 
-  constructor(mountTarget: HTMLElement, size: number = DEFAULT_PANEL_WIDTH) {
+  constructor(mountTarget: HTMLElement, size: number = DEFAULT_PANEL_WIDTH, whisparr?: WhisparrClient) {
+    this.whisparr = whisparr;
     this.collapsed = localStorage.getItem(LS_KEY) !== '0';
     this.panelWidth = size;
 
@@ -342,8 +353,17 @@ export class DiscoveryPanel {
       boxSizing: 'border-box',
     });
 
-    const thumb = document.createElement('div');
-    thumb.style.cssText = `position: relative; width: 100%; aspect-ratio: 16/9; background: ${THEME.colors.backgroundPrimary}; overflow: hidden;`;
+    const thumb = document.createElement('a');
+    thumb.style.cssText = `position: relative; width: 100%; aspect-ratio: 16/9; background: ${THEME.colors.backgroundPrimary}; overflow: hidden; display: block; text-decoration: none; color: inherit;`;
+    thumb.target = '_blank';
+    thumb.rel = 'noopener noreferrer';
+    if (localStashId) {
+      thumb.href = `/scenes/${localStashId}`;
+      thumb.title = 'Play in Stash';
+    } else {
+      thumb.href = `${baseUrl}/scenes/${scene.id}`;
+      thumb.title = 'View on StashDB';
+    }
 
     const imgUrl = scene.images?.[0]?.url;
     if (imgUrl) {
@@ -360,6 +380,19 @@ export class DiscoveryPanel {
       thumb.appendChild(placeholder);
     }
 
+    const overlay = document.createElement('div');
+    overlay.style.cssText = `position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 40px; height: 40px; border-radius: 50%; background: rgba(0, 0, 0, 0.55); color: #fff; display: flex; align-items: center; justify-content: center; pointer-events: none; transition: background 0.15s ease;`;
+    if (localStashId) {
+      overlay.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>';
+      overlay.setAttribute('aria-label', 'Play in Stash');
+    } else {
+      overlay.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>';
+      overlay.setAttribute('aria-label', 'View on StashDB');
+    }
+    thumb.appendChild(overlay);
+    thumb.addEventListener('mouseenter', () => { overlay.style.background = THEME.colors.accentPrimary; });
+    thumb.addEventListener('mouseleave', () => { overlay.style.background = 'rgba(0, 0, 0, 0.55)'; });
+
     const info = document.createElement('div');
     info.style.cssText = `padding: 4px 8px 6px; display: flex; flex-direction: column; gap: 1px; overflow: hidden;`;
 
@@ -367,9 +400,18 @@ export class DiscoveryPanel {
     nameEl.style.cssText = `font-size: 10px; color: ${THEME.colors.accentPrimary}; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;`;
     nameEl.textContent = performerName;
 
-    const titleEl = document.createElement('div');
-    titleEl.style.cssText = `font-weight: ${THEME.typography.weightBodyStrong}; font-size: ${THEME.typography.sizeMeta}; color: ${THEME.colors.textPrimary}; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;`;
+    const titleEl = document.createElement('a');
+    titleEl.style.cssText = `font-weight: ${THEME.typography.weightBodyStrong}; font-size: ${THEME.typography.sizeMeta}; color: ${THEME.colors.textPrimary}; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-decoration: none; display: block;`;
     titleEl.textContent = scene.title ?? 'Untitled';
+    titleEl.target = '_blank';
+    titleEl.rel = 'noopener noreferrer';
+    if (localStashId) {
+      titleEl.href = `/scenes/${localStashId}`;
+      titleEl.title = 'Play in Stash';
+    } else {
+      titleEl.href = `${baseUrl}/scenes/${scene.id}`;
+      titleEl.title = 'View on StashDB';
+    }
 
     const meta = document.createElement('div');
     meta.style.cssText = `font-size: 10px; color: ${THEME.colors.textMuted}; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;`;
@@ -378,30 +420,13 @@ export class DiscoveryPanel {
     if (scene.studio?.name) parts.push(scene.studio.name);
     meta.textContent = parts.join(' · ');
 
-    const link = document.createElement('a');
-    if (localStashId) {
-      link.href = `/scenes/${localStashId}`;
-      link.target = '_self';
-      link.rel = '';
-      const icon = document.createElement('span');
-      icon.textContent = '▶';
-      icon.style.cssText = `color: ${THEME.colors.accentPrimary}; margin-right: 3px; font-size: 8px; vertical-align: middle;`;
-      link.appendChild(icon);
-      link.appendChild(document.createTextNode('Play in Stash'));
-    } else {
-      link.href = `${baseUrl}/scenes/${scene.id}`;
-      link.target = '_blank';
-      link.rel = 'noopener noreferrer';
-      link.textContent = 'View on StashDB →';
-    }
-    link.style.cssText = `font-size: 10px; color: ${THEME.colors.accentPrimary}; text-decoration: none; margin-top: 2px; display: inline-block; white-space: nowrap;`;
-
     info.appendChild(nameEl);
     info.appendChild(titleEl);
     info.appendChild(meta);
-    info.appendChild(link);
     card.appendChild(thumb);
     card.appendChild(info);
+
+    this.renderWhisparrButton(card, info, scene, localStashId);
 
     return card;
   }
@@ -411,7 +436,183 @@ export class DiscoveryPanel {
     return `<svg xmlns="http://www.w3.org/2000/svg" width="10" height="18" viewBox="0 0 10 18" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="${d}"/></svg>`;
   }
 
+  setWhisparrClient(client: WhisparrClient | undefined): void {
+    this.whisparr = client;
+  }
+
+  private renderWhisparrButton(card: HTMLElement, info: HTMLElement, scene: StashBoxScene, localStashId?: string): void {
+    if (!this.whisparr || !this.whisparr.isFullyConfigured()) return;
+    const whisparr = this.whisparr;
+
+    const button = document.createElement('button');
+    button.type = 'button';
+    Object.assign(button.style, {
+      marginTop: '4px',
+      padding: '4px 8px',
+      borderRadius: THEME.radius.button,
+      border: `1px solid ${THEME.colors.border}`,
+      background: THEME.colors.backgroundPrimary,
+      color: THEME.colors.accentPrimary,
+      cursor: 'pointer',
+      fontSize: '10px',
+      fontFamily: THEME.typography.fontFamily,
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: '4px',
+      whiteSpace: 'nowrap',
+      overflow: 'hidden',
+      textOverflow: 'ellipsis',
+    });
+    info.appendChild(button);
+
+    let state: WhisparrButtonState = { kind: 'loading' };
+    let pollTimer: number | undefined;
+    let destroyed = false;
+
+    const applyState = (next: WhisparrButtonState) => {
+      state = next;
+      switch (next.kind) {
+        case 'loading':
+          button.textContent = '… Whisparr';
+          button.disabled = true;
+          button.title = 'Checking Whisparr…';
+          button.style.color = THEME.colors.textMuted;
+          button.style.cursor = 'wait';
+          break;
+        case 'add':
+          button.textContent = '+ Add to Whisparr';
+          button.disabled = false;
+          button.title = 'Add this scene to Whisparr (monitored, auto-search)';
+          button.style.color = THEME.colors.accentPrimary;
+          button.style.cursor = 'pointer';
+          break;
+        case 'downloading': {
+          const pct = typeof next.percent === 'number' ? ` ${next.percent.toFixed(0)}%` : '';
+          button.textContent = `↓ Downloading${pct}`;
+          button.disabled = false;
+          button.title = 'In Whisparr download queue — click to refresh';
+          button.style.color = THEME.colors.accentPrimary;
+          button.style.cursor = 'pointer';
+          break;
+        }
+        case 'monitored':
+          button.textContent = '👁 Monitored';
+          button.disabled = true;
+          button.title = 'Monitored in Whisparr, awaiting release';
+          button.style.color = THEME.colors.textMuted;
+          button.style.cursor = 'default';
+          break;
+        case 'downloaded':
+          button.textContent = '✓ Downloaded';
+          button.disabled = true;
+          button.title = 'Whisparr has a file for this scene';
+          button.style.color = THEME.colors.accentPrimary;
+          button.style.cursor = 'default';
+          break;
+        case 'error':
+          button.textContent = '! Whisparr error';
+          button.disabled = false;
+          button.title = next.message;
+          button.style.color = '#e57373';
+          button.style.cursor = 'pointer';
+          break;
+      }
+    };
+
+    const classify = async (movie: WhisparrScene): Promise<WhisparrButtonState> => {
+      if (movie.hasFile) return { kind: 'downloaded', movieId: movie.id };
+      try {
+        const queueItem = await whisparr.getQueueForMovie(movie.id);
+        if (queueItem) {
+          const percent = computePercent(queueItem);
+          return { kind: 'downloading', movieId: movie.id, percent };
+        }
+      } catch {
+        // queue lookup failure: still show as monitored
+      }
+      return { kind: 'monitored', movieId: movie.id };
+    };
+
+    const refresh = async () => {
+      if (destroyed) return;
+      try {
+        const movie = await whisparr.getSceneByStashId(scene.id);
+        if (destroyed) return;
+        if (!movie) {
+          applyState({ kind: 'add' });
+          stopPolling();
+          return;
+        }
+        const next = await classify(movie);
+        if (destroyed) return;
+        applyState(next);
+        if (next.kind === 'downloading') startPolling();
+        else stopPolling();
+      } catch (err) {
+        if (destroyed) return;
+        const message = err instanceof Error ? err.message : String(err);
+        applyState({ kind: 'error', message });
+        stopPolling();
+      }
+    };
+
+    const startPolling = () => {
+      if (pollTimer !== undefined) return;
+      pollTimer = window.setInterval(() => {
+        whisparr.invalidateCaches();
+        void refresh();
+      }, 5000);
+    };
+    const stopPolling = () => {
+      if (pollTimer !== undefined) {
+        clearInterval(pollTimer);
+        pollTimer = undefined;
+      }
+    };
+
+    button.addEventListener('click', async () => {
+      if (button.disabled) return;
+      if (state.kind === 'add' || state.kind === 'error') {
+        applyState({ kind: 'loading' });
+        try {
+          await whisparr.addScene(scene.id);
+          showToast(`Added "${scene.title ?? 'scene'}" to Whisparr`);
+          await refresh();
+        } catch (err) {
+          const message = err instanceof Error ? err.message : String(err);
+          showToast(`Whisparr add failed: ${message}`, 4000);
+          applyState({ kind: 'error', message });
+        }
+        return;
+      }
+      if (state.kind === 'downloading') {
+        whisparr.invalidateCaches();
+        await refresh();
+      }
+    });
+
+    const observer = new MutationObserver(() => {
+      if (!document.body.contains(card)) {
+        destroyed = true;
+        stopPolling();
+        observer.disconnect();
+      }
+    });
+    observer.observe(document.body, { childList: true, subtree: true });
+
+    applyState({ kind: 'loading' });
+    void refresh();
+  }
+
   destroy(): void {
     this.outer.remove();
   }
+}
+
+function computePercent(item: WhisparrQueueItem): number | undefined {
+  if (typeof item.size !== 'number' || typeof item.sizeleft !== 'number' || item.size <= 0) {
+    return undefined;
+  }
+  return Math.max(0, Math.min(100, ((item.size - item.sizeleft) / item.size) * 100));
 }
