@@ -266,7 +266,11 @@ export class DiscoveryManager {
 
       await Promise.all(allScenes.map(async (item) => {
         if (ac.signal.aborted) return;
-        const localId = await this.api.findLocalSceneIdByStashDbId(item.scene.id, ac.signal);
+        const localId = await this.api.findLocalSceneIdByStashDbId(
+          item.scene.id,
+          ac.signal,
+          `${item.baseUrl}/scenes/${item.scene.id}`,
+        );
         if (localId) item.localStashId = localId;
       }));
       if (ac.signal.aborted) return;
@@ -373,7 +377,11 @@ export class DiscoveryManager {
   private async enrichAndShow(scenes: ScenePayloadItem[], signal?: AbortSignal): Promise<void> {
     await Promise.all(scenes.map(async (item) => {
       if (signal?.aborted) return;
-      const localId = await this.api.findLocalSceneIdByStashDbId(item.scene.id, signal);
+      const localId = await this.api.findLocalSceneIdByStashDbId(
+        item.scene.id,
+        signal,
+        `${item.baseUrl}/scenes/${item.scene.id}`,
+      );
       if (localId) item.localStashId = localId;
     }));
     if (!signal?.aborted) this.showScenes(scenes);

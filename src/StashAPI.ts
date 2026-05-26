@@ -2506,9 +2506,11 @@ export class StashAPI {
   }
 
   // fallow-ignore-next-line unused-class-member
-  async findLocalSceneIdByStashDbId(stashId: string, signal?: AbortSignal): Promise<string | null> {
+  async findLocalSceneIdByStashDbId(stashId: string, signal?: AbortSignal, sceneUrl?: string): Promise<string | null> {
     if (this.isAborted(signal)) return null;
 
+    // First try by stash_id (matches regardless of endpoint value via NOT_NULL).
+    // Then fall back to URL lookup (covers scenes added without a stash_id link).
     const QUERY = `
       query FindSceneByStashId($scene_filter: SceneFilterType) {
         findScenes(scene_filter: $scene_filter) {
@@ -2518,20 +2520,39 @@ export class StashAPI {
     `;
 
     try {
-      const result = await this.gqlClient.query<{
+      const byStashId = await this.gqlClient.query<{
         findScenes?: { scenes: Array<{ id: string }> };
       }>({
         query: QUERY,
         variables: {
           scene_filter: {
-            stash_id_endpoint: { stash_id: stashId, endpoint: '', modifier: 'EQUALS' },
+            stash_id_endpoint: { stash_id: stashId, modifier: 'EQUALS' },
           },
         },
         signal,
       });
 
       if (this.isAborted(signal)) return null;
-      return result.data?.findScenes?.scenes[0]?.id ?? null;
+      const sceneById = byStashId.data?.findScenes?.scenes[0]?.id;
+      if (sceneById) return sceneById;
+
+      if (sceneUrl) {
+        const byUrl = await this.gqlClient.query<{
+          findScenes?: { scenes: Array<{ id: string }> };
+        }>({
+          query: QUERY,
+          variables: {
+            scene_filter: {
+              url: { modifier: 'EQUALS', value: sceneUrl },
+            },
+          },
+          signal,
+        });
+        if (this.isAborted(signal)) return null;
+        return byUrl.data?.findScenes?.scenes[0]?.id ?? null;
+      }
+
+      return null;
     } catch (error: unknown) {
       return this.handleError('findLocalSceneIdByStashDbId', error, signal, null);
     }
