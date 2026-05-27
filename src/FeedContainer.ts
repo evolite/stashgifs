@@ -7828,7 +7828,7 @@ export class FeedContainer {
     defaultValue: boolean,
   ): void {
     if (next === undefined || current === previous) return;
-    const on = current === undefined ? defaultValue : current;
+    const on = current ?? defaultValue;
     for (const post of this.posts.values()) {
       apply(post, on);
     }
