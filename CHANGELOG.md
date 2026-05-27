@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.5.0] - 2026-05-27
+
+### Bug Fixes
+
+- Detect locally-existing scenes regardless of stash_id endpoint
+
+### Features
+
+- Add scene title display option to layout settings
+- Add Whisparr integration to discovery panel
+
 ## [6.4.0] - 2026-05-22
 
 ### Bug Fixes
