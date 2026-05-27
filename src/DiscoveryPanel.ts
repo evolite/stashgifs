@@ -441,7 +441,7 @@ export class DiscoveryPanel {
   }
 
   private renderWhisparrButton(card: HTMLElement, info: HTMLElement, scene: StashBoxScene, localStashId?: string): void {
-    if (!this.whisparr || !this.whisparr.isFullyConfigured()) return;
+    if (!this.whisparr?.isFullyConfigured()) return;
     const whisparr = this.whisparr;
 
     const button = document.createElement('button');
@@ -559,7 +559,7 @@ export class DiscoveryPanel {
 
     const startPolling = () => {
       if (pollTimer !== undefined) return;
-      pollTimer = window.setInterval(() => {
+      pollTimer = globalThis.setInterval(() => {
         whisparr.invalidateCaches();
         void refresh();
       }, 5000);

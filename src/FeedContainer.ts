@@ -7790,31 +7790,47 @@ export class FeedContainer {
     previousShowStudioChips: boolean | undefined,
     previousShowSceneTitle: boolean | undefined
   ): void {
-    if (newSettings.showVerifiedCheckmarks !== undefined
-      && this.settings.showVerifiedCheckmarks !== previousShowVerified) {
-      for (const post of this.posts.values()) {
-        post.setShowVerifiedCheckmarks?.(this.settings.showVerifiedCheckmarks !== false);
-      }
-    }
-    if (newSettings.showProductionAge !== undefined
-      && this.settings.showProductionAge !== previousShowProductionAge) {
-      for (const post of this.posts.values()) {
-        post.setShowProductionAge?.(this.settings.showProductionAge === true);
-      }
-    }
-    if (newSettings.showStudioChips !== undefined
-      && this.settings.showStudioChips !== previousShowStudioChips) {
-      const show = this.settings.showStudioChips !== false;
-      for (const post of this.posts.values()) {
-        post.setShowStudioChips?.(show);
-      }
-    }
-    if (newSettings.showSceneTitle !== undefined
-      && this.settings.showSceneTitle !== previousShowSceneTitle) {
-      const show = this.settings.showSceneTitle === true;
-      for (const post of this.posts.values()) {
-        post.setShowSceneTitle?.(show);
-      }
+    this.applyPostDisplayToggle(
+      newSettings.showVerifiedCheckmarks,
+      previousShowVerified,
+      this.settings.showVerifiedCheckmarks,
+      (post, on) => post.setShowVerifiedCheckmarks?.(on),
+      false,
+    );
+    this.applyPostDisplayToggle(
+      newSettings.showProductionAge,
+      previousShowProductionAge,
+      this.settings.showProductionAge,
+      (post, on) => post.setShowProductionAge?.(on),
+      true,
+    );
+    this.applyPostDisplayToggle(
+      newSettings.showStudioChips,
+      previousShowStudioChips,
+      this.settings.showStudioChips,
+      (post, on) => post.setShowStudioChips?.(on),
+      false,
+    );
+    this.applyPostDisplayToggle(
+      newSettings.showSceneTitle,
+      previousShowSceneTitle,
+      this.settings.showSceneTitle,
+      (post, on) => post.setShowSceneTitle?.(on),
+      true,
+    );
+  }
+
+  private applyPostDisplayToggle(
+    next: boolean | undefined,
+    previous: boolean | undefined,
+    current: boolean | undefined,
+    apply: (post: PostType, on: boolean) => void,
+    defaultValue: boolean,
+  ): void {
+    if (next === undefined || current === previous) return;
+    const on = current === undefined ? defaultValue : current;
+    for (const post of this.posts.values()) {
+      apply(post, on);
     }
   }
 
