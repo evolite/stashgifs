@@ -533,7 +533,7 @@ export abstract class BasePost {
       '.icon-btn--rating-active .rating-display__icon'
     );
     for (const icon of activeRatingIcons) {
-      icon.style.color = THEME.colors.accentPrimary;
+      icon.style.color = '#FFD700';
       icon.style.textShadow = '0 2px 8px rgba(0, 0, 0, 0.65)';
     }
   }
@@ -2338,7 +2338,7 @@ export abstract class BasePost {
     fillSpan.style.display = 'flex';
     fillSpan.style.alignItems = 'center';
     fillSpan.style.justifyContent = 'center';
-    fillSpan.style.color = `var(--rating-star-fill, ${THEME.colors.accentPrimary})`;
+    fillSpan.style.color = `var(--rating-star-fill, #FFD700)`;
     fillSpan.style.clipPath = 'inset(0 100% 0 0)';
 
     wrapper.appendChild(outlineSpan);
@@ -3305,9 +3305,9 @@ export abstract class BasePost {
     if (!discoveryButtonHasJiggled) {
       discoveryButtonHasJiggled = true;
       setTimeout(() => {
-        btn.style.animation = 'stashgifs-jiggle 0.7s ease-in-out';
+        btn.style.animation = 'stashgifs-jiggle 1.1s ease-in-out, stashgifs-discovery-pulse 1.1s ease-in-out';
         btn.addEventListener('animationend', () => { btn.style.animation = ''; }, { once: true });
-      }, 400);
+      }, 3000);
     }
 
     return btn;

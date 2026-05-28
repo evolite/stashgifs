@@ -128,7 +128,8 @@ export class DiscoveryPanel {
       style.textContent = [
         '@keyframes stashgifs-spin { to { transform: rotate(360deg); } }',
         '@keyframes stashgifs-pulse { 0%,100% { opacity: 0.35; } 50% { opacity: 0.7; } }',
-        '@keyframes stashgifs-jiggle { 0%,100% { transform: rotate(0); } 15% { transform: rotate(-14deg); } 30% { transform: rotate(12deg); } 45% { transform: rotate(-8deg); } 60% { transform: rotate(6deg); } 75% { transform: rotate(-3deg); } }',
+        '@keyframes stashgifs-jiggle { 0%,100% { transform: rotate(0) scale(1); } 10% { transform: rotate(-22deg) scale(1.25); } 20% { transform: rotate(20deg) scale(1.25); } 30% { transform: rotate(-18deg) scale(1.2); } 45% { transform: rotate(14deg) scale(1.15); } 60% { transform: rotate(-10deg) scale(1.1); } 75% { transform: rotate(6deg) scale(1.05); } 90% { transform: rotate(-3deg) scale(1.02); } }',
+        `@keyframes stashgifs-discovery-pulse { 0%,100% { color: ${THEME.colors.iconInactive}; } 15%,85% { color: ${THEME.colors.accentPrimary}; } 50% { color: ${THEME.colors.accentPrimary}; } }`,
       ].join(' ');
       document.head.appendChild(style);
     }
