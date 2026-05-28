@@ -9,6 +9,10 @@ import { VisibilityManager } from './VisibilityManager.js';
 import { normalizeMediaUrl, showToast, isMobileDevice, THEME, subscribeWindowScroll, applyMenuItemHover, extractValidPerformerIds, initPopoverDialog, formatViewCount } from './utils.js';
 import { RatingControl } from './RatingControl.js';
 import { ADD_TAG_SVG, HEART_SVG_OUTLINE, HEART_SVG_FILLED, OCOUNT_SVG, EXTERNAL_LINK_SVG, STAR_SVG, STAR_SVG_OUTLINE, VERIFIED_SVG, EYE_SVG, CLAPPERBOARD_SVG } from './icons.js';
+import { DISCOVERY_ICON_SVG, type DiscoveryPanelControl } from './DiscoveryPanel.js';
+
+// Module-level flag: discovery button jiggle plays once per page load.
+let discoveryButtonHasJiggled = false;
 import { setupTouchHandlers, preventClickAfterTouch } from './utils/touchHandlers.js';
 import { adjustImageDialogPosition, toggleImageFavorite } from './utils/imagePostUtils.js';
 import { OverlayManager } from './utils/OverlayManager.js';
@@ -26,6 +30,10 @@ export interface BasePostOptions {
   showProductionAge?: boolean;
   showStudioChips?: boolean;
   showSceneTitle?: boolean;
+  showOCountButton?: boolean;
+  showViewCountBadge?: boolean;
+  showAddTagButton?: boolean;
+  discoveryPanel?: DiscoveryPanelControl;
 }
 
 interface HoverHandlers {
@@ -118,6 +126,11 @@ export abstract class BasePost {
   protected showProductionAge: boolean = false;
   protected showStudioChips: boolean = true;
   protected showSceneTitle: boolean = false;
+  protected showOCountButton: boolean = true;
+  protected showViewCountBadge: boolean = true;
+  protected showAddTagButton: boolean = true;
+  protected discoveryPanel?: DiscoveryPanelControl;
+  private discoveryCollapseUnsubscribe?: () => void;
   private readonly performerOverlayMgr: OverlayManager<PerformerExtended>;
   private readonly tagOverlayMgr: OverlayManager<Tag>;
   private readonly studioOverlayMgr: OverlayManager<StudioExtended>;
@@ -154,6 +167,10 @@ export abstract class BasePost {
     this.showProductionAge = options?.showProductionAge === true;
     this.showStudioChips = options?.showStudioChips !== false;
     this.showSceneTitle = options?.showSceneTitle === true;
+    this.showOCountButton = options?.showOCountButton !== false;
+    this.showViewCountBadge = options?.showViewCountBadge !== false;
+    this.showAddTagButton = options?.showAddTagButton !== false;
+    this.discoveryPanel = options?.discoveryPanel;
 
     this.performerOverlayMgr = new OverlayManager<PerformerExtended>(
       (id, signal) => this.api!.getPerformerDetails(id, signal),
@@ -255,6 +272,11 @@ export abstract class BasePost {
       this.removeHoverEffect(button);
     }
     this.hoverHandlers.clear();
+
+    if (this.discoveryCollapseUnsubscribe) {
+      this.discoveryCollapseUnsubscribe();
+      this.discoveryCollapseUnsubscribe = undefined;
+    }
     this.ratingControl?.destroy();
     this.ratingControl = undefined;
   }
@@ -511,7 +533,7 @@ export abstract class BasePost {
       '.icon-btn--rating-active .rating-display__icon'
     );
     for (const icon of activeRatingIcons) {
-      icon.style.color = '#FFD700';
+      icon.style.color = THEME.colors.accentPrimary;
       icon.style.textShadow = '0 2px 8px rgba(0, 0, 0, 0.65)';
     }
   }
@@ -552,13 +574,6 @@ export abstract class BasePost {
         }
       }
 
-      const accentButtons = buttonGroup.querySelectorAll<HTMLElement>(
-        '.icon-btn--play, .icon-btn--image, .icon-btn--add-tag'
-      );
-      for (const button of accentButtons) {
-        button.style.color = THEME.colors.accentPrimary;
-        button.style.textShadow = '0 2px 8px rgba(0, 0, 0, 0.65)';
-      }
     }
   }
 
@@ -696,16 +711,14 @@ export abstract class BasePost {
       this.heartButton = this.createHeartButton();
       buttonGroup.appendChild(this.heartButton);
     }
-    if (this.api) {
-      this.addTagButton = this.createAddTagButton('Add tag to image');
-      buttonGroup.appendChild(this.addTagButton);
-    }
-    if (this.api) {
+    if (this.api && this.showOCountButton) {
       this.oCountButton = this.createOCountButton();
       buttonGroup.appendChild(this.oCountButton);
     }
-    const viewCount = this.getAndIncrementLocalViewCount(imageId);
-    buttonGroup.appendChild(this.createViewCountBadge(viewCount));
+    if (this.showViewCountBadge) {
+      const viewCount = this.getAndIncrementLocalViewCount(imageId);
+      buttonGroup.appendChild(this.createViewCountBadge(viewCount));
+    }
     const ratingControl = this.createRatingSection();
     buttonGroup.appendChild(ratingControl);
   }
@@ -2093,15 +2106,18 @@ export abstract class BasePost {
 
     // Tag chips section (includes studio chip at the start)
     const hasStudio = !!options.studio && this.showStudioChips;
-    if (hasStudio || options.tags?.length) {
+    const hasTags = !!options.tags?.length;
+    const addTagChip = this.createAddTagChip('Add tag to image');
+    if (hasStudio || hasTags || addTagChip) {
       const tagsSection = document.createElement('div');
       tagsSection.className = 'video-post__tags';
       if (hasStudio) {
         tagsSection.appendChild(this.createStudioChip(options.studio!));
       }
-      if (options.tags?.length) {
-        this.appendTagChips(tagsSection, options.tags, options.favoriteTagName, performers.length > 0);
+      if (hasTags) {
+        this.appendTagChips(tagsSection, options.tags!, options.favoriteTagName, performers.length > 0);
       }
+      if (addTagChip) tagsSection.appendChild(addTagChip);
       if (this.isReelMode) {
         this.applyReelModeTagStyles(tagsSection);
       }
@@ -2170,6 +2186,63 @@ export abstract class BasePost {
     }
   }
 
+  /**
+   * Optional inline "+ Add tag" chip that lives at the end of the tag list.
+   * Styled to read as optional (muted color, dashed underline) and hints that
+   * more tags can be added. No-op if no API is available.
+   */
+  protected createAddTagChip(title: string = 'Add another tag'): HTMLElement | undefined {
+    if (!this.api || !this.showAddTagButton) return undefined;
+
+    const chip = document.createElement('button');
+    chip.type = 'button';
+    chip.className = 'tag-chip tag-chip--add';
+    chip.setAttribute('aria-label', 'Add tag');
+    chip.title = title;
+    chip.textContent = '+ add tag';
+    Object.assign(chip.style, {
+      display: 'inline-flex',
+      alignItems: 'center',
+      padding: '0 6px',
+      margin: '0 0 0 4px',
+      fontSize: '13px',
+      lineHeight: '1.4',
+      minHeight: '44px',
+      height: '44px',
+      color: THEME.colors.textMuted,
+      background: 'transparent',
+      border: 'none',
+      borderBottom: `1px dashed ${THEME.colors.textMuted}`,
+      borderRadius: '0',
+      cursor: 'pointer',
+      transition: 'color 0.2s ease, border-color 0.2s ease',
+      fontStyle: 'italic',
+      opacity: '0.75',
+    });
+    if (this.isReelMode) {
+      chip.style.color = '#ffffff';
+      chip.style.borderBottomColor = 'rgba(255,255,255,0.5)';
+      chip.style.textShadow = '0 2px 8px rgba(0, 0, 0, 0.65)';
+    }
+    chip.addEventListener('mouseenter', () => {
+      chip.style.opacity = '1';
+      chip.style.color = this.isReelMode ? '#ffffff' : THEME.colors.textPrimary;
+      chip.style.borderBottomColor = this.isReelMode ? '#ffffff' : THEME.colors.textPrimary;
+    });
+    chip.addEventListener('mouseleave', () => {
+      chip.style.opacity = '0.75';
+      chip.style.color = this.isReelMode ? '#ffffff' : THEME.colors.textMuted;
+      chip.style.borderBottomColor = this.isReelMode ? 'rgba(255,255,255,0.5)' : THEME.colors.textMuted;
+    });
+    chip.addEventListener('click', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      this.openAddTagDialog();
+    });
+    this.addTagButton = chip;
+    return chip;
+  }
+
   protected getImageLink(imageId: string): string {
     return `${globalThis.location.origin}/images/${imageId}`;
   }
@@ -2192,7 +2265,6 @@ export abstract class BasePost {
     iconBtn.setAttribute('aria-label', ariaLabel);
     iconBtn.title = title;
     this.applyIconButtonStyles(iconBtn);
-    iconBtn.style.color = THEME.colors.accentPrimary;
     iconBtn.style.padding = '0';
     iconBtn.innerHTML = EXTERNAL_LINK_SVG;
     this.addHoverEffect(iconBtn);
@@ -2270,7 +2342,7 @@ export abstract class BasePost {
     fillSpan.style.display = 'flex';
     fillSpan.style.alignItems = 'center';
     fillSpan.style.justifyContent = 'center';
-    fillSpan.style.color = `var(--rating-star-fill, ${THEME.colors.ratingLow})`;
+    fillSpan.style.color = `var(--rating-star-fill, ${THEME.colors.accentPrimary})`;
     fillSpan.style.clipPath = 'inset(0 100% 0 0)';
 
     wrapper.appendChild(outlineSpan);
@@ -3175,7 +3247,6 @@ export abstract class BasePost {
     addTagBtn.title = title;
     this.applyIconButtonStyles(addTagBtn);
     addTagBtn.style.padding = '0';
-    addTagBtn.style.color = THEME.colors.accentPrimary;
     addTagBtn.innerHTML = ADD_TAG_SVG;
 
     const clickHandler = (e: Event) => {
@@ -3188,6 +3259,44 @@ export abstract class BasePost {
     this.addHoverEffect(addTagBtn);
     this.addTagButton = addTagBtn;
     return addTagBtn;
+  }
+
+  /**
+   * Create the StashDB Discovery panel toggle button. Returns undefined if no panel is wired.
+   * Default neutral; turns accent while the panel is open. Plays a one-shot jiggle on
+   * the first instance created per page load.
+   */
+  protected createDiscoveryButton(): HTMLElement | undefined {
+    const panel = this.discoveryPanel;
+    if (!panel) return undefined;
+
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'icon-btn icon-btn--discovery';
+    btn.setAttribute('aria-label', 'Toggle StashDB discovery panel');
+    btn.title = 'StashDB Discovery';
+    this.applyIconButtonStyles(btn);
+    btn.innerHTML = DISCOVERY_ICON_SVG;
+    this.addHoverEffect(btn);
+
+    const applyState = (collapsed: boolean) => {
+      btn.style.color = collapsed ? THEME.colors.iconInactive : THEME.colors.accentPrimary;
+      btn.setAttribute('aria-pressed', collapsed ? 'false' : 'true');
+    };
+    applyState(panel.isCollapsed());
+
+    btn.addEventListener('click', () => panel.toggle());
+    this.discoveryCollapseUnsubscribe = panel.onCollapseChange(applyState);
+
+    if (!discoveryButtonHasJiggled) {
+      discoveryButtonHasJiggled = true;
+      setTimeout(() => {
+        btn.style.animation = 'stashgifs-jiggle 0.7s ease-in-out';
+        btn.addEventListener('animationend', () => { btn.style.animation = ''; }, { once: true });
+      }, 400);
+    }
+
+    return btn;
   }
 
   /**

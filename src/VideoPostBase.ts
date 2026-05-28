@@ -9,6 +9,8 @@ import { isMobileDevice, THEME, showToast } from './utils.js';
 import { HQ_SVG_OUTLINE, HQ_SVG_FILLED, VOLUME_MUTED_SVG, VOLUME_UNMUTED_SVG } from './icons.js';
 import { BasePost, BasePostOptions } from './BasePost.js';
 import { setupTouchHandlers, preventClickAfterTouch } from './utils/touchHandlers.js';
+import type { DiscoveryPanelControl } from './DiscoveryPanel.js';
+export type { DiscoveryPanelControl };
 
 export interface BaseVideoPostOptions extends BasePostOptions {
   onMuteToggle?: (isMuted: boolean) => void;
@@ -16,6 +18,7 @@ export interface BaseVideoPostOptions extends BasePostOptions {
   onCancelRequests?: () => void;
   ratingSystemConfig?: { type?: string; starPrecision?: string } | null;
   reelMode?: boolean;
+  hdModeFromSettings?: boolean;
 }
 
 export abstract class VideoPostBase extends BasePost {
@@ -34,6 +37,7 @@ export abstract class VideoPostBase extends BasePost {
   protected posterLayer?: HTMLElement;
   protected hasRenderedVideo: boolean = false;
   protected videoLoadingIndicator?: HTMLElement;
+  protected hdModeFromSettings: boolean = false;
 
   constructor(
     container: HTMLElement,

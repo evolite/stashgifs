@@ -158,6 +158,9 @@ export class ImagePost extends BasePost {
 
     this.appendCommonImageFooterButtons(buttonGroup, this.data.image.id);
 
+    const discoveryBtn = this.createDiscoveryButton();
+    if (discoveryBtn) buttonGroup.appendChild(discoveryBtn);
+
     // Image button (open in Stash)
     const imageBtn = this.createImageButton(this.data.image.id);
     buttonGroup.appendChild(imageBtn);

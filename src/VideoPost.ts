@@ -62,6 +62,7 @@ export class VideoPost extends VideoPostBase {
     super(container, options);
     this.data = data;
     this.useShuffleMode = options.useShuffleMode || false;
+    this.hdModeFromSettings = options.hdModeFromSettings === true;
     this.onCancelRequests = options.onCancelRequests;
     this.onMuteToggle = options.onMuteToggle;
     this.getGlobalMuteState = options.getGlobalMuteState;
@@ -239,15 +240,20 @@ export class VideoPost extends VideoPostBase {
     // Skip in shuffle mode UNLESS a marker has been created (to show the assigned tag)
     const studio = this.data.marker.scene.studio;
     const hasStudio = !!studio && this.showStudioChips;
-    if (hasStudio || (!this.useShuffleMode || this.hasCreatedMarker)) {
+    const canShowTags = !this.useShuffleMode || this.hasCreatedMarker;
+    const addTagChip = canShowTags
+      ? this.createAddTagChip(this.isRealMarker() || this.isShortFormContent() ? 'Add tag to marker' : 'Add tag')
+      : undefined;
+    if (hasStudio || canShowTags) {
       const tagsSection = document.createElement('div');
       tagsSection.className = 'video-post__tags';
       if (hasStudio) {
         tagsSection.appendChild(this.createStudioChip(studio));
       }
-      if (!this.useShuffleMode || this.hasCreatedMarker) {
+      if (canShowTags) {
         this.addTagChips(tagsSection);
       }
+      if (addTagChip) tagsSection.appendChild(addTagChip);
       if (this.isReelMode) {
         this.applyReelModeTagStyles(tagsSection);
       }
@@ -394,7 +400,6 @@ export class VideoPost extends VideoPostBase {
   private addShuffleModeButtons(buttonGroup: HTMLElement): void {
     if (this.hasCreatedMarker && this.favoritesManager) {
       buttonGroup.appendChild(this.createHeartButton());
-      this.appendAddTagButton(buttonGroup);
     } else if (this.api) {
       buttonGroup.appendChild(this.createMarkerButton());
     }
@@ -403,13 +408,6 @@ export class VideoPost extends VideoPostBase {
   private addStandardButtons(buttonGroup: HTMLElement): void {
     if (this.favoritesManager) {
       buttonGroup.appendChild(this.createHeartButton());
-    }
-    this.appendAddTagButton(buttonGroup);
-  }
-
-  private appendAddTagButton(buttonGroup: HTMLElement): void {
-    if (this.api && (this.isRealMarker() || this.isShortFormContent())) {
-      buttonGroup.appendChild(this.createAddTagButton('Add tag to marker'));
     }
   }
 
@@ -428,10 +426,12 @@ export class VideoPost extends VideoPostBase {
     // Add buttons in order
     this.addActionButtons(buttonGroup);
 
-    const viewCount = this.data.marker.scene.play_count ?? 0;
-    buttonGroup.appendChild(this.createViewCountBadge(viewCount));
+    if (this.showViewCountBadge) {
+      const viewCount = this.data.marker.scene.play_count ?? 0;
+      buttonGroup.appendChild(this.createViewCountBadge(viewCount));
+    }
 
-    if (this.api) {
+    if (this.api && this.showOCountButton) {
       const oCountBtn = this.createOCountButton();
       buttonGroup.appendChild(oCountBtn);
     }
@@ -439,13 +439,16 @@ export class VideoPost extends VideoPostBase {
     const ratingControl = this.createRatingSection();
     buttonGroup.appendChild(ratingControl);
 
-    if (this.api) {
+    if (this.api && !this.hdModeFromSettings) {
       const hqBtn = this.createHQButton();
       buttonGroup.appendChild(hqBtn);
     }
 
     const muteBtn = this.createMuteOverlayButton();
     buttonGroup.appendChild(muteBtn);
+
+    const discoveryBtn = this.createDiscoveryButton();
+    if (discoveryBtn) buttonGroup.appendChild(discoveryBtn);
 
     const playBtn = this.createPlayButton();
     buttonGroup.appendChild(playBtn);

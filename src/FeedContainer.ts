@@ -3640,8 +3640,13 @@ export class FeedContainer {
       showProductionAge: this.settings.showProductionAge === true,
       showStudioChips: this.settings.showStudioChips !== false,
       showSceneTitle: this.settings.showSceneTitle === true,
+      showOCountButton: this.settings.showOCountButton !== false,
+      showViewCountBadge: this.settings.showViewCountBadge !== false,
+      showAddTagButton: this.settings.showAddTagButton !== false,
       ratingSystemConfig: this.ratingSystemConfig,
       reelMode: this.settings.reelMode === true,
+      hdModeFromSettings: this.useHDMode,
+      discoveryPanel: this.discoveryPanel,
     };
   }
 

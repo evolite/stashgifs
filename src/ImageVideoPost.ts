@@ -24,6 +24,7 @@ export class ImageVideoPost extends VideoPostBase {
     this.onCancelRequests = options?.onCancelRequests;
     this.onMuteToggle = options?.onMuteToggle;
     this.getGlobalMuteState = options?.getGlobalMuteState;
+    this.hdModeFromSettings = options?.hdModeFromSettings === true;
     this.initImagePostOptions(this.data.image.o_counter, options?.ratingSystemConfig, options?.reelMode);
     this.render();
   }
@@ -64,7 +65,7 @@ export class ImageVideoPost extends VideoPostBase {
     this.appendCommonImageFooterButtons(buttonGroup, this.data.image.id);
 
     // HQ button (upgrade to HD)
-    if (this.api && !this.isHQMode) {
+    if (this.api && !this.isHQMode && !this.hdModeFromSettings) {
       this.hqButton = this.createHQButton();
       buttonGroup.appendChild(this.hqButton);
     }
@@ -72,6 +73,9 @@ export class ImageVideoPost extends VideoPostBase {
     // Mute button (always show, but grayed out in non-HD mode)
     const muteBtn = this.createMuteOverlayButton();
     buttonGroup.appendChild(muteBtn);
+
+    const discoveryBtn = this.createDiscoveryButton();
+    if (discoveryBtn) buttonGroup.appendChild(discoveryBtn);
 
     // Image button (open in Stash)
     const imageBtn = this.createImageButton(this.data.image.id);

@@ -5,6 +5,16 @@ import type { WhisparrClient, WhisparrScene, WhisparrQueueItem } from './Whispar
 const LS_KEY = 'stashgifs-discovery-collapsed';
 const DEFAULT_PANEL_WIDTH = 260;
 
+export interface DiscoveryPanelControl {
+  toggle(): void;
+  isCollapsed(): boolean;
+  setCollapsed(collapsed: boolean): void;
+  onCollapseChange(cb: (collapsed: boolean) => void): () => void;
+}
+
+export const DISCOVERY_ICON_SVG =
+  '<svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><line x1="20" y1="20" x2="16.65" y2="16.65"/></svg>';
+
 type WhisparrButtonState =
   | { kind: 'loading' }
   | { kind: 'add' }
@@ -14,8 +24,7 @@ type WhisparrButtonState =
   | { kind: 'error'; message: string };
 
 export class DiscoveryPanel {
-  private readonly outer: HTMLElement;  // slides right; tab hangs off its left edge
-  private readonly tab: HTMLButtonElement;
+  private readonly outer: HTMLElement;
   private readonly title: HTMLElement;
   private readonly scenes: HTMLElement;
   private readonly slots: HTMLElement[] = [];
@@ -25,6 +34,7 @@ export class DiscoveryPanel {
   private hasScenes = false;
   private panelWidth: number;
   private onOpen?: () => void;
+  private readonly collapseListeners: Array<(collapsed: boolean) => void> = [];
   private whisparr?: WhisparrClient;
 
   constructor(mountTarget: HTMLElement, size: number = DEFAULT_PANEL_WIDTH, whisparr?: WhisparrClient) {
@@ -52,30 +62,6 @@ export class DiscoveryPanel {
       color: THEME.colors.textPrimary,
     });
 
-    // Tab hugs the left edge of the outer, vertically centred on it.
-    this.tab = document.createElement('button');
-    this.tab.setAttribute('aria-label', 'Toggle StashDB discovery panel');
-    this.tab.setAttribute('title', 'StashDB Discovery');
-    Object.assign(this.tab.style, {
-      position: 'absolute',
-      right: '100%',
-      top: '50%',
-      transform: 'translateY(-50%)',
-      width: '44px',
-      height: '48px',
-      border: 'none',
-      borderRadius: '6px 0 0 6px',
-      background: THEME.colors.surface,
-      color: THEME.colors.accentPrimary,
-      cursor: 'pointer',
-      display: 'flex',
-      alignItems: 'center',
-      justifyContent: 'center',
-      boxShadow: '-2px 0 8px rgba(0,0,0,0.35)',
-    });
-    this.tab.innerHTML = this.tabIcon(this.collapsed);
-    this.tab.addEventListener('click', () => this.toggle());
-
     // Inner panel — clipping container for the scrollable content.
     const inner = document.createElement('div');
     Object.assign(inner.style, {
@@ -98,7 +84,34 @@ export class DiscoveryPanel {
       flexShrink: '0',
       background: THEME.colors.surface,
       borderBottom: `1px solid ${THEME.colors.border}`,
+      display: 'flex',
+      alignItems: 'center',
+      gap: '8px',
     });
+
+    const closeBtn = document.createElement('button');
+    closeBtn.type = 'button';
+    closeBtn.setAttribute('aria-label', 'Close StashDB discovery panel');
+    closeBtn.title = 'Close';
+    Object.assign(closeBtn.style, {
+      width: '24px',
+      height: '24px',
+      flexShrink: '0',
+      border: 'none',
+      background: 'transparent',
+      color: THEME.colors.textSecondary,
+      cursor: 'pointer',
+      borderRadius: '4px',
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      padding: '0',
+    });
+    closeBtn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>';
+    closeBtn.addEventListener('mouseenter', () => { closeBtn.style.color = THEME.colors.textPrimary; closeBtn.style.background = THEME.colors.backgroundPrimary; });
+    closeBtn.addEventListener('mouseleave', () => { closeBtn.style.color = THEME.colors.textSecondary; closeBtn.style.background = 'transparent'; });
+    closeBtn.addEventListener('click', () => this.setCollapsed(true));
+    header.appendChild(closeBtn);
 
     this.title = document.createElement('span');
     Object.assign(this.title.style, {
@@ -115,6 +128,7 @@ export class DiscoveryPanel {
       style.textContent = [
         '@keyframes stashgifs-spin { to { transform: rotate(360deg); } }',
         '@keyframes stashgifs-pulse { 0%,100% { opacity: 0.35; } 50% { opacity: 0.7; } }',
+        '@keyframes stashgifs-jiggle { 0%,100% { transform: rotate(0); } 15% { transform: rotate(-14deg); } 30% { transform: rotate(12deg); } 45% { transform: rotate(-8deg); } 60% { transform: rotate(6deg); } 75% { transform: rotate(-3deg); } }',
       ].join(' ');
       document.head.appendChild(style);
     }
@@ -160,7 +174,6 @@ export class DiscoveryPanel {
     body.appendChild(this.scenes);
     inner.appendChild(header);
     inner.appendChild(body);
-    this.outer.appendChild(this.tab);
     this.outer.appendChild(inner);
     mountTarget.appendChild(this.outer);
   }
@@ -178,12 +191,25 @@ export class DiscoveryPanel {
   }
 
   toggle(): void {
+    this.setCollapsed(!this.collapsed);
+  }
+
+  setCollapsed(collapsed: boolean): void {
+    if (this.collapsed === collapsed) return;
     const wasCollapsed = this.collapsed;
-    this.collapsed = !this.collapsed;
+    this.collapsed = collapsed;
     localStorage.setItem(LS_KEY, this.collapsed ? '1' : '0');
     this.outer.style.right = this.collapsed ? `-${this.panelWidth}px` : '0';
-    this.tab.innerHTML = this.tabIcon(this.collapsed);
     if (wasCollapsed && !this.collapsed) this.onOpen?.();
+    for (const cb of this.collapseListeners) cb(this.collapsed);
+  }
+
+  onCollapseChange(cb: (collapsed: boolean) => void): () => void {
+    this.collapseListeners.push(cb);
+    return () => {
+      const idx = this.collapseListeners.indexOf(cb);
+      if (idx >= 0) this.collapseListeners.splice(idx, 1);
+    };
   }
 
   // fallow-ignore-next-line unused-class-member
@@ -429,11 +455,6 @@ export class DiscoveryPanel {
     this.renderWhisparrButton(card, info, scene, localStashId);
 
     return card;
-  }
-
-  private tabIcon(collapsed: boolean): string {
-    const d = collapsed ? 'M8 3 L2 9 L8 15' : 'M2 3 L8 9 L2 15';
-    return `<svg xmlns="http://www.w3.org/2000/svg" width="10" height="18" viewBox="0 0 10 18" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="${d}"/></svg>`;
   }
 
   setWhisparrClient(client: WhisparrClient | undefined): void {

@@ -294,7 +294,7 @@ export class SettingsPage {
     const layoutTabButton = createTabButton('Layout');
     const contentTabButton = createTabButton('Options');
     const themeTabButton = createTabButton('Theme');
-    const whisparrTabButton = createTabButton('Whisparr');
+    const whisparrTabButton = createTabButton('Discovery');
     tabBar.appendChild(layoutTabButton);
     tabBar.appendChild(contentTabButton);
     tabBar.appendChild(themeTabButton);
@@ -821,6 +821,37 @@ export class SettingsPage {
     layoutSection.appendChild(sceneTitleContainer);
     (this as any).sceneTitleToggle = sceneTitleToggle;
 
+    const appendButtonToggle = (labelText: string, tooltip: string, checked: boolean, refKey: string): void => {
+      const container = document.createElement('div');
+      container.style.display = 'flex';
+      container.style.justifyContent = 'space-between';
+      container.style.alignItems = 'center';
+      container.style.marginBottom = '16px';
+      container.appendChild(buildInfoLabel(labelText, tooltip));
+      const { container: toggleContainer, input } = this.createToggleSwitch(checked, () => this.saveSettings());
+      container.appendChild(toggleContainer);
+      layoutSection.appendChild(container);
+      (this as any)[refKey] = input;
+    };
+    appendButtonToggle(
+      'Show O-Count Button',
+      'Show the O-count button in the post button group.',
+      this.settings.showOCountButton !== false,
+      'showOCountToggle',
+    );
+    appendButtonToggle(
+      'Show View Count',
+      'Show the view-count badge in the post button group.',
+      this.settings.showViewCountBadge !== false,
+      'showViewCountToggle',
+    );
+    appendButtonToggle(
+      'Show Add Tag Button',
+      'Show the "Add tag" button in the post button group.',
+      this.settings.showAddTagButton !== false,
+      'showAddTagToggle',
+    );
+
     // ── Content Types Section ──────────────────────────────────────────────
     const contentTypesSection = document.createElement('div');
     contentTypesSection.style.marginBottom = '24px';
@@ -983,7 +1014,7 @@ export class SettingsPage {
     discoverySection.appendChild(discoveryOrderContainer);
     (this as any).discoveryOrderSelect = discoveryOrderSelect;
 
-    layoutContent.appendChild(discoverySection);
+    whisparrContent.appendChild(discoverySection);
 
     // ── Short-Form ─────────────────────────────────────────────────
     const shortFormSection = document.createElement('div');
@@ -1820,7 +1851,9 @@ export class SettingsPage {
       'shortFormIncludeToggle', 'reelModeToggle', 'hdVideoToggle',
       'portraitToggle', 'landscapeToggle',
       'themeBackgroundInput', 'themePrimaryInput', 'themeSecondaryInput', 'themeAccentInput',
-      'showVerifiedCheckmarksToggle', 'showProductionAgeToggle', 'showStudioChipsToggle', 'sceneTitleToggle', 'discoveryPanelToggle', 'excludedTagsInput',
+      'showVerifiedCheckmarksToggle', 'showProductionAgeToggle', 'showStudioChipsToggle', 'sceneTitleToggle',
+      'showOCountToggle', 'showViewCountToggle', 'showAddTagToggle',
+      'discoveryPanelToggle', 'excludedTagsInput',
       'includeSubtagsToggle', 'seenHistorySizeInput', 'contentLimitInput',
     ];
     const inputs: Record<string, HTMLInputElement> = {};
@@ -1881,6 +1914,9 @@ export class SettingsPage {
       showProductionAge: inputs.showProductionAgeToggle.checked,
       showStudioChips: inputs.showStudioChipsToggle.checked,
       showSceneTitle: inputs.sceneTitleToggle.checked,
+      showOCountButton: inputs.showOCountToggle.checked,
+      showViewCountBadge: inputs.showViewCountToggle.checked,
+      showAddTagButton: inputs.showAddTagToggle.checked,
       enableDiscoveryPanel: inputs.discoveryPanelToggle.checked,
       discoveryPanelSize: Number(((this as any).discoverySizeSlider as HTMLInputElement)?.value ?? 260),
       discoverySceneOrder: ((this as any).discoveryOrderSelect as HTMLSelectElement)?.value as 'latest' | 'random' | 'trending' ?? 'latest',
