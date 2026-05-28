@@ -217,8 +217,19 @@ export class VideoPost extends VideoPostBase {
    */
   protected createHeader(): HTMLElement {
     const header = this.createHeaderContainer();
+    header.appendChild(this.buildPerformersSection());
 
-    // Performer chips section — filter to valid entries (id + name required)
+    if (this.showSceneTitle && this.data.marker.scene.title) {
+      header.appendChild(this.buildTitleElement(this.data.marker.scene.title));
+    }
+
+    const tagsSection = this.buildTagsSection();
+    if (tagsSection) header.appendChild(tagsSection);
+
+    return header;
+  }
+
+  private buildPerformersSection(): HTMLElement {
     const performers = (this.data.marker.scene.performers ?? []).filter(
       (p) => p?.id && p?.name
     );
@@ -230,37 +241,26 @@ export class VideoPost extends VideoPostBase {
     } else {
       performersSection.appendChild(this.createAddPerformerPlaceholder());
     }
-    header.appendChild(performersSection);
+    return performersSection;
+  }
 
-    if (this.showSceneTitle && this.data.marker.scene.title) {
-      header.appendChild(this.buildTitleElement(this.data.marker.scene.title));
-    }
-
-    // Tag chips section (includes studio chip at the start)
+  private buildTagsSection(): HTMLElement | undefined {
     // Skip in shuffle mode UNLESS a marker has been created (to show the assigned tag)
     const studio = this.data.marker.scene.studio;
     const hasStudio = !!studio && this.showStudioChips;
     const canShowTags = !this.useShuffleMode || this.hasCreatedMarker;
-    const addTagChip = canShowTags
-      ? this.createAddTagChip(this.isRealMarker() || this.isShortFormContent() ? 'Add tag to marker' : 'Add tag')
-      : undefined;
-    if (hasStudio || canShowTags) {
-      const tagsSection = document.createElement('div');
-      tagsSection.className = 'video-post__tags';
-      if (hasStudio) {
-        tagsSection.appendChild(this.createStudioChip(studio));
-      }
-      if (canShowTags) {
-        this.addTagChips(tagsSection);
-      }
-      if (addTagChip) tagsSection.appendChild(addTagChip);
-      if (this.isReelMode) {
-        this.applyReelModeTagStyles(tagsSection);
-      }
-      header.appendChild(tagsSection);
-    }
+    if (!hasStudio && !canShowTags) return undefined;
 
-    return header;
+    const addTagChipTitle = this.isRealMarker() || this.isShortFormContent() ? 'Add tag to marker' : 'Add tag';
+    const addTagChip = canShowTags ? this.createAddTagChip(addTagChipTitle) : undefined;
+
+    const tagsSection = document.createElement('div');
+    tagsSection.className = 'video-post__tags';
+    if (hasStudio) tagsSection.appendChild(this.createStudioChip(studio));
+    if (canShowTags) this.addTagChips(tagsSection);
+    if (addTagChip) tagsSection.appendChild(addTagChip);
+    if (this.isReelMode) this.applyReelModeTagStyles(tagsSection);
+    return tagsSection;
   }
 
   /**

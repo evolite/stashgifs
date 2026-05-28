@@ -2381,7 +2381,7 @@ export abstract class BasePost {
     const anchorParent = anchor.parentElement ?? options.buttonGroup;
     anchorParent.style.position = 'relative';
     if (state.dialog.parentElement !== anchorParent) {
-      state.dialog.parentElement?.removeChild(state.dialog);
+      state.dialog.remove();
       anchorParent.appendChild(state.dialog);
     }
 
