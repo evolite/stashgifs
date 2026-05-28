@@ -45,6 +45,7 @@ export class ImagePost extends BasePost {
     this.data = data;
     this.initImagePostOptions(this.data.image.o_counter, options?.ratingSystemConfig, options?.reelMode);
     this.render();
+    this.attachReelAutoAdvanceTimer();
   }
 
   /**

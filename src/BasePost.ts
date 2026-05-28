@@ -3294,15 +3294,48 @@ export abstract class BasePost {
       // Backwards jump > 0.4s indicates a loop completed.
       if (t + 0.4 < lastTime && !this.autoAdvanceFired) {
         this.autoAdvanceFired = true;
-        let next = this.container.nextElementSibling as HTMLElement | null;
-        // Skip over non-post siblings (e.g. lazy-load triggers/sentinels).
-        while (next && !next.matches('.video-post, .image-post, [class*="post-wrapper"]')) {
-          next = next.nextElementSibling as HTMLElement | null;
-        }
-        next?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        this.scrollToNextPost();
       }
       lastTime = t;
     });
+  }
+
+  /**
+   * Image-post variant: advance after a fixed dwell time (default 5s) while
+   * the post is intersecting the viewport. Cancels and resets if the user
+   * scrolls away before the timer fires.
+   */
+  protected attachReelAutoAdvanceTimer(dwellMs: number = 5000): void {
+    if (this.autoAdvanceAttached || !this.isReelMode || !this.reelAutoScroll) return;
+    this.autoAdvanceAttached = true;
+    let timerId: ReturnType<typeof setTimeout> | undefined;
+    const observer = new IntersectionObserver((entries) => {
+      const entry = entries[0];
+      if (!entry) return;
+      if (entry.isIntersecting && entry.intersectionRatio >= 0.6) {
+        if (timerId === undefined && !this.autoAdvanceFired) {
+          timerId = setTimeout(() => {
+            if (this.autoAdvanceFired) return;
+            this.autoAdvanceFired = true;
+            this.scrollToNextPost();
+            observer.disconnect();
+          }, dwellMs);
+        }
+      } else if (timerId !== undefined) {
+        clearTimeout(timerId);
+        timerId = undefined;
+      }
+    }, { threshold: [0, 0.6, 1] });
+    observer.observe(this.container);
+  }
+
+  private scrollToNextPost(): void {
+    let next = this.container.nextElementSibling as HTMLElement | null;
+    // Skip over non-post siblings (e.g. lazy-load triggers/sentinels).
+    while (next && !next.matches('.video-post, .image-post, [class*="post-wrapper"]')) {
+      next = next.nextElementSibling as HTMLElement | null;
+    }
+    next?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   }
 
   /**
