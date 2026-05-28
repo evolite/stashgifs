@@ -94,6 +94,16 @@ export class OverlayManager<T> {
     }
   }
 
+  scheduleHide(delayMs: number = 300): void {
+    if (this.hideTimeout !== undefined) {
+      clearTimeout(this.hideTimeout);
+    }
+    this.hideTimeout = setTimeout(() => {
+      if (!this.isHovered()) this.hide();
+      this.hideTimeout = undefined;
+    }, delayMs) as unknown as number;
+  }
+
   cancelHide(): void {
     if (this.hideTimeout !== undefined) {
       clearTimeout(this.hideTimeout);
@@ -126,7 +136,7 @@ export class OverlayManager<T> {
       this.hideTimeout = setTimeout(() => {
         if (!this.isHovered()) this.hide();
         this.hideTimeout = undefined;
-      }, 100) as unknown as number;
+      }, 300) as unknown as number;
     });
   }
 

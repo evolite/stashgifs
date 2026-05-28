@@ -1709,7 +1709,7 @@ export abstract class BasePost {
   private createPerformerOverlay(performerData: PerformerExtended, onRemove?: () => Promise<boolean>): HTMLElement {
     const overlay = this.createOverlayContainer('performer-overlay', '480px', {
       onMouseEnter: () => this.performerOverlayMgr.cancelHide(),
-      onMouseLeave: () => this.performerOverlayMgr.hide(),
+      onMouseLeave: () => this.performerOverlayMgr.scheduleHide(),
       onClickBackground: () => this.performerOverlayMgr.hide(true),
     }, { maxHeight: '80vh', overflowY: 'auto' });
 
@@ -1833,7 +1833,7 @@ export abstract class BasePost {
       onMouseEnter: () => {
         this.tagOverlayMgr.cancelHide();
       },
-      onMouseLeave: () => this.tagOverlayMgr.hide(),
+      onMouseLeave: () => this.tagOverlayMgr.scheduleHide(),
       onClickBackground: () => this.tagOverlayMgr.hide(true),
     });
 
@@ -1874,7 +1874,7 @@ export abstract class BasePost {
   private createStudioOverlay(studioData: StudioExtended): HTMLElement {
     const overlay = this.createOverlayContainer('studio-overlay', '400px', {
       onMouseEnter: () => this.studioOverlayMgr.cancelHide(),
-      onMouseLeave: () => this.studioOverlayMgr.hide(),
+      onMouseLeave: () => this.studioOverlayMgr.scheduleHide(),
       onClickBackground: () => this.studioOverlayMgr.hide(true),
     });
 
@@ -2199,40 +2199,36 @@ export abstract class BasePost {
     chip.className = 'tag-chip tag-chip--add';
     chip.setAttribute('aria-label', 'Add tag');
     chip.title = title;
-    chip.textContent = '+ add tag';
+    chip.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" aria-hidden="true" style="display:block;transform:translateY(2px);"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>';
     Object.assign(chip.style, {
       display: 'inline-flex',
       alignItems: 'center',
-      padding: '0 6px',
-      margin: '0 0 0 4px',
-      fontSize: '13px',
-      lineHeight: '1.4',
+      justifyContent: 'center',
+      padding: '0',
+      margin: '0 0 0 6px',
       minHeight: '44px',
       height: '44px',
+      minWidth: '20px',
       color: THEME.colors.textMuted,
       background: 'transparent',
       border: 'none',
-      borderBottom: `1px dashed ${THEME.colors.textMuted}`,
       borderRadius: '0',
       cursor: 'pointer',
-      transition: 'color 0.2s ease, border-color 0.2s ease',
-      fontStyle: 'italic',
-      opacity: '0.75',
+      transition: 'color 0.2s ease, opacity 0.2s ease',
+      opacity: '0.4',
+      verticalAlign: 'middle',
     });
     if (this.isReelMode) {
       chip.style.color = '#ffffff';
-      chip.style.borderBottomColor = 'rgba(255,255,255,0.5)';
       chip.style.textShadow = '0 2px 8px rgba(0, 0, 0, 0.65)';
     }
     chip.addEventListener('mouseenter', () => {
       chip.style.opacity = '1';
       chip.style.color = this.isReelMode ? '#ffffff' : THEME.colors.textPrimary;
-      chip.style.borderBottomColor = this.isReelMode ? '#ffffff' : THEME.colors.textPrimary;
     });
     chip.addEventListener('mouseleave', () => {
-      chip.style.opacity = '0.75';
+      chip.style.opacity = '0.4';
       chip.style.color = this.isReelMode ? '#ffffff' : THEME.colors.textMuted;
-      chip.style.borderBottomColor = this.isReelMode ? 'rgba(255,255,255,0.5)' : THEME.colors.textMuted;
     });
     chip.addEventListener('click', (e) => {
       e.preventDefault();
@@ -2377,10 +2373,21 @@ export abstract class BasePost {
 
     this.updateAddTagDialogState(state);
 
-    options.buttonGroup.style.position = 'relative';
-    if (!state.dialog.parentElement) {
-      options.buttonGroup.appendChild(state.dialog);
+    // Anchor below the add-tag chip (which now lives in the tag row).
+    // Fall back to the legacy button-group position if no chip exists.
+    const anchor = this.addTagButton ?? options.buttonGroup;
+    const anchorParent = anchor.parentElement ?? options.buttonGroup;
+    anchorParent.style.position = 'relative';
+    if (state.dialog.parentElement !== anchorParent) {
+      state.dialog.parentElement?.removeChild(state.dialog);
+      anchorParent.appendChild(state.dialog);
     }
+
+    // Switch dialog from "open above" to "open below" the anchor.
+    state.dialog.style.bottom = '';
+    state.dialog.style.top = `${anchor.offsetTop + anchor.offsetHeight + 6}px`;
+    const anchorCenterX = anchor.offsetLeft + anchor.offsetWidth / 2;
+    state.dialog.style.left = `${anchorCenterX}px`;
 
     state.dialog.hidden = false;
     state.dialog.setAttribute('aria-hidden', 'false');
@@ -2388,14 +2395,21 @@ export abstract class BasePost {
     state.dialog.style.transform = 'translateX(-50%) translateY(0) scale(1)';
     state.dialog.style.pointerEvents = 'auto';
 
-    const adjustPosition = options.onAdjustPosition;
-    if (adjustPosition) {
-      requestAnimationFrame(() => {
-        if (state.dialog) {
-          adjustPosition(state.dialog);
-        }
-      });
-    }
+    // Clamp dialog horizontally so it stays inside the card.
+    requestAnimationFrame(() => {
+      if (!state.dialog) return;
+      const dialogRect = state.dialog.getBoundingClientRect();
+      const cardRect = this.container.getBoundingClientRect();
+      let offsetX = 0;
+      const desiredLeft = dialogRect.left;
+      const desiredRight = dialogRect.right;
+      if (desiredLeft < cardRect.left + 8) {
+        offsetX = (cardRect.left + 8) - desiredLeft;
+      } else if (desiredRight > cardRect.right - 8) {
+        offsetX = (cardRect.right - 8) - desiredRight;
+      }
+      state.dialog.style.transform = `translateX(calc(-50% + ${offsetX}px)) translateY(0) scale(1)`;
+    });
 
     state.outsideClickHandler ??= (event: Event) => {
       if (!state.isOpen || !state.dialog) return;
