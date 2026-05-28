@@ -3647,6 +3647,7 @@ export class FeedContainer {
       reelMode: this.settings.reelMode === true,
       hdModeFromSettings: this.useHDMode,
       discoveryPanel: this.discoveryPanel,
+      reelAutoScroll: this.settings.reelAutoScroll === true,
     };
   }
 

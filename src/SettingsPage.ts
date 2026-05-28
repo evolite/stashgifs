@@ -715,6 +715,26 @@ export class SettingsPage {
 
     layoutSection.appendChild(reelModeContainer);
 
+    const reelAutoScrollContainer = document.createElement('div');
+    reelAutoScrollContainer.style.display = 'flex';
+    reelAutoScrollContainer.style.justifyContent = 'space-between';
+    reelAutoScrollContainer.style.alignItems = 'center';
+    reelAutoScrollContainer.style.marginBottom = '16px';
+    reelAutoScrollContainer.style.paddingLeft = '20px';
+    reelAutoScrollContainer.appendChild(
+      buildInfoLabel(
+        'Auto-Scroll',
+        'Reel Mode only: automatically advance to the next post when the current video loops.'
+      )
+    );
+    const { container: reelAutoScrollToggleContainer, input: reelAutoScrollToggle } = this.createToggleSwitch(
+      this.settings.reelAutoScroll === true,
+      () => this.saveSettings()
+    );
+    reelAutoScrollContainer.appendChild(reelAutoScrollToggleContainer);
+    layoutSection.appendChild(reelAutoScrollContainer);
+    (this as any).reelAutoScrollToggle = reelAutoScrollToggle;
+
     const hdVideoContainer = document.createElement('div');
     hdVideoContainer.style.display = 'flex';
     hdVideoContainer.style.justifyContent = 'space-between';
@@ -1560,7 +1580,7 @@ export class SettingsPage {
       )
     );
     feedbackLinks.appendChild(
-      createFooterLink('💻 GitHub', 'https://github.com/evolite/stashgifs')
+      createFooterLink('💻 Codeberg', 'https://codeberg.org/surging9143/stashgifs')
     );
     versionFooter.appendChild(feedbackLinks);
 
@@ -1848,7 +1868,7 @@ export class SettingsPage {
   private collectFormInputs(): Record<string, HTMLInputElement> | undefined {
     const inputNames = [
       'fileTypesInput', 'maxDurationInput', 'includeMarkersToggle', 'includeRandomToggle', 'randomIncludeScenesWithMarkersToggle', 'includeImagesToggle',
-      'shortFormIncludeToggle', 'reelModeToggle', 'hdVideoToggle',
+      'shortFormIncludeToggle', 'reelModeToggle', 'reelAutoScrollToggle', 'hdVideoToggle',
       'portraitToggle', 'landscapeToggle',
       'themeBackgroundInput', 'themePrimaryInput', 'themeSecondaryInput', 'themeAccentInput',
       'showVerifiedCheckmarksToggle', 'showProductionAgeToggle', 'showStudioChipsToggle', 'sceneTitleToggle',
@@ -1904,6 +1924,7 @@ export class SettingsPage {
       shortFormInNonHDMode: inputs.shortFormIncludeToggle.checked,
       shortFormMaxDuration: validMaxDuration,
       reelMode: inputs.reelModeToggle.checked,
+      reelAutoScroll: inputs.reelAutoScrollToggle.checked,
       snapToCards: inputs.reelModeToggle.checked,
       orientationFilter: this.parseOrientationFilter(inputs.portraitToggle.checked, inputs.landscapeToggle.checked),
       themeBackground: inputs.themeBackgroundInput.value,

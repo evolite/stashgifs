@@ -10,9 +10,6 @@ import { normalizeMediaUrl, showToast, isMobileDevice, THEME, subscribeWindowScr
 import { RatingControl } from './RatingControl.js';
 import { ADD_TAG_SVG, HEART_SVG_OUTLINE, HEART_SVG_FILLED, OCOUNT_SVG, EXTERNAL_LINK_SVG, STAR_SVG, STAR_SVG_OUTLINE, VERIFIED_SVG, EYE_SVG, CLAPPERBOARD_SVG } from './icons.js';
 import { DISCOVERY_ICON_SVG, type DiscoveryPanelControl } from './DiscoveryPanel.js';
-
-// Module-level flag: discovery button jiggle plays once per page load.
-let discoveryButtonHasJiggled = false;
 import { setupTouchHandlers, preventClickAfterTouch } from './utils/touchHandlers.js';
 import { adjustImageDialogPosition, toggleImageFavorite } from './utils/imagePostUtils.js';
 import { OverlayManager } from './utils/OverlayManager.js';
@@ -34,6 +31,7 @@ export interface BasePostOptions {
   showViewCountBadge?: boolean;
   showAddTagButton?: boolean;
   discoveryPanel?: DiscoveryPanelControl;
+  reelAutoScroll?: boolean;
 }
 
 interface HoverHandlers {
@@ -131,6 +129,9 @@ export abstract class BasePost {
   protected showAddTagButton: boolean = true;
   protected discoveryPanel?: DiscoveryPanelControl;
   private discoveryCollapseUnsubscribe?: () => void;
+  protected reelAutoScroll: boolean = false;
+  private autoAdvanceAttached: boolean = false;
+  private autoAdvanceFired: boolean = false;
   private readonly performerOverlayMgr: OverlayManager<PerformerExtended>;
   private readonly tagOverlayMgr: OverlayManager<Tag>;
   private readonly studioOverlayMgr: OverlayManager<StudioExtended>;
@@ -171,6 +172,7 @@ export abstract class BasePost {
     this.showViewCountBadge = options?.showViewCountBadge !== false;
     this.showAddTagButton = options?.showAddTagButton !== false;
     this.discoveryPanel = options?.discoveryPanel;
+    this.reelAutoScroll = options?.reelAutoScroll === true;
 
     this.performerOverlayMgr = new OverlayManager<PerformerExtended>(
       (id, signal) => this.api!.getPerformerDetails(id, signal),
@@ -3276,6 +3278,34 @@ export abstract class BasePost {
   }
 
   /**
+   * Auto-advance to the next post when the post's video loops back.
+   * Only active in reel mode with the reelAutoScroll setting enabled.
+   * Idempotent: subclasses can call this after their video player has mounted;
+   * the first call with a discoverable <video> element wins.
+   */
+  protected attachReelAutoAdvance(): void {
+    if (this.autoAdvanceAttached || !this.isReelMode || !this.reelAutoScroll) return;
+    const video = this.container.querySelector<HTMLVideoElement>('video');
+    if (!video) return;
+    this.autoAdvanceAttached = true;
+    let lastTime = 0;
+    video.addEventListener('timeupdate', () => {
+      const t = video.currentTime;
+      // Backwards jump > 0.4s indicates a loop completed.
+      if (t + 0.4 < lastTime && !this.autoAdvanceFired) {
+        this.autoAdvanceFired = true;
+        let next = this.container.nextElementSibling as HTMLElement | null;
+        // Skip over non-post siblings (e.g. lazy-load triggers/sentinels).
+        while (next && !next.matches('.video-post, .image-post, [class*="post-wrapper"]')) {
+          next = next.nextElementSibling as HTMLElement | null;
+        }
+        next?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }
+      lastTime = t;
+    });
+  }
+
+  /**
    * Create the StashDB Discovery panel toggle button. Returns undefined if no panel is wired.
    * Default neutral; turns accent while the panel is open. Plays a one-shot jiggle on
    * the first instance created per page load.
@@ -3302,13 +3332,10 @@ export abstract class BasePost {
     btn.addEventListener('click', () => panel.toggle());
     this.discoveryCollapseUnsubscribe = panel.onCollapseChange(applyState);
 
-    if (!discoveryButtonHasJiggled) {
-      discoveryButtonHasJiggled = true;
-      setTimeout(() => {
-        btn.style.animation = 'stashgifs-jiggle 1.1s ease-in-out, stashgifs-discovery-pulse 1.1s ease-in-out';
-        btn.addEventListener('animationend', () => { btn.style.animation = ''; }, { once: true });
-      }, 3000);
-    }
+    setTimeout(() => {
+      btn.style.animation = 'stashgifs-jiggle 1.1s ease-in-out, stashgifs-discovery-pulse 1.1s ease-in-out';
+      btn.addEventListener('animationend', () => { btn.style.animation = ''; }, { once: true });
+    }, 3000);
 
     return btn;
   }

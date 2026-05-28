@@ -122,6 +122,7 @@ export interface FeedSettings {
   shortFormOnly?: boolean; // When true, only load short-form content and skip regular markers
   snapToCards?: boolean; // When true, scroll/swipe snaps to center next/previous card
   reelMode?: boolean; // When true, use full-screen reel layout
+  reelAutoScroll?: boolean; // Reel mode only: auto-advance to next post when video loops
   themeBackground?: string; // Background color for app + search overlay
   themePrimary?: string; // Primary surface color for cards
   themeSecondary?: string; // Secondary surface color for inputs/panels

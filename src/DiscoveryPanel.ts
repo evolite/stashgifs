@@ -39,7 +39,8 @@ export class DiscoveryPanel {
 
   constructor(mountTarget: HTMLElement, size: number = DEFAULT_PANEL_WIDTH, whisparr?: WhisparrClient) {
     this.whisparr = whisparr;
-    this.collapsed = localStorage.getItem(LS_KEY) !== '0';
+    // Always start collapsed on page load; the user opens it via the per-post button.
+    this.collapsed = true;
     this.panelWidth = size;
 
     // Outer slides. overflow:visible so the tab sticks out to the left without clipping.
