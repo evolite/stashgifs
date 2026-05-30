@@ -1525,7 +1525,7 @@ export class VideoPost extends VideoPostBase {
 
     // Focus input
     requestAnimationFrame(() => {
-      this.markerDialogInput?.focus();
+      this.markerDialogInput?.focus({ preventScroll: true });
     });
   }
 

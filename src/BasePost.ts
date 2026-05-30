@@ -2397,11 +2397,20 @@ export abstract class BasePost {
     state.dialog.style.transform = 'translateX(-50%) translateY(0) scale(1)';
     state.dialog.style.pointerEvents = 'auto';
 
-    // Clamp dialog horizontally so it stays inside the card.
+    // Clamp dialog horizontally and vertically so it stays inside the viewport.
     requestAnimationFrame(() => {
       if (!state.dialog) return;
       const dialogRect = state.dialog.getBoundingClientRect();
       const cardRect = this.container.getBoundingClientRect();
+
+      // Flip above anchor if dialog extends below the viewport.
+      if (dialogRect.bottom > globalThis.innerHeight - 8) {
+        const anchorEl = this.addTagButton ?? options.buttonGroup;
+        if (anchorEl) {
+          state.dialog.style.top = `${anchorEl.offsetTop - state.dialog.offsetHeight - 6}px`;
+        }
+      }
+
       let offsetX = 0;
       const desiredLeft = dialogRect.left;
       const desiredRight = dialogRect.right;
@@ -2441,7 +2450,7 @@ export abstract class BasePost {
     document.addEventListener('keydown', state.keydownHandler);
 
     requestAnimationFrame(() => {
-      state.input?.focus();
+      state.input?.focus({ preventScroll: true });
     });
   }
 
@@ -2485,7 +2494,7 @@ export abstract class BasePost {
       document.removeEventListener('keydown', state.keydownHandler);
     }
 
-    focusAfterClose?.focus();
+    focusAfterClose?.focus({ preventScroll: true });
   }
 
   protected handleAddTagInputBase(options: { state: AddTagDialogState; onSearch: (searchTerm: string) => void }): void {
@@ -3027,13 +3036,19 @@ export abstract class BasePost {
         if (!this.addPerformerDialog) return;
         const cardRect = this.container.getBoundingClientRect();
         const anchorRect = anchor.getBoundingClientRect();
-        // Place BELOW anchor so the dialog stays inside the card (overflow:hidden clips above)
         const topPx = anchorRect.bottom - cardRect.top + 6;
         this.addPerformerDialog.style.bottom = 'auto';
         this.addPerformerDialog.style.top = `${topPx}px`;
         this.addPerformerDialog.style.left = '14px';
         this.addPerformerDialog.style.transform = 'translateY(0) scale(1)';
         this.addPerformerDialog.style.opacity = '1';
+
+        // Flip above anchor if dialog extends below the viewport.
+        const dlgRect = this.addPerformerDialog.getBoundingClientRect();
+        if (dlgRect.bottom > globalThis.innerHeight - 8) {
+          const aboveTop = anchorRect.top - cardRect.top - this.addPerformerDialog.offsetHeight - 6;
+          this.addPerformerDialog.style.top = `${aboveTop}px`;
+        }
       });
     }
     this.onAddPerformerDialogOutsideClick = (event: Event) => {
@@ -3053,7 +3068,7 @@ export abstract class BasePost {
     document.addEventListener('mousedown', this.onAddPerformerDialogOutsideClick);
     document.addEventListener('touchstart', this.onAddPerformerDialogOutsideClick);
     document.addEventListener('keydown', this.onAddPerformerDialogKeydown);
-    requestAnimationFrame(() => { this.addPerformerDialogInput?.focus(); });
+    requestAnimationFrame(() => { this.addPerformerDialogInput?.focus({ preventScroll: true }); });
   }
 
   private closeAddPerformerDialog(): void {
