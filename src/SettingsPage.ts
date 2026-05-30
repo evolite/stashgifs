@@ -742,6 +742,20 @@ export class SettingsPage {
     layoutSection.appendChild(reelAutoScrollContainer);
     (this as any).reelAutoScrollToggle = reelAutoScrollToggle;
 
+    const autoHideSearchBarContainer = document.createElement('div');
+    autoHideSearchBarContainer.style.cssText = 'display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;';
+    autoHideSearchBarContainer.appendChild(buildInfoLabel(
+      'Auto-Hide Search Bar',
+      'Hides the search bar when scrolling down, and reveals it when scrolling up.'
+    ));
+    const { container: autoHideSearchBarToggleContainer, input: autoHideSearchBarToggle } = this.createToggleSwitch(
+      this.settings.autoHideSearchBar !== false,
+      () => this.saveSettings()
+    );
+    autoHideSearchBarContainer.appendChild(autoHideSearchBarToggleContainer);
+    layoutSection.appendChild(autoHideSearchBarContainer);
+    (this as any).autoHideSearchBarToggle = autoHideSearchBarToggle;
+
     const hdVideoContainer = document.createElement('div');
     hdVideoContainer.style.display = 'flex';
     hdVideoContainer.style.justifyContent = 'space-between';
@@ -1875,7 +1889,7 @@ export class SettingsPage {
   private collectFormInputs(): Record<string, HTMLInputElement> | undefined {
     const inputNames = [
       'fileTypesInput', 'maxDurationInput', 'includeMarkersToggle', 'includeRandomToggle', 'randomIncludeScenesWithMarkersToggle', 'includeImagesToggle',
-      'shortFormIncludeToggle', 'reelModeToggle', 'reelAutoScrollToggle', 'hdVideoToggle',
+      'shortFormIncludeToggle', 'reelModeToggle', 'reelAutoScrollToggle', 'autoHideSearchBarToggle', 'hdVideoToggle',
       'portraitToggle', 'landscapeToggle',
       'themeBackgroundInput', 'themePrimaryInput', 'themeSecondaryInput', 'themeAccentInput',
       'showVerifiedCheckmarksToggle', 'showProductionAgeToggle', 'showStudioChipsToggle', 'sceneTitleToggle',
@@ -1933,6 +1947,7 @@ export class SettingsPage {
       reelMode: inputs.reelModeToggle.checked,
       reelAutoScroll: inputs.reelAutoScrollToggle.checked,
       snapToCards: inputs.reelModeToggle.checked,
+      autoHideSearchBar: inputs.autoHideSearchBarToggle.checked,
       orientationFilter: this.parseOrientationFilter(inputs.portraitToggle.checked, inputs.landscapeToggle.checked),
       themeBackground: inputs.themeBackgroundInput.value,
       themePrimary: inputs.themePrimaryInput.value,

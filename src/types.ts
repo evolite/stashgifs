@@ -123,6 +123,7 @@ export interface FeedSettings {
   snapToCards?: boolean; // When true, scroll/swipe snaps to center next/previous card
   reelMode?: boolean; // When true, use full-screen reel layout
   reelAutoScroll?: boolean; // Reel mode only: auto-advance to next post when video loops
+  autoHideSearchBar?: boolean; // Hide search bar on scroll-down, default: true
   themeBackground?: string; // Background color for app + search overlay
   themePrimary?: string; // Primary surface color for cards
   themeSecondary?: string; // Secondary surface color for inputs/panels

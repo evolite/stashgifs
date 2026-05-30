@@ -45,6 +45,7 @@ const DEFAULT_SETTINGS: FeedSettings = {
   shortFormOnly: false, // When true, only load short-form content and skip regular markers
   snapToCards: false, // When true, scroll/swipe snaps to center next/previous card
   reelMode: false, // When true, use full-screen reel layout
+  autoHideSearchBar: true,
   themeBackground: THEME_DEFAULTS.backgroundPrimary,
   themePrimary: THEME_DEFAULTS.surface,
   themeSecondary: THEME_DEFAULTS.backgroundSecondary,
@@ -711,6 +712,10 @@ export class FeedContainer {
         previousOrientation,
         this.normalizeOrientationFilter(updatedSettings.orientationFilter ?? [])
       );
+
+    if (newSettings.autoHideSearchBar !== undefined && newSettings.autoHideSearchBar === false) {
+      this.showHeader();
+    }
 
     if (newSettings.enableDiscoveryPanel !== undefined) {
       if (updatedSettings.enableDiscoveryPanel === true) {
@@ -6767,6 +6772,8 @@ export class FeedContainer {
    * Check if header handling should be skipped
    */
   private shouldSkipHeaderHandling(): boolean {
+    if (this.settings.autoHideSearchBar === false) return true;
+
     const suggestions = document.querySelector('.feed-filters__suggestions') as HTMLElement;
     if (suggestions && suggestions.style.display !== 'none' && suggestions.style.display !== '') {
       return true;
