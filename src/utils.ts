@@ -25,6 +25,7 @@ export const THEME = {
     ratingMedium: '#F39C12',
     ratingLow: '#F1C40F',
     success: '#2ECC71',
+    danger: '#E85C5C',
     iconInactive: '#9FB0BC',
     iconActive: '#E6EEF4',
     overlay: 'rgba(31, 42, 51, 0.96)',

@@ -117,7 +117,7 @@ export class DiscoveryPanel {
     this.title = document.createElement('span');
     Object.assign(this.title.style, {
       fontWeight: THEME.typography.weightBodyStrong,
-      fontSize: THEME.typography.sizeMeta,
+      fontSize: THEME.typography.sizeControl,
       color: THEME.colors.textSecondary,
     });
     this.title.textContent = 'StashDB Discovery';
@@ -409,7 +409,7 @@ export class DiscoveryPanel {
     }
 
     const overlay = document.createElement('div');
-    overlay.style.cssText = `position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 40px; height: 40px; border-radius: 50%; background: rgba(0, 0, 0, 0.55); color: #fff; display: flex; align-items: center; justify-content: center; pointer-events: none; transition: background 0.15s ease;`;
+    overlay.style.cssText = `position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 40px; height: 40px; border-radius: 50%; background: ${THEME.colors.overlay}; color: #fff; display: flex; align-items: center; justify-content: center; pointer-events: none; transition: background 0.15s ease;`;
     if (localStashId) {
       overlay.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>';
       overlay.setAttribute('aria-label', 'Play in Stash');
@@ -419,17 +419,17 @@ export class DiscoveryPanel {
     }
     thumb.appendChild(overlay);
     thumb.addEventListener('mouseenter', () => { overlay.style.background = THEME.colors.accentPrimary; });
-    thumb.addEventListener('mouseleave', () => { overlay.style.background = 'rgba(0, 0, 0, 0.55)'; });
+    thumb.addEventListener('mouseleave', () => { overlay.style.background = THEME.colors.overlay; });
 
     const info = document.createElement('div');
     info.style.cssText = `padding: 4px 8px 6px; display: flex; flex-direction: column; gap: 1px; overflow: hidden;`;
 
     const nameEl = document.createElement('div');
-    nameEl.style.cssText = `font-size: 10px; color: ${THEME.colors.accentPrimary}; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;`;
+    nameEl.style.cssText = `font-size: ${THEME.typography.sizeMeta}; color: ${THEME.colors.textSecondary}; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;`;
     nameEl.textContent = performerName;
 
     const titleEl = document.createElement('a');
-    titleEl.style.cssText = `font-weight: ${THEME.typography.weightBodyStrong}; font-size: ${THEME.typography.sizeMeta}; color: ${THEME.colors.textPrimary}; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-decoration: none; display: block;`;
+    titleEl.style.cssText = `font-weight: ${THEME.typography.weightBodyStrong}; font-size: ${THEME.typography.sizeControl}; color: ${THEME.colors.textPrimary}; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-decoration: none; display: block;`;
     titleEl.textContent = scene.title ?? 'Untitled';
     titleEl.target = '_blank';
     titleEl.rel = 'noopener noreferrer';
@@ -442,7 +442,7 @@ export class DiscoveryPanel {
     }
 
     const meta = document.createElement('div');
-    meta.style.cssText = `font-size: 10px; color: ${THEME.colors.textMuted}; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;`;
+    meta.style.cssText = `font-size: ${THEME.typography.sizeMeta}; color: ${THEME.colors.textMuted}; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;`;
     const parts: string[] = [];
     if (scene.date) parts.push(scene.date);
     if (scene.studio?.name) parts.push(scene.studio.name);
@@ -477,7 +477,7 @@ export class DiscoveryPanel {
       background: THEME.colors.backgroundPrimary,
       color: THEME.colors.accentPrimary,
       cursor: 'pointer',
-      fontSize: '10px',
+      fontSize: THEME.typography.sizeMeta,
       fontFamily: THEME.typography.fontFamily,
       display: 'flex',
       alignItems: 'center',
@@ -537,7 +537,7 @@ export class DiscoveryPanel {
           button.textContent = '! Whisparr error';
           button.disabled = false;
           button.title = next.message;
-          button.style.color = '#e57373';
+          button.style.color = THEME.colors.danger;
           button.style.cursor = 'pointer';
           break;
       }
