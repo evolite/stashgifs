@@ -12,6 +12,7 @@ export class ImagePlayer {
   private readonly imageUrl: string;
   private readonly isGif: boolean;
   private readonly isVideo: boolean;
+  private readonly objectFit: 'cover' | 'contain' = 'cover';
   private isLoaded: boolean = false;
   private hasRetried: boolean = false;
   private loadingIndicator?: HTMLElement;
@@ -22,11 +23,13 @@ export class ImagePlayer {
   constructor(container: HTMLElement, imageUrl: string, options?: {
     isGif?: boolean;
     isVideo?: boolean;
+    objectFit?: 'cover' | 'contain';
   }) {
     this.container = container;
     this.imageUrl = imageUrl;
     this.isVideo = options?.isVideo ?? false;
     this.isGif = options?.isGif ?? (!this.isVideo && imageUrl.toLowerCase().endsWith('.gif'));
+    if (options?.objectFit) this.objectFit = options.objectFit;
     
     this.createMediaElement();
   }
@@ -64,7 +67,7 @@ export class ImagePlayer {
     this.imageElement.className = 'image-player__element';
     this.imageElement.style.width = '100%';
     this.imageElement.style.height = '100%';
-    this.imageElement.style.objectFit = 'cover';
+    this.imageElement.style.objectFit = this.objectFit;
     this.imageElement.style.display = 'block';
     
     wrapper.appendChild(this.imageElement);
@@ -101,7 +104,7 @@ export class ImagePlayer {
     this.videoElement.className = 'image-player__element';
     
     // Setup looping video properties (reused utility function)
-    setupLoopingVideoElement(this.videoElement);
+    setupLoopingVideoElement(this.videoElement, { objectFit: this.objectFit });
     
     // Determine MIME type based on file extension
     const urlLower = this.imageUrl.toLowerCase();

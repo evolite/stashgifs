@@ -894,6 +894,7 @@ export class VideoPost extends VideoPostBase {
         aggressivePreload: false, // HD videos use metadata preload
         posterUrl: this.getPreferredPosterUrl(),
         showLoadingIndicator: false,
+        objectFit: this.isReelMode ? 'contain' : 'cover',
         // onMuteToggle removed - using overlay button instead
       });
 
@@ -1070,6 +1071,7 @@ export class VideoPost extends VideoPostBase {
         endTime: endTime ?? this.data.endTime ?? this.data.marker.end_seconds,
         posterUrl: this.getPreferredPosterUrl(),
         showLoadingIndicator: false,
+        objectFit: this.isReelMode ? 'contain' : 'cover',
       });
 
       this.isLoaded = true;

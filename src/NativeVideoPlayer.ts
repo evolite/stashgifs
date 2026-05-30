@@ -20,6 +20,7 @@ interface EnhancedVideoError extends Error {
 
 export class NativeVideoPlayer {
   private readonly container: HTMLElement;
+  private readonly objectFit: 'cover' | 'contain' = 'cover';
   private videoElement!: HTMLVideoElement;
   private controlsContainer!: HTMLElement;
   private playButton!: HTMLElement;
@@ -107,6 +108,7 @@ export class NativeVideoPlayer {
     aggressivePreload?: boolean; // Use 'auto' preload for non-HD videos
     posterUrl?: string; // Poster image URL to display before video loads
     showLoadingIndicator?: boolean; // Toggle internal loading spinner
+    objectFit?: 'cover' | 'contain';
     // onMuteToggle removed - mute is now controlled by overlay button in VideoPost
   }) {
     const normalizedVideoUrl = normalizeMediaUrl(videoUrl);
@@ -124,6 +126,7 @@ export class NativeVideoPlayer {
     this.container = container;
     this.onStateChange = options?.onStateChange;
     this.shouldShowLoadingIndicator = options?.showLoadingIndicator ?? true;
+    if (options?.objectFit) this.objectFit = options.objectFit;
 
     this.state = {
       isPlaying: false,
@@ -246,7 +249,7 @@ export class NativeVideoPlayer {
     this.applyPosterConfig(options?.posterUrl);
     
     // Set object-fit for proper video display
-    this.videoElement.style.objectFit = 'cover';
+    this.videoElement.style.objectFit = this.objectFit;
     this.videoElement.style.width = '100%';
     this.videoElement.style.height = '100%';
     

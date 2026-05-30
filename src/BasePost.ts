@@ -457,11 +457,8 @@ export abstract class BasePost {
     }
   }
 
-  private applyReelMediaStyles(playerContainer: HTMLElement, _isPortrait: boolean): void {
-    const mediaElements = playerContainer.querySelectorAll<HTMLElement>('video, img');
-    for (const mediaElement of mediaElements) {
-      mediaElement.style.objectFit = 'contain';
-    }
+  private applyReelMediaStyles(_playerContainer: HTMLElement, _isPortrait: boolean): void {
+    // object-fit is set at construction time by each player (NativeVideoPlayer/ImagePlayer)
   }
 
   private applyReelHeaderStyles(header: HTMLElement, isMobile: boolean): void {

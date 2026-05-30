@@ -113,9 +113,10 @@ export class ImagePost extends BasePost {
                      vf.video_codec?.toLowerCase() === 'gif'
                    ));
       
-      this.player = new ImagePlayer(this.playerContainer, imageUrl, { 
-        isGif, 
-        isVideo
+      this.player = new ImagePlayer(this.playerContainer, imageUrl, {
+        isGif,
+        isVideo,
+        objectFit: this.isReelMode ? 'contain' : 'cover',
       });
       this.isLoaded = true;
 

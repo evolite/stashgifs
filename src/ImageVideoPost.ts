@@ -168,6 +168,7 @@ export class ImageVideoPost extends VideoPostBase {
         aggressivePreload: false,
         posterUrl: this.getPosterUrl(),
         showLoadingIndicator: false,
+        objectFit: this.isReelMode ? 'contain' : 'cover',
       });
 
       this.isLoaded = true;
@@ -286,6 +287,7 @@ export class ImageVideoPost extends VideoPostBase {
         endTime: undefined,
         posterUrl: this.getPosterUrl(),
         showLoadingIndicator: false,
+        objectFit: this.isReelMode ? 'contain' : 'cover',
       });
 
       this.isLoaded = true;
