@@ -457,10 +457,10 @@ export abstract class BasePost {
     }
   }
 
-  private applyReelMediaStyles(playerContainer: HTMLElement, isPortrait: boolean): void {
+  private applyReelMediaStyles(playerContainer: HTMLElement, _isPortrait: boolean): void {
     const mediaElements = playerContainer.querySelectorAll<HTMLElement>('video, img');
     for (const mediaElement of mediaElements) {
-      mediaElement.style.objectFit = isPortrait ? 'contain' : 'cover';
+      mediaElement.style.objectFit = 'contain';
     }
   }
 
