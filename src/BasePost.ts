@@ -2293,7 +2293,7 @@ export abstract class BasePost {
 
     const iconSpan = document.createElement('span');
     iconSpan.className = 'rating-display__icon';
-    iconSpan.innerHTML = STAR_SVG;
+    iconSpan.innerHTML = STAR_SVG_OUTLINE;
     iconSpan.style.display = 'flex';
     iconSpan.style.alignItems = 'center';
     iconSpan.style.justifyContent = 'center';
