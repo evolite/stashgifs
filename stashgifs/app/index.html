@@ -76,6 +76,11 @@
         r.style.visibility = 'visible';
       })();
     </script>
+    <script>
+      document.addEventListener('touchmove', function(e) {
+        if (e.touches.length > 1) e.preventDefault();
+      }, { passive: false });
+    </script>
     <link rel="modulepreload" href="./assets/index.js">
     <script type="module" src="./assets/index.js"></script>
   </head>
