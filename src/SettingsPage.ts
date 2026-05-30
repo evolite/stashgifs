@@ -266,15 +266,19 @@ export class SettingsPage {
 
     const tabBar = document.createElement('div');
     tabBar.style.display = 'flex';
-    tabBar.style.gap = '8px';
+    tabBar.style.gap = '6px';
     tabBar.style.marginBottom = '16px';
     tabBar.style.alignItems = 'center';
+    tabBar.style.flexWrap = 'nowrap';
+    tabBar.style.width = '100%';
 
     const createTabButton = (label: string): HTMLButtonElement => {
       const button = document.createElement('button');
       button.type = 'button';
       button.textContent = label;
-      button.style.padding = '0 18px';
+      button.style.flex = '1 1 0';
+      button.style.minWidth = '0';
+      button.style.padding = '0 4px';
       button.style.height = '38px';
       button.style.borderRadius = THEME.radius.button;
       button.style.border = `1px solid ${THEME.colors.border}`;
@@ -287,6 +291,9 @@ export class SettingsPage {
       button.style.alignItems = 'center';
       button.style.justifyContent = 'center';
       button.style.lineHeight = '1';
+      button.style.overflow = 'hidden';
+      button.style.textOverflow = 'ellipsis';
+      button.style.whiteSpace = 'nowrap';
       button.style.transition = 'background 0.2s ease, color 0.2s ease, border-color 0.2s ease';
       return button;
     };
