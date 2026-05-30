@@ -3345,7 +3345,7 @@ export abstract class BasePost {
    */
   protected createDiscoveryButton(): HTMLElement | undefined {
     const panel = this.discoveryPanel;
-    if (!panel) return undefined;
+    if (!panel || isMobileDevice()) return undefined;
 
     const btn = document.createElement('button');
     btn.type = 'button';

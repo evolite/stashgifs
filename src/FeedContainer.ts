@@ -743,7 +743,7 @@ export class FeedContainer {
   }
 
   private mountDiscoveryPanel(): void {
-    if (this.discoveryPanel) return;
+    if (this.discoveryPanel || isMobileDevice()) return;
     this.discoveryPanel = new DiscoveryPanel(
       this.container,
       this.settings.discoveryPanelSize ?? 260,
@@ -1162,8 +1162,8 @@ export class FeedContainer {
     // Initialize favorites manager
     this.favoritesManager = new FavoritesManager(this.api);
 
-    // Initialize discovery panel (opt-out via setting)
-    if (this.settings.enableDiscoveryPanel === true) {
+    // Initialize discovery panel (opt-out via setting; hidden on mobile)
+    if (this.settings.enableDiscoveryPanel === true && !isMobileDevice()) {
       this.discoveryPanel = new DiscoveryPanel(
         this.container,
         this.settings.discoveryPanelSize ?? 260,
