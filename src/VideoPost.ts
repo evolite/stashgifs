@@ -38,6 +38,7 @@ export class VideoPost extends VideoPostBase {
   private selectedTagName?: string;
   private autocompleteDebounceTimer?: ReturnType<typeof setTimeout>;
   private tagSearchLoadingTimer?: ReturnType<typeof setTimeout>;
+  private retryLoadDelayId?: ReturnType<typeof setTimeout>;
   private isTagSearchLoading: boolean = false;
   private hasCreatedMarker: boolean = false; // Track if marker has been created for this scene
 
@@ -739,7 +740,8 @@ export class VideoPost extends VideoPostBase {
     this.stopWatchTracking();
     this.clearLoadErrorCheckTimeout();
     this.detachLoadErrorHandler();
-    
+    this.detachReelAutoAdvance();
+
     // Clear the state change listener first to prevent it from firing after destroy
     // This is critical - the old player's listener might try to update visibility manager
     // with the destroyed player's state, causing conflicts
@@ -1332,7 +1334,8 @@ export class VideoPost extends VideoPostBase {
 
     // Small delay to ensure cleanup completes and browser releases resources
     // This helps with blocked requests by giving the browser time to clear the connection
-    setTimeout(() => {
+    this.retryLoadDelayId = setTimeout(() => {
+      this.retryLoadDelayId = undefined;
       // Get video URL and reload
       if (this.hasVideoSource() && this.data.videoUrl) {
         const player = this.loadPlayer(
@@ -1340,10 +1343,8 @@ export class VideoPost extends VideoPostBase {
           this.data.startTime ?? this.data.marker.seconds,
           this.data.endTime ?? this.data.marker.end_seconds
         );
-        
         // If retry succeeds, ensure placeholder stays hidden
         if (player) {
-          // Placeholder is already hidden, but ensure it stays that way
           this.hideErrorPlaceholder();
         }
       }
@@ -2294,6 +2295,11 @@ export class VideoPost extends VideoPostBase {
     if (this.retryTimeoutId) {
       clearTimeout(this.retryTimeoutId);
       this.retryTimeoutId = undefined;
+    }
+
+    if (this.retryLoadDelayId) {
+      clearTimeout(this.retryLoadDelayId);
+      this.retryLoadDelayId = undefined;
     }
 
     this.clearLoadErrorCheckTimeout();

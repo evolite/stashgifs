@@ -491,9 +491,11 @@ export class GraphQLClient {
   private setupTimeoutSignal(signal?: AbortSignal): {
     timeoutId: ReturnType<typeof setTimeout> | undefined;
     finalSignal: AbortSignal | undefined;
+    cleanup: () => void;
   } {
     let timeoutId: ReturnType<typeof setTimeout> | undefined;
     let finalSignal: AbortSignal | undefined = signal;
+    let abortCleanup: (() => void) | undefined;
 
     if (this.timeout > 0) {
       const timeoutController = new AbortController();
@@ -510,13 +512,14 @@ export class GraphQLClient {
           signal.removeEventListener('abort', abort);
           combinedController.abort();
         });
+        abortCleanup = () => signal.removeEventListener('abort', abort);
         finalSignal = combinedController.signal;
       } else {
         finalSignal = timeoutController.signal;
       }
     }
 
-    return { timeoutId, finalSignal };
+    return { timeoutId, finalSignal, cleanup: abortCleanup ?? (() => {}) };
   }
 
   /**
@@ -551,7 +554,7 @@ export class GraphQLClient {
     this.checkAbort(signal);
 
     // Setup timeout signal
-    const { timeoutId, finalSignal } = this.setupTimeoutSignal(signal);
+    const { timeoutId, finalSignal, cleanup } = this.setupTimeoutSignal(signal);
 
     try {
       let response: Response;
@@ -575,6 +578,7 @@ export class GraphQLClient {
         if (timeoutId) {
           clearTimeout(timeoutId);
         }
+        cleanup();
       }
 
       // Parse response using common helper (checks abort internally)

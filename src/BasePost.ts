@@ -132,6 +132,8 @@ export abstract class BasePost {
   protected reelAutoScroll: boolean = false;
   private autoAdvanceAttached: boolean = false;
   private autoAdvanceFired: boolean = false;
+  private reelAutoAdvanceElement?: HTMLVideoElement;
+  private reelAutoAdvanceHandler?: () => void;
   private readonly performerOverlayMgr: OverlayManager<PerformerExtended>;
   private readonly tagOverlayMgr: OverlayManager<Tag>;
   private readonly studioOverlayMgr: OverlayManager<StudioExtended>;
@@ -279,6 +281,7 @@ export abstract class BasePost {
       this.discoveryCollapseUnsubscribe();
       this.discoveryCollapseUnsubscribe = undefined;
     }
+    this.detachReelAutoAdvance();
     this.ratingControl?.destroy();
     this.ratingControl = undefined;
   }
@@ -320,6 +323,15 @@ export abstract class BasePost {
   protected static setCachedPerformerFavorite(performerId: string, favorite: boolean): void {
     this.loadFavoritePerformerCache();
     this.favoritePerformerCache.set(performerId, favorite);
+    // Evict oldest entries to cap memory and localStorage size
+    while (this.favoritePerformerCache.size > 500) {
+      const oldest = this.favoritePerformerCache.keys().next().value;
+      if (oldest !== undefined) {
+        this.favoritePerformerCache.delete(oldest);
+      } else {
+        break;
+      }
+    }
     this.persistFavoritePerformerCache();
   }
 
@@ -3299,9 +3311,8 @@ export abstract class BasePost {
     if (this.autoAdvanceAttached || !this.isReelMode || !this.reelAutoScroll) return;
     const video = this.container.querySelector<HTMLVideoElement>('video');
     if (!video) return;
-    this.autoAdvanceAttached = true;
     let lastTime = 0;
-    video.addEventListener('timeupdate', () => {
+    this.reelAutoAdvanceHandler = () => {
       const t = video.currentTime;
       // Backwards jump > 0.4s indicates a loop completed.
       if (t + 0.4 < lastTime && !this.autoAdvanceFired) {
@@ -3309,7 +3320,20 @@ export abstract class BasePost {
         this.scrollToNextPost();
       }
       lastTime = t;
-    });
+    };
+    video.addEventListener('timeupdate', this.reelAutoAdvanceHandler);
+    this.reelAutoAdvanceElement = video;
+    this.autoAdvanceAttached = true;
+  }
+
+  protected detachReelAutoAdvance(): void {
+    if (this.reelAutoAdvanceElement && this.reelAutoAdvanceHandler) {
+      this.reelAutoAdvanceElement.removeEventListener('timeupdate', this.reelAutoAdvanceHandler);
+      this.reelAutoAdvanceElement = undefined;
+      this.reelAutoAdvanceHandler = undefined;
+    }
+    this.autoAdvanceAttached = false;
+    this.autoAdvanceFired = false;
   }
 
   /**

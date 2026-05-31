@@ -287,7 +287,7 @@ export class VisibilityManager {
   /**
    * Unified timer management - set a timer for a post
    */
-  private setTimer(postId: string, timerType: 'pending' | 'hoverDebounce' | 'hoverReload' | 'retry' | 'touchEnd', timer: ReturnType<typeof setTimeout>): void {
+  private setTimer(postId: string, timerType: 'pending' | 'hoverDebounce' | 'hoverReload' | 'retry' | 'touchEnd' | 'hoverRetry', timer: ReturnType<typeof setTimeout>): void {
     let postTimers = this.timers.get(postId);
     if (!postTimers) {
       postTimers = new Map();
@@ -304,7 +304,7 @@ export class VisibilityManager {
   /**
    * Cancel a specific timer for a post
    */
-  private cancelTimer(postId: string, timerType: 'pending' | 'hoverDebounce' | 'hoverReload' | 'retry' | 'touchEnd'): void {
+  private cancelTimer(postId: string, timerType: 'pending' | 'hoverDebounce' | 'hoverReload' | 'retry' | 'touchEnd' | 'hoverRetry'): void {
     const postTimers = this.timers.get(postId);
     if (!postTimers) return;
     
@@ -390,14 +390,14 @@ export class VisibilityManager {
 
     player.setStateChangeListener((state) => {
       if (state.isPlaying) {
+        const previouslyPlaying = this.videoStates.get(postId) === 'playing';
         this.videoStates.set(postId, 'playing');
         this.debugLog('state-playing', { postId });
         this.manualPauseLocks.delete(postId);
         // Only mark as manually started if this play was NOT initiated by VisibilityManager
-        // (vmInitiatedPlays tracks every play we started; external plays — e.g. user clicking
-        // the player's own play button — won't be in the set and are treated as manual).
-        // Hover-triggered plays are excluded by the hoveredPostId guard.
-        if (!this.vmInitiatedPlays.delete(postId) && this.hoveredPostId !== postId) {
+        // AND the video was not already playing (loop restarts fire a second play event but
+        // are not user-initiated). Hover-triggered plays are excluded by hoveredPostId guard.
+        if (!this.vmInitiatedPlays.delete(postId) && !previouslyPlaying && this.hoveredPostId !== postId) {
           this.audioManager.markManuallyStarted(postId);
         }
       } else {
@@ -1417,6 +1417,8 @@ export class VisibilityManager {
     this.timers.clear();
     this.rectCache.clear();
     this.vmInitiatedPlays.clear();
+    this.manualPauseLocks.clear();
+    this.autoplayBlocked = false;
     this.hoveredPostId = undefined;
     this.touchedPostId = undefined;
   }
@@ -1931,14 +1933,13 @@ export class VisibilityManager {
         
         // Retry after a short delay if player state says ready but play failed
         if (isPlayerReady || playerActuallyReady) {
-          setTimeout(() => {
-            // Verify still hovered before retrying
+          const retryHandle = setTimeout(() => {
+            this.cancelTimer(postId, 'hoverRetry');
             if (this.hoveredPostId === postId && entry.pendingVisibilityPlay) {
-              this.executePlayOnHover(postId).catch(() => {
-                // Ignore retry errors
-              });
+              this.executePlayOnHover(postId).catch(() => {});
             }
           }, 200);
+          this.setTimer(postId, 'hoverRetry', retryHandle);
         }
         throw error; // Re-throw to propagate the error
       });
