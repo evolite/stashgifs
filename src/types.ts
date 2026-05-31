@@ -104,10 +104,6 @@ export interface FeedSettings {
   aspectRatio: 'preserve' | '16:9' | '9:16' | '1:1';
   showControls: 'always' | 'hover' | 'never';
   enableFullscreen: boolean;
-  backgroundPreloadEnabled?: boolean;
-  backgroundPreloadDelay?: number; // ms, default: 150ms delay between videos
-  backgroundPreloadFastScrollDelay?: number; // ms, default: 400ms delay during fast scrolling
-  backgroundPreloadScrollVelocityThreshold?: number; // pixels/ms, default: 2.0 for fast scroll detection
   enabledFileTypes?: string[]; // File extensions to include (e.g., ['.gif', '.webm']), default: ['.gif']
   includeMarkersInFeed?: boolean; // Whether to include scene markers in feed, default: true
   includeRandomInFeed?: boolean; // Include random scenes played from a random timeframe, default: false

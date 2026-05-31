@@ -22,6 +22,9 @@ import { DiscoveryPanel } from './DiscoveryPanel.js';
 import { WhisparrClient } from './WhisparrClient.js';
 import { DiscoveryManager } from './DiscoveryManager.js';
 
+// Lazy-load videos only as they enter the viewport — no speculative look-ahead.
+const LAZY_LOAD_ROOT_MARGIN = '0px';
+
 const DEFAULT_SETTINGS: FeedSettings = {
   autoPlay: true, // Enable autoplay for markers
   autoPlayThreshold: 0.2, // Lower threshold - start playing when 20% visible instead of 50%
@@ -30,10 +33,6 @@ const DEFAULT_SETTINGS: FeedSettings = {
   aspectRatio: 'preserve',
   showControls: 'hover',
   enableFullscreen: true,
-  backgroundPreloadEnabled: true,
-  backgroundPreloadDelay: 150, // ms, delay between videos
-  backgroundPreloadFastScrollDelay: 400, // ms, delay during fast scrolling
-  backgroundPreloadScrollVelocityThreshold: 2, // pixels/ms, threshold for fast scroll detection
   enabledFileTypes: ['.jpg', '.png', '.gif', '.mp4', '.m4v'], // Default file types to include
   includeImagesInFeed: true, // Whether to include images in feed
   imagesOnly: false,
@@ -129,16 +128,11 @@ export class FeedContainer {
   private postsContainer!: HTMLElement;
   private headerBar?: HTMLElement;
   private selectedSavedFilter?: { id: string; name: string };
-  private maxSimultaneousPreloads: number;
   private preloadedTags: Array<{ id: string; name: string }> = [];
   private preloadedPerformers: Array<{ id: string; name: string; image_path?: string }> = [];
   private isPreloading: boolean = false;
-  private backgroundPreloadActive: boolean = false;
   private excludedTagIds: string[] = [];
   private excludedTagNamesNormalized: string[] = [];
-  private backgroundPreloadHandle?: number;
-  private backgroundPreloadPriorityQueue: string[] = [];
-  private readonly activePreloadPosts: Set<string> = new Set();
   private readonly reelNextPreloadIds: Set<string> = new Set();
   private reelPlaybackStarted: boolean = false;
   private lastScrollTop: number = 0;
@@ -151,10 +145,8 @@ export class FeedContainer {
   private cleanupScrollTimeout?: ReturnType<typeof setTimeout>;
   private scrollHandler?: () => void;
   private scrollEventTarget?: Window | HTMLElement;
-  private visibilityChangeHandler?: () => void;
   private suggestionsClickOutsideHandler?: (event: Event) => void;
   private suggestionsTouchOutsideHandler?: (event: Event) => void;
-  private currentlyPreloadingCount: number = 0;
   private placeholderAnimationInterval?: ReturnType<typeof setInterval>; // For scrolling placeholder animation
   private savedFiltersCache: Array<{ id: string; name: string }> = [];
   private savedFiltersLoaded: boolean = false;
@@ -206,7 +198,6 @@ export class FeedContainer {
     this.favoritesManager = null!; // Will be set in initializeManagers
     this.posts = new Map();
     this.postOrder = [];
-    this.maxSimultaneousPreloads = 0;
 
     this.deviceCapabilities = null!; // Will be set in initializeDeviceConfiguration
 
@@ -247,20 +238,6 @@ export class FeedContainer {
    */
   private initializeDeviceConfiguration(): void {
     this.deviceCapabilities = detectDeviceCapabilities();
-
-    if (this.deviceCapabilities.availableRAM >= 4096) {
-      this.maxSimultaneousPreloads = 3;
-      this.settings.backgroundPreloadDelay = 60;
-      this.settings.backgroundPreloadFastScrollDelay = 150;
-    } else if (this.deviceCapabilities.availableRAM >= 3072) {
-      this.maxSimultaneousPreloads = 2;
-      this.settings.backgroundPreloadDelay = 80;
-      this.settings.backgroundPreloadFastScrollDelay = 200;
-    } else {
-      this.maxSimultaneousPreloads = 1;
-      this.settings.backgroundPreloadDelay = 120;
-      this.settings.backgroundPreloadFastScrollDelay = 300;
-    }
 
     this.posts = new Map();
     this.postOrder = [];
@@ -460,9 +437,6 @@ export class FeedContainer {
     this.setupCardSnapping();
     this.resetScrollObserver();
     this.refreshAutoplayAfterLayout();
-    if (this.settings.backgroundPreloadEnabled) {
-      this.startBackgroundPreloading();
-    }
     if (isReelMode) {
       this.warmStartPreloads();
       this.ensureReelInitialCardLoaded();
@@ -3868,8 +3842,9 @@ export class FeedContainer {
     videoUrl: string,
     signal?: AbortSignal
   ): void {
-    const rootMargin = this.getDesktopRootMargin(this.getLazyLoadDistance());
-    this.createLazyLoadObserverForImageVideo(postContainer, post, image, rootMargin, signal);
+    // Load only when the post actually enters the viewport (no speculative
+    // look-ahead). Keeps bandwidth on the video the user is looking at.
+    this.createLazyLoadObserverForImageVideo(postContainer, post, image, LAZY_LOAD_ROOT_MARGIN, signal);
   }
 
   /**
@@ -3991,7 +3966,8 @@ export class FeedContainer {
     try {
       const baseCount = currentFilters.limit || FeedContainer.CONTENT_LOAD_LIMIT;
       const prefetchCount = this.isReelModeEnabled() ? Math.min(2, baseCount) : baseCount;
-      posterPreloader.prefetchForMarkers(markers, prefetchCount);
+      const maxConcurrent = isMobileDevice() ? 3 : Infinity;
+      posterPreloader.prefetchForMarkers(markers, prefetchCount, maxConcurrent);
     } catch (e) {
       console.warn('Poster prefetch failed', e);
     }
@@ -4029,7 +4005,8 @@ export class FeedContainer {
         return;
       }
       if (result.markers.length > 0) {
-        posterPreloader.prefetchForMarkers(result.markers, limit);
+        const maxConcurrent = isMobileDevice() ? 3 : Infinity;
+        posterPreloader.prefetchForMarkers(result.markers, limit, maxConcurrent);
       }
     } catch (e) {
       if (!controller.signal.aborted) {
@@ -4072,10 +4049,6 @@ export class FeedContainer {
     if (!append) {
       this.refreshAutoplayAfterLayout();
       this.warmStartPreloads();
-    }
-
-    if (this.settings.backgroundPreloadEnabled && this.posts.size > 0) {
-      this.startBackgroundPreloading();
     }
 
     this.ensureVisiblePostsLoaded();
@@ -5600,34 +5573,9 @@ export class FeedContainer {
     safeVideoUrl: string,
     signal?: AbortSignal
   ): void {
-    const rootMargin = this.getDesktopRootMargin(this.getLazyLoadDistance());
-    this.createLazyLoadObserver(postContainer, post, marker, rootMargin, signal);
-  }
-
-  /**
-   * Get lazy load distance based on device capabilities
-   */
-  private getLazyLoadDistance(): string {
-    if (this.deviceCapabilities.availableRAM < 2048) {
-      return '25px';
-    }
-    if (this.deviceCapabilities.isHighEnd) {
-      return '100px';
-    }
-    return '50px';
-  }
-
-  /**
-   * Get root margin for desktop lazy loading
-   */
-  private getDesktopRootMargin(lazyLoadDistance: string): string {
-    if (this.useHDMode) {
-      return lazyLoadDistance;
-    }
-    if (this.deviceCapabilities.isHighEnd) {
-      return '200px';
-    }
-    return '100px';
+    // Load only when the post actually enters the viewport (no speculative
+    // look-ahead). Keeps bandwidth on the video the user is looking at.
+    this.createLazyLoadObserver(postContainer, post, marker, LAZY_LOAD_ROOT_MARGIN, signal);
   }
 
   /**
@@ -5779,8 +5727,6 @@ export class FeedContainer {
    * Clear all posts
    */
   private clearPosts(): void {
-    // Stop background preloading
-    this.stopBackgroundPreloading();
     posterPreloader.cancelInflight();
     this.cancelNextPagePosterPrefetch();
     
@@ -5792,11 +5738,8 @@ export class FeedContainer {
     }
     this.posts.clear();
     this.postOrder = [];
-    this.activePreloadPosts.clear();
     this.reelNextPreloadIds.clear();
     this.reelPlaybackStarted = false;
-    this.backgroundPreloadPriorityQueue = [];
-    this.currentlyPreloadingCount = 0;
     if (this.postsContainer) {
       this.postsContainer.innerHTML = '';
     }
@@ -5839,7 +5782,7 @@ export class FeedContainer {
     }
 
     // Use Intersection Observer to detect when trigger is visible
-    const rootMargin = '600px';
+    const rootMargin = isMobileDevice() ? '200px' : '600px';
     this.scrollObserver = new IntersectionObserver(
       (entries) => {
         for (const entry of entries) {
@@ -6005,295 +5948,8 @@ export class FeedContainer {
   }
 
 
-  /**
-   * Calculate distance of element from viewport
-   */
-  private getViewportDistance(element: HTMLElement): number {
-    if (!element) {
-      return 0;
-    }
-    
-    const rect = element.getBoundingClientRect();
-    
-    // Fallback for mobile: if element isn't laid out yet (rect is all zeros), return 0 (assume visible)
-    if (rect.width === 0 && rect.height === 0 && rect.top === 0 && rect.left === 0) {
-      // Element might not be laid out yet, especially on mobile
-      // Check if it's actually in the DOM
-      if (!element.offsetParent && element.style.display !== 'none') {
-        return 0;
-      }
-    }
-    const viewport = this.getViewportRect();
-    const viewportTop = viewport.top;
-    const viewportBottom = viewport.top + viewport.height;
-
-    // If element is above viewport
-    if (rect.bottom < viewportTop) {
-      return viewportTop - rect.bottom;
-    }
-    // If element is below viewport
-    if (rect.top > viewportBottom) {
-      return rect.top - viewportBottom;
-    }
-    // Element is in or overlapping viewport
-    return 0;
-  }
-
-  /**
-   * Calculate preload priority by sorting posts by viewport distance
-   */
-  private calculatePreloadPriority(): string[] {
-    const orderedPosts = this.postOrder
-      .map((id) => {
-        const post = this.posts.get(id);
-        if (!post || !post.hasVideoSource() || post.isPlayerLoaded()) {
-          return null;
-        }
-        const container = post.getContainer();
-        const distance = this.getViewportDistance(container);
-        return { id, distance };
-      })
-      .filter((item): item is { id: string; distance: number } => item !== null)
-      .sort((a, b) => a.distance - b.distance)
-      .map((item) => item.id);
-
-    return orderedPosts;
-  }
-
-  /**
-   * Get next unloaded video from priority queue
-   */
-  private getNextUnloadedVideo(): string | null {
-    // Refresh priority queue if empty
-    if (this.backgroundPreloadPriorityQueue.length === 0) {
-      this.backgroundPreloadPriorityQueue = this.calculatePreloadPriority();
-    }
-
-    // Remove already loaded videos from queue
-    while (this.backgroundPreloadPriorityQueue.length > 0) {
-      const postId = this.backgroundPreloadPriorityQueue[0];
-      if (!postId) {
-        this.backgroundPreloadPriorityQueue.shift();
-        continue;
-      }
-      const post = this.posts.get(postId);
-      
-      if (!post || post.isPlayerLoaded() || !post.hasVideoSource()) {
-        this.backgroundPreloadPriorityQueue.shift();
-        continue;
-      }
-
-      if (this.activePreloadPosts.has(postId)) {
-        this.backgroundPreloadPriorityQueue.shift();
-        continue;
-      }
-
-      return postId;
-    }
-
-    return null;
-  }
-
-  /**
-   * Calculate delay based on scroll velocity
-   */
-  private getPreloadDelay(): number {
-    const threshold = this.settings.backgroundPreloadScrollVelocityThreshold ?? 2;
-    const normalDelay = this.settings.backgroundPreloadDelay ?? 150;
-    const fastScrollDelay = this.settings.backgroundPreloadFastScrollDelay ?? 400;
-
-    if (this.scrollVelocity > threshold) {
-      return fastScrollDelay;
-    }
-
-    return normalDelay;
-  }
-
-  /**
-   * Check if preloading should be throttled
-   */
-  private shouldThrottlePreloading(): boolean {
-    // Check if tab is in background
-    if (typeof document !== 'undefined' && document.hidden) {
-      return true;
-    }
-
-    // Check if we've hit concurrent preload limit
-    if (this.currentlyPreloadingCount >= this.maxSimultaneousPreloads) {
-      return true;
-    }
-
-    return false;
-  }
-
-  /**
-   * Track an active background preload and decrement counters when ready or timed out
-   */
-  private trackBackgroundPreload(postId: string): void {
-    if (this.activePreloadPosts.has(postId)) {
-      return;
-    }
-
-    this.activePreloadPosts.add(postId);
-    this.currentlyPreloadingCount += 1;
-
-    const readinessTimeout = 5000;
-    const scheduleTimeout = (cb: () => void, delay: number) => {
-      if (globalThis.window !== undefined && typeof globalThis.setTimeout === 'function') {
-        globalThis.setTimeout(cb, delay);
-      } else {
-        setTimeout(cb, delay);
-      }
-    };
-    const waitForReady = async (): Promise<void> => {
-      try {
-        await new Promise<void>((resolve) => {
-          scheduleTimeout(() => resolve(), readinessTimeout);
-        });
-      } catch {
-        // Ignore readiness errors – cleanup happens in finally
-      } finally {
-        if (this.activePreloadPosts.has(postId)) {
-          this.activePreloadPosts.delete(postId);
-          this.currentlyPreloadingCount = Math.max(0, this.currentlyPreloadingCount - 1);
-        }
-      }
-    };
-
-    waitForReady().catch(() => {
-      if (this.activePreloadPosts.has(postId)) {
-        this.activePreloadPosts.delete(postId);
-        this.currentlyPreloadingCount = Math.max(0, this.currentlyPreloadingCount - 1);
-      }
-    });
-  }
-
-
-  /**
-   * Check if a post is currently in or near the viewport
-   */
-  private isPostInViewport(postId: string): boolean {
-    const post = this.posts.get(postId);
-    if (!post) return false;
-    
-    const container = post.getContainer();
-    const rect = container.getBoundingClientRect();
-    const viewport = this.getViewportRect();
-    let margin: number;
-    if (this.isReelModeEnabled()) {
-      margin = 800;
-    } else {
-      margin = 500; // Consider posts near viewport
-    }
-    
-    return rect.bottom > viewport.top - margin && 
-           rect.top < viewport.top + viewport.height + margin &&
-           rect.right > viewport.left - margin && 
-           rect.left < viewport.left + viewport.width + margin;
-  }
-
-  /**
-   * Cancel preload for a post if it's out of view
-   */
-  private cancelPreloadIfOutOfView(postId: string): void {
-    if (!this.isPostInViewport(postId)) {
-      // Remove from active preloads
-      if (this.activePreloadPosts.has(postId)) {
-        this.activePreloadPosts.delete(postId);
-        this.currentlyPreloadingCount = Math.max(0, this.currentlyPreloadingCount - 1);
-      }
-      
-      // Remove from queue
-      const queueIndex = this.backgroundPreloadPriorityQueue.indexOf(postId);
-      if (queueIndex !== -1) {
-        this.backgroundPreloadPriorityQueue.splice(queueIndex, 1);
-      }
-    }
-  }
-
-  /**
-   * Process next video in background preload queue
-   */
-  private preloadNextVideo(): void {
-    // Check if preloading should be paused
-    if (this.shouldThrottlePreloading()) {
-      // Schedule next attempt after delay
-      const delay = this.getPreloadDelay();
-      this.backgroundPreloadHandle = globalThis.setTimeout(() => {
-        this.preloadNextVideo();
-      }, delay) as unknown as number;
-      return;
-    }
-
-    // Get next video to preload
-    if (this.backgroundPreloadPriorityQueue.length === 0) {
-      // No more videos to preload, stop background preloading
-      this.backgroundPreloadActive = false;
-      return;
-    }
-
-    const postId = this.backgroundPreloadPriorityQueue[0];
-    if (!postId) {
-      this.backgroundPreloadPriorityQueue.shift();
-      this.preloadNextVideo();
-      return;
-    }
-
-    // Check if post is still in viewport before preloading
-    if (!this.isPostInViewport(postId)) {
-      this.backgroundPreloadPriorityQueue.shift();
-      this.preloadNextVideo();
-      return;
-    }
-
-    const post = this.posts.get(postId);
-    if (!post || post.isPlayerLoaded() || !post.hasVideoSource()) {
-      // Skip this one and try next
-      this.backgroundPreloadPriorityQueue.shift();
-      this.preloadNextVideo();
-      return;
-    }
-
-
-    // Preload the video
-    try {
-      const player = post.preload();
-      if (isNativeVideoPlayer(player)) {
-        // Only register video players with visibility manager
-        this.visibilityManager.registerPlayer(postId, player);
-        this.trackBackgroundPreload(postId);
-      }
-    } catch (error) {
-      console.warn('Background preload failed for post', postId, error);
-    }
-
-    // Remove from queue
-    this.backgroundPreloadPriorityQueue.shift();
-
-    // Schedule next preload
-    const delay = this.getPreloadDelay();
-    this.backgroundPreloadHandle = globalThis.setTimeout(() => {
-      this.preloadNextVideo();
-    }, delay) as unknown as number;
-  }
-
-  /**
-   * Start background preloading system
-   */
-  private startBackgroundPreloading(): void {
-    return;
-  }
-
-  /**
-   * Stop background preloading
-   */
-  private stopBackgroundPreloading(): void {
-    this.backgroundPreloadActive = false;
-    if (this.backgroundPreloadHandle) {
-      globalThis.clearTimeout(this.backgroundPreloadHandle);
-      this.backgroundPreloadHandle = undefined;
-    }
-  }
+  // Background video preloading was removed: videos now load only as they enter
+  // the viewport (see LAZY_LOAD_ROOT_MARGIN), so nothing is fetched ahead of time.
 
   /**
    * Clean up posts that are far from viewport to free memory
@@ -6412,8 +6068,6 @@ export class FeedContainer {
    * Remove a single post and clean up all associated resources
    */
   private removePost(postId: string): void {
-    this.cancelPreloadIfOutOfView(postId);
-    
     const post = this.posts.get(postId);
     if (post) {
       this.destroyPostPlayer(post);
@@ -6512,7 +6166,6 @@ export class FeedContainer {
 
     for (const postId of this.postOrder) {
       if (loaded >= maxToLoad) break;
-      if (this.activePreloadPosts.has(postId)) continue;
 
       const post = this.posts.get(postId);
       if (!post || post.isPlayerLoaded() || !post.hasVideoSource()) continue;
@@ -6543,21 +6196,36 @@ export class FeedContainer {
   private aggressiveVideoUnload(): void {
     const viewportTop = this.getViewportTop();
     const viewportBottom = viewportTop + this.getViewportHeight();
-    const unloadDistance = 100;
-    const maxLoadedVideos = this.useHDMode ? 2 : 3;
-    
-    const loadedVideoCount = this.countLoadedVideosInViewport(viewportTop, viewportBottom);
+    // Unload only videos more than ~one screen away so small scrolls don't
+    // re-download a video the user is likely to return to. maxLoadedVideos is
+    // the hard memory ceiling; the count margin matches unloadDistance so every
+    // resident video is counted (no escape band between the two passes).
+    const unloadDistance = this.getViewportHeight();
+    const maxLoadedVideos = this.getMaxLoadedVideos();
+
+    const loadedVideoCount = this.countLoadedVideosInViewport(viewportTop, viewportBottom, unloadDistance);
     this.unloadVideosFarFromViewport(viewportTop, viewportBottom, unloadDistance);
     this.unloadExcessVideos(viewportTop, viewportBottom, maxLoadedVideos, loadedVideoCount);
   }
 
   /**
+   * Maximum number of video players kept loaded at once. Mobile stays lean to
+   * bound memory; desktop keeps a larger working set to avoid reloading
+   * neighbors on normal scrolling.
+   */
+  private getMaxLoadedVideos(): number {
+    if (isMobileDevice()) {
+      return this.useHDMode ? 2 : 3;
+    }
+    return this.useHDMode ? 3 : 5;
+  }
+
+  /**
    * Count loaded videos that are in or near the viewport
    */
-  private countLoadedVideosInViewport(viewportTop: number, viewportBottom: number): number {
+  private countLoadedVideosInViewport(viewportTop: number, viewportBottom: number, viewportMargin: number = 200): number {
     let loadedVideoCount = 0;
-    const viewportMargin = 200;
-    
+
     for (const [, post] of this.posts.entries()) {
       if (this.isPostNearViewport(post, viewportTop, viewportBottom, viewportMargin)) {
         const player = post.getPlayer();
@@ -6739,29 +6407,6 @@ export class FeedContainer {
   }
 
   /**
-   * Handle fast scrolling by stopping background preloading
-   */
-  private handleFastScrolling(): void {
-    const fastScrollThreshold = 3;
-    if (this.scrollVelocity > fastScrollThreshold && this.backgroundPreloadActive) {
-      this.stopBackgroundPreloading();
-    }
-  }
-
-  /**
-   * Cancel preloads for posts that have gone out of view
-   */
-  private cancelOutOfViewPreloads(): void {
-    if (this.activePreloadPosts.size === 0) {
-      return;
-    }
-    
-    for (const postId of Array.from(this.activePreloadPosts)) {
-      this.cancelPreloadIfOutOfView(postId);
-    }
-  }
-
-  /**
    * Check if header handling should be skipped
    */
   private shouldSkipHeaderHandling(): boolean {
@@ -6836,14 +6481,6 @@ export class FeedContainer {
     }, 2000);
   }
 
-  private handleVisibilityChange(): void {
-    if (document.hidden) {
-      this.stopBackgroundPreloading();
-    } else if (this.settings.backgroundPreloadEnabled && this.posts.size > 0) {
-      this.startBackgroundPreloading();
-    }
-  }
-
   /**
    * Setup scroll handler
    * Handles header hide/show based on scroll direction and tracks scroll velocity
@@ -6864,8 +6501,6 @@ export class FeedContainer {
 
       this.updateScrollVelocity(currentScrollY, timeDelta);
       this.scheduleVideoUnload();
-      this.handleFastScrolling();
-      this.cancelOutOfViewPreloads();
 
       if (!this.shouldSkipHeaderHandling()) {
         const headerState = this.handleHeaderVisibility(currentScrollY, lastScrollY, isHeaderHidden);
@@ -6891,14 +6526,6 @@ export class FeedContainer {
     this.scrollHandler = handleScroll;
     this.scrollEventTarget = this.getScrollEventTarget();
     this.scrollEventTarget.addEventListener('scroll', handleScroll, { passive: true });
-
-    // Listen for page visibility changes to pause/resume preloading
-    if (this.visibilityChangeHandler) {
-      document.removeEventListener('visibilitychange', this.visibilityChangeHandler);
-    }
-    const handleVisibilityChange = () => this.handleVisibilityChange();
-    this.visibilityChangeHandler = handleVisibilityChange;
-    document.addEventListener('visibilitychange', handleVisibilityChange);
   }
 
   /**
@@ -7071,10 +6698,6 @@ export class FeedContainer {
       this.scrollHandler = undefined;
       this.scrollEventTarget = undefined;
     }
-    if (this.visibilityChangeHandler) {
-      document.removeEventListener('visibilitychange', this.visibilityChangeHandler);
-      this.visibilityChangeHandler = undefined;
-    }
     if (this.suggestionsClickOutsideHandler) {
       document.removeEventListener('click', this.suggestionsClickOutsideHandler);
       this.suggestionsClickOutsideHandler = undefined;
@@ -7108,10 +6731,6 @@ export class FeedContainer {
       clearTimeout(this.cardSnapScrollTimeout);
       this.cardSnapScrollTimeout = undefined;
     }
-    if (this.backgroundPreloadHandle) {
-      globalThis.clearTimeout(this.backgroundPreloadHandle);
-      this.backgroundPreloadHandle = undefined;
-    }
     if (this.placeholderAnimationInterval) {
       clearInterval(this.placeholderAnimationInterval);
       this.placeholderAnimationInterval = undefined;
@@ -7129,7 +6748,6 @@ export class FeedContainer {
   }
 
   destroy(): void {
-    this.stopBackgroundPreloading();
     posterPreloader.cancelInflight();
     this.teardownListeners();
     this.clearPosts();
@@ -7811,7 +7429,6 @@ export class FeedContainer {
    * Cleanup
    */
   cleanup(): void {
-    this.stopBackgroundPreloading();
     this.cancelAllPendingRequests();
     this.stopLoadingVideos();
     this.visibilityManager.cleanup();

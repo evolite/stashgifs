@@ -997,8 +997,12 @@ export class VisibilityManager {
       distanceFromViewport = rect.left - (viewport.left + viewport.width);
     }
     
-    if (distanceFromViewport > 100) {
-      this.debugLog('unloading-video', { postId, distanceFromViewport, isHDMode: this.isHDMode });
+    // Keep videos within roughly one screen of the viewport resident so small
+    // scrolls don't tear down and re-download a video the user is likely to
+    // scroll back to. The FeedContainer count cap remains the hard memory ceiling.
+    const unloadThreshold = viewport.height;
+    if (distanceFromViewport > unloadThreshold) {
+      this.debugLog('unloading-video', { postId, distanceFromViewport, unloadThreshold, isHDMode: this.isHDMode });
       entry.player.unload();
       entry.isUnloaded = true;
     }

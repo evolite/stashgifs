@@ -118,13 +118,16 @@ export class VideoPost extends VideoPostBase {
   }
 
   /**
-   * Build URL with cache-busting parameter
+   * Build a poster URL with a stable per-marker cache key.
+   * A stable key (vs a per-call timestamp) lets the browser cache the poster so
+   * re-rendering or scrolling back to a post reuses it instead of re-downloading,
+   * and matches the URL the PosterPreloader warmed.
    */
   private buildUrlWithCacheBusting(path: string): string | undefined {
     const baseUrl = toAbsoluteUrl(path);
     if (!baseUrl) return undefined;
     const separator = baseUrl.includes('?') ? '&' : '?';
-    return `${baseUrl}${separator}t=${Date.now()}`;
+    return `${baseUrl}${separator}t=${this.data.marker.id}`;
   }
 
   /**

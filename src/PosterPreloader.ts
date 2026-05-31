@@ -10,10 +10,15 @@ import { normalizeMediaUrl, toAbsoluteUrl } from './utils.js';
 class PosterPreloader {
   private readonly cache: Map<string, string> = new Map();
   private readonly inflight: Map<string, HTMLImageElement> = new Map();
+  private pendingQueue: Array<{ idStr: string; url: string }> = [];
+  private activeCount = 0;
+  private currentMaxConcurrent = Infinity;
 
   /**
    * Build the marker screenshot URL using scene + marker IDs.
-   * Adds cache-busting query parameter to prevent 304 responses with empty data.
+   * Uses a stable per-marker cache key so the warmed poster matches the URL the
+   * post later requests (enabling a cache hit) and so re-scrolling reuses it
+   * instead of re-downloading.
    */
   private buildMarkerScreenshotUrl(marker: SceneMarker): string | undefined {
     const markerId = marker?.id;
@@ -24,44 +29,57 @@ class PosterPreloader {
     const markerIdStr = String(markerId);
     if (markerIdStr.startsWith('synthetic-') || markerIdStr.startsWith('shortform-')) return undefined;
     // Path-style endpoint; assume same-origin
-    // Add cache-busting timestamp to prevent 304 responses with empty/corrupted cache
-    const timestamp = Date.now();
-    const path = `/scene/${sceneId}/scene_marker/${markerIdStr}/screenshot?t=${timestamp}`;
+    const path = `/scene/${sceneId}/scene_marker/${markerIdStr}/screenshot?t=${markerIdStr}`;
     return toAbsoluteUrl(path);
   }
 
-  /**
-   * Prefetch poster images for a list of markers.
-   * Limits to maxCount to avoid overloading the network.
-   */
-  prefetchForMarkers(markers: SceneMarker[], maxCount: number = 24): void {
+  prefetchForMarkers(markers: SceneMarker[], maxCount: number = 24, maxConcurrent: number = Infinity): void {
+    this.currentMaxConcurrent = maxConcurrent;
     const slice = markers.slice(0, Math.max(0, maxCount));
     for (const marker of slice) {
       const id = marker?.id;
       if (!id) continue;
-      // Convert to string to handle both string and number IDs
       const idStr = String(id);
       if (this.cache.has(idStr) || this.inflight.has(idStr)) continue;
       const url = this.buildMarkerScreenshotUrl(marker);
       if (!url) continue;
-      // Use Image to warm cache; store on load
-      const img = new Image();
-      this.inflight.set(idStr, img);
-      img.onload = () => {
-        this.cache.set(idStr, url);
-        this.inflight.delete(idStr);
-      };
-      img.onerror = () => {
-        // Keep silent; just drop inflight and don't cache failures
-        this.inflight.delete(idStr);
-      };
-      const normalizedUrl = normalizeMediaUrl(url);
-      if (!normalizedUrl) {
-        console.warn('PosterPreloader: Invalid poster URL', { url });
-        this.inflight.delete(idStr);
-        continue;
+      if (this.activeCount < this.currentMaxConcurrent) {
+        this.startFetch(idStr, url);
+      } else {
+        this.pendingQueue.push({ idStr, url });
       }
-      img.src = normalizedUrl;
+    }
+  }
+
+  private startFetch(idStr: string, url: string): void {
+    const normalizedUrl = normalizeMediaUrl(url);
+    if (!normalizedUrl) {
+      console.warn('PosterPreloader: Invalid poster URL', { url });
+      return;
+    }
+    const img = new Image();
+    this.inflight.set(idStr, img);
+    this.activeCount++;
+    img.onload = () => {
+      this.cache.set(idStr, url);
+      this.inflight.delete(idStr);
+      this.activeCount--;
+      this.drainQueue();
+    };
+    img.onerror = () => {
+      this.inflight.delete(idStr);
+      this.activeCount--;
+      this.drainQueue();
+    };
+    img.src = normalizedUrl;
+  }
+
+  private drainQueue(): void {
+    while (this.pendingQueue.length > 0 && this.activeCount < this.currentMaxConcurrent) {
+      const next = this.pendingQueue.shift()!;
+      if (!this.cache.has(next.idStr) && !this.inflight.has(next.idStr)) {
+        this.startFetch(next.idStr, next.url);
+      }
     }
   }
 
@@ -73,6 +91,8 @@ class PosterPreloader {
       img.src = '';
     }
     this.inflight.clear();
+    this.pendingQueue = [];
+    this.activeCount = 0;
   }
 
   /**

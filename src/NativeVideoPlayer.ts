@@ -92,8 +92,6 @@ export class NativeVideoPlayer {
   private rebufferCount: number = 0;
   private totalRebufferMs: number = 0;
   private progressTimeoutId?: ReturnType<typeof setTimeout>;
-  private viewportObserver?: IntersectionObserver;
-  private viewportUnloadTimeoutId?: ReturnType<typeof setTimeout>;
 
   private visibilityChangeHandler?: () => void;
   private pageHideHandler?: (e: PageTransitionEvent) => void;
@@ -721,7 +719,6 @@ export class NativeVideoPlayer {
     }    
     this.container.appendChild(playerWrapper);
     this.setupKeyboardAccessibility();
-    this.setupViewportObserver();
   }
 
   private createControls(): void {
@@ -1919,10 +1916,6 @@ export class NativeVideoPlayer {
       clearTimeout(this.overlayTimeoutId);
       this.overlayTimeoutId = undefined;
     }
-    if (this.viewportUnloadTimeoutId) {
-      clearTimeout(this.viewportUnloadTimeoutId);
-      this.viewportUnloadTimeoutId = undefined;
-    }
   }
 
   private scheduleVideoFrameCallback(): void {
@@ -2321,53 +2314,6 @@ export class NativeVideoPlayer {
     this.container.addEventListener('keydown', this.containerKeydownHandler);
   }
 
-  private handleViewportIntersectionEntry(entry: IntersectionObserverEntry): void {
-    if (!this.isVideoElementValid()) {
-      return;
-    }
-    if (entry.isIntersecting) {
-      if (this.viewportUnloadTimeoutId) {
-        clearTimeout(this.viewportUnloadTimeoutId);
-        this.viewportUnloadTimeoutId = undefined;
-      }
-      if (this.videoElement.preload === 'none') {
-        this.videoElement.preload = 'auto';
-      }
-      if (this.isUnloaded) {
-        this.reload();
-      }
-      return;
-    }
-
-    if (this.state.isPlaying) {
-      return;
-    }
-
-    if (this.viewportUnloadTimeoutId) {
-      clearTimeout(this.viewportUnloadTimeoutId);
-    }
-    this.viewportUnloadTimeoutId = setTimeout(() => {
-      if (!this.isVideoElementValid()) return;
-      if (this.state.isPlaying) return;
-      this.videoElement.preload = 'none';
-      this.unload();
-    }, 1500);
-  }
-
-  private setupViewportObserver(): void {
-    if (typeof IntersectionObserver === 'undefined') {
-      return;
-    }
-
-    this.viewportObserver = new IntersectionObserver((entries) => {
-      for (const entry of entries) {
-        this.handleViewportIntersectionEntry(entry);
-      }
-    }, { rootMargin: '200px 0px', threshold: 0.01 });
-
-    this.viewportObserver.observe(this.container);
-  }
-
   private setPlaybackAccelerationHints(isPlaying: boolean): void {
     if (!this.isVideoElementValid()) return;
     const transformValue = isPlaying ? 'translateZ(0)' : 'none';
@@ -2408,11 +2354,6 @@ export class NativeVideoPlayer {
       this.container.removeEventListener('keydown', this.containerKeydownHandler);
       this.containerKeydownHandler = undefined;
     }
-    if (this.viewportObserver) {
-      this.viewportObserver.disconnect();
-      this.viewportObserver = undefined;
-    }
-
     if (this.visibilityChangeHandler) {
       document.removeEventListener('visibilitychange', this.visibilityChangeHandler);
       this.visibilityChangeHandler = undefined;

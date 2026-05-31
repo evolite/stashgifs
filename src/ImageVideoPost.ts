@@ -236,12 +236,15 @@ export class ImageVideoPost extends VideoPostBase {
    */
   private getPosterUrl(): string | undefined {
     // Use image thumbnail or preview as fallback
+    // Stable per-image cache key so the browser can cache the poster and
+    // re-scrolling reuses it instead of re-downloading.
+    const cacheKey = this.data.image.id;
     const thumbnail = this.data.image.paths?.thumbnail;
     if (thumbnail) {
       const baseUrl = toAbsoluteUrl(thumbnail);
       if (baseUrl) {
         const separator = baseUrl.includes('?') ? '&' : '?';
-        return `${baseUrl}${separator}t=${Date.now()}`;
+        return `${baseUrl}${separator}t=${cacheKey}`;
       }
     }
     // Fallback to preview if thumbnail unavailable
@@ -250,7 +253,7 @@ export class ImageVideoPost extends VideoPostBase {
       const baseUrl = toAbsoluteUrl(preview);
       if (baseUrl) {
         const separator = baseUrl.includes('?') ? '&' : '?';
-        return `${baseUrl}${separator}t=${Date.now()}`;
+        return `${baseUrl}${separator}t=${cacheKey}`;
       }
     }
     return undefined;
