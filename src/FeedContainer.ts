@@ -66,9 +66,6 @@ const DEFAULT_SETTINGS: FeedSettings = {
  * Debug interface for FeedContainer (for extension/debugging purposes)
  */
 interface FeedContainerDebug {
-  __isHeaderHidden?: () => boolean;
-  __setHeaderHidden?: (val: boolean) => void;
-  __showHeader?: () => void;
   _mobileLoadTimeout?: ReturnType<typeof setTimeout> | null;
 }
 
@@ -1621,9 +1618,7 @@ export class FeedContainer {
       const performerId = Number.parseInt(performer.id, 10);
       let imageSrc: string | undefined;
       if (performer.image_path) {
-        imageSrc = performer.image_path.startsWith('http')
-          ? performer.image_path
-          : `${globalThis.location.origin}${performer.image_path}`;
+        imageSrc = normalizeMediaUrl(performer.image_path) ?? undefined;
       }
       const btn = this.createListButton(
         performer.name,
@@ -1667,9 +1662,7 @@ export class FeedContainer {
       const studioId = Number.parseInt(studio.id, 10);
       let imageSrc: string | undefined;
       if (studio.image_path) {
-        imageSrc = studio.image_path.startsWith('http')
-          ? studio.image_path
-          : `${globalThis.location.origin}${studio.image_path}`;
+        imageSrc = normalizeMediaUrl(studio.image_path) ?? undefined;
       }
       const btn = this.createListButton(
         studio.name,
@@ -3423,9 +3416,6 @@ export class FeedContainer {
   /**
    * Check if signal is aborted and handle cleanup
    */
-  private checkAbortAndCleanupRender(signal?: AbortSignal): boolean {
-    return this.checkAbortAndCleanup(signal);
-  }
 
   /**
    * Shared helper: create a post container and append it to a fragment
@@ -3523,7 +3513,7 @@ export class FeedContainer {
       : (content as SceneMarker[]).map(m => ({ type: 'marker' as const, data: m, date: m.scene.date }));
 
     for (let i = 0; i < items.length; i++) {
-      if (this.checkAbortAndCleanupRender(signal)) {
+      if (this.checkAbortAndCleanup(signal)) {
         return;
       }
 
@@ -6543,11 +6533,6 @@ export class FeedContainer {
     return 0;
   }
 
-  /**
-   * Aggressively unload videos that are not visible to free RAM
-   * Unloads videos even if posts are still in memory
-   * Extremely aggressive to prevent 8GB+ RAM usage
-   */
   private aggressiveVideoUnload(): void {
     const viewportTop = this.getViewportTop();
     const viewportBottom = viewportTop + this.getViewportHeight();
@@ -6860,17 +6845,6 @@ export class FeedContainer {
     let lastScrollY = this.getViewportTop();
     let isHeaderHidden = false;
     
-    // Store reference to isHeaderHidden so we can access it from other methods (for debugging/extension)
-    const debugThis = this as FeedContainer & FeedContainerDebug;
-    debugThis.__isHeaderHidden = () => isHeaderHidden;
-    debugThis.__setHeaderHidden = (val: boolean) => { isHeaderHidden = val; };
-    debugThis.__showHeader = () => {
-      if (this.headerBar) {
-        this.headerBar.style.transform = 'translateY(0)';
-        isHeaderHidden = false;
-      }
-    };
-
     // Initialize scroll tracking
     this.lastScrollTop = this.getViewportTop();
     this.lastScrollTime = Date.now();
