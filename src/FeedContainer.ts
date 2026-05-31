@@ -14,7 +14,6 @@ import { ImagePlayer } from './ImagePlayer.js';
 import { VisibilityManager } from './VisibilityManager.js';
 import { FavoritesManager } from './FavoritesManager.js';
 import { SettingsPage } from './SettingsPage.js';
-import { AudioManager, AudioPriority } from './AudioManager.js';
 import { debounce, normalizeMediaUrl, detectDeviceCapabilities, DeviceCapabilities, isStandaloneNavigator, isMobileDevice, detectVideoFromVisualFiles, isMp4File, getImageUrlForDisplay, THEME, THEME_DEFAULTS, normalizeHexColor, toRgba, buildFullUrl, applyThemeColors } from './utils.js';
 import { posterPreloader } from './PosterPreloader.js';
 import { GQLImage } from './graphql/types.js';
@@ -1019,15 +1018,14 @@ export class FeedContainer {
     const maxSeen = this.settings.seenHistorySize ?? 500;
     if (maxSeen === 0) return;
     const cache = this.getSeenCache();
-    if (!cache.set.has(id)) {
-      cache.ids.push(id);
-      cache.set.add(id);
-    } else {
+    if (cache.set.has(id)) {
       // Move to end (most recent)
       const idx = cache.ids.indexOf(id);
       if (idx !== -1) cache.ids.splice(idx, 1);
-      cache.ids.push(id);
+    } else {
+      cache.set.add(id);
     }
+    cache.ids.push(id);
     if (cache.ids.length > maxSeen) {
       const removed = cache.ids.splice(0, cache.ids.length - maxSeen);
       for (const r of removed) cache.set.delete(r);
@@ -7339,7 +7337,7 @@ export class FeedContainer {
     const checkPlayback = async (attempts: number = 0): Promise<void> => {
       if (attempts > 10) return;
       if (player.isPlaying()) {
-        this.visibilityManager!.grantSnapAudioFocus(postId);
+        this.visibilityManager.grantSnapAudioFocus(postId);
       } else {
         await new Promise((r) => setTimeout(r, 100));
         await checkPlayback(attempts + 1);
