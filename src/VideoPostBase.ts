@@ -33,9 +33,6 @@ export abstract class VideoPostBase extends BasePost {
   protected retryTimeoutId?: number;
   protected loadErrorCheckTimeoutId?: ReturnType<typeof setTimeout>;
   protected loadErrorHandler?: () => void;
-  protected posterLayer?: HTMLElement;
-  protected hasRenderedVideo: boolean = false;
-  protected videoLoadingIndicator?: HTMLElement;
   protected hdModeFromSettings: boolean = false;
 
   constructor(
@@ -47,7 +44,6 @@ export abstract class VideoPostBase extends BasePost {
 
   protected abstract getPlayer(): NativeVideoPlayer | undefined;
   protected abstract checkForLoadError(): void;
-  protected abstract getEntityLogId(): string;
   protected abstract getHQButtonOffLabel(): string;
 
   protected capturePlayerState(): { playerContainer: HTMLElement; wasPlaying: boolean } {
@@ -60,7 +56,7 @@ export abstract class VideoPostBase extends BasePost {
     return { playerContainer, wasPlaying };
   }
 
-  protected createVideoPlayerContainer(aspectRatio: number | undefined, aspectRatioClass: string, posterUrl: string | undefined): HTMLElement {
+  protected createVideoPlayerContainer(aspectRatio: number | undefined, aspectRatioClass: string): HTMLElement {
     const container = document.createElement('div');
     container.className = 'video-post__player';
     container.style.position = 'relative';
@@ -72,18 +68,6 @@ export abstract class VideoPostBase extends BasePost {
     }
     container.classList.add(aspectRatioClass);
 
-    this.appendPosterLayer(container, this.isReelMode ? posterUrl : undefined);
-
-    const loading = document.createElement('div');
-    loading.className = 'video-post__loading';
-    const spinner = document.createElement('div');
-    spinner.className = 'spinner';
-    loading.appendChild(spinner);
-    loading.style.display = this.isLoaded ? 'none' : 'flex';
-    loading.style.zIndex = '3';
-    container.appendChild(loading);
-    this.videoLoadingIndicator = loading;
-
     return container;
   }
 
@@ -93,12 +77,7 @@ export abstract class VideoPostBase extends BasePost {
 
     player.reload();
     this.isLoaded = true;
-    this.hasRenderedVideo = false;
-    this.showPosterLayer();
-    const container = this.playerContainer || this.container.querySelector<HTMLElement>('.video-post__player');
-    if (container) {
-      this.hideMediaWhenReady(player, container);
-    }
+    this.clearLoadErrorTimerOnPlayback(player);
     return player;
   }
 
@@ -107,23 +86,6 @@ export abstract class VideoPostBase extends BasePost {
       clearTimeout(this.loadErrorCheckTimeoutId);
       this.loadErrorCheckTimeoutId = undefined;
     }
-  }
-
-  protected showPosterLayer(): void {
-    if (!this.posterLayer) {
-      return;
-    }
-    if (this.hasRenderedVideo) {
-      return;
-    }
-    this.posterLayer.style.opacity = '1';
-  }
-
-  protected hidePosterLayer(): void {
-    if (!this.posterLayer) {
-      return;
-    }
-    this.posterLayer.style.opacity = '0';
   }
 
   protected attachLoadErrorHandler(): void {
@@ -179,73 +141,18 @@ export abstract class VideoPostBase extends BasePost {
     }
   }
 
-  protected hideMediaWhenReady(player: NativeVideoPlayer, container: HTMLElement): void {
-    const loading = container.querySelector<HTMLElement>('.video-post__loading');
-
-    const hideVisuals = () => {
-      if (loading) {
-        loading.style.display = 'none';
-        if (this.videoLoadingIndicator) {
-          this.videoLoadingIndicator = undefined;
-        }
-      }
-      this.hidePosterLayer();
-    };
-
-    const scheduleTimeout = globalThis.window?.setTimeout.bind(globalThis.window) ?? setTimeout;
-    const clearScheduledTimeout = globalThis.window?.clearTimeout.bind(globalThis.window) ?? clearTimeout;
-    const requestFrame = globalThis.window?.requestAnimationFrame?.bind(globalThis.window) ?? ((cb: FrameRequestCallback) => setTimeout(cb, 16));
-
+  /**
+   * Clear the stuck-load error check once the video confirms it is playing.
+   * The player reveals its own surface (opacity 0 -> 1 + hide placeholder) on the
+   * 'playing' event, so no visual reveal orchestration is needed here.
+   */
+  protected clearLoadErrorTimerOnPlayback(player: NativeVideoPlayer): void {
     const videoElement = player.getVideoElement();
     if (!videoElement) return;
 
-    let revealed = false;
-
-    const cleanup = () => {
-      videoElement.removeEventListener('loadeddata', onLoadedData);
-      videoElement.removeEventListener('playing', onPlaying);
-      videoElement.removeEventListener('timeupdate', onTimeUpdate);
-      clearScheduledTimeout(fallbackHandle);
-    };
-
-    const reveal = () => {
-      if (revealed) {
-        return;
-      }
-      revealed = true;
-      cleanup();
-      this.clearLoadErrorCheckTimeout();
-      const performHide = () => hideVisuals();
-      requestFrame(() => requestFrame(() => performHide()));
-      this.hasRenderedVideo = true;
-    };
-
-    const onLoadedData = () => reveal();
-    const onPlaying = () => reveal();
-    const onTimeUpdate = () => {
-      if (videoElement.currentTime > 0 || videoElement.readyState >= 2) {
-        reveal();
-      }
-    };
-
-    videoElement.addEventListener('loadeddata', onLoadedData, { once: true });
-    videoElement.addEventListener('playing', onPlaying, { once: true });
-    videoElement.addEventListener('timeupdate', onTimeUpdate);
-
-    const fallbackHandle = scheduleTimeout(() => reveal(), 6000);
-
-    player.waitForReady(4000)
-      .catch((error) => {
-        console.warn('VideoPostBase: Player ready wait timed out', {
-          error,
-          entityId: this.getEntityLogId(),
-        });
-      })
-      .finally(() => {
-        if (videoElement.readyState >= 2) {
-          reveal();
-        }
-      });
+    const onReady = () => this.clearLoadErrorCheckTimeout();
+    videoElement.addEventListener('playing', onReady, { once: true });
+    videoElement.addEventListener('loadeddata', onReady, { once: true });
   }
 
   protected createMuteOverlayButton(): HTMLElement {
@@ -316,25 +223,6 @@ export abstract class VideoPostBase extends BasePost {
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   protected applyMuteButtonHQState(_btn: HTMLElement): void {
     // No-op by default (VideoPost always keeps mute button active)
-  }
-
-  protected appendPosterLayer(container: HTMLElement, posterUrl: string | undefined): void {
-    if (!posterUrl) return;
-    const posterLayer = document.createElement('div');
-    posterLayer.className = 'video-post__poster';
-    posterLayer.style.position = 'absolute';
-    posterLayer.style.inset = '0';
-    posterLayer.style.backgroundImage = `url("${posterUrl}")`;
-    posterLayer.style.backgroundColor = THEME.colors.backgroundSecondary;
-    posterLayer.style.backgroundSize = 'cover';
-    posterLayer.style.backgroundPosition = 'center';
-    posterLayer.style.backgroundRepeat = 'no-repeat';
-    posterLayer.style.opacity = '1';
-    posterLayer.style.transition = 'opacity 220ms ease';
-    posterLayer.style.zIndex = '2';
-    posterLayer.style.pointerEvents = 'none';
-    container.appendChild(posterLayer);
-    this.posterLayer = posterLayer;
   }
 
   protected abstract getHQAriaLabel(): string;

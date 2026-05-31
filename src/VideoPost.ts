@@ -3,12 +3,11 @@
  * Individual video post card in the feed
  */
 
-import { VideoPostData, Scene, SceneMarker } from './types.js';
+import { VideoPostData, Scene } from './types.js';
 import { NativeVideoPlayer } from './NativeVideoPlayer.js';
 import { StashAPI } from './StashAPI.js';
 import { VisibilityManager } from './VisibilityManager.js';
 import { calculateAspectRatio, getAspectRatioClass, normalizeMediaUrl, showToast, toAbsoluteUrl, isMobileDevice, THEME, extractValidPerformerIds } from './utils.js';
-import { posterPreloader } from './PosterPreloader.js';
 import { MARKER_SVG } from './icons.js';
 import { VideoPostBase, BaseVideoPostOptions } from './VideoPostBase.js';
 
@@ -114,107 +113,7 @@ export class VideoPost extends VideoPostBase {
       }
     }
 
-    return this.createVideoPlayerContainer(aspectRatio, aspectRatioClass, this.getPreviewPosterUrl());
-  }
-
-  /**
-   * Build a poster URL with a stable per-marker cache key.
-   * A stable key (vs a per-call timestamp) lets the browser cache the poster so
-   * re-rendering or scrolling back to a post reuses it instead of re-downloading,
-   * and matches the URL the PosterPreloader warmed.
-   */
-  private buildUrlWithCacheBusting(path: string): string | undefined {
-    const baseUrl = toAbsoluteUrl(path);
-    if (!baseUrl) return undefined;
-    const separator = baseUrl.includes('?') ? '&' : '?';
-    return `${baseUrl}${separator}t=${this.data.marker.id}`;
-  }
-
-  /**
-   * Get poster URL for image-based markers
-   */
-  private getImageBasedMarkerPoster(marker: SceneMarker): string | undefined {
-    const imagePaths = marker?.scene?.paths as { thumbnail?: string; preview?: string; image?: string } | undefined;
-    const thumbnail = imagePaths?.thumbnail;
-    if (thumbnail) {
-      const url = this.buildUrlWithCacheBusting(thumbnail);
-      if (url) return url;
-    }
-    const preview = imagePaths?.preview;
-    if (preview) {
-      return this.buildUrlWithCacheBusting(preview);
-    }
-    return undefined;
-  }
-
-  /**
-   * Get poster URL for synthetic/short form markers
-   */
-  private getSyntheticMarkerPoster(marker: SceneMarker): string | undefined {
-    const p = marker?.scene?.paths?.screenshot;
-    if (!p) return undefined;
-    return this.buildUrlWithCacheBusting(p);
-  }
-
-  /**
-   * Get poster URL for the video
-   * Only uses screenshots - never preview or webp
-   * Returns undefined if screenshot is unavailable (will trigger first frame fallback)
-   */
-  /**
-   * Resolve poster URL for special marker types (image-based, synthetic, shortform)
-   * @returns poster URL if marker is a special type, undefined otherwise
-   */
-  private resolveSpecialMarkerPoster(m: SceneMarker): string | undefined | null {
-    const markerId = m?.id;
-    if (markerId && typeof markerId === 'string' && markerId.startsWith('image-')) {
-      return this.getImageBasedMarkerPoster(m);
-    }
-    if (markerId && typeof markerId === 'string' && (markerId.startsWith('synthetic-') || markerId.startsWith('shortform-'))) {
-      return this.getSyntheticMarkerPoster(m);
-    }
-    return null; // Not a special marker type
-  }
-
-  private getPosterUrl(): string | undefined {
-    const m = this.data.marker;
-    const specialPoster = this.resolveSpecialMarkerPoster(m);
-    if (specialPoster !== null) return specialPoster;
-
-    // Prefer preloaded poster from batch prefetch (commit parity)
-    const cached = posterPreloader.getPosterForMarker(m);
-    if (cached) return cached;
-
-    // Only use screenshot if not preloaded
-    const p = m?.scene?.paths?.screenshot;
-    if (!p) return undefined;
-    return this.buildUrlWithCacheBusting(p);
-  }
-
-  private getPreviewPosterUrl(): string | undefined {
-    const m = this.data.marker;
-    const specialPoster = this.resolveSpecialMarkerPoster(m);
-    if (specialPoster !== null) return specialPoster;
-    const preview = m?.preview;
-    if (preview) {
-      return this.buildUrlWithCacheBusting(preview);
-    }
-    const scenePreview = m?.scene?.paths?.preview;
-    if (scenePreview) {
-      return this.buildUrlWithCacheBusting(scenePreview);
-    }
-    const sceneScreenshot = m?.scene?.paths?.screenshot;
-    if (sceneScreenshot) {
-      return this.buildUrlWithCacheBusting(sceneScreenshot);
-    }
-    return undefined;
-  }
-
-  private getPreferredPosterUrl(): string | undefined {
-    if (this.isReelMode) {
-      return this.getPreviewPosterUrl();
-    }
-    return this.getPosterUrl();
+    return this.createVideoPlayerContainer(aspectRatio, aspectRatioClass);
   }
 
   /**
@@ -381,14 +280,6 @@ export class VideoPost extends VideoPostBase {
    */
   private isShortFormContent(): boolean {
     return typeof this.data.marker.id === 'string' && this.data.marker.id.startsWith('shortform-');
-  }
-
-  /**
-   * Determine if marker ID represents a synthetic marker
-   */
-  private isSyntheticMarker(): boolean {
-    const markerId = this.data.marker?.id;
-    return typeof markerId === 'string' && markerId.startsWith('synthetic-');
   }
 
   /**
@@ -896,16 +787,13 @@ export class VideoPost extends VideoPostBase {
    */
   private async createSceneVideoPlayer(playerContainer: HTMLElement, sceneVideoUrl: string): Promise<void> {
     try {
-      this.hasRenderedVideo = false;
       const startTime = this.data.startTime ?? this.data.marker.seconds;
-      
+
       this.player = new NativeVideoPlayer(playerContainer, sceneVideoUrl, {
         muted: true,
         autoplay: false,
         startTime: startTime,
         endTime: this.data.endTime ?? this.data.marker.end_seconds,
-        aggressivePreload: false, // HD videos use metadata preload
-        posterUrl: this.getPreferredPosterUrl(),
         showLoadingIndicator: false,
         objectFit: this.isReelMode ? 'contain' : 'cover',
         // onMuteToggle removed - using overlay button instead
@@ -916,7 +804,7 @@ export class VideoPost extends VideoPostBase {
       if (startTime !== undefined) {
         void this.seekPlayerToStart(this.player, startTime);
       }
-      this.hideMediaWhenReady(this.player, playerContainer);
+      this.clearLoadErrorTimerOnPlayback(this.player);
       this.scheduleLoadErrorCheck();
       this.attachLoadErrorHandler();
       this.attachReelAutoAdvance();
@@ -1064,31 +952,29 @@ export class VideoPost extends VideoPostBase {
     }
 
     try {
-      this.hasRenderedVideo = false;
       // For non-HD videos, don't pass startTime (intentionally ignored like old version)
       // This allows browser to show first frame naturally
       // Only pass startTime for HD videos (when in HQ mode or explicitly upgrading)
       // For regular marker videos, pass undefined to use simple loading path
-      const finalStartTime = this.isHQMode 
+      const finalStartTime = this.isHQMode
         ? (startTime ?? this.data.startTime ?? this.data.marker.seconds)
         : undefined;
-      
+
       // Respect global mute state when creating player
       // Marker previews can have audio, so respect global mute state
       const shouldBeMuted = this.getGlobalMuteState ? this.getGlobalMuteState() : true;
-      
+
       this.player = new NativeVideoPlayer(playerContainer, normalizedVideoUrl, {
         muted: shouldBeMuted,
         autoplay: false,
         startTime: finalStartTime,
         endTime: endTime ?? this.data.endTime ?? this.data.marker.end_seconds,
-        posterUrl: this.getPreferredPosterUrl(),
         showLoadingIndicator: false,
         objectFit: this.isReelMode ? 'contain' : 'cover',
       });
 
       this.isLoaded = true;
-      this.hideMediaWhenReady(this.player, playerContainer);
+      this.clearLoadErrorTimerOnPlayback(this.player);
 
       this.scheduleLoadErrorCheck();
       this.attachLoadErrorHandler();
@@ -1131,12 +1017,6 @@ export class VideoPost extends VideoPostBase {
 
     const reloaded = this.attemptReloadIfUnloaded();
     if (reloaded) return reloaded;
-
-    // Show loading indicator when video starts loading
-    if (this.videoLoadingIndicator && !this.isLoaded) {
-      this.videoLoadingIndicator.style.display = 'flex';
-    }
-    this.showPosterLayer();
 
     return this.loadPlayer(
       this.data.videoUrl!,
@@ -1188,10 +1068,6 @@ export class VideoPost extends VideoPostBase {
     return this.data.marker.scene.performers ?? [];
   }
 
-  protected getEntityLogId(): string {
-    return this.data.marker.id;
-  }
-
   protected getHQButtonOffLabel(): string {
     return 'Load HD video with audio';
   }
@@ -1225,14 +1101,6 @@ export class VideoPost extends VideoPostBase {
     const placeholder = document.createElement('div');
     placeholder.className = 'video-post__error-placeholder';
     placeholder.style.backgroundColor = THEME.colors.backgroundSecondary;
-
-    const posterUrl = this.getPosterUrl();
-    if (posterUrl) {
-      placeholder.style.backgroundImage = `url("${posterUrl}")`;
-      placeholder.style.backgroundSize = 'cover';
-      placeholder.style.backgroundPosition = 'center';
-      placeholder.style.backgroundRepeat = 'no-repeat';
-    }
 
     // Create error text overlay
     const errorText = document.createElement('div');
@@ -1292,24 +1160,24 @@ export class VideoPost extends VideoPostBase {
   private handleLoadError(error: Error): void {
     this.loadErrorCount++;
 
-    if (this.loadErrorCount >= 5) {
+    const MAX_RETRIES = 2;
+    if (this.loadErrorCount >= MAX_RETRIES) {
       // Exhausted retries, show placeholder
       this.hasFailedPermanently = true;
       this.showErrorPlaceholder();
-      console.warn('VideoPost: Video failed to load after 5 attempts, showing placeholder', {
+      console.warn('VideoPost: Video failed to load, showing placeholder', {
         markerId: this.data.marker.id,
         error,
         attempts: this.loadErrorCount,
       });
     } else {
-      // Schedule retry with exponential backoff
-      const delays = [1000, 2000, 4000, 8000, 16000]; // 1s, 2s, 4s, 8s, 16s
-      const delay = delays[this.loadErrorCount - 1] || 16000;
-      
+      // Schedule a single short-backoff retry
+      const delay = this.loadErrorCount === 1 ? 1000 : 2000;
+
       console.warn('VideoPost: Video load failed, retrying...', {
         markerId: this.data.marker.id,
         attempt: this.loadErrorCount,
-        maxAttempts: 5,
+        maxAttempts: MAX_RETRIES,
         retryDelay: delay,
         error,
       });

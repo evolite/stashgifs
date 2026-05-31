@@ -431,13 +431,6 @@ export abstract class BasePost {
     this.container.appendChild(gradient);
   }
 
-  private removeReelGradientOverlay(): void {
-    const existingOverlay = this.container.querySelector('.reel-gradient-overlay');
-    if (existingOverlay) {
-      existingOverlay.remove();
-    }
-  }
-
   private applyReelPlayerStyles(playerContainer: HTMLElement): boolean {
     playerContainer.style.flex = '1 1 auto';
     playerContainer.style.width = '100%';
@@ -1639,25 +1632,6 @@ export abstract class BasePost {
   }
 
   /**
-   * Create details section for performer overlay
-   */
-  private createPerformerOverlayDetails(performerData: PerformerExtended): HTMLElement | null {
-    if (!performerData.details) {
-      return null;
-    }
-
-    const detailsSection = document.createElement('div');
-    detailsSection.style.fontSize = '14px';
-    detailsSection.style.color = THEME.colors.textSecondary;
-    detailsSection.style.lineHeight = '1.5';
-    detailsSection.style.marginTop = '12px';
-    detailsSection.style.paddingTop = '12px';
-    detailsSection.style.borderTop = `1px solid ${THEME.colors.border}`;
-    detailsSection.textContent = performerData.details;
-    return detailsSection;
-  }
-
-  /**
    * Create a styled remove button for overlay cards (performer or tag).
    */
   private createOverlayRemoveButton(
@@ -1754,10 +1728,6 @@ export abstract class BasePost {
   /**
    * Show performer overlay on hover
    */
-  private showPerformerOverlay(performerId: string, chipElement: HTMLElement, onRemove?: () => Promise<boolean>): void {
-    this.performerOverlayMgr.show(performerId, chipElement, onRemove);
-  }
-
   private hidePerformerOverlay(immediate = false): void {
     this.performerOverlayMgr.hide(immediate);
   }
@@ -1881,10 +1851,6 @@ export abstract class BasePost {
     return overlay;
   }
 
-  private showTagOverlay(tagId: string, chipElement: HTMLElement, onRemove?: () => Promise<boolean>): void {
-    this.tagOverlayMgr.show(tagId, chipElement, onRemove);
-  }
-
   private hideTagOverlay(immediate = false): void {
     this.tagOverlayMgr.hide(immediate);
   }
@@ -1973,14 +1939,6 @@ export abstract class BasePost {
   ): void {
     if (!this.api || !this.canHoverDevice()) return;
     this.studioOverlayMgr.bindHover(chip, studio.id, '.studio-chip');
-  }
-
-  private showStudioOverlay(studioId: string, chipElement: HTMLElement): void {
-    this.studioOverlayMgr.show(studioId, chipElement);
-  }
-
-  private hideStudioOverlay(immediate = false): void {
-    this.studioOverlayMgr.hide(immediate);
   }
 
   /**

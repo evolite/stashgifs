@@ -44,8 +44,7 @@ export class NativeVideoPlayer {
   private originalEndTime?: number; // Store original end time for reload
   private unloadRetryTimeout?: ReturnType<typeof setTimeout>;
   private placeholderElement?: HTMLDivElement; // Neutral placeholder to avoid black screens
-  private shouldShowPlaceholder: boolean = false;
-  private hasPoster: boolean = false;
+  private shouldShowPlaceholder: boolean = true;
   private hasResolvedReady: boolean = false;
   // Store event handlers for proper cleanup
   private fullscreenChangeHandler?: () => void;
@@ -103,8 +102,6 @@ export class NativeVideoPlayer {
     startTime?: number;
     endTime?: number;
     onStateChange?: (state: VideoPlayerState) => void;
-    aggressivePreload?: boolean; // Use 'auto' preload for non-HD videos
-    posterUrl?: string; // Poster image URL to display before video loads
     showLoadingIndicator?: boolean; // Toggle internal loading spinner
     objectFit?: 'cover' | 'contain';
     // onMuteToggle removed - mute is now controlled by overlay button in VideoPost
@@ -147,8 +144,6 @@ export class NativeVideoPlayer {
       muted: options?.muted,
       startTime: options?.startTime,
       endTime: options?.endTime,
-      aggressivePreload: options?.aggressivePreload,
-      posterUrl: options?.posterUrl,
     });
     this.createControls();
     this.attachEventListeners();
@@ -243,9 +238,7 @@ export class NativeVideoPlayer {
   /**
    * Setup basic video element properties
    */
-  private setupVideoElementBasicProperties(options?: { startTime?: number; muted?: boolean; posterUrl?: string; aggressivePreload?: boolean }): void {
-    this.applyPosterConfig(options?.posterUrl);
-    
+  private setupVideoElementBasicProperties(options?: { startTime?: number; muted?: boolean }): void {
     // Set object-fit for proper video display
     this.videoElement.style.objectFit = this.objectFit;
     this.videoElement.style.width = '100%';
@@ -257,8 +250,8 @@ export class NativeVideoPlayer {
       this.videoElement.style.transition = 'opacity 0.3s ease-out';
     }
     
-    this.applyPreloadStrategy(options?.startTime, options?.aggressivePreload);
-    
+    this.applyPreloadStrategy(options?.startTime);
+
     this.videoElement.playsInline = true; // Required for iOS inline playback
     this.videoElement.muted = options?.muted ?? false; // Default to unmuted (markers don't have sound anyway)
     this.videoElement.loop = true; // Enable looping
@@ -276,35 +269,13 @@ export class NativeVideoPlayer {
     
   }
 
-  private applyPosterConfig(posterUrl: string | undefined): void {
-    this.hasPoster = false;
-    if (!posterUrl) {
-      this.shouldShowPlaceholder = true;
-      return;
-    }
-
-    const normalizedPosterUrl = normalizeMediaUrl(posterUrl);
-    if (!normalizedPosterUrl) {
-      console.warn('NativeVideoPlayer: Invalid poster URL, skipping poster', { posterUrl });
-      this.shouldShowPlaceholder = true;
-      return;
-    }
-
-    this.hasPoster = true;
-    this.videoElement.poster = normalizedPosterUrl;
-    this.shouldShowPlaceholder = false;
-  }
-
-  private applyPreloadStrategy(startTime: number | undefined, aggressivePreload?: boolean): void {
+  private applyPreloadStrategy(startTime: number | undefined): void {
     const hasStartTimeForPreload = typeof startTime === 'number'
       && Number.isFinite(startTime)
       && startTime > 0;
 
-    if (aggressivePreload) {
-      this.videoElement.preload = 'auto';
-      return;
-    }
-
+    // Marker clips (no startTime) use 'auto' for the fastest possible start;
+    // HD scene videos seek to a startTime, so 'metadata' avoids wasted download.
     this.videoElement.preload = hasStartTimeForPreload ? 'metadata' : 'auto';
   }
 
@@ -332,7 +303,9 @@ export class NativeVideoPlayer {
   }
 
   private shouldHideVideoUntilPlaying(): boolean {
-    return !this.hasPoster;
+    // Always true: with no poster, the solid placeholder covers the surface and
+    // the video element fades in on first 'playing'.
+    return true;
   }
 
   private showPlaceholder(): void {
@@ -630,7 +603,7 @@ export class NativeVideoPlayer {
     return true;
   }
 
-  private createVideoElement(videoUrl: string, options?: { autoplay?: boolean; muted?: boolean; startTime?: number; endTime?: number; aggressivePreload?: boolean; posterUrl?: string }): void {
+  private createVideoElement(videoUrl: string, options?: { autoplay?: boolean; muted?: boolean; startTime?: number; endTime?: number }): void {
     // Defensive validation - validate URL again before setting src
     // This is a last line of defense in case validation was bypassed
     // If invalid, create element but don't set src - error handler will catch it
@@ -680,8 +653,6 @@ export class NativeVideoPlayer {
     this.playerWrapper = playerWrapper;
     
     this.videoElement.style.position = 'relative';
-    // On mobile, video z-index is 1 (below poster which is 2) to ensure poster covers video
-    // On desktop, z-index is 1 as well
     this.videoElement.style.zIndex = '1';
     // Set background to transparent
     this.videoElement.style.backgroundColor = 'transparent';
@@ -899,8 +870,8 @@ export class NativeVideoPlayer {
       this.notifyStateChange();
     });
 
-    // Use 'playing' event for poster crossfade - fires when video actually starts rendering
-    // This ensures poster fades out smoothly when video is actually playing
+    // 'playing' fires when the video actually starts rendering: reveal the video
+    // surface and hide the solid placeholder.
     this.videoElement.addEventListener('playing', () => {
       if (!this.isVideoElementValid()) return;
       this.scheduleVideoFrameCallback();
@@ -935,7 +906,6 @@ export class NativeVideoPlayer {
       this.updateOverlayState();
       
       // On pause, keep video visible to show current frame
-      // No need to fade to poster - video frame is already visible
       this.setLoadingState(this.videoElement.readyState < 2);
       
       this.notifyStateChange();
@@ -992,36 +962,6 @@ export class NativeVideoPlayer {
     this.overlay.style.transition = 'opacity 0.3s ease-out';
     this.overlay.innerHTML = PLAY_BUTTON_SVG;
     this.overlay.setAttribute('aria-hidden', 'true');
-  }
-
-  /**
-   * Show play/pause overlay (temporary, fades out after 1.5s)
-   */
-  private showOverlay(isPlaying: boolean): void {
-    if (!this.overlay) return;
-    
-    // Clear any existing timeout
-    if (this.overlayTimeoutId) {
-      clearTimeout(this.overlayTimeoutId);
-    }
-    
-    // Update icon based on play state
-    if (isPlaying) {
-      this.overlay.innerHTML = PAUSE_SVG;
-    } else {
-      this.overlay.innerHTML = PLAY_BUTTON_SVG;
-    }
-    
-    // Show overlay
-    this.overlay.style.opacity = '1';
-    
-    // Hide after 1.5 seconds
-    this.overlayTimeoutId = setTimeout(() => {
-      if (this.overlay) {
-        this.overlay.style.opacity = '0';
-      }
-      this.overlayTimeoutId = undefined;
-    }, 1500);
   }
 
   /**

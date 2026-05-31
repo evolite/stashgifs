@@ -597,21 +597,6 @@ export class VisibilityManager {
     return this.audioManager;
   }
 
-  forceVisible(postId: string): void {
-    const entry = this.entries.get(postId);
-    if (entry && !entry.isVisible) {
-      entry.isVisible = true;
-      this.audioManager.onVisibilityChange(postId, true);
-    }
-  }
-
-  setHoveredPostId(postId: string | undefined): void {
-    this.hoveredPostId = postId;
-    if (postId !== undefined) {
-      this.audioManager.onHoverEnter(postId);
-    }
-  }
-
   /**
    * Trigger snap playback for a snapped card: force visibility, mark manually
    * started, elevate to hover priority, and request playback.
@@ -722,20 +707,6 @@ export class VisibilityManager {
       this.lastPrimaryPostId = id;
       this.onPrimaryPostChanged(id);
     }
-  }
-
-  /**
-   * Check if a video should play based on AudioManager priority logic (for HD mode)
-   */
-  private shouldVideoPlay(postId: string): boolean {
-    if (!this.isHDMode) {
-      // In non-HD mode, use standard autoplay logic
-      return true;
-    }
-
-    // In HD mode, use AudioManager priority logic
-    const videoThatShouldPlay = this.getVideoThatShouldPlay();
-    return videoThatShouldPlay === postId;
   }
 
   /**

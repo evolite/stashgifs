@@ -117,10 +117,6 @@ export class WhisparrClient {
     return await this.request<WhisparrQualityProfile[]>('/qualityprofile', { method: 'GET', signal });
   }
 
-  async testConnection(signal?: AbortSignal): Promise<void> {
-    await this.getRootFolders(signal);
-  }
-
   private getMovieList(signal?: AbortSignal): Promise<WhisparrScene[]> {
     const now = Date.now();
     if (this.movieListCache && now - this.movieListCache.fetchedAt < MOVIE_CACHE_TTL_MS) {

@@ -15,7 +15,6 @@ import { VisibilityManager } from './VisibilityManager.js';
 import { FavoritesManager } from './FavoritesManager.js';
 import { SettingsPage } from './SettingsPage.js';
 import { debounce, normalizeMediaUrl, detectDeviceCapabilities, DeviceCapabilities, isStandaloneNavigator, isMobileDevice, detectVideoFromVisualFiles, isMp4File, getImageUrlForDisplay, THEME, THEME_DEFAULTS, normalizeHexColor, toRgba, buildFullUrl, applyThemeColors } from './utils.js';
-import { posterPreloader } from './PosterPreloader.js';
 import { GQLImage } from './graphql/types.js';
 import { SETTINGS_SVG, STASHGIFS_LOGO_SVG } from './icons.js';
 import { DiscoveryPanel } from './DiscoveryPanel.js';
@@ -109,7 +108,6 @@ export class FeedContainer {
   private shortFormUnfilteredOffset: number = 0; // Track offset in UNFILTERED scene list for short-form pagination
   private markerPageSize: number = 0; // Track the page size used for markers (for consistent pagination)
   private imagePageSize: number = 0; // Track the page size used for images (for consistent pagination)
-  // Batch poster prefetching aligns with previous commit behavior
   private isLoading: boolean = false;
   private currentFilters?: FilterOptions;
   private readonly selectedTagIds: Map<number, string> = new Map();
@@ -152,8 +150,6 @@ export class FeedContainer {
   private savedFiltersLoaded: boolean = false;
   private activeSearchAbortController?: AbortController;
   private activeLoadVideosAbortController?: AbortController;
-  private nextPagePosterPrefetchAbortController?: AbortController;
-  private lastNextPagePosterPrefetchKey?: string;
   private skeletonLoaders: HTMLElement[] = [];
   private useHDMode: boolean = false;
   private globalMuteState: boolean = false; // Global mute state - all videos muted when true
@@ -438,7 +434,6 @@ export class FeedContainer {
     this.resetScrollObserver();
     this.refreshAutoplayAfterLayout();
     if (isReelMode) {
-      this.warmStartPreloads();
       this.ensureReelInitialCardLoaded();
     }
     this.ensureVisiblePostsLoaded();
@@ -1816,41 +1811,6 @@ export class FeedContainer {
     suggestions.scrollTop = 0;
   }
 
-  /**
-   * Create a suggestion chip button
-   */
-  private createSuggestionChip(
-    text: string,
-    onClick: () => void,
-    isSelected: boolean = false
-  ): HTMLElement {
-    const chip = document.createElement('button');
-    chip.textContent = text;
-    chip.className = isSelected ? 'feed-suggestion-chip feed-suggestion-chip--selected' : 'feed-suggestion-chip';
-    chip.addEventListener('mousedown', (e) => { e.preventDefault(); });
-    chip.addEventListener('click', onClick);
-    return chip;
-  }
-
-  /**
-   * Create a section label for suggestions
-   */
-  private createSuggestionLabel(text: string): HTMLElement {
-    const label = document.createElement('div');
-    label.className = 'feed-suggestion-label';
-    label.textContent = text;
-    return label;
-  }
-
-  /**
-   * Create a divider for suggestions
-   */
-  private createSuggestionDivider(): HTMLElement {
-    const divider = document.createElement('div');
-    divider.className = 'feed-suggestion-divider';
-    return divider;
-  }
-
   private sortByMatchAccuracy<T extends { name: string }>(items: T[], query: string): T[] {
     if (!query) return items;
     const q = query.toLowerCase();
@@ -1865,241 +1825,6 @@ export class FeedContainer {
       const diff = score(aName) - score(bName);
       return diff === 0 ? aName.localeCompare(bName) : diff;
     });
-  }
-
-  /**
-   * Render saved filters as suggestion chips
-   */
-  private renderSavedFiltersSuggestions(
-    container: HTMLElement,
-    savedSelect: HTMLSelectElement,
-    updateSearchBarDisplay: () => void,
-    apply: () => Promise<void>,
-    queryInput: HTMLInputElement
-  ): void {
-    if (this.savedFiltersCache.length === 0) return;
-
-    container.appendChild(this.createSuggestionLabel('Saved Marker Filters'));
-
-    for (const f of this.savedFiltersCache) {
-      const chip = this.createSuggestionChip(f.name, () => {
-        savedSelect.value = f.id;
-        this.selectedSavedFilter = { id: f.id, name: f.name };
-        this.selectedTagIds.clear();
-        this.selectedPerformerIds.clear();
-        queryInput.value = '';
-        this.closeSuggestions();
-        updateSearchBarDisplay();
-        apply();
-      });
-      container.appendChild(chip);
-    }
-  }
-
-  /**
-   * Render tags as suggestion chips
-   */
-  private renderTagsSuggestions(
-    container: HTMLElement,
-    tags: Array<{ id: string; name: string }>,
-    savedSelect: HTMLSelectElement,
-    updateSearchBarDisplay: () => void,
-    apply: () => Promise<void>,
-    refreshSuggestions: (text: string) => void,
-    trimmedText: string
-  ): void {
-    for (const tag of tags) {
-      if (tag.name === 'StashGifs Favorite' || tag.name === 'StashGifs Marker') continue;
-      const tagId = Number.parseInt(tag.id, 10);
-      const isSelected = this.selectedTagIds.has(tagId);
-
-      const chip = this.createSuggestionChip(tag.name, () => {
-        this.selectedSavedFilter = undefined;
-        savedSelect.value = '';
-        if (this.selectedTagIds.has(tagId)) {
-          this.selectedTagIds.delete(tagId);
-          chip.classList.remove('feed-suggestion-chip--selected');
-        } else {
-          this.selectedTagIds.set(tagId, tag.name);
-          chip.classList.add('feed-suggestion-chip--selected');
-        }
-        updateSearchBarDisplay();
-        this.debouncedApplyFilters();
-        this.focusSearchInput();
-      }, isSelected);
-      container.appendChild(chip);
-    }
-  }
-
-  /**
-   * Render performers as suggestion chips
-   */
-  private renderPerformersSuggestions(
-    container: HTMLElement,
-    performers: Array<{ id: string; name: string; image_path?: string }>,
-    savedSelect: HTMLSelectElement,
-    updateSearchBarDisplay: () => void,
-    apply: () => Promise<void>,
-    refreshSuggestions: (text: string) => void
-  ): void {
-    if (performers.length === 0) return;
-
-    if (container.children.length > 0) {
-      container.appendChild(this.createSuggestionDivider());
-    }
-
-    for (const performer of performers) {
-      const performerId = Number.parseInt(performer.id, 10);
-      const isSelected = this.selectedPerformerIds.has(performerId);
-
-      const chip = this.createSuggestionChip(performer.name, () => {
-        this.selectedSavedFilter = undefined;
-        savedSelect.value = '';
-        if (this.selectedPerformerIds.has(performerId)) {
-          this.selectedPerformerIds.delete(performerId);
-          chip.classList.remove('feed-suggestion-chip--selected');
-        } else {
-          this.selectedPerformerIds.set(performerId, performer.name);
-          chip.classList.add('feed-suggestion-chip--selected');
-        }
-        updateSearchBarDisplay();
-        this.debouncedApplyFilters();
-        this.focusSearchInput();
-      }, isSelected);
-      container.appendChild(chip);
-    }
-  }
-
-  /**
-   * Create loading skeleton chips
-   */
-  private createLoadingSkeletonChips(container: HTMLElement): void {
-    for (let i = 0; i < 6; i++) {
-      const skeletonChip = document.createElement('div');
-      skeletonChip.className = 'chip-skeleton';
-      skeletonChip.dataset.suggestionSkeleton = 'true';
-      skeletonChip.style.display = 'inline-block';
-      skeletonChip.style.padding = '6px 10px';
-      skeletonChip.style.borderRadius = '999px';
-      skeletonChip.style.height = '28px';
-      skeletonChip.style.marginRight = '8px';
-      skeletonChip.style.marginBottom = '8px';
-      const widths = [70, 85, 65, 90, 75, 80];
-      skeletonChip.style.width = `${widths[i % widths.length]}px`;
-      container.appendChild(skeletonChip);
-    }
-  }
-
-  /**
-   * Remove loading skeleton chips
-   */
-  private removeLoadingSkeletonChips(container: HTMLElement): void {
-    const skeletonChips = Array.from(container.querySelectorAll('[data-suggestion-skeleton="true"]'));
-    for (const chip of skeletonChips) {
-      chip.remove();
-    }
-  }
-
-  /**
-   * Render default suggestions (empty text with forceShow)
-   */
-  private async renderDefaultSuggestionsChips(
-    suggestions: HTMLElement,
-    signal: AbortSignal,
-    savedSelect: HTMLSelectElement,
-    updateSearchBarDisplay: () => void,
-    apply: () => Promise<void>,
-    queryInput: HTMLInputElement,
-    refreshSuggestions: (text: string, page: number, forceShow: boolean) => void
-  ): Promise<void> {
-    await this.loadSavedFiltersIfNeeded();
-    if (signal.aborted) return;
-
-    if (this.savedFiltersCache.length > 0) {
-      this.renderSavedFiltersSuggestions(suggestions, savedSelect, updateSearchBarDisplay, apply, queryInput);
-      suggestions.appendChild(this.createSuggestionDivider());
-    }
-
-    let loadingTimeout: ReturnType<typeof setTimeout> | null = null;
-    let loadingContainerCreated = false;
-
-    const showLoadingSkeletons = () => {
-      if (loadingContainerCreated) return;
-      loadingContainerCreated = true;
-      this.createLoadingSkeletonChips(suggestions);
-    };
-
-    suggestions.style.display = 'flex';
-
-    loadingTimeout = setTimeout(() => {
-      if (signal.aborted) return;
-      showLoadingSkeletons();
-    }, 200);
-
-    const [tags, performers] = await Promise.all([
-      this.api.searchMarkerTags('', 3, signal),
-      this.api.searchPerformers('', 3, signal)
-    ]);
-    if (signal.aborted) return;
-
-    if (loadingTimeout) {
-      clearTimeout(loadingTimeout);
-      loadingTimeout = null;
-    }
-
-    if (loadingContainerCreated) {
-      this.removeLoadingSkeletonChips(suggestions);
-    }
-
-    this.renderTagsSuggestions(suggestions, tags, savedSelect, updateSearchBarDisplay, apply, (text) => refreshSuggestions(text, 1, false), '');
-    this.renderPerformersSuggestions(suggestions, performers, savedSelect, updateSearchBarDisplay, apply, (text) => refreshSuggestions(text, 1, true));
-
-    suggestions.style.display = suggestions.children.length > 0 ? 'flex' : 'none';
-  }
-
-  /**
-   * Create "More results" button
-   */
-  private createMoreResultsButton(params: {
-    container: HTMLElement;
-    trimmedText: string;
-    pageSize: number;
-    signal: AbortSignal;
-    savedSelect: HTMLSelectElement;
-    updateSearchBarDisplay: () => void;
-    apply: () => Promise<void>;
-    refreshSuggestions: (text: string, page: number, forceShow: boolean) => Promise<void>;
-    onPageIncrement: () => void;
-  }): HTMLElement {
-    const more = document.createElement('button');
-    more.dataset.more = '1';
-    more.textContent = 'More results…';
-    more.style.padding = '8px 10px';
-    more.style.borderRadius = THEME.radius.button;
-    more.style.border = `1px solid ${THEME.colors.border}`;
-    more.style.background = THEME.colors.backgroundSecondary;
-    more.style.cursor = 'pointer';
-    more.style.width = '100%';
-    more.style.marginTop = '4px';
-    const handleMoreClick = async (): Promise<void> => {
-      params.onPageIncrement();
-      const next = await this.api.searchMarkerTags(params.trimmedText, params.pageSize, params.signal);
-      if (params.signal.aborted) return;
-      this.renderTagsSuggestions(
-        params.container,
-        next,
-        params.savedSelect,
-        params.updateSearchBarDisplay,
-        params.apply,
-        (text) => { params.refreshSuggestions(text, 1, false).catch(() => {}); },
-        params.trimmedText
-      );
-      if (next.length < params.pageSize) {
-        more.remove();
-      }
-    };
-    more.addEventListener('click', () => { void handleMoreClick(); });
-    return more;
   }
 
   /**
@@ -2974,23 +2699,6 @@ export class FeedContainer {
 
 
   /**
-   * Build filter values from selected performers Map
-   */
-  private buildPerformerFilters(): { performers: string[] } {
-    return {
-      performers: [...this.selectedPerformerIds.keys()].map(String),
-    };
-  }
-
-  /**
-   * Build filter values from selected tags Map
-   */
-  private buildTagFilters(): { tags?: string[] } {
-    const ids = [...this.selectedTagIds.keys()].map(String);
-    return ids.length ? { tags: ids } : {};
-  }
-
-  /**
    * Resolve query text to tag or performer, or use as plain query
    */
   private async resolveQueryToFilters(
@@ -3667,45 +3375,6 @@ export class FeedContainer {
   }
 
   /**
-   * Create a synthetic SceneMarker from Image data
-   * This allows MP4/M4V images to be displayed as VideoPost with full video controls
-   */
-  private createSyntheticMarkerFromImage(image: Image): SceneMarker {
-    const markerId = `image-${image.id}`;
-    const duration = image.visualFiles?.find(vf => vf.duration)?.duration ?? 0;
-    
-    // Create Scene object from Image data
-    const scene: Scene = {
-      id: `scene-${image.id}`,
-      title: image.title,
-      date: image.date,
-      rating100: image.rating100,
-      o_counter: image.o_counter,
-      performers: image.performers,
-      tags: image.tags,
-      files: image.visualFiles?.map(vf => ({
-        id: vf.path || `file-${image.id}`,
-        path: vf.path || '',
-        duration: vf.duration,
-        video_codec: vf.video_codec,
-        width: vf.width ?? image.width,
-        height: vf.height ?? image.height,
-      })),
-      paths: image.paths,
-    };
-
-    return {
-      id: markerId,
-      title: image.title || 'Image Video',
-      seconds: 0,
-      end_seconds: duration > 0 ? duration : undefined,
-      preview: image.paths?.preview,
-      tags: image.tags,
-      scene,
-    };
-  }
-
-  /**
    * Try to get valid media URL from path
    */
   private tryGetValidMediaUrl(path: string | undefined, baseUrl: string): string | undefined {
@@ -3957,69 +3626,6 @@ export class FeedContainer {
   }
 
   /**
-   * Prefetch poster images for markers
-   */
-  private prefetchPosters(markers: SceneMarker[], append: boolean, currentFilters: FilterOptions): void {
-    if (this.isReelModeEnabled() && !this.reelPlaybackStarted) {
-      return;
-    }
-    try {
-      const baseCount = currentFilters.limit || FeedContainer.CONTENT_LOAD_LIMIT;
-      const prefetchCount = this.isReelModeEnabled() ? Math.min(2, baseCount) : baseCount;
-      const maxConcurrent = isMobileDevice() ? 3 : Infinity;
-      posterPreloader.prefetchForMarkers(markers, prefetchCount, maxConcurrent);
-    } catch (e) {
-      console.warn('Poster prefetch failed', e);
-    }
-  }
-
-  private async prefetchNextPagePosters(currentFilters: FilterOptions, shouldLoadMarkers: boolean): Promise<void> {
-    if (this.isReelModeEnabled() || !shouldLoadMarkers) {
-      return;
-    }
-    if (!this.hasMore) {
-      return;
-    }
-
-    const limit = this.markerPageSize || currentFilters.limit || FeedContainer.CONTENT_LOAD_LIMIT;
-    if (limit <= 0) {
-      return;
-    }
-
-    const nextOffset = this.markersLoadedCount;
-    const sortSeed = currentFilters.sortSeed ?? '';
-    const key = `${nextOffset}:${limit}:${sortSeed}`;
-    if (this.lastNextPagePosterPrefetchKey === key) {
-      return;
-    }
-
-    this.lastNextPagePosterPrefetchKey = key;
-    this.cancelNextPagePosterPrefetch();
-
-    const controller = new AbortController();
-    this.nextPagePosterPrefetchAbortController = controller;
-
-    try {
-      const result = await this.fetchMarkersForLoad(currentFilters, limit, nextOffset, controller.signal);
-      if (controller.signal.aborted) {
-        return;
-      }
-      if (result.markers.length > 0) {
-        const maxConcurrent = isMobileDevice() ? 3 : Infinity;
-        posterPreloader.prefetchForMarkers(result.markers, limit, maxConcurrent);
-      }
-    } catch (e) {
-      if (!controller.signal.aborted) {
-        console.warn('Next page poster prefetch failed', e);
-      }
-    } finally {
-      if (this.nextPagePosterPrefetchAbortController === controller) {
-        this.nextPagePosterPrefetchAbortController = undefined;
-      }
-    }
-  }
-
-  /**
    * Handle empty markers result
    */
   private handleEmptyMarkers(append: boolean): void {
@@ -4048,14 +3654,9 @@ export class FeedContainer {
 
     if (!append) {
       this.refreshAutoplayAfterLayout();
-      this.warmStartPreloads();
     }
 
     this.ensureVisiblePostsLoaded();
-  }
-
-  private warmStartPreloads(): void {
-    return;
   }
 
   /**
@@ -4538,10 +4139,6 @@ export class FeedContainer {
 
     this.hideError();
 
-    if (shouldLoadMarkers && allMarkers.length > 0) {
-      this.prefetchPosters(allMarkers, append, currentFilters);
-    }
-
     // Pre-warm discovery cache with performers from this batch
     if (this.discoveryManager) {
       const performers = mergedContent.flatMap(item => {
@@ -4670,8 +4267,6 @@ export class FeedContainer {
         signal,
         page
       );
-
-      void this.prefetchNextPagePosters(currentFilters, shouldLoadMarkers || shouldLoadRandom);
     } catch (error: unknown) {
       this.handleLoadError(error, append);
     } finally {
@@ -5066,86 +4661,6 @@ export class FeedContainer {
   }
 
   /**
-   * Merge markers and images by interleaving in chunks
-   * Preserves the random order from API (no sorting)
-   */
-  private mergeMarkersAndImages(markers: SceneMarker[], images: Image[]): Array<{ type: 'marker' | 'image'; data: SceneMarker | Image; date?: string }> {
-    const content: Array<{ type: 'marker' | 'image'; data: SceneMarker | Image; date?: string }> = [];
-
-    // If only one type, return it in original order
-    if (markers.length === 0) {
-      for (const image of images) {
-        content.push({
-          type: 'image',
-          data: image,
-          date: image.date,
-        });
-      }
-      return content;
-    }
-
-    if (images.length === 0) {
-      for (const marker of markers) {
-        content.push({
-          type: 'marker',
-          data: marker,
-          date: marker.scene.date,
-        });
-      }
-      return content;
-    }
-
-    // Both types present - interleave in chunks
-    const markerCount = markers.length;
-    const imageCount = images.length;
-
-    // Determine chunk sizes - always show 1-2 images between videos
-    let videoChunkSize: number;
-    const imageChunkSize = 1 + Math.floor(Math.random() * 2); // Always 1-2 images between videos
-
-    if (markerCount > imageCount) {
-      // More videos: larger video chunks
-      videoChunkSize = 4 + Math.floor(Math.random() * 2); // 4-5
-    } else if (imageCount > markerCount) {
-      // More images: smaller video chunks
-      videoChunkSize = 2 + Math.floor(Math.random() * 2); // 2-3
-    } else {
-      // Roughly equal: balanced chunks
-      videoChunkSize = 3 + Math.floor(Math.random() * 2); // 3-4
-    }
-
-    // Interleave in chunks
-    let markerIndex = 0;
-    let imageIndex = 0;
-
-    while (markerIndex < markerCount || imageIndex < imageCount) {
-      // Add chunk of videos
-      const videosToAdd = Math.min(videoChunkSize, markerCount - markerIndex);
-      for (let i = 0; i < videosToAdd; i++) {
-        const marker = markers[markerIndex++];
-        content.push({
-          type: 'marker',
-          data: marker,
-          date: marker.scene.date,
-        });
-      }
-
-      // Add chunk of images
-      const imagesToAdd = Math.min(imageChunkSize, imageCount - imageIndex);
-      for (let i = 0; i < imagesToAdd; i++) {
-        const image = images[imageIndex++];
-        content.push({
-          type: 'image',
-          data: image,
-          date: image.date,
-        });
-      }
-    }
-
-    return content;
-  }
-
-  /**
    * Check if only a single content type is present
    */
   private getSingleContentTypeResult(
@@ -5419,17 +4934,8 @@ export class FeedContainer {
       this.activeSearchAbortController.abort();
       this.activeSearchAbortController = undefined;
     }
-    this.cancelNextPagePosterPrefetch();
     // Also stop any loading videos
     this.stopLoadingVideos();
-  }
-
-  private cancelNextPagePosterPrefetch(): void {
-    if (this.nextPagePosterPrefetchAbortController) {
-      this.nextPagePosterPrefetchAbortController.abort();
-      this.nextPagePosterPrefetchAbortController = undefined;
-    }
-    this.lastNextPagePosterPrefetchKey = undefined;
   }
 
   /**
@@ -5727,9 +5233,6 @@ export class FeedContainer {
    * Clear all posts
    */
   private clearPosts(): void {
-    posterPreloader.cancelInflight();
-    this.cancelNextPagePosterPrefetch();
-    
     for (const [postId, post] of this.posts.entries()) {
       if (this.visibilityManager) {
         this.visibilityManager.unobservePost(postId);
@@ -5878,62 +5381,6 @@ export class FeedContainer {
       }
       this.tryPreloadReelPost(nextId, post as VideoPost | ImageVideoPost);
     }
-  }
-
-  /**
-   * Autoplay the first N posts by force-loading and playing them
-   */
-  private async autoplayInitial(count: number): Promise<void> {
-    if (!this.isReelModeEnabled()) {
-      return;
-    }
-    const initial = this.markers.slice(0, Math.min(count, this.markers.length));
-    const players = this.preloadInitialPlayers(initial);
-    await new Promise((r) => setTimeout(r, 100));
-
-    for (const entry of players) {
-      this.attemptAutoplay(entry.player, entry.markerId).catch(() => {
-        // Errors are handled inside attemptAutoplay
-      });
-    }
-  }
-
-  private preloadInitialPlayers(markers: SceneMarker[]): Array<{ markerId: string; player: NativeVideoPlayer }> {
-    if (!this.isReelModeEnabled()) {
-      return [];
-    }
-    const players: Array<{ markerId: string; player: NativeVideoPlayer }> = [];
-    for (const marker of markers) {
-      const post = this.posts.get(marker.id);
-      if (!post?.hasVideoSource()) continue;
-      const player = post.preload();
-      if (!isNativeVideoPlayer(player)) continue;
-      this.visibilityManager.registerPlayer(marker.id, player);
-      players.push({ markerId: marker.id, player });
-    }
-    return players;
-  }
-
-  private async attemptAutoplay(player: NativeVideoPlayer, markerId: string): Promise<void> {
-    const maxAttempts = 5;
-    const attemptPlay = async (attempt: number): Promise<void> => {
-      try {
-        await player.waitForReady(1500);
-        await new Promise((r) => setTimeout(r, 50));
-        await player.play();
-      } catch (e) {
-        console.warn(`Autoplay initial attempt ${attempt} failed for marker ${markerId}`, e);
-        if (attempt < maxAttempts) {
-          const delay = Math.min(200 * Math.pow(2, attempt - 1), 1600);
-          await new Promise((r) => setTimeout(r, delay));
-          await attemptPlay(attempt + 1);
-        } else {
-          console.error(`Autoplay initial: All attempts failed for marker ${markerId}`);
-        }
-      }
-    };
-
-    await attemptPlay(1);
   }
 
   private shouldEnableVisibilityDebug(): boolean {
@@ -6748,7 +6195,6 @@ export class FeedContainer {
   }
 
   destroy(): void {
-    posterPreloader.cancelInflight();
     this.teardownListeners();
     this.clearPosts();
     this.discoveryManager?.destroy();
@@ -7099,16 +6545,6 @@ export class FeedContainer {
       this.container.appendChild(loading);
     }
     loading.style.display = 'block';
-  }
-
-  /**
-   * Hide loading indicator
-   */
-  private hideLoading(): void {
-    const loading = this.container.querySelector('.feed-loading') as HTMLElement;
-    if (loading) {
-      loading.style.display = 'none';
-    }
   }
 
   /**

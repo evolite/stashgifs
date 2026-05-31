@@ -1373,44 +1373,6 @@ export class StashAPI {
   }
 
   /**
-   * Filter markers to only include those from scenes with less than maxMarkers
-   * @param markers Array of scene markers
-   * @param maxMarkers Maximum number of markers per scene (exclusive)
-   * @returns Filtered array of markers
-   */
-  private filterScenesByMarkerCount(markers: SceneMarker[], maxMarkers: number): SceneMarker[] {
-    // Group markers by scene ID
-    const sceneMarkerCounts = new Map<string, number>();
-    const sceneMarkers = new Map<string, SceneMarker[]>();
-
-    for (const marker of markers) {
-      const sceneId = marker.scene?.id;
-      if (!sceneId) continue;
-
-      const count = sceneMarkerCounts.get(sceneId) || 0;
-      sceneMarkerCounts.set(sceneId, count + 1);
-
-      if (!sceneMarkers.has(sceneId)) {
-        sceneMarkers.set(sceneId, []);
-      }
-      sceneMarkers.get(sceneId)!.push(marker);
-    }
-
-    // Filter to only scenes with less than maxMarkers
-    const filteredMarkers: SceneMarker[] = [];
-    for (const [sceneId, count] of sceneMarkerCounts.entries()) {
-      if (count < maxMarkers) {
-        const sceneMarkersList = sceneMarkers.get(sceneId);
-        if (sceneMarkersList) {
-          filteredMarkers.push(...sceneMarkersList);
-        }
-      }
-    }
-
-    return filteredMarkers;
-  }
-
-  /**
    * Get video URL for a scene marker
    */
   getMarkerVideoUrl(marker: SceneMarker): string | undefined {

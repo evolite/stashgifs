@@ -52,7 +52,7 @@ export class ImageVideoPost extends VideoPostBase {
       }
     }
 
-    return this.createVideoPlayerContainer(aspectRatio, aspectRatioClass, this.getPosterUrl());
+    return this.createVideoPlayerContainer(aspectRatio, aspectRatioClass);
   }
 
   /**
@@ -157,7 +157,6 @@ export class ImageVideoPost extends VideoPostBase {
    */
   private async createHDVideoPlayer(playerContainer: HTMLElement, hdVideoUrl: string): Promise<void> {
     try {
-      this.hasRenderedVideo = false;
       // Respect global mute state when creating HD player
       const shouldBeMuted = this.getGlobalMuteState ? this.getGlobalMuteState() : true;
       this.player = new NativeVideoPlayer(playerContainer, hdVideoUrl, {
@@ -165,14 +164,12 @@ export class ImageVideoPost extends VideoPostBase {
         autoplay: false,
         startTime: undefined, // Start from beginning for images
         endTime: undefined,
-        aggressivePreload: false,
-        posterUrl: this.getPosterUrl(),
         showLoadingIndicator: false,
         objectFit: this.isReelMode ? 'contain' : 'cover',
       });
 
       this.isLoaded = true;
-      this.hideMediaWhenReady(this.player, playerContainer);
+      this.clearLoadErrorTimerOnPlayback(this.player);
       this.scheduleLoadErrorCheck();
       this.attachLoadErrorHandler();
       this.attachReelAutoAdvance();
@@ -232,34 +229,6 @@ export class ImageVideoPost extends VideoPostBase {
   }
 
   /**
-   * Get poster URL for the video
-   */
-  private getPosterUrl(): string | undefined {
-    // Use image thumbnail or preview as fallback
-    // Stable per-image cache key so the browser can cache the poster and
-    // re-scrolling reuses it instead of re-downloading.
-    const cacheKey = this.data.image.id;
-    const thumbnail = this.data.image.paths?.thumbnail;
-    if (thumbnail) {
-      const baseUrl = toAbsoluteUrl(thumbnail);
-      if (baseUrl) {
-        const separator = baseUrl.includes('?') ? '&' : '?';
-        return `${baseUrl}${separator}t=${cacheKey}`;
-      }
-    }
-    // Fallback to preview if thumbnail unavailable
-    const preview = this.data.image.paths?.preview;
-    if (preview) {
-      const baseUrl = toAbsoluteUrl(preview);
-      if (baseUrl) {
-        const separator = baseUrl.includes('?') ? '&' : '?';
-        return `${baseUrl}${separator}t=${cacheKey}`;
-      }
-    }
-    return undefined;
-  }
-
-  /**
    * Load the video player
    */
   loadPlayer(videoUrl: string): NativeVideoPlayer | undefined {
@@ -273,28 +242,26 @@ export class ImageVideoPost extends VideoPostBase {
     }
 
     try {
-      this.hasRenderedVideo = false;
       // For non-HD videos, don't pass startTime (allows browser to show first frame naturally)
       const finalStartTime = undefined;
-      
+
       // Respect global mute state when creating player
       // For non-HD videos, always muted (preview videos don't have audio)
       // For HD videos, respect global mute state
-      const shouldBeMuted = this.isHQMode && this.getGlobalMuteState 
-        ? this.getGlobalMuteState() 
+      const shouldBeMuted = this.isHQMode && this.getGlobalMuteState
+        ? this.getGlobalMuteState()
         : true;
       this.player = new NativeVideoPlayer(this.playerContainer, videoUrl, {
         muted: shouldBeMuted,
         autoplay: false,
         startTime: finalStartTime,
         endTime: undefined,
-        posterUrl: this.getPosterUrl(),
         showLoadingIndicator: false,
         objectFit: this.isReelMode ? 'contain' : 'cover',
       });
 
       this.isLoaded = true;
-      this.hideMediaWhenReady(this.player, this.playerContainer);
+      this.clearLoadErrorTimerOnPlayback(this.player);
 
       this.scheduleLoadErrorCheck();
       this.attachLoadErrorHandler();
@@ -373,10 +340,6 @@ export class ImageVideoPost extends VideoPostBase {
     return this.player;
   }
 
-  protected getEntityLogId(): string {
-    return this.data.image.id;
-  }
-
   protected getHQButtonOffLabel(): string {
     return 'Load HD video';
   }
@@ -399,7 +362,6 @@ export class ImageVideoPost extends VideoPostBase {
     const reloaded = this.attemptReloadIfUnloaded();
     if (reloaded) return reloaded;
 
-    this.showPosterLayer();
     return this.loadPlayer(videoUrl);
   }
 
