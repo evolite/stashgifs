@@ -334,11 +334,10 @@ export abstract class BasePost {
     // Evict oldest entries to cap memory and localStorage size
     while (this.favoritePerformerCache.size > 500) {
       const oldest = this.favoritePerformerCache.keys().next().value;
-      if (oldest !== undefined) {
-        this.favoritePerformerCache.delete(oldest);
-      } else {
+      if (oldest === undefined) {
         break;
       }
+      this.favoritePerformerCache.delete(oldest);
     }
     this.persistFavoritePerformerCache();
   }
