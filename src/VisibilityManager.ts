@@ -1336,7 +1336,10 @@ export class VisibilityManager {
       if (this.touchedPostId === postId) {
         this.touchedPostId = undefined;
       }
-      
+      if (this.lastPrimaryPostId === postId) {
+        this.lastPrimaryPostId = undefined;
+      }
+
       this.observer.unobserve(entry.element);
       if (entry.player) {
         entry.player.destroy();

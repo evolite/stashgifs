@@ -129,6 +129,8 @@ export abstract class BasePost {
   protected showAddTagButton: boolean = true;
   protected discoveryPanel?: DiscoveryPanelControl;
   private discoveryCollapseUnsubscribe?: () => void;
+  private discoveryJiggleTimerId?: ReturnType<typeof setTimeout>;
+  private readonly touchCleanups: Array<() => void> = [];
   protected reelAutoScroll: boolean = false;
   private autoAdvanceAttached: boolean = false;
   private autoAdvanceFired: boolean = false;
@@ -281,6 +283,12 @@ export abstract class BasePost {
       this.discoveryCollapseUnsubscribe();
       this.discoveryCollapseUnsubscribe = undefined;
     }
+    if (this.discoveryJiggleTimerId) {
+      clearTimeout(this.discoveryJiggleTimerId);
+      this.discoveryJiggleTimerId = undefined;
+    }
+    for (const cleanup of this.touchCleanups) cleanup();
+    this.touchCleanups.length = 0;
     this.detachReelAutoAdvance();
     this.ratingControl?.destroy();
     this.ratingControl = undefined;
@@ -1054,7 +1062,7 @@ export abstract class BasePost {
         preventDefault: true,
         stopPropagation: true,
       });
-      preventClickAfterTouch(chip);
+      this.touchCleanups.push(preventClickAfterTouch(chip));
     }
 
     chip.addEventListener('click', (e) => {
@@ -2050,8 +2058,7 @@ export abstract class BasePost {
         stopPropagation: true,
       });
       
-      // Prevent click event from firing after touch to avoid double-firing
-      preventClickAfterTouch(hashtag);
+      this.touchCleanups.push(preventClickAfterTouch(hashtag));
     }
     
     // Desktop click handler
@@ -3401,7 +3408,8 @@ export abstract class BasePost {
     btn.addEventListener('click', () => panel.toggle());
     this.discoveryCollapseUnsubscribe = panel.onCollapseChange(applyState);
 
-    setTimeout(() => {
+    this.discoveryJiggleTimerId = setTimeout(() => {
+      this.discoveryJiggleTimerId = undefined;
       btn.style.animation = 'stashgifs-jiggle 1.1s ease-in-out, stashgifs-discovery-pulse 1.1s ease-in-out';
       btn.addEventListener('animationend', () => { btn.style.animation = ''; }, { once: true });
     }, 3000);

@@ -123,6 +123,7 @@ export class FeedContainer {
   private currentPage: number = 1;
   private appendRetryCount = 0;
   private appendRetryTimeoutId?: ReturnType<typeof setTimeout>;
+  private latestLoadId = 0;
   private scrollObserver?: IntersectionObserver;
   private loadMoreTrigger?: HTMLElement;
   private postsContainer!: HTMLElement;
@@ -3934,6 +3935,11 @@ export class FeedContainer {
       this.shortFormUnfilteredOffset = 0;
       this.markerPageSize = 0;
       this.imagePageSize = 0;
+      if (this.appendRetryTimeoutId) {
+        clearTimeout(this.appendRetryTimeoutId);
+        this.appendRetryTimeoutId = undefined;
+        this.appendRetryCount = 0;
+      }
     }
   }
 
@@ -4585,13 +4591,13 @@ export class FeedContainer {
   }
 
   async loadVideos(filters?: FilterOptions, append: boolean = false, signal?: AbortSignal, force: boolean = false): Promise<void> {
-    signal = this.prepareLoadVideos(signal);
-
     if (!force && this.isLoading) {
       return;
     }
 
+    signal = this.prepareLoadVideos(signal);
     this.initializeLoadState(append);
+    const reqId = ++this.latestLoadId;
 
     try {
       const currentFilters = filters || this.currentFilters || {};
@@ -4644,7 +4650,7 @@ export class FeedContainer {
       // Store currentFilters (with sortSeed) back to this.currentFilters for pagination persistence
       this.currentFilters = currentFilters;
 
-      if (this.checkAbortAndCleanup(signal)) {
+      if (reqId !== this.latestLoadId || this.checkAbortAndCleanup(signal)) {
         return;
       }
 

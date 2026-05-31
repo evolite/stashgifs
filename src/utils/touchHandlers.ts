@@ -230,7 +230,7 @@ export function setupTouchHandlers(
  * Prevent click event from firing after touch (to avoid double-firing)
  * Call this in touchend handler to prevent subsequent click event
  */
-export function preventClickAfterTouch(element: HTMLElement, timeout: number = 300): void {
+export function preventClickAfterTouch(element: HTMLElement, timeout: number = 300): () => void {
   let clickPrevented = false;
 
   const preventClick = (e: MouseEvent) => {
@@ -251,14 +251,9 @@ export function preventClickAfterTouch(element: HTMLElement, timeout: number = 3
 
   element.addEventListener('touchend', handleTouchEnd, { passive: true });
 
-  // Cleanup on element removal
-  const observer = new MutationObserver(() => {
-    if (!element.isConnected) {
-      element.removeEventListener('touchend', handleTouchEnd);
-      element.removeEventListener('click', preventClick, true);
-      observer.disconnect();
-    }
-  });
-  observer.observe(document.body, { childList: true, subtree: true });
+  return () => {
+    element.removeEventListener('touchend', handleTouchEnd);
+    element.removeEventListener('click', preventClick, true);
+  };
 }
 

@@ -39,6 +39,7 @@ export class VideoPost extends VideoPostBase {
   private autocompleteDebounceTimer?: ReturnType<typeof setTimeout>;
   private tagSearchLoadingTimer?: ReturnType<typeof setTimeout>;
   private retryLoadDelayId?: ReturnType<typeof setTimeout>;
+  private seekResetTimerId?: ReturnType<typeof setTimeout>;
   private isTagSearchLoading: boolean = false;
   private hasCreatedMarker: boolean = false; // Track if marker has been created for this scene
 
@@ -741,6 +742,10 @@ export class VideoPost extends VideoPostBase {
     this.clearLoadErrorCheckTimeout();
     this.detachLoadErrorHandler();
     this.detachReelAutoAdvance();
+    if (this.seekResetTimerId) {
+      clearTimeout(this.seekResetTimerId);
+      this.seekResetTimerId = undefined;
+    }
 
     // Clear the state change listener first to prevent it from firing after destroy
     // This is critical - the old player's listener might try to update visibility manager
@@ -1369,11 +1374,12 @@ export class VideoPost extends VideoPostBase {
       if (isMobileDevice()) {
         const videoElement = player.getVideoElement();
         const reSeek = () => {
+          this.seekResetTimerId = undefined;
           if (Math.abs(videoElement.currentTime - clamped) > 0.5) {
             player.seekTo(clamped);
           }
         };
-        setTimeout(reSeek, 100);
+        this.seekResetTimerId = setTimeout(reSeek, 100);
         videoElement.addEventListener('playing', () => reSeek(), { once: true });
       }
     } catch (error) {
@@ -2300,6 +2306,10 @@ export class VideoPost extends VideoPostBase {
     if (this.retryLoadDelayId) {
       clearTimeout(this.retryLoadDelayId);
       this.retryLoadDelayId = undefined;
+    }
+    if (this.seekResetTimerId) {
+      clearTimeout(this.seekResetTimerId);
+      this.seekResetTimerId = undefined;
     }
 
     this.clearLoadErrorCheckTimeout();
