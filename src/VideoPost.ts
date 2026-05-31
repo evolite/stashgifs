@@ -747,6 +747,9 @@ export class VideoPost extends VideoPostBase {
     
     // Unload first to release video buffers immediately
     if (this.player.getIsUnloaded()) {
+      this.player.destroy();
+      this.player = undefined;
+      this.isLoaded = false;
       return;
     }
     this.player.unload();
@@ -2284,6 +2287,7 @@ export class VideoPost extends VideoPostBase {
    * Destroy the post and clean up all resources
    */
   destroy(): void {
+    this.stopWatchTracking();
     this.closeMarkerDialog();
 
     // Clear any pending retry

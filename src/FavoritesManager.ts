@@ -10,7 +10,7 @@ const FAVORITE_TAG_NAME = 'StashGifs Favorite';
 
 export class FavoritesManager {
   private readonly api: StashAPI;
-  private favoriteTagId: string | null = null;
+  private favoriteTagId: string | null | undefined = undefined;
   private favoriteTagPromise: Promise<string | null> | null = null;
 
   constructor(api: StashAPI) {
@@ -21,8 +21,8 @@ export class FavoritesManager {
    * Get or create the favorite tag
    */
   async getFavoriteTagId(): Promise<string | null> {
-    // If we already have it cached, return it
-    if (this.favoriteTagId) {
+    // If we already have it cached (including a null failure result), return it
+    if (this.favoriteTagId !== undefined) {
       return this.favoriteTagId;
     }
 

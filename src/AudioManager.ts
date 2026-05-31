@@ -34,6 +34,7 @@ export class AudioManager {
   private readonly logger?: (event: string, payload?: Record<string, unknown>) => void;
   private readonly getHoveredPostId?: () => string | undefined;
   private readonly getIsReelMode?: () => boolean;
+  private readonly getViewportRect?: () => { top: number; left: number; width: number; height: number };
 
   constructor(
     entries: Map<string, VisibilityEntry>,
@@ -42,6 +43,7 @@ export class AudioManager {
       logger?: (event: string, payload?: Record<string, unknown>) => void;
       getHoveredPostId?: () => string | undefined;
       getIsReelMode?: () => boolean;
+      getViewportRect?: () => { top: number; left: number; width: number; height: number };
     }
   ) {
     this.entries = entries;
@@ -49,6 +51,7 @@ export class AudioManager {
     this.logger = options?.logger;
     this.getHoveredPostId = options?.getHoveredPostId;
     this.getIsReelMode = options?.getIsReelMode;
+    this.getViewportRect = options?.getViewportRect;
   }
 
   /**
@@ -170,8 +173,11 @@ export class AudioManager {
   }
 
   private getCenteredPlayingVideo(): string | undefined {
-    const viewportCenterY = globalThis.window.innerHeight / 2;
-    const viewportCenterX = globalThis.window.innerWidth / 2;
+    const viewport = this.getViewportRect
+      ? this.getViewportRect()
+      : { top: 0, left: 0, width: globalThis.window.innerWidth, height: globalThis.window.innerHeight };
+    const viewportCenterY = viewport.top + viewport.height / 2;
+    const viewportCenterX = viewport.left + viewport.width / 2;
 
     let bestId: string | undefined;
     let bestScore = Number.POSITIVE_INFINITY;

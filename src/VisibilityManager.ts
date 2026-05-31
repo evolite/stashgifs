@@ -15,6 +15,13 @@ interface HoverHandlers {
   touchEndTimeout?: ReturnType<typeof setTimeout>;
 }
 
+interface PlayerListeners {
+  element: HTMLVideoElement;
+  handlePlay: () => void;
+  handlePause: () => void;
+  handlePlaying: () => void;
+}
+
 interface VisibilityEntry {
   element: HTMLElement;
   player?: NativeVideoPlayer;
@@ -23,6 +30,7 @@ interface VisibilityEntry {
   pendingVisibilityPlay: boolean;
   isUnloaded: boolean;
   hoverHandlers?: HoverHandlers;
+  playerListeners?: PlayerListeners;
 }
 
 type VideoState = 'loading' | 'ready' | 'playing' | 'paused' | 'failed';
@@ -46,6 +54,7 @@ export class VisibilityManager {
   private touchedPostId?: string; // Track which post is currently touched (separate from hover for mobile)
   private isHDMode: boolean = false; // Track HD mode for more aggressive unloading
   private readonly manualPauseLocks: Set<string> = new Set();
+  private readonly vmInitiatedPlays: Set<string> = new Set();
   private observerRoot: Element | null;
   private scrollRoot?: HTMLElement | null;
   // Note: manuallyStartedVideos tracking moved to AudioManager for single source of truth
@@ -103,6 +112,7 @@ export class VisibilityManager {
       logger: this.logger,
       getHoveredPostId: () => this.hoveredPostId,
       getIsReelMode: () => this.options.isReelMode ?? false,
+      getViewportRect: () => this.getViewportRect(),
     });
 
     this.observerRoot = this.options.root ?? null;
@@ -383,10 +393,11 @@ export class VisibilityManager {
         this.videoStates.set(postId, 'playing');
         this.debugLog('state-playing', { postId });
         this.manualPauseLocks.delete(postId);
-        // Track if this was a manual play (not from hover)
-        // If video is playing but wasn't triggered by hover, mark as manual
-        if (!entry.pendingVisibilityPlay && this.hoveredPostId !== postId) {
-          // Use AudioManager's tracking for single source of truth
+        // Only mark as manually started if this play was NOT initiated by VisibilityManager
+        // (vmInitiatedPlays tracks every play we started; external plays — e.g. user clicking
+        // the player's own play button — won't be in the set and are treated as manual).
+        // Hover-triggered plays are excluded by the hoveredPostId guard.
+        if (!this.vmInitiatedPlays.delete(postId) && this.hoveredPostId !== postId) {
           this.audioManager.markManuallyStarted(postId);
         }
       } else {
@@ -394,11 +405,10 @@ export class VisibilityManager {
         // Remove from manually started set when paused - use AudioManager
         this.audioManager.unmarkManuallyStarted(postId);
         this.debugLog('state-paused', { postId });
-        if (!this.isHDMode && entry.isVisible && !entry.player?.isManuallyPaused()) {
-          this.manualPauseLocks.add(postId);
-        }
-        
-        // Manual video pause handled by normal autoplay logic
+        // Manual-pause lock (blocks autoplay restart) is only needed when the user
+        // explicitly paused; isManuallyPaused() in canPlayback() already handles that.
+        // Adding a lock for non-manual pauses (network stall, video end) was preventing
+        // autoplay from recovering after browser interruptions.
       }
     });
 
@@ -1109,11 +1119,16 @@ export class VisibilityManager {
 
     const player = entry.player;
 
+    // Mark this play as VM-initiated so the state-change listener won't mis-classify
+    // it as a manual play (external plays won't be in this set).
+    this.vmInitiatedPlays.add(postId);
+
     const perform = async (): Promise<void> => {
       try {
         await this.waitForPlayerReadyBeforePlay(postId, player, entry);
         await this.executePlayback(postId, player, entry, origin, attempt);
       } catch (error: unknown) {
+        this.vmInitiatedPlays.delete(postId);
         this.handlePlaybackError(postId, entry, error, attempt);
       }
     };
@@ -1310,9 +1325,10 @@ export class VisibilityManager {
     if (entry) {
       this.cancelAllTimers(postId);
       
-      // Remove hover handlers
+      // Remove hover and player event handlers
       this.removeHoverHandlers(entry);
-      
+      this.removePlayerEventListeners(entry);
+
       // Clear hover state if this was the hovered post
       if (this.hoveredPostId === postId) {
         this.hoveredPostId = undefined;
@@ -1328,6 +1344,7 @@ export class VisibilityManager {
       this.entries.delete(postId);
       this.videoStates.delete(postId);
       this.visibilityStability.delete(postId);
+      this.vmInitiatedPlays.delete(postId);
     }
   }
 
@@ -1376,9 +1393,10 @@ export class VisibilityManager {
       this.cancelAllTimers(postId);
     }
     
-    // Remove all hover handlers
+    // Remove all hover and player event handlers
     for (const entry of this.entries.values()) {
       this.removeHoverHandlers(entry);
+      this.removePlayerEventListeners(entry);
     }
     
     // Clean up scroll velocity tracking
@@ -1397,7 +1415,8 @@ export class VisibilityManager {
     this.videoStates.clear();
     this.visibilityStability.clear();
     this.timers.clear();
-    this.rectCache.clear(); // Clear rect cache
+    this.rectCache.clear();
+    this.vmInitiatedPlays.clear();
     this.hoveredPostId = undefined;
     this.touchedPostId = undefined;
   }
@@ -1959,15 +1978,31 @@ export class VisibilityManager {
   }
 
   /**
+   * Remove stored play/pause/playing listeners from a post's video element.
+   */
+  private removePlayerEventListeners(entry: VisibilityEntry): void {
+    const pl = entry.playerListeners;
+    if (!pl) return;
+    pl.element.removeEventListener('play', pl.handlePlay);
+    pl.element.removeEventListener('pause', pl.handlePause);
+    pl.element.removeEventListener('playing', pl.handlePlaying);
+    entry.playerListeners = undefined;
+  }
+
+  /**
    * Setup play/pause event listeners for AudioManager
    */
   private setupPlayerEventListeners(postId: string, player: NativeVideoPlayer): void {
+    const entry = this.entries.get(postId);
+    if (!entry) return;
+
+    // Remove any listeners from a previous player registration (e.g. HQ upgrade)
+    this.removePlayerEventListeners(entry);
+
     try {
       const videoElement = player.getVideoElement();
-      
+
       const handlePlay = () => {
-        // Check if this was a manual play (user clicked/tapped)
-        // Check if manual via AudioManager
         const isManual = this.audioManager.isManuallyStarted(postId);
         this.audioManager.onVideoPlay(postId, isManual);
       };
@@ -1976,36 +2011,26 @@ export class VisibilityManager {
         this.audioManager.onVideoPause(postId);
       };
 
-      // CRITICAL: Also listen for 'playing' event to ensure audio works on mobile
-      // The 'playing' event fires when video actually starts rendering frames
-      // On mobile, AudioManager needs to check isPlaying() when video is actually playing,
-      // not just when play() is called, because isPlaying() might return false initially
+      // 'playing' fires when frames actually start rendering — important on mobile
+      // where isPlaying() may still return false immediately after play() resolves.
       const handlePlaying = () => {
-        // Re-apply mute state when video actually starts playing
-        // This ensures isPlaying() returns true and AudioManager can properly unmute on mobile
         this.audioManager.applyMuteStateToAll();
-        
-        // Re-request audio focus if video is playing but doesn't have it
-        // This catches cases where the initial request failed due to timing
         const currentOwner = this.audioManager.getCurrentAudioOwner();
         if (currentOwner !== postId && player.isPlaying()) {
-          // Determine priority: manual > center
           const isManual = this.audioManager.isManuallyStarted(postId);
           const priority = isManual ? AudioPriority.MANUAL : AudioPriority.CENTER;
           this.audioManager.requestAudioFocus(postId, priority);
-          // Re-apply mute state after requesting focus
           this.audioManager.applyMuteStateToAll();
         }
       };
-      
+
       videoElement.addEventListener('play', handlePlay);
       videoElement.addEventListener('pause', handlePause);
       videoElement.addEventListener('playing', handlePlaying);
-      
-      // Store handlers for cleanup (we'll need to track these)
-      // For now, we'll rely on the video element being removed when player is destroyed
+
+      entry.playerListeners = { element: videoElement, handlePlay, handlePause, handlePlaying };
     } catch {
-      // Player doesn't have video element yet, will be handled when ready
+      // Player doesn't have a video element yet; will be set up when ready
     }
   }
 }
