@@ -147,6 +147,10 @@ export class FeedContainer {
   private lastScrollTop: number = 0;
   private lastScrollTime: number = 0;
   private scrollVelocity: number = 0;
+  private scrollRafPending: boolean = false;
+  private videoUnloadTimer?: ReturnType<typeof setTimeout>;
+  private seenSetCache?: { ids: string[]; set: Set<string> };
+  private seenFlushTimer?: ReturnType<typeof setTimeout>;
   private cleanupScrollTimeout?: ReturnType<typeof setTimeout>;
   private scrollHandler?: () => void;
   private scrollEventTarget?: Window | HTMLElement;
@@ -987,31 +991,56 @@ export class FeedContainer {
     return images.filter((image) => !this.shouldExcludeTags(image.tags));
   }
 
+  private getSeenCache(): { ids: string[]; set: Set<string> } {
+    if (this.seenSetCache) return this.seenSetCache;
+    try {
+      const raw = localStorage.getItem(FeedContainer.SEEN_IDS_KEY);
+      const ids: string[] = raw ? JSON.parse(raw) as string[] : [];
+      this.seenSetCache = { ids, set: new Set(ids) };
+    } catch {
+      this.seenSetCache = { ids: [], set: new Set() };
+    }
+    return this.seenSetCache;
+  }
+
   private getSeenSet(): Set<string> {
     const maxSeen = this.settings.seenHistorySize ?? 500;
     if (maxSeen === 0) return new Set();
+    return this.getSeenCache().set;
+  }
+
+  private flushSeenSet(): void {
+    if (!this.seenSetCache) return;
     try {
-      const raw = localStorage.getItem(FeedContainer.SEEN_IDS_KEY);
-      return raw ? new Set(JSON.parse(raw) as string[]) : new Set();
+      localStorage.setItem(FeedContainer.SEEN_IDS_KEY, JSON.stringify(this.seenSetCache.ids));
     } catch {
-      return new Set();
+      // ignore localStorage errors
     }
   }
 
   private markItemSeen(id: string): void {
     const maxSeen = this.settings.seenHistorySize ?? 500;
     if (maxSeen === 0) return;
-    try {
-      const raw = localStorage.getItem(FeedContainer.SEEN_IDS_KEY);
-      const ids: string[] = raw ? JSON.parse(raw) as string[] : [];
-      const idx = ids.indexOf(id);
-      if (idx !== -1) ids.splice(idx, 1);
-      ids.push(id);
-      if (ids.length > maxSeen) ids.splice(0, ids.length - maxSeen);
-      localStorage.setItem(FeedContainer.SEEN_IDS_KEY, JSON.stringify(ids));
-    } catch {
-      // ignore localStorage errors
+    const cache = this.getSeenCache();
+    if (!cache.set.has(id)) {
+      cache.ids.push(id);
+      cache.set.add(id);
+    } else {
+      // Move to end (most recent)
+      const idx = cache.ids.indexOf(id);
+      if (idx !== -1) cache.ids.splice(idx, 1);
+      cache.ids.push(id);
     }
+    if (cache.ids.length > maxSeen) {
+      const removed = cache.ids.splice(0, cache.ids.length - maxSeen);
+      for (const r of removed) cache.set.delete(r);
+    }
+    // Debounce the write — flush once after the render batch settles
+    if (this.seenFlushTimer) clearTimeout(this.seenFlushTimer);
+    this.seenFlushTimer = setTimeout(() => {
+      this.seenFlushTimer = undefined;
+      this.flushSeenSet();
+    }, 500);
   }
 
   private deferAutoAdvance(retries = 5): void {
@@ -1068,14 +1097,10 @@ export class FeedContainer {
     
     // Update AudioManager
     if (this.visibilityManager) {
-      const audioManager = (this.visibilityManager as any).audioManager;
-      if (audioManager) {
-        audioManager.setGlobalMuteState(isMuted);
-        // Also update all VideoPost mute buttons
-        this.updateAllMuteButtons();
-      }
+      this.visibilityManager.getAudioManager().setGlobalMuteState(isMuted);
+      this.updateAllMuteButtons();
     }
-    
+
     // AudioManager will automatically handle audio focus when global mute state changes
   }
 
@@ -1105,10 +1130,7 @@ export class FeedContainer {
     }
     
     // Also update AudioManager to ensure consistency
-    const audioManager = (this.visibilityManager as any).audioManager;
-    if (audioManager) {
-      audioManager.setGlobalMuteState(this.globalMuteState);
-    }
+    this.visibilityManager?.getAudioManager().setGlobalMuteState(this.globalMuteState);
   }
 
   /**
@@ -1154,10 +1176,7 @@ export class FeedContainer {
     this.visibilityManager.setHDMode(this.useHDMode);
     
     // Initialize AudioManager with the loaded global mute state
-    const audioManager = (this.visibilityManager as any).audioManager;
-    if (audioManager) {
-      audioManager.setGlobalMuteState(this.globalMuteState);
-    }
+    this.visibilityManager.getAudioManager().setGlobalMuteState(this.globalMuteState);
 
     // Apply global mute state to all existing players and update mute buttons
     // This ensures the loaded state is applied to any posts that were created before managers were initialized
@@ -3473,8 +3492,6 @@ export class FeedContainer {
     } else {
       postsContainer.appendChild(fragment);
     }
-
-    this.cleanupDistantPosts();
   }
 
   /**
@@ -3915,9 +3932,6 @@ export class FeedContainer {
     if (!append) {
       // Clear all cached content when starting a new search/filter
       this.clearPosts();
-      if (this.postsContainer) {
-        this.postsContainer.innerHTML = '';
-      }
       this.reelPlaybackStarted = false;
       this.markers = [];
       this.images = [];
@@ -4107,13 +4121,6 @@ export class FeedContainer {
   /**
    * Defer setting isLoading to false to prevent rapid successive loads
    */
-  private deferLoadingComplete(): void {
-    requestAnimationFrame(() => {
-      requestAnimationFrame(() => {
-        this.isLoading = false;
-      });
-    });
-  }
 
 
 
@@ -4121,14 +4128,9 @@ export class FeedContainer {
    * Refresh the entire feed by clearing all posts and reloading from the beginning
    */
   async refreshFeed(): Promise<void> {
-    // Clear all existing posts
+    // Clear all existing posts and DOM
     this.clearPosts();
-    
-    // Clear posts container
-    if (this.postsContainer) {
-      this.postsContainer.innerHTML = '';
-    }
-    
+
     // Recreate load more trigger
     if (this.loadMoreTrigger && this.postsContainer) {
       this.postsContainer.appendChild(this.loadMoreTrigger);
@@ -4587,6 +4589,7 @@ export class FeedContainer {
       return;
     }
 
+    this.cleanupDistantPosts();
     this.finalizeLoadState(append, page);
   }
 
@@ -4702,7 +4705,7 @@ export class FeedContainer {
     } catch (error: unknown) {
       this.handleLoadError(error, append);
     } finally {
-      this.deferLoadingComplete();
+      this.isLoading = false;
     }
   }
 
@@ -5797,13 +5800,9 @@ export class FeedContainer {
     this.reelPlaybackStarted = false;
     this.backgroundPreloadPriorityQueue = [];
     this.currentlyPreloadingCount = 0;
-    // Don't clear posts container - let browser handle cleanup naturally
-    // if (this.postsContainer) {
-    //   // Clear posts efficiently
-    //   while (this.postsContainer.firstChild) {
-    //     this.postsContainer.removeChild(this.postsContainer.firstChild);
-    //   }
-    // }
+    if (this.postsContainer) {
+      this.postsContainer.innerHTML = '';
+    }
     
     // Clean up all load observers
     this.cleanupLoadObservers();
@@ -6736,13 +6735,15 @@ export class FeedContainer {
   }
 
   /**
-   * Handle video unloading during scrolling
+   * Debounce aggressiveVideoUnload so it fires once after scrolling settles,
+   * not on every scroll event.
    */
-  private handleScrollVideoUnloading(timeDelta: number): void {
-    const unloadInterval = 500;
-    if (timeDelta > unloadInterval) {
+  private scheduleVideoUnload(): void {
+    if (this.videoUnloadTimer) clearTimeout(this.videoUnloadTimer);
+    this.videoUnloadTimer = setTimeout(() => {
+      this.videoUnloadTimer = undefined;
       this.aggressiveVideoUnload();
-    }
+    }, 300);
   }
 
   /**
@@ -6874,13 +6875,14 @@ export class FeedContainer {
     this.lastScrollTop = this.getViewportTop();
     this.lastScrollTime = Date.now();
 
-    const handleScroll = () => {
+    const processScroll = () => {
+      this.scrollRafPending = false;
       const now = Date.now();
       const currentScrollY = this.getViewportTop();
       const timeDelta = now - this.lastScrollTime;
 
       this.updateScrollVelocity(currentScrollY, timeDelta);
-      this.handleScrollVideoUnloading(timeDelta);
+      this.scheduleVideoUnload();
       this.handleFastScrolling();
       this.cancelOutOfViewPreloads();
 
@@ -6891,6 +6893,12 @@ export class FeedContainer {
       }
 
       this.scheduleCleanupAfterScroll();
+    };
+
+    const handleScroll = () => {
+      if (this.scrollRafPending) return;
+      this.scrollRafPending = true;
+      requestAnimationFrame(processScroll);
     };
 
     // Use passive listener for better performance
@@ -6904,6 +6912,9 @@ export class FeedContainer {
     this.scrollEventTarget.addEventListener('scroll', handleScroll, { passive: true });
 
     // Listen for page visibility changes to pause/resume preloading
+    if (this.visibilityChangeHandler) {
+      document.removeEventListener('visibilitychange', this.visibilityChangeHandler);
+    }
     const handleVisibilityChange = () => this.handleVisibilityChange();
     this.visibilityChangeHandler = handleVisibilityChange;
     document.addEventListener('visibilitychange', handleVisibilityChange);
@@ -7070,11 +7081,9 @@ export class FeedContainer {
     }
   }
 
-  destroy(): void {
-    this.stopBackgroundPreloading();
-    posterPreloader.cancelInflight();
-
+  private teardownListeners(): void {
     this.removeMobileAutoplayUnlockListeners();
+    this.removeAutoplayUnlockHandlers();
 
     if (this.scrollHandler && this.scrollEventTarget) {
       this.scrollEventTarget.removeEventListener('scroll', this.scrollHandler);
@@ -7085,9 +7094,6 @@ export class FeedContainer {
       document.removeEventListener('visibilitychange', this.visibilityChangeHandler);
       this.visibilityChangeHandler = undefined;
     }
-
-    this.removeAutoplayUnlockHandlers();
-
     if (this.suggestionsClickOutsideHandler) {
       document.removeEventListener('click', this.suggestionsClickOutsideHandler);
       this.suggestionsClickOutsideHandler = undefined;
@@ -7097,10 +7103,22 @@ export class FeedContainer {
       this.suggestionsTouchOutsideHandler = undefined;
     }
 
+    this.cleanupCardSnapping();
+
     if (this.cleanupScrollTimeout) {
       clearTimeout(this.cleanupScrollTimeout);
       this.cleanupScrollTimeout = undefined;
     }
+    if (this.videoUnloadTimer) {
+      clearTimeout(this.videoUnloadTimer);
+      this.videoUnloadTimer = undefined;
+    }
+    if (this.seenFlushTimer) {
+      clearTimeout(this.seenFlushTimer);
+      this.flushSeenSet();
+      this.seenFlushTimer = undefined;
+    }
+    this.seenSetCache = undefined;
     if (this.snapThrottleTimeout) {
       clearTimeout(this.snapThrottleTimeout);
       this.snapThrottleTimeout = undefined;
@@ -7122,13 +7140,17 @@ export class FeedContainer {
       this.appendRetryTimeoutId = undefined;
     }
 
-    this.cleanupCardSnapping();
     this.cleanupLoadObservers();
     if (this.scrollObserver) {
       this.scrollObserver.disconnect();
       this.scrollObserver = undefined;
     }
+  }
 
+  destroy(): void {
+    this.stopBackgroundPreloading();
+    posterPreloader.cancelInflight();
+    this.teardownListeners();
     this.clearPosts();
     this.discoveryManager?.destroy();
     this.discoveryPanel?.destroy();
@@ -7243,21 +7265,7 @@ export class FeedContainer {
    * Extract post ID from a card element
    */
   private getPostIdFromCard(card: HTMLElement): string | null {
-    // Try direct dataset first
-    if (card.dataset.postId) {
-      return card.dataset.postId;
-    }
-    
-    // Traverse up the DOM to find the post container
-    let current: HTMLElement | null = card;
-    while (current) {
-      if (current.dataset.postId) {
-        return current.dataset.postId;
-      }
-      current = current.parentElement;
-    }
-    
-    return null;
+    return card.dataset.postId ?? null;
   }
 
   private ensureReelInitialCardLoaded(): void {
@@ -7339,75 +7347,28 @@ export class FeedContainer {
     }
 
     // Trigger playback via VisibilityManager
-    // Access the private entries map and requestPlaybackIfReady method
-    const visibilityManager = this.visibilityManager as any;
-    const entry = visibilityManager.entries?.get(postId);
-    if (!entry || !visibilityManager.requestPlaybackIfReady) {
-      return;
-    }
-
-    // Force update visibility state - check if element is actually in viewport
-    // IntersectionObserver might not have fired yet after snapping
     const container = post.getContainer();
     const rect = container.getBoundingClientRect();
     const viewport = this.getViewportRect();
-    const isActuallyVisible = rect.bottom > viewport.top && 
-                              rect.top < viewport.top + viewport.height && 
-                              rect.right > viewport.left && 
+    const isActuallyVisible = rect.bottom > viewport.top &&
+                              rect.top < viewport.top + viewport.height &&
+                              rect.right > viewport.left &&
                               rect.left < viewport.left + viewport.width;
 
-    // If element is actually visible but entry.isVisible is false, force update it
-    if (isActuallyVisible && !entry.isVisible) {
-      entry.isVisible = true;
-      // Also trigger visibility change handlers if they exist
-      if (visibilityManager.audioManager) {
-        visibilityManager.audioManager.onVisibilityChange(postId, true);
-      }
-    }
-
-    // Mark as manually started BEFORE triggering playback
-    // This ensures it gets MANUAL priority and audio focus when playback succeeds
-    if (visibilityManager.audioManager) {
-      visibilityManager.audioManager.markManuallyStarted(postId);
-    }
-
-    // Set as hovered temporarily to give it highest priority (HOVER priority)
-    // This ensures snapped card gets audio even if other videos are playing
-    visibilityManager.hoveredPostId = postId;
-    
-    // Also set in AudioManager for consistency
-    if (visibilityManager.audioManager) {
-      visibilityManager.audioManager.hoveredPostId = postId;
-    }
-
-    // Now trigger playback
-    if (entry.isVisible) {
-      visibilityManager.requestPlaybackIfReady(postId, entry, 'snap');
-    }
+    const triggered = this.visibilityManager.triggerSnapPlayback(postId, isActuallyVisible);
+    if (!triggered) return;
 
     // Wait for playback to start, then ensure audio is granted
-    // Check periodically if video started playing
     const checkPlayback = async (attempts: number = 0): Promise<void> => {
-      if (attempts > 10) return; // Give up after 1 second (10 * 100ms)
-      
+      if (attempts > 10) return;
       if (player.isPlaying()) {
-        // Video is playing - ensure audio focus is granted
-        if (visibilityManager.audioManager) {
-          // Request with HOVER priority to ensure it gets audio
-          visibilityManager.audioManager.requestAudioFocus(postId, AudioPriority.HOVER);
-          visibilityManager.audioManager.applyMuteStateToAll();
-        }
+        this.visibilityManager!.grantSnapAudioFocus(postId);
       } else {
-        // Wait a bit and check again
         await new Promise((r) => setTimeout(r, 100));
         await checkPlayback(attempts + 1);
       }
     };
-    
-    // Start checking for playback
-    checkPlayback().catch(() => {
-      // Ignore errors
-    });
+    checkPlayback().catch(() => {});
   }
 
   /**
@@ -7440,18 +7401,7 @@ export class FeedContainer {
       return;
     }
 
-    // Get AudioManager from VisibilityManager
-    const audioManager = (this.visibilityManager as any).audioManager as AudioManager | undefined;
-    if (!audioManager) {
-      return; // AudioManager not available
-    }
-
-    // Request audio focus with HOVER priority (highest) to ensure snapped card gets audio
-    // This ensures it takes priority over other videos
-    audioManager.requestAudioFocus(postId, AudioPriority.HOVER);
-    
-    // Apply mute state to ensure the snapped card gets unmuted
-    audioManager.applyMuteStateToAll();
+    this.visibilityManager?.grantSnapAudioFocus(postId);
   }
 
   /**
@@ -7875,48 +7825,22 @@ export class FeedContainer {
    * Cleanup
    */
   cleanup(): void {
-    // Stop background preloading
     this.stopBackgroundPreloading();
-    
-    // Clean up visibility manager
-    this.visibilityManager.cleanup();
-    
-    // Clear all posts (which will destroy players and clean up observers)
-    this.clearPosts();
-    
-    
-    // Clear skeleton loaders
-    this.hideSkeletonLoaders();
-    
-    // Cancel all pending requests
     this.cancelAllPendingRequests();
+    this.stopLoadingVideos();
+    this.visibilityManager.cleanup();
+    this.teardownListeners();
+    this.clearPosts();
+    this.hideSkeletonLoaders();
 
-    // Clear mobile load timeout
     const debugThis = this as FeedContainer & FeedContainerDebug;
     if (debugThis._mobileLoadTimeout) {
       clearTimeout(debugThis._mobileLoadTimeout);
       debugThis._mobileLoadTimeout = null;
     }
-    
-    // Clean up all load observers
-    this.cleanupLoadObservers();
-    
-    // Stop all loading videos to free memory
-    this.stopLoadingVideos();
-    
-    // Clean up scroll observer
-    if (this.scrollObserver) {
-      this.scrollObserver.disconnect();
-      this.scrollObserver = undefined;
-    }
+
     if (this.loadMoreTrigger) {
       this.loadMoreTrigger = undefined;
-    }
-    
-    // Clean up placeholder animation
-    if (this.placeholderAnimationInterval) {
-      clearInterval(this.placeholderAnimationInterval);
-      this.placeholderAnimationInterval = undefined;
     }
   }
 }

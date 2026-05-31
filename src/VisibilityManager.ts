@@ -26,7 +26,7 @@ interface VisibilityEntry {
 }
 
 type VideoState = 'loading' | 'ready' | 'playing' | 'paused' | 'failed';
-type PlaybackOrigin = 'observer' | 'ready' | 'register' | 'retry';
+type PlaybackOrigin = 'observer' | 'ready' | 'register' | 'retry' | 'snap';
 
 export class VisibilityManager {
   private observer: IntersectionObserver;
@@ -581,6 +581,57 @@ export class VisibilityManager {
    */
   setHDMode(enabled: boolean): void {
     this.isHDMode = !!enabled;
+  }
+
+  getAudioManager(): AudioManager {
+    return this.audioManager;
+  }
+
+  forceVisible(postId: string): void {
+    const entry = this.entries.get(postId);
+    if (entry && !entry.isVisible) {
+      entry.isVisible = true;
+      this.audioManager.onVisibilityChange(postId, true);
+    }
+  }
+
+  setHoveredPostId(postId: string | undefined): void {
+    this.hoveredPostId = postId;
+    if (postId !== undefined) {
+      this.audioManager.onHoverEnter(postId);
+    }
+  }
+
+  /**
+   * Trigger snap playback for a snapped card: force visibility, mark manually
+   * started, elevate to hover priority, and request playback.
+   * Returns true if an entry was found and playback was attempted.
+   */
+  triggerSnapPlayback(postId: string, isActuallyVisible: boolean): boolean {
+    const entry = this.entries.get(postId);
+    if (!entry) return false;
+
+    if (isActuallyVisible && !entry.isVisible) {
+      entry.isVisible = true;
+      this.audioManager.onVisibilityChange(postId, true);
+    }
+
+    this.audioManager.markManuallyStarted(postId);
+    this.hoveredPostId = postId;
+    this.audioManager.onHoverEnter(postId);
+
+    if (entry.isVisible) {
+      this.requestPlaybackIfReady(postId, entry, 'snap');
+    }
+    return true;
+  }
+
+  /**
+   * Grant audio focus to a post at HOVER priority and apply mute state.
+   */
+  grantSnapAudioFocus(postId: string): void {
+    this.audioManager.requestAudioFocus(postId, AudioPriority.HOVER);
+    this.audioManager.applyMuteStateToAll();
   }
 
   /**
