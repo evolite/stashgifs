@@ -5,6 +5,22 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.7.1] - 2026-05-31
+
+### Bug Fixes
+
+- Hide stale error banner when new load starts or content renders
+- Resolve SonarQube violations from refactor
+- Resolve 8 Opus-reviewed correctness issues
+- Resolve 8 state/memory/cleanup issues from second Opus review
+- Resolve memory leaks, race conditions, and stale state from Opus audit
+- Replace negated condition with early-break in performer cache eviction
+
+### Refactoring
+
+- Address Opus code review findings in FeedContainer
+- Address Opus LOW findings in FeedContainer
+
 ## [6.7.0] - 2026-05-30
 
 ### Bug Fixes
