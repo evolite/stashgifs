@@ -3919,6 +3919,7 @@ export class FeedContainer {
    */
   private initializeLoadState(append: boolean): void {
     this.isLoading = true;
+    this.hideError();
     if (!append) {
       // Clear all cached content when starting a new search/filter
       this.clearPosts();
@@ -4557,6 +4558,8 @@ export class FeedContainer {
       this.handleEmptyMarkers(append);
       return;
     }
+
+    this.hideError();
 
     if (shouldLoadMarkers && allMarkers.length > 0) {
       this.prefetchPosters(allMarkers, append, currentFilters);
@@ -7687,6 +7690,11 @@ export class FeedContainer {
     }
     error.textContent = message;
     error.style.display = 'block';
+  }
+
+  private hideError(): void {
+    const error = this.container.querySelector<HTMLElement>('.feed-error');
+    if (error) error.style.display = 'none';
   }
 
   /**
