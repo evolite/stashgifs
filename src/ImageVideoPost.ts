@@ -132,19 +132,16 @@ export class ImageVideoPost extends VideoPostBase {
     const { playerContainer, wasPlaying } = this.capturePlayerState();
 
     // Unload and destroy current player
-    await this.destroyCurrentPlayer();
+    this.destroyCurrentPlayer();
 
     // Clean up any leftover player elements
     this.cleanupPlayerElements(playerContainer);
-
-    // Small delay to ensure DOM is cleared
-    await new Promise(resolve => setTimeout(resolve, 50));
 
     // Create new player with full HD video
     await this.createHDVideoPlayer(playerContainer, hdVideoUrl);
 
     // Register with visibility manager if available
-    await this.registerUpgradedPlayerWithVisibilityManager();
+    this.registerUpgradedPlayerWithVisibilityManager();
 
     // If video was playing, resume playback
     if (wasPlaying) {
@@ -186,8 +183,7 @@ export class ImageVideoPost extends VideoPostBase {
   /**
    * Register player with visibility manager after upgrade
    */
-  private async registerUpgradedPlayerWithVisibilityManager(): Promise<void> {
-    await new Promise(resolve => setTimeout(resolve, 50));
+  private registerUpgradedPlayerWithVisibilityManager(): void {
     if (this.visibilityManager && this.data.image.id && this.player) {
       this.visibilityManager.registerPlayer(this.data.image.id, this.player);
     }
@@ -208,7 +204,7 @@ export class ImageVideoPost extends VideoPostBase {
   /**
    * Destroy current player
    */
-  private async destroyCurrentPlayer(): Promise<void> {
+  private destroyCurrentPlayer(): void {
     if (this.player) {
       this.clearLoadErrorCheckTimeout();
       this.detachLoadErrorHandler();

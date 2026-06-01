@@ -627,7 +627,7 @@ export class VideoPost extends VideoPostBase {
   /**
    * Destroy the current player instance
    */
-  private async destroyCurrentPlayer(): Promise<void> {
+  private destroyCurrentPlayer(): void {
     if (!this.player) {
       return;
     }
@@ -654,17 +654,12 @@ export class VideoPost extends VideoPostBase {
       return;
     }
     this.player.unload();
-    // Small delay to ensure unload completes and memory is released
-    await new Promise(resolve => setTimeout(resolve, 50));
-    
-    // Destroy the player FIRST - it will handle removing the video element from DOM
-    // This prevents the "Child to be replaced is not a child" error
+
+    // Destroy the player FIRST - it synchronously removes the video element from DOM
+    // (prevents the "Child to be replaced is not a child" error)
     this.player.destroy();
     this.player = undefined;
     this.isLoaded = false;
-    
-    // Small delay to ensure destroy completes
-    await new Promise(resolve => setTimeout(resolve, 50));
   }
 
   /**
@@ -822,9 +817,7 @@ export class VideoPost extends VideoPostBase {
   /**
    * Register player with visibility manager after upgrade
    */
-  private async registerUpgradedPlayerWithVisibilityManager(): Promise<void> {
-    // Wait a brief moment to ensure player is fully initialized before registering
-    await new Promise(resolve => setTimeout(resolve, 50));
+  private registerUpgradedPlayerWithVisibilityManager(): void {
     if (this.visibilityManager && this.data.marker.id && this.player) {
       this.visibilityManager.registerPlayer(this.data.marker.id, this.player);
     }
@@ -877,19 +870,16 @@ export class VideoPost extends VideoPostBase {
     const { sceneVideoUrl, playerContainer, wasPlaying } = this.validateAndPrepareUpgrade();
 
     // Unload and destroy current marker player to free memory before creating new one
-    await this.destroyCurrentPlayer();
+    this.destroyCurrentPlayer();
 
     // Clean up any leftover player elements from the old player
     this.cleanupPlayerElements(playerContainer);
-
-    // Small delay to ensure DOM is cleared and old player is fully destroyed
-    await new Promise(resolve => setTimeout(resolve, 50));
 
     // Create new player with full scene video
     await this.createSceneVideoPlayer(playerContainer, sceneVideoUrl);
 
     // Register with visibility manager if available
-    await this.registerUpgradedPlayerWithVisibilityManager();
+    this.registerUpgradedPlayerWithVisibilityManager();
 
     // If video was playing, resume playback
     if (wasPlaying) {
