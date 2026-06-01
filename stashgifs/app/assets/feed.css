@@ -409,13 +409,20 @@
   will-change: auto; /* Browser optimizes based on video playback */
 }
 
+/* snapToCards (non-reel) mode: align every post card for native CSS snap */
+.feed-posts[data-snap-to-cards] .video-post,
+.feed-posts[data-snap-to-cards] .image-post {
+  scroll-snap-align: start;
+  scroll-snap-stop: always;
+}
+
 /* ---- Progress bar ---- */
 .vp-progress__track {
   position: absolute;
   bottom: 0;
   left: 0;
   right: 0;
-  height: 4px;
+  height: 12px;
   background: rgba(255, 255, 255, 0.18);
   cursor: pointer;
   z-index: 12; /* above video chrome, below header/footer */
@@ -426,7 +433,7 @@
 .vp-progress__track:hover,
 .vp-progress__track:focus-visible,
 .vp-progress__track:active {
-  height: 6px;
+  height: 16px;
   outline: none;
 }
 

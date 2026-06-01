@@ -157,16 +157,7 @@ export class FeedContainer {
   private deviceCapabilities: DeviceCapabilities; // Device capabilities for adaptive quality
   private updatePlaceholderVisibilityRef?: () => void; // Reference to updatePlaceholderVisibility function
   // Card snapping state
-  private cardSnapWheelHandler?: (e: WheelEvent) => void;
-  private cardSnapTouchStartHandler?: (e: TouchEvent) => void;
-  private cardSnapTouchMoveHandler?: (e: TouchEvent) => void;
-  private cardSnapTouchEndHandler?: (e: TouchEvent) => void;
-  private cardSnapEventTarget?: Window | HTMLElement;
   private cardSnapScrollTarget?: Window | HTMLElement;
-  private touchStartY: number = 0;
-  private touchStartTime: number = 0;
-  private isSnapping: boolean = false; // Prevent multiple snaps in progress
-  private snapThrottleTimeout?: ReturnType<typeof setTimeout>;
   private cardSnapScrollHandler?: () => void;
   private cardSnapScrollTimeout?: ReturnType<typeof setTimeout>;
   private mobileAutoplayUnlockHandler?: (event: Event) => void;
@@ -5974,160 +5965,47 @@ export class FeedContainer {
     this.scrollEventTarget.addEventListener('scroll', handleScroll, { passive: true });
   }
 
-  /**
-   * Setup card snapping - intercepts wheel and touch events to snap to cards
-   */
   private setupCardSnapping(): void {
-    // Clean up existing handlers
     this.cleanupCardSnapping();
 
     const shouldSnap = this.settings.snapToCards === true || this.settings.reelMode === true;
-    // Only setup if snapToCards is enabled
-    if (!shouldSnap) {
-      return;
+    if (!shouldSnap) return;
+
+    // In snapToCards (non-reel) mode the document root is the scroll container, so set
+    // CSS snap there and mark the posts container so the CSS rule aligns each card.
+    // Reel mode already has scrollSnapType on scrollContainer via updateScrollContainerStyles,
+    // and cards get scrollSnapAlign via applyReelContainerStyles.
+    if (!this.settings.reelMode) {
+      document.documentElement.style.scrollSnapType = 'y mandatory';
+      if (this.postsContainer) this.postsContainer.dataset.snapToCards = 'true';
     }
 
-    // Setup wheel event handler
-    this.cardSnapWheelHandler = (e: WheelEvent) => {
-      if (this.isSnapping) {
-        e.preventDefault();
-        return;
-      }
-
-      // Throttle to prevent rapid snapping
-      if (this.snapThrottleTimeout) {
-        e.preventDefault();
-        return;
-      }
-
-      const deltaY = e.deltaY;
-      if (Math.abs(deltaY) < 10) {
-        return; // Ignore small movements
-      }
-
-      e.preventDefault();
-      
-      const direction = deltaY > 0 ? 'next' : 'previous';
-      this.snapToNextCard(direction);
-      
-      // Throttle for 300ms
-      this.snapThrottleTimeout = setTimeout(() => {
-        this.snapThrottleTimeout = undefined;
-      }, 300);
+    // After the browser's native snap settles, trigger autoplay for the snapped card.
+    this.cardSnapScrollHandler = () => {
+      if (this.cardSnapScrollTimeout) clearTimeout(this.cardSnapScrollTimeout);
+      this.cardSnapScrollTimeout = setTimeout(() => {
+        this.cardSnapScrollTimeout = undefined;
+        const closestCard = this.findCardClosestToCenter();
+        if (!closestCard) return;
+        const postId = this.getPostIdFromCard(closestCard);
+        if (!postId) return;
+        this.triggerAutoplayForSnappedCard(postId).catch(() => {});
+        setTimeout(() => { this.requestAudioFocusForSnappedCard(postId); }, 300);
+      }, 200);
     };
-
-    // Setup touch handlers for swipe detection
-    this.cardSnapTouchStartHandler = (e: TouchEvent) => {
-      if (e.touches.length === 1) {
-        this.touchStartY = e.touches[0].clientY;
-        this.touchStartTime = Date.now();
-      }
-    };
-
-    this.cardSnapTouchMoveHandler = (e: TouchEvent) => {
-      if (this.isSnapping && e.touches.length === 1) {
-        e.preventDefault(); // Prevent default scroll during snap
-      }
-    };
-
-    this.cardSnapTouchEndHandler = (e: TouchEvent) => {
-      if (this.isSnapping || !e.changedTouches.length) {
-        return;
-      }
-
-      const touchEndY = e.changedTouches[0].clientY;
-      const deltaY = this.touchStartY - touchEndY;
-      const deltaTime = Date.now() - this.touchStartTime;
-      const minSwipeDistance = 50; // Minimum pixels for swipe
-      const maxSwipeTime = 500; // Maximum milliseconds for swipe
-
-      // Check if this was a valid swipe
-      if (Math.abs(deltaY) > minSwipeDistance && deltaTime < maxSwipeTime) {
-        e.preventDefault();
-        
-        // Throttle to prevent rapid snapping
-        if (this.snapThrottleTimeout) {
-          return;
-        }
-
-        const direction = deltaY > 0 ? 'next' : 'previous';
-        this.snapToNextCard(direction);
-        
-        // Throttle for 300ms
-        this.snapThrottleTimeout = setTimeout(() => {
-          this.snapThrottleTimeout = undefined;
-        }, 300);
-      }
-    };
-
-    // Add event listeners
-    const snapTarget = this.getScrollEventTarget();
-    this.cardSnapEventTarget = snapTarget;
-    snapTarget.addEventListener('wheel', this.cardSnapWheelHandler as EventListener, { passive: false });
-    snapTarget.addEventListener('touchstart', this.cardSnapTouchStartHandler as EventListener, { passive: true });
-    snapTarget.addEventListener('touchmove', this.cardSnapTouchMoveHandler as EventListener, { passive: false });
-    snapTarget.addEventListener('touchend', this.cardSnapTouchEndHandler as EventListener, { passive: false });
-
-    if (this.settings.reelMode === true) {
-      this.cardSnapScrollHandler = () => {
-        if (this.cardSnapScrollTimeout) {
-          clearTimeout(this.cardSnapScrollTimeout);
-        }
-        this.cardSnapScrollTimeout = setTimeout(() => {
-          this.cardSnapScrollTimeout = undefined;
-          if (this.isSnapping) {
-            return;
-          }
-          const closestCard = this.findCardClosestToCenter();
-          if (!closestCard) {
-            return;
-          }
-          const postId = this.getPostIdFromCard(closestCard);
-          if (!postId) {
-            return;
-          }
-          this.triggerAutoplayForSnappedCard(postId).catch(() => {
-            // Ignore autoplay errors
-          });
-          setTimeout(() => {
-            this.requestAudioFocusForSnappedCard(postId);
-          }, 300);
-        }, 200);
-      };
-      this.cardSnapScrollTarget = this.getScrollEventTarget();
-      this.cardSnapScrollTarget.addEventListener('scroll', this.cardSnapScrollHandler as EventListener, { passive: true });
-    }
+    this.cardSnapScrollTarget = this.getScrollEventTarget();
+    this.cardSnapScrollTarget.addEventListener('scroll', this.cardSnapScrollHandler as EventListener, { passive: true });
   }
 
-  /**
-   * Clean up card snapping event listeners
-   */
   private cleanupCardSnapping(): void {
-    if (this.cardSnapWheelHandler && this.cardSnapEventTarget) {
-      this.cardSnapEventTarget.removeEventListener('wheel', this.cardSnapWheelHandler as EventListener);
-      this.cardSnapWheelHandler = undefined;
-    }
-    if (this.cardSnapTouchStartHandler && this.cardSnapEventTarget) {
-      this.cardSnapEventTarget.removeEventListener('touchstart', this.cardSnapTouchStartHandler as EventListener);
-      this.cardSnapTouchStartHandler = undefined;
-    }
-    if (this.cardSnapTouchMoveHandler && this.cardSnapEventTarget) {
-      this.cardSnapEventTarget.removeEventListener('touchmove', this.cardSnapTouchMoveHandler as EventListener);
-      this.cardSnapTouchMoveHandler = undefined;
-    }
-    if (this.cardSnapTouchEndHandler && this.cardSnapEventTarget) {
-      this.cardSnapEventTarget.removeEventListener('touchend', this.cardSnapTouchEndHandler as EventListener);
-      this.cardSnapTouchEndHandler = undefined;
-    }
     if (this.cardSnapScrollHandler && this.cardSnapScrollTarget) {
       this.cardSnapScrollTarget.removeEventListener('scroll', this.cardSnapScrollHandler as EventListener);
       this.cardSnapScrollHandler = undefined;
     }
-    this.cardSnapEventTarget = undefined;
     this.cardSnapScrollTarget = undefined;
-    if (this.snapThrottleTimeout) {
-      clearTimeout(this.snapThrottleTimeout);
-      this.snapThrottleTimeout = undefined;
+    if (this.postsContainer?.dataset.snapToCards) {
+      delete this.postsContainer.dataset.snapToCards;
+      document.documentElement.style.scrollSnapType = '';
     }
     if (this.cardSnapScrollTimeout) {
       clearTimeout(this.cardSnapScrollTimeout);
@@ -6169,14 +6047,6 @@ export class FeedContainer {
       this.seenFlushTimer = undefined;
     }
     this.seenSetCache = undefined;
-    if (this.snapThrottleTimeout) {
-      clearTimeout(this.snapThrottleTimeout);
-      this.snapThrottleTimeout = undefined;
-    }
-    if (this.cardSnapScrollTimeout) {
-      clearTimeout(this.cardSnapScrollTimeout);
-      this.cardSnapScrollTimeout = undefined;
-    }
     if (this.placeholderAnimationInterval) {
       clearInterval(this.placeholderAnimationInterval);
       this.placeholderAnimationInterval = undefined;
@@ -6243,66 +6113,6 @@ export class FeedContainer {
     }
 
     return closestCard;
-  }
-
-  /**
-   * Calculate scroll position to center a card in the viewport
-   */
-  private calculateCardCenterPosition(card: HTMLElement): number {
-    const rect = card.getBoundingClientRect();
-    const cardTop = this.getElementTop(rect);
-    const cardHeight = rect.height;
-    const viewportHeight = this.getViewportHeight();
-    
-    // Calculate position to center the card
-    return cardTop + cardHeight / 2 - viewportHeight / 2;
-  }
-
-  private resolveTargetIndex(direction: 'next' | 'previous', currentIndex: number, cardCount: number): number | null {
-    const targetIndex = direction === 'next' ? currentIndex + 1 : currentIndex - 1;
-    if (targetIndex < 0 || targetIndex >= cardCount) return null;
-    return targetIndex;
-  }
-
-  /**
-   * Snap to the next or previous card
-   */
-  private snapToNextCard(direction: 'next' | 'previous'): void {
-    if (this.isSnapping) {
-      return;
-    }
-
-    const cards = this.getAllCardContainers();
-    if (cards.length === 0) {
-      return;
-    }
-
-    const currentCard = this.findCardClosestToCenter();
-    if (!currentCard) {
-      const targetCard = direction === 'next' ? cards[0] : cards[cards.length - 1];
-      this.snapToCard(targetCard);
-      return;
-    }
-
-    const currentIndex = cards.indexOf(currentCard);
-    if (currentIndex === -1) {
-      return;
-    }
-
-    const targetIndex = this.resolveTargetIndex(direction, currentIndex, cards.length);
-
-    if (direction === 'next') {
-      const isAtOrNearEnd = targetIndex === null || cards.length - 1 - targetIndex <= 2;
-      if (isAtOrNearEnd && !this.isLoading && this.hasMore) {
-        void this.loadVideos(undefined, true);
-      }
-    }
-
-    if (targetIndex === null) {
-      return;
-    }
-
-    this.snapToCard(cards[targetIndex]);
   }
 
   /**
@@ -6446,54 +6256,6 @@ export class FeedContainer {
     }
 
     this.visibilityManager?.grantSnapAudioFocus(postId);
-  }
-
-  /**
-   * Smoothly scroll to center a card
-   */
-  private snapToCard(card: HTMLElement): void {
-    if (this.isSnapping) {
-      return;
-    }
-
-    this.isSnapping = true;
-    const targetPosition = this.calculateCardCenterPosition(card);
-    const postId = this.getPostIdFromCard(card);
-
-    this.scrollToPosition(targetPosition, 'smooth');
-
-    const scrollTarget = this.isReelModeEnabled() && this.scrollContainer
-      ? this.scrollContainer
-      : (globalThis as unknown as Window);
-
-    const finishSnap = () => {
-      this.isSnapping = false;
-      if (postId) {
-        setTimeout(() => {
-          this.triggerAutoplayForSnappedCard(postId).catch((e) => {
-            console.warn('Failed to trigger autoplay for snapped card', e);
-          });
-          setTimeout(() => {
-            this.requestAudioFocusForSnappedCard(postId);
-          }, 500);
-        }, 200);
-      }
-    };
-
-    let safetyTimeout: ReturnType<typeof setTimeout>;
-
-    const onScrollEnd = () => {
-      clearTimeout(safetyTimeout);
-      finishSnap();
-    };
-
-    scrollTarget.addEventListener('scrollend', onScrollEnd, { once: true });
-
-    // Safety fallback for browsers where scrollend may not fire
-    safetyTimeout = setTimeout(() => {
-      scrollTarget.removeEventListener('scrollend', onScrollEnd);
-      finishSnap();
-    }, 1200);
   }
 
   /**

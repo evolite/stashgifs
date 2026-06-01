@@ -3295,7 +3295,8 @@ export abstract class BasePost {
     this.reelAutoAdvanceHandler = () => {
       const t = video.currentTime;
       // Backwards jump > 0.4s indicates a loop completed.
-      if (t + 0.4 < lastTime && !this.autoAdvanceFired) {
+      // t < 1.5 distinguishes a true loop-to-start from a backward seek
+      if (t < 1.5 && t + 0.4 < lastTime && !this.autoAdvanceFired) {
         this.autoAdvanceFired = true;
         this.scrollToNextPost();
       }
