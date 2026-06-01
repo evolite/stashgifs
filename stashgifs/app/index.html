@@ -81,6 +81,10 @@
         if (e.touches.length > 1) e.preventDefault();
       }, { passive: false });
     </script>
+    <!-- video.js engine (vendored UMD; includes @videojs/http-streaming for HLS). -->
+    <!-- Loaded as classic scripts so the global `window.videojs` is available to the ESM app. -->
+    <link rel="stylesheet" href="./assets/vendor/video-js.min.css">
+    <script src="./assets/vendor/video.min.js"></script>
     <link rel="modulepreload" href="./assets/index.js">
     <script type="module" src="./assets/index.js"></script>
   </head>

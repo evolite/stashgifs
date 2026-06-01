@@ -1,10 +1,10 @@
 /**
  * VideoPostBase
  * Abstract base class for video-capable post components (VideoPost and ImageVideoPost).
- * Extracts shared NativeVideoPlayer management logic to reduce code duplication.
+ * Extracts shared video-player management logic to reduce code duplication.
  */
 
-import { NativeVideoPlayer } from './NativeVideoPlayer.js';
+import type { IVideoPlayer } from './types.js';
 import { isMobileDevice, THEME, showToast } from './utils.js';
 import { HQ_SVG_OUTLINE, HQ_SVG_FILLED, VOLUME_MUTED_SVG, VOLUME_UNMUTED_SVG } from './icons.js';
 import { BasePost, BasePostOptions } from './BasePost.js';
@@ -42,7 +42,7 @@ export abstract class VideoPostBase extends BasePost {
     super(container, options);
   }
 
-  protected abstract getPlayer(): NativeVideoPlayer | undefined;
+  protected abstract getPlayer(): IVideoPlayer | undefined;
   protected abstract checkForLoadError(): void;
   protected abstract getHQButtonOffLabel(): string;
 
@@ -71,7 +71,7 @@ export abstract class VideoPostBase extends BasePost {
     return container;
   }
 
-  protected attemptReloadIfUnloaded(): NativeVideoPlayer | undefined {
+  protected attemptReloadIfUnloaded(): IVideoPlayer | undefined {
     const player = this.getPlayer();
     if (!player?.getIsUnloaded()) return undefined;
 
@@ -146,7 +146,7 @@ export abstract class VideoPostBase extends BasePost {
    * The player reveals its own surface (opacity 0 -> 1 + hide placeholder) on the
    * 'playing' event, so no visual reveal orchestration is needed here.
    */
-  protected clearLoadErrorTimerOnPlayback(player: NativeVideoPlayer): void {
+  protected clearLoadErrorTimerOnPlayback(player: IVideoPlayer): void {
     const videoElement = player.getVideoElement();
     if (!videoElement) return;
 

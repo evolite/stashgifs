@@ -3,8 +3,8 @@
  * Individual video post card in the feed
  */
 
-import { VideoPostData, Scene } from './types.js';
-import { NativeVideoPlayer } from './NativeVideoPlayer.js';
+import { VideoPostData, Scene, IVideoPlayer } from './types.js';
+import { VideoJsPlayer } from './VideoJsPlayer.js';
 import { StashAPI } from './StashAPI.js';
 import { VisibilityManager } from './VisibilityManager.js';
 import { calculateAspectRatio, getAspectRatioClass, normalizeMediaUrl, showToast, toAbsoluteUrl, isMobileDevice, THEME, extractValidPerformerIds } from './utils.js';
@@ -23,7 +23,7 @@ interface VideoPostOptions extends BaseVideoPostOptions {
 
 export class VideoPost extends VideoPostBase {
   protected readonly data: VideoPostData;
-  private player?: NativeVideoPlayer;
+  private player?: IVideoPlayer;
   private markerButton?: HTMLElement;
   private playButton?: HTMLElement;
   private markerDialog?: HTMLElement;
@@ -784,14 +784,23 @@ export class VideoPost extends VideoPostBase {
     try {
       const startTime = this.data.startTime ?? this.data.marker.seconds;
 
-      this.player = new NativeVideoPlayer(playerContainer, sceneVideoUrl, {
+      // Real scenes expose sceneStreams (Direct/HLS/transcode) — hand them all to
+      // video.js so it can fall back past a codec the browser can't decode. Synthetic
+      // image-markers have no sceneStreams, so fall back to the single resolved URL.
+      const markerId = this.data.marker.id;
+      const isImageMarker = typeof markerId === 'string' && markerId.startsWith('image-');
+      const sources = (!isImageMarker && this.api)
+        ? this.api.getSceneSources(this.data.marker.scene)
+        : undefined;
+
+      this.player = new VideoJsPlayer(playerContainer, sceneVideoUrl, {
         muted: true,
-        autoplay: false,
+        autoplay: true,
         startTime: startTime,
         endTime: this.data.endTime ?? this.data.marker.end_seconds,
         showLoadingIndicator: false,
         objectFit: this.isReelMode ? 'contain' : 'cover',
-        // onMuteToggle removed - using overlay button instead
+        sources: sources && sources.length > 0 ? sources : undefined,
       });
 
       this.isLoaded = true;
@@ -918,7 +927,7 @@ export class VideoPost extends VideoPostBase {
   /**
    * Load the video player
    */
-  loadPlayer(videoUrl: string, startTime?: number, endTime?: number): NativeVideoPlayer | undefined {
+  loadPlayer(videoUrl: string, startTime?: number, endTime?: number): IVideoPlayer | undefined {
     // Early return if already loaded
     if (this.isLoaded) {
       return this.player;
@@ -954,13 +963,22 @@ export class VideoPost extends VideoPostBase {
       // Marker previews can have audio, so respect global mute state
       const shouldBeMuted = this.getGlobalMuteState ? this.getGlobalMuteState() : true;
 
-      this.player = new NativeVideoPlayer(playerContainer, normalizedVideoUrl, {
+      // Only the HD (HQ) path plays the full scene and benefits from sceneStreams
+      // codec fallback; the muted marker preview is already a browser-ready clip.
+      const markerId = this.data.marker.id;
+      const isImageMarker = typeof markerId === 'string' && markerId.startsWith('image-');
+      const sources = (this.isHQMode && !isImageMarker && this.api)
+        ? this.api.getSceneSources(this.data.marker.scene)
+        : undefined;
+
+      this.player = new VideoJsPlayer(playerContainer, normalizedVideoUrl, {
         muted: shouldBeMuted,
-        autoplay: false,
+        autoplay: true,
         startTime: finalStartTime,
         endTime: endTime ?? this.data.endTime ?? this.data.marker.end_seconds,
         showLoadingIndicator: false,
         objectFit: this.isReelMode ? 'contain' : 'cover',
+        sources: sources && sources.length > 0 ? sources : undefined,
       });
 
       this.isLoaded = true;
@@ -1000,7 +1018,7 @@ export class VideoPost extends VideoPostBase {
    * Preload player using default source/range
    * Handles reloading if player was previously unloaded
    */
-  preload(): NativeVideoPlayer | undefined {
+  preload(): IVideoPlayer | undefined {
     if (!this.hasVideoSource()) {
       return undefined;
     }
@@ -1050,7 +1068,7 @@ export class VideoPost extends VideoPostBase {
   /**
    * Get the video player instance
    */
-  getPlayer(): NativeVideoPlayer | undefined {
+  getPlayer(): IVideoPlayer | undefined {
     return this.player;
   }
 
@@ -1217,7 +1235,7 @@ export class VideoPost extends VideoPostBase {
     }, 100); // Small delay to allow cleanup
   }
 
-  private async seekPlayerToStart(player: NativeVideoPlayer, startTime: number): Promise<void> {
+  private async seekPlayerToStart(player: IVideoPlayer, startTime: number): Promise<void> {
     const clamped = Number.isFinite(startTime) ? Math.max(0, startTime) : 0;
     try {
       await player.waitForReady(4000);

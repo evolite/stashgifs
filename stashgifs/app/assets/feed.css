@@ -409,6 +409,38 @@
   will-change: auto; /* Browser optimizes based on video playback */
 }
 
+/* ---- video.js embedding ----
+   video.js wraps our <video> in a `.video-js` box that defaults to inline-block
+   ~300x150 with no object-fit, and injects its own chrome (poster, spinner,
+   control bar). Pin it to fill the post player box, set object-fit, and hide all
+   built-in UI so our own overlays/controls are the only ones shown. */
+.video-post__player .video-js {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  font-size: inherit;
+}
+.video-post__player .video-js .vjs-tech,
+.video-post__player video.video-player__element {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  /* object-fit is also set inline per-player (cover in feed, contain in reel);
+     this is the fallback when the inline style hasn't applied yet. */
+  object-fit: cover;
+}
+.video-post__player .vjs-control-bar,
+.video-post__player .vjs-loading-spinner,
+.video-post__player .vjs-big-play-button,
+.video-post__player .vjs-poster,
+.video-post__player .vjs-text-track-display,
+.video-post__player .vjs-error-display,
+.video-post__player .vjs-modal-dialog {
+  display: none !important;
+}
+
 /* Video Player Loading Indicator */
 .video-player__loading {
   position: absolute;

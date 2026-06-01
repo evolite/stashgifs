@@ -9,7 +9,7 @@ import { PluginSettingsManager } from './PluginSettingsManager.js';
 import { VideoPost } from './VideoPost.js';
 import { ImagePost } from './ImagePost.js';
 import { ImageVideoPost } from './ImageVideoPost.js';
-import { NativeVideoPlayer } from './NativeVideoPlayer.js';
+import type { IVideoPlayer } from './types.js';
 import { ImagePlayer } from './ImagePlayer.js';
 import { VisibilityManager } from './VisibilityManager.js';
 import { FavoritesManager } from './FavoritesManager.js';
@@ -67,9 +67,9 @@ interface FeedContainerDebug {
 }
 
 /**
- * Type guard to check if a player is a NativeVideoPlayer
+ * Type guard to check if a player is a video player (vs the GIF ImagePlayer).
  */
-function isNativeVideoPlayer(player: NativeVideoPlayer | ImagePlayer | undefined): player is NativeVideoPlayer {
+function isVideoPlayer(player: IVideoPlayer | ImagePlayer | undefined): player is IVideoPlayer {
   return player !== undefined && 'getVideoElement' in player;
 }
 
@@ -1228,12 +1228,11 @@ export class FeedContainer {
       return;
     }
 
+    // A real user gesture lifts the browser's autoplay restrictions. Re-run the
+    // play decision on gesture so any video the browser refused to autoplay starts.
+    // reconcile() is idempotent and cheap, so firing on every gesture is fine.
     const handler = () => {
-      if (!this.visibilityManager?.isAutoplayBlocked?.()) {
-        return;
-      }
-      this.visibilityManager.clearAutoplayBlocked();
-      this.visibilityManager.retryVisibleVideos();
+      this.visibilityManager?.retryVisibleVideos();
     };
 
     this.autoplayUnlockHandler = handler;
@@ -4944,7 +4943,7 @@ export class FeedContainer {
   private stopLoadingVideos(): void {
     for (const [, post] of this.posts.entries()) {
       const player = post.getPlayer();
-      if (isNativeVideoPlayer(player)) {
+      if (isVideoPlayer(player)) {
         this.cancelVideoLoad(player.getVideoElement());
       }
     }
@@ -5157,7 +5156,7 @@ export class FeedContainer {
     }
 
     const player = post.preload();
-    if (isNativeVideoPlayer(player)) {
+    if (isVideoPlayer(player)) {
       this.visibilityManager.registerPlayer(image.id, player);
     } else {
       console.warn('FeedContainer: Player not created, hiding post', { imageId: image.id });
@@ -5194,7 +5193,7 @@ export class FeedContainer {
     }
 
     const player = post.preload();
-    if (isNativeVideoPlayer(player)) {
+    if (isVideoPlayer(player)) {
       this.visibilityManager.registerPlayer(marker.id, player);
     } else {
       console.warn('FeedContainer: Player not created, hiding post', { markerId: marker.id });
@@ -5351,7 +5350,7 @@ export class FeedContainer {
   private tryPreloadReelPost(nextId: string, post: VideoPost | ImageVideoPost): void {
     try {
       const player = post.preload();
-      if (isNativeVideoPlayer(player)) {
+      if (isVideoPlayer(player)) {
         this.visibilityManager.registerPlayer(nextId, player);
       }
       this.reelNextPreloadIds.add(nextId);
@@ -5537,7 +5536,7 @@ export class FeedContainer {
     }
     
     // Only video players have unload method
-    if (isNativeVideoPlayer(player) && !player.getIsUnloaded()) {
+    if (isVideoPlayer(player) && !player.getIsUnloaded()) {
       player.unload();
     }
     player.destroy();
@@ -5595,7 +5594,7 @@ export class FeedContainer {
     // If post has a video source, trigger preload
     if (post.hasVideoSource()) {
       const player = post.preload();
-      if (isNativeVideoPlayer(player)) {
+      if (isVideoPlayer(player)) {
         // Register player with VisibilityManager - it will handle playing when ready
         // Only register video players, not image players
         this.visibilityManager.registerPlayer(postId, player);
@@ -5630,7 +5629,7 @@ export class FeedContainer {
   private tryPreloadPost(postId: string, post: PostType): number {
     try {
       const player = post.preload();
-      if (isNativeVideoPlayer(player)) {
+      if (isVideoPlayer(player)) {
         this.visibilityManager.registerPlayer(postId, player);
         return 1;
       }
@@ -5793,7 +5792,7 @@ export class FeedContainer {
       if (!this.isPostImmediatelyVisible(post, viewportTop, viewportBottom)) {
         const player = post.getPlayer();
         // Only unload video players (images don't need unloading)
-        if (isNativeVideoPlayer(player) && !player.getIsUnloaded()) {
+        if (isVideoPlayer(player) && !player.getIsUnloaded()) {
           player.unload();
           loadedVideoCount--;
         }
@@ -5823,7 +5822,7 @@ export class FeedContainer {
   private unloadPostVideo(post: PostType): void {
     const player = post.getPlayer();
     // Only unload video players (images don't need unloading)
-    if (isNativeVideoPlayer(player) && !player.getIsUnloaded()) {
+    if (isVideoPlayer(player) && !player.getIsUnloaded()) {
       player.unload();
     }
   }
@@ -6335,7 +6334,7 @@ export class FeedContainer {
 
     try {
       const player = post.preload();
-      if (isNativeVideoPlayer(player)) {
+      if (isVideoPlayer(player)) {
         this.visibilityManager.registerPlayer(postId, player);
         this.visibilityManager.observePost(post.getContainer(), postId);
       }
@@ -6375,7 +6374,7 @@ export class FeedContainer {
 
     // Preload the player if not already loaded
     const player = post.preload();
-    if (!isNativeVideoPlayer(player)) {
+    if (!isVideoPlayer(player)) {
       return; // Not a video player or failed to load
     }
 
@@ -6437,7 +6436,7 @@ export class FeedContainer {
     }
 
     const player = post.getPlayer();
-    if (!isNativeVideoPlayer(player)) {
+    if (!isVideoPlayer(player)) {
       return;
     }
 

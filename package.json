@@ -12,6 +12,8 @@
     "type-check": "tsc --noEmit"
   },
   "devDependencies": {
-    "typescript": "^6.0.3"
+    "typescript": "^6.0.3",
+    "video.js": "^8.23.7",
+    "videojs-offset": "^2.1.3"
   }
 }

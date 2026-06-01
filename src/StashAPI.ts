@@ -3,7 +3,7 @@
  * This will interface with the Stash GraphQL API
  */
 
-import { Scene, SceneMarker, FilterOptions } from './types.js';
+import { Scene, SceneMarker, FilterOptions, VideoSource } from './types.js';
 import { normalizeMediaUrl, stripApiKey } from './utils.js';
 import * as queries from './graphql/queries.js';
 import * as mutations from './graphql/mutations.js';
@@ -1419,6 +1419,94 @@ export class StashAPI {
     const streamUrl = scene.sceneStreams[0]?.url?.trim();
     if (!streamUrl) return undefined;
     return this.buildAndValidateUrl(streamUrl);
+  }
+
+  /**
+   * Build an ordered list of playable sources for a scene, for a player (video.js)
+   * that selects/falls-back by MIME type. Order:
+   *   1. Direct stream first IF the browser can decode the file's codec (cheapest, best quality).
+   *   2. HLS (Stash transcodes/remuxes to a browser-compatible codec — always plays).
+   *   3. Other forced-transcode variants (MP4/WebM), then DASH.
+   *   4. Direct stream last as a final fallback when codec support is unknown.
+   * URLs are NOT cache-busted: Stash keys transcode sessions on the URL, so a stable
+   * URL lets it resume an existing transcode instead of restarting one each load.
+   */
+  getSceneSources(scene: Scene): VideoSource[] {
+    const out: VideoSource[] = [];
+    const seen = new Set<string>();
+    const push = (rawUrl: string | undefined, type?: string): void => {
+      const built = this.buildStreamUrl(rawUrl);
+      if (built && !seen.has(built)) {
+        seen.add(built);
+        out.push(type ? { src: built, type } : { src: built });
+      }
+    };
+
+    const streams = scene.sceneStreams ?? [];
+    const isHls = (s: { mime_type?: string; label?: string }) =>
+      (s.mime_type ?? '').toLowerCase().includes('mpegurl') || (s.label ?? '').toUpperCase().includes('HLS');
+    const isDash = (s: { mime_type?: string; label?: string }) =>
+      (s.mime_type ?? '').toLowerCase().includes('dash') || (s.label ?? '').toUpperCase().includes('DASH');
+    const isDirect = (s: { label?: string }) => (s.label ?? '').toLowerCase().includes('direct');
+
+    const direct = streams.filter(isDirect);
+    const hls = streams.filter(isHls);
+    const dash = streams.filter(isDash);
+    const rest = streams.filter((s) => !isDirect(s) && !isHls(s) && !isDash(s));
+
+    const directPlayable = this.isDirectPlayable(scene);
+    if (directPlayable) {
+      for (const s of direct) push(s.url, s.mime_type || 'video/mp4');
+    }
+    for (const s of hls) push(s.url, s.mime_type || 'application/x-mpegURL');
+    for (const s of rest) push(s.url, s.mime_type || 'video/mp4');
+    for (const s of dash) push(s.url, s.mime_type || 'application/dash+xml');
+    if (!directPlayable) {
+      for (const s of direct) push(s.url, s.mime_type || 'video/mp4');
+    }
+
+    // Fallbacks when sceneStreams is empty (older Stash or odd configs).
+    if (out.length === 0) {
+      push(scene.paths?.stream ?? undefined, 'video/mp4');
+      push(scene.files?.[0]?.path, 'video/mp4');
+    }
+    return out;
+  }
+
+  /**
+   * Whether the browser is likely able to directly decode the scene's primary
+   * video codec. Conservative: H.264/AVC always; HEVC/AV1/VP9 only if canPlayType
+   * reports support. Unknown codecs default to true (the error-fallback in the
+   * player handles a wrong guess).
+   */
+  private isDirectPlayable(scene: Scene): boolean {
+    const codec = scene.files?.find((f) => f.video_codec)?.video_codec?.toLowerCase();
+    if (!codec) return true;
+    if (codec.includes('264') || codec.includes('avc')) return true;
+
+    const probe = (mime: string): boolean => {
+      try {
+        return !!document.createElement('video').canPlayType(mime);
+      } catch {
+        return false;
+      }
+    };
+    if (codec.includes('hevc') || codec.includes('265')) {
+      return probe('video/mp4; codecs="hvc1"') || probe('video/mp4; codecs="hev1"');
+    }
+    if (codec.includes('av1') || codec.includes('av01')) {
+      return probe('video/mp4; codecs="av01.0.05M.08"');
+    }
+    if (codec.includes('vp9')) return probe('video/webm; codecs="vp9"');
+    if (codec.includes('vp8')) return probe('video/webm; codecs="vp8"');
+    return true;
+  }
+
+  /** Build a full, normalized stream URL without cache-busting (see getSceneSources). */
+  private buildStreamUrl(path?: string | null): string | undefined {
+    const trimmed = path?.trim();
+    if (!trimmed) return undefined;
+    return normalizeMediaUrl(this.buildUrl(trimmed)) ?? undefined;
   }
 
   private tryGetUrlFromPath(path?: string | null): string | undefined {

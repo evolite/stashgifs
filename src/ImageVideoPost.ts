@@ -3,15 +3,15 @@
  * MP4/M4V images displayed as videos with preview/HD upgrade capability
  */
 
-import { ImageVideoPostData } from './types.js';
-import { NativeVideoPlayer } from './NativeVideoPlayer.js';
+import { ImageVideoPostData, IVideoPlayer } from './types.js';
+import { VideoJsPlayer } from './VideoJsPlayer.js';
 import { calculateAspectRatio, getAspectRatioClass, normalizeMediaUrl, toAbsoluteUrl, THEME, createCoverDiv } from './utils.js';
 import { VideoPostBase, BaseVideoPostOptions } from './VideoPostBase.js';
 interface ImageVideoPostOptions extends BaseVideoPostOptions {}
 
 export class ImageVideoPost extends VideoPostBase {
   protected readonly data: ImageVideoPostData;
-  private player?: NativeVideoPlayer;
+  private player?: IVideoPlayer;
   private readonly onCancelRequests?: () => void;
 
   constructor(
@@ -156,9 +156,9 @@ export class ImageVideoPost extends VideoPostBase {
     try {
       // Respect global mute state when creating HD player
       const shouldBeMuted = this.getGlobalMuteState ? this.getGlobalMuteState() : true;
-      this.player = new NativeVideoPlayer(playerContainer, hdVideoUrl, {
+      this.player = new VideoJsPlayer(playerContainer, hdVideoUrl, {
         muted: shouldBeMuted,
-        autoplay: false,
+        autoplay: true,
         startTime: undefined, // Start from beginning for images
         endTime: undefined,
         showLoadingIndicator: false,
@@ -227,7 +227,7 @@ export class ImageVideoPost extends VideoPostBase {
   /**
    * Load the video player
    */
-  loadPlayer(videoUrl: string): NativeVideoPlayer | undefined {
+  loadPlayer(videoUrl: string): IVideoPlayer | undefined {
     if (this.isLoaded) {
       return this.player;
     }
@@ -247,9 +247,9 @@ export class ImageVideoPost extends VideoPostBase {
       const shouldBeMuted = this.isHQMode && this.getGlobalMuteState
         ? this.getGlobalMuteState()
         : true;
-      this.player = new NativeVideoPlayer(this.playerContainer, videoUrl, {
+      this.player = new VideoJsPlayer(this.playerContainer, videoUrl, {
         muted: shouldBeMuted,
-        autoplay: false,
+        autoplay: true,
         startTime: finalStartTime,
         endTime: undefined,
         showLoadingIndicator: false,
@@ -332,7 +332,7 @@ export class ImageVideoPost extends VideoPostBase {
   /**
    * Get the player instance
    */
-  getPlayer(): NativeVideoPlayer | undefined {
+  getPlayer(): IVideoPlayer | undefined {
     return this.player;
   }
 
@@ -350,7 +350,7 @@ export class ImageVideoPost extends VideoPostBase {
   /**
    * Preload player using video URL
    */
-  preload(): NativeVideoPlayer | undefined {
+  preload(): IVideoPlayer | undefined {
     const videoUrl = this.data.videoUrl;
     if (!videoUrl) {
       return undefined;
