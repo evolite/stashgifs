@@ -163,6 +163,39 @@ export interface VideoPlayerState {
   isFullscreen: boolean;
 }
 
+/** A playable media source (URL + optional MIME type for player source selection). */
+export interface VideoSource {
+  src: string;
+  type?: string;
+}
+
+/**
+ * The video-player surface that the rest of the app depends on. Both the legacy
+ * NativeVideoPlayer and the video.js-backed VideoJsPlayer implement this, so the
+ * post/visibility/audio layers stay player-agnostic.
+ */
+export interface IVideoPlayer {
+  play(): Promise<void>;
+  pause(): void;
+  pauseManually(): void;
+  isPlaying(): boolean;
+  isManuallyPaused(): boolean;
+  clearManualPause(): void;
+  getVideoElement(): HTMLVideoElement;
+  getState(): VideoPlayerState;
+  waitForReady(timeoutMs?: number): Promise<void>;
+  seekTo(time: number): void;
+  setMuted(isMuted: boolean): void;
+  setVolume(volume: number): void;
+  unload(): void;
+  reload(): void;
+  getIsUnloaded(): boolean;
+  setStateChangeListener(listener?: (state: VideoPlayerState) => void): void;
+  hasLoadError(): boolean;
+  getLoadErrorType(): 'timeout' | 'network' | 'play' | null;
+  destroy(): void;
+}
+
 /**
  * Image type (simplified for feed display)
  */

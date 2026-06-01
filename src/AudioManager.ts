@@ -3,15 +3,14 @@
  * Centralized audio management with single source of truth and priority system
  */
 
-import { NativeVideoPlayer } from './NativeVideoPlayer.js';
+import type { IVideoPlayer } from './types.js';
 import { supportsHover } from './utils.js';
 
 interface VisibilityEntry {
   element: HTMLElement;
-  player?: NativeVideoPlayer;
+  player?: IVideoPlayer;
   postId: string;
   isVisible: boolean;
-  pendingVisibilityPlay: boolean;
   isUnloaded: boolean;
 }
 
