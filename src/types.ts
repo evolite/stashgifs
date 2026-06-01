@@ -185,6 +185,10 @@ export interface IVideoPlayer {
   getState(): VideoPlayerState;
   waitForReady(timeoutMs?: number): Promise<void>;
   seekTo(time: number): void;
+  /** Playback position as 0–1 within the clip window (respects startAt/endAt). */
+  getProgress(): number;
+  /** Seek to a 0–1 position within the clip window. */
+  seekToProgress(ratio: number): void;
   setMuted(isMuted: boolean): void;
   setVolume(volume: number): void;
   unload(): void;

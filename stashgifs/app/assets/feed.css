@@ -409,6 +409,37 @@
   will-change: auto; /* Browser optimizes based on video playback */
 }
 
+/* ---- Progress bar ---- */
+.vp-progress__track {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 4px;
+  background: rgba(255, 255, 255, 0.18);
+  cursor: pointer;
+  z-index: 12; /* above video chrome, below header/footer */
+  transition: height 0.15s ease;
+  touch-action: none; /* let pointer events own the drag */
+}
+
+.vp-progress__track:hover,
+.vp-progress__track:focus-visible,
+.vp-progress__track:active {
+  height: 6px;
+  outline: none;
+}
+
+.vp-progress__fill {
+  height: 100%;
+  width: 0%;
+  background: var(--color-accent, #e05c6e);
+  border-radius: 0 2px 2px 0;
+  pointer-events: none;
+  /* Hardware-accelerate the width animation during playback */
+  will-change: width;
+}
+
 /* ---- video.js embedding ----
    video.js wraps our <video> in a `.video-js` box that defaults to inline-block
    ~300x150 with no object-fit, and injects its own chrome (poster, spinner,

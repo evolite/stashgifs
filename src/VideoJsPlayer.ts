@@ -339,6 +339,26 @@ export class VideoJsPlayer implements IVideoPlayer {
     try { this.player!.currentTime(time); } catch { /* disposed */ }
   }
 
+  getProgress(): number {
+    if (!this.isUsable()) return 0;
+    const current = this.safeNumber(() => this.player!.currentTime());
+    const start = this.startAt;
+    const end = this.endAt > 0 ? this.endAt : this.safeNumber(() => this.player!.duration());
+    const span = end - start;
+    if (span <= 0) return 0;
+    return Math.max(0, Math.min(1, (current - start) / span));
+  }
+
+  seekToProgress(ratio: number): void {
+    if (!this.isUsable()) return;
+    const clamped = Math.max(0, Math.min(1, ratio));
+    const start = this.startAt;
+    const end = this.endAt > 0 ? this.endAt : this.safeNumber(() => this.player!.duration());
+    const span = end - start;
+    if (span <= 0) return;
+    this.seekTo(start + clamped * span);
+  }
+
   setMuted(isMuted: boolean): void {
     if (!this.isUsable()) return;
     try {

@@ -170,6 +170,7 @@ export class ImageVideoPost extends VideoPostBase {
       this.scheduleLoadErrorCheck();
       this.attachLoadErrorHandler();
       this.attachReelAutoAdvance();
+      this.setupProgressBar();
     } catch (error) {
       console.error('ImageVideoPost: Failed to create HD video player', {
         error,
@@ -262,6 +263,7 @@ export class ImageVideoPost extends VideoPostBase {
       this.scheduleLoadErrorCheck();
       this.attachLoadErrorHandler();
       this.attachReelAutoAdvance();
+      this.setupProgressBar();
 
       if (this.visibilityManager && this.data.image.id) {
         this.visibilityManager.registerPlayer(this.data.image.id, this.player);

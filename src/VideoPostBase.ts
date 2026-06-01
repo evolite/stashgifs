@@ -34,6 +34,7 @@ export abstract class VideoPostBase extends BasePost {
   protected loadErrorCheckTimeoutId?: ReturnType<typeof setTimeout>;
   protected loadErrorHandler?: () => void;
   protected hdModeFromSettings: boolean = false;
+  private progressBar?: { track: HTMLElement; fill: HTMLElement; cleanup: () => void };
 
   constructor(
     container: HTMLElement,
@@ -286,5 +287,117 @@ export abstract class VideoPostBase extends BasePost {
       return false;
     }
     return true;
+  }
+
+  /**
+   * Mount a thin accent-coloured progress bar at the bottom of the player
+   * container and wire it to the current player for updates and drag-to-seek.
+   * Call after the player is created; call again after an HD upgrade replaces
+   * the player so the listeners rebind to the new video element.
+   */
+  protected setupProgressBar(): void {
+    this.destroyProgressBar();
+
+    const playerContainer = this.playerContainer
+      ?? this.container.querySelector('.video-post__player') as HTMLElement | null;
+    if (!playerContainer) return;
+
+    const player = this.getPlayer();
+    if (!player) return;
+
+    // Build DOM.
+    const track = document.createElement('div');
+    track.className = 'vp-progress__track';
+    track.setAttribute('role', 'slider');
+    track.setAttribute('aria-label', 'Video progress');
+    track.setAttribute('aria-valuemin', '0');
+    track.setAttribute('aria-valuemax', '100');
+    track.setAttribute('aria-valuenow', '0');
+    track.setAttribute('tabindex', '0');
+
+    const fill = document.createElement('div');
+    fill.className = 'vp-progress__fill';
+    track.appendChild(fill);
+    playerContainer.appendChild(track);
+
+    // Update fill from player.
+    const update = () => {
+      const p = this.getPlayer();
+      if (!p) return;
+      const pct = Math.round(p.getProgress() * 1000) / 10; // 1dp
+      fill.style.width = `${pct}%`;
+      track.setAttribute('aria-valuenow', String(Math.round(pct)));
+    };
+
+    const video = player.getVideoElement();
+    video.addEventListener('timeupdate', update);
+
+    // Drag-to-seek via pointer events (works for mouse and touch).
+    let dragging = false;
+
+    const ratioFromEvent = (e: PointerEvent): number => {
+      const rect = track.getBoundingClientRect();
+      return rect.width > 0 ? Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width)) : 0;
+    };
+
+    const onDown = (e: PointerEvent) => {
+      e.preventDefault();
+      dragging = true;
+      track.setPointerCapture(e.pointerId);
+      const p = this.getPlayer();
+      if (p) {
+        const ratio = ratioFromEvent(e);
+        p.seekToProgress(ratio);
+        fill.style.width = `${ratio * 100}%`;
+      }
+    };
+
+    const onMove = (e: PointerEvent) => {
+      if (!dragging) return;
+      e.preventDefault();
+      const p = this.getPlayer();
+      if (p) {
+        const ratio = ratioFromEvent(e);
+        p.seekToProgress(ratio);
+        fill.style.width = `${ratio * 100}%`;
+      }
+    };
+
+    const onUp = () => { dragging = false; };
+
+    track.addEventListener('pointerdown', onDown);
+    track.addEventListener('pointermove', onMove);
+    track.addEventListener('pointerup', onUp);
+    track.addEventListener('pointercancel', onUp);
+
+    // Keyboard seek: left/right arrow ±5 %.
+    track.addEventListener('keydown', (e: KeyboardEvent) => {
+      const p = this.getPlayer();
+      if (!p) return;
+      if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
+        e.preventDefault();
+        const delta = e.key === 'ArrowRight' ? 0.05 : -0.05;
+        p.seekToProgress(Math.max(0, Math.min(1, p.getProgress() + delta)));
+      }
+    });
+
+    this.progressBar = {
+      track,
+      fill,
+      cleanup: () => {
+        video.removeEventListener('timeupdate', update);
+        track.remove();
+      },
+    };
+  }
+
+  private destroyProgressBar(): void {
+    this.progressBar?.cleanup();
+    this.progressBar = undefined;
+  }
+
+  override destroy(): void {
+    this.destroyProgressBar();
+    super.destroy();
   }
 }

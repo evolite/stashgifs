@@ -812,6 +812,7 @@ export class VideoPost extends VideoPostBase {
       this.scheduleLoadErrorCheck();
       this.attachLoadErrorHandler();
       this.attachReelAutoAdvance();
+      this.setupProgressBar();
     } catch (error) {
       console.error('VideoPost: Failed to create scene video player', {
         error,
@@ -987,6 +988,7 @@ export class VideoPost extends VideoPostBase {
       this.scheduleLoadErrorCheck();
       this.attachLoadErrorHandler();
       this.attachReelAutoAdvance();
+      this.setupProgressBar();
 
       if (this.visibilityManager && this.data.marker.id) {
         this.visibilityManager.registerPlayer(this.data.marker.id, this.player);
