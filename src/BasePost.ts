@@ -2321,6 +2321,18 @@ export abstract class BasePost {
     return wrapper;
   }
 
+  /**
+   * Lift this card above sibling posts while a popover dialog is open. The card is
+   * `position: relative` with no z-index, so it shares the feed's stacking context
+   * with the other posts; a dialog that overflows the card bounds would otherwise be
+   * painted over by a later post. Giving the open card a z-index turns it into its own
+   * stacking context that paints above siblings (still below the feed chrome at 900+).
+   * Cleared on close.
+   */
+  protected setCardElevated(elevated: boolean): void {
+    this.container.style.zIndex = elevated ? '60' : '';
+  }
+
   protected openAddTagDialogBase(options: {
     state: AddTagDialogState;
     buttonGroup?: HTMLElement;
@@ -2339,6 +2351,7 @@ export abstract class BasePost {
     if (!state.dialog || !options.buttonGroup) return;
 
     state.isOpen = true;
+    this.setCardElevated(true);
     state.selectedTagId = undefined;
     state.selectedTagName = undefined;
     state.onSubmit = options.onSubmit;
@@ -2431,6 +2444,7 @@ export abstract class BasePost {
     const { state, focusAfterClose } = options;
     if (!state.isOpen) return;
     state.isOpen = false;
+    this.setCardElevated(false);
 
     if (state.autocompleteDebounceTimer) {
       clearTimeout(state.autocompleteDebounceTimer);
@@ -2995,6 +3009,7 @@ export abstract class BasePost {
     }
     if (this.isAddPerformerDialogOpen) return;
     this.isAddPerformerDialogOpen = true;
+    this.setCardElevated(true);
     this.selectedPerformerId = undefined;
     this.selectedPerformerName = undefined;
     this.selectedPerformerImagePath = undefined;
@@ -3047,6 +3062,7 @@ export abstract class BasePost {
   private closeAddPerformerDialog(): void {
     if (!this.isAddPerformerDialogOpen) return;
     this.isAddPerformerDialogOpen = false;
+    this.setCardElevated(false);
     if (this.addPerformerDebounceTimer) {
       clearTimeout(this.addPerformerDebounceTimer);
       this.addPerformerDebounceTimer = undefined;
