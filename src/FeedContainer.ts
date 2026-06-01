@@ -6418,7 +6418,6 @@ export class FeedContainer {
       skeleton.style.height = '100vh';
       skeleton.style.minHeight = '100vh';
       skeleton.style.scrollSnapAlign = 'start';
-      skeleton.style.scrollSnapStop = 'always';
 
       card.style.border = 'none';
       card.style.borderRadius = '0';

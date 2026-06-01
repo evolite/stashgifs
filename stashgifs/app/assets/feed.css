@@ -413,7 +413,6 @@
 .feed-posts[data-snap-to-cards] .video-post,
 .feed-posts[data-snap-to-cards] .image-post {
   scroll-snap-align: start;
-  scroll-snap-stop: always;
 }
 
 /* ---- Progress bar ---- */

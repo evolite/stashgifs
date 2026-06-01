@@ -397,7 +397,6 @@ export abstract class BasePost {
     this.container.style.justifyContent = 'center';
     this.container.style.overflow = 'hidden';
     this.container.style.scrollSnapAlign = 'start';
-    this.container.style.scrollSnapStop = 'always';
     this.container.dataset.reelMode = 'true';
     
     // Add gradient overlay
