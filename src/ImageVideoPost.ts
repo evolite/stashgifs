@@ -140,8 +140,8 @@ export class ImageVideoPost extends VideoPostBase {
     // Create new player with full HD video
     await this.createHDVideoPlayer(playerContainer, hdVideoUrl);
 
-    // Register with visibility manager if available
-    this.registerUpgradedPlayerWithVisibilityManager();
+    // Let the playback controller re-apply playback to the upgraded player
+    this.notifyPlayerReady();
 
     // If video was playing, resume playback
     if (wasPlaying) {
@@ -182,11 +182,11 @@ export class ImageVideoPost extends VideoPostBase {
   }
 
   /**
-   * Register player with visibility manager after upgrade
+   * Notify the playback controller that the player was (re)created after an upgrade.
    */
-  private registerUpgradedPlayerWithVisibilityManager(): void {
-    if (this.visibilityManager && this.data.image.id && this.player) {
-      this.visibilityManager.registerPlayer(this.data.image.id, this.player);
+  private notifyPlayerReady(): void {
+    if (this.data.image.id && this.player) {
+      this.onPlayerReady?.(this.data.image.id);
     }
   }
 
@@ -265,8 +265,8 @@ export class ImageVideoPost extends VideoPostBase {
       this.attachReelAutoAdvance();
       this.setupProgressBar();
 
-      if (this.visibilityManager && this.data.image.id) {
-        this.visibilityManager.registerPlayer(this.data.image.id, this.player);
+      if (this.data.image.id) {
+        this.onPlayerReady?.(this.data.image.id);
       }
 
     } catch (error) {

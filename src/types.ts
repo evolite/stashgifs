@@ -116,9 +116,7 @@ export interface FeedSettings {
   shortFormInNonHDMode?: boolean; // Include short-form in non-HD mode
   shortFormMaxDuration?: number; // Maximum duration in seconds for short-form content, default: 120
   shortFormOnly?: boolean; // When true, only load short-form content and skip regular markers
-  snapToCards?: boolean; // When true, scroll/swipe snaps to center next/previous card
-  reelMode?: boolean; // When true, use full-screen reel layout
-  reelAutoScroll?: boolean; // Reel mode only: auto-advance to next post when video loops
+  reelAutoScroll?: boolean; // Auto-advance to next post when video loops
   autoHideSearchBar?: boolean; // Hide search bar on scroll-down, default: true
   themeBackground?: string; // Background color for app + search overlay
   themePrimary?: string; // Primary surface color for cards

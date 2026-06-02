@@ -69,6 +69,19 @@ export abstract class VideoPostBase extends BasePost {
     }
     container.classList.add(aspectRatioClass);
 
+    container.addEventListener('click', (e: MouseEvent) => {
+      // Ignore clicks that land on a child control (buttons, the progress bar, etc.)
+      if (e.target !== container && (e.target as HTMLElement).closest('button, [role="slider"]')) return;
+      const player = this.getPlayer();
+      if (!player) return;
+      if (player.isPlaying()) {
+        player.pauseManually();
+      } else {
+        player.clearManualPause();
+        player.play()?.catch(() => {});
+      }
+    });
+
     return container;
   }
 

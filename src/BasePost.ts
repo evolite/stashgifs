@@ -5,7 +5,6 @@
 
 import { FavoritesManager } from './FavoritesManager.js';
 import { StashAPI } from './StashAPI.js';
-import { VisibilityManager } from './VisibilityManager.js';
 import { normalizeMediaUrl, showToast, isMobileDevice, THEME, subscribeWindowScroll, applyMenuItemHover, extractValidPerformerIds, initPopoverDialog, formatViewCount } from './utils.js';
 import { RatingControl } from './RatingControl.js';
 import { ADD_TAG_SVG, HEART_SVG_OUTLINE, HEART_SVG_FILLED, OCOUNT_SVG, EXTERNAL_LINK_SVG, STAR_SVG, STAR_SVG_OUTLINE, VERIFIED_SVG, EYE_SVG, CLAPPERBOARD_SVG } from './icons.js';
@@ -19,7 +18,8 @@ import { Performer, Tag, VideoPostData, ImageBasedPostData, Image } from './type
 export interface BasePostOptions {
   favoritesManager?: FavoritesManager;
   api?: StashAPI;
-  visibilityManager?: VisibilityManager;
+  onPlayerReady?: (postId: string) => void; // Notify controller a player was (re)created
+  onPauseAll?: () => void; // Pause every reel video (e.g. before a modal flow)
   onPerformerChipClick?: (performerId: number, performerName: string) => void | Promise<void>;
   onTagChipClick?: (tagId: number, tagName: string) => void | Promise<void>;
   onStudioChipClick?: (studioId: number, studioName: string) => void | Promise<void>;
@@ -32,6 +32,7 @@ export interface BasePostOptions {
   showAddTagButton?: boolean;
   discoveryPanel?: DiscoveryPanelControl;
   reelAutoScroll?: boolean;
+  onReelAdvance?: () => void; // Reel mode: advance one card via the JS scroller
 }
 
 interface HoverHandlers {
@@ -102,7 +103,8 @@ export abstract class BasePost {
   protected readonly container: HTMLElement;
   protected readonly favoritesManager?: FavoritesManager;
   protected readonly api?: StashAPI;
-  protected readonly visibilityManager?: VisibilityManager;
+  protected readonly onPlayerReady?: (postId: string) => void;
+  protected readonly onPauseAll?: () => void;
   protected readonly hoverHandlers: Map<HTMLElement, HoverHandlers> = new Map();
   protected readonly onPerformerChipClick?: (performerId: number, performerName: string) => void | Promise<void>;
   protected readonly onTagChipClick?: (tagId: number, tagName: string) => void | Promise<void>;
@@ -132,6 +134,7 @@ export abstract class BasePost {
   private discoveryJiggleTimerId?: ReturnType<typeof setTimeout>;
   private readonly touchCleanups: Array<() => void> = [];
   protected reelAutoScroll: boolean = false;
+  private readonly onReelAdvance?: () => void;
   private autoAdvanceAttached: boolean = false;
   private autoAdvanceFired: boolean = false;
   private reelAutoAdvanceElement?: HTMLVideoElement;
@@ -164,7 +167,8 @@ export abstract class BasePost {
     this.container = container;
     this.favoritesManager = options?.favoritesManager;
     this.api = options?.api;
-    this.visibilityManager = options?.visibilityManager;
+    this.onPlayerReady = options?.onPlayerReady;
+    this.onPauseAll = options?.onPauseAll;
     this.onPerformerChipClick = options?.onPerformerChipClick;
     this.onTagChipClick = options?.onTagChipClick;
     this.onStudioChipClick = options?.onStudioChipClick;
@@ -177,6 +181,7 @@ export abstract class BasePost {
     this.showAddTagButton = options?.showAddTagButton !== false;
     this.discoveryPanel = options?.discoveryPanel;
     this.reelAutoScroll = options?.reelAutoScroll === true;
+    this.onReelAdvance = options?.onReelAdvance;
 
     this.performerOverlayMgr = new OverlayManager<PerformerExtended>(
       (id, signal) => this.api!.getPerformerDetails(id, signal),
@@ -372,9 +377,6 @@ export abstract class BasePost {
   }
 
   protected applyReelModeLayoutIfNeeded(header?: HTMLElement): void {
-    if (!this.isReelMode) {
-      return;
-    }
     const headerElement = header ?? this.container.querySelector<HTMLElement>('.video-post__header');
     const playerContainer = this.container.querySelector<HTMLElement>('.video-post__player');
     const footer = this.container.querySelector<HTMLElement>('.video-post__footer');
@@ -396,7 +398,6 @@ export abstract class BasePost {
     this.container.style.flexDirection = 'column';
     this.container.style.justifyContent = 'center';
     this.container.style.overflow = 'hidden';
-    this.container.style.scrollSnapAlign = 'start';
     this.container.dataset.reelMode = 'true';
     
     // Add gradient overlay
@@ -589,9 +590,6 @@ export abstract class BasePost {
 
   public setReelMode(isReelMode: boolean): void {
     this.isReelMode = isReelMode;
-    if (!isReelMode) {
-      return;
-    }
     const header = this.container.querySelector<HTMLElement>('.video-post__header');
     const playerContainer = this.container.querySelector<HTMLElement>('.video-post__player');
     const footer = this.container.querySelector<HTMLElement>('.video-post__footer');
@@ -3345,6 +3343,12 @@ export abstract class BasePost {
   }
 
   private scrollToNextPost(): void {
+    // In reel mode the JS scroller owns scroll position; defer to it so the
+    // auto-advance obeys the same one-card-per-gesture motion as manual input.
+    if (this.onReelAdvance) {
+      this.onReelAdvance();
+      return;
+    }
     let next = this.container.nextElementSibling as HTMLElement | null;
     // Skip over non-post siblings (e.g. lazy-load triggers/sentinels).
     while (next && !next.matches('.video-post, .image-post, [class*="post-wrapper"]')) {

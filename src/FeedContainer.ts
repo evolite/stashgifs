@@ -11,7 +11,8 @@ import { ImagePost } from './ImagePost.js';
 import { ImageVideoPost } from './ImageVideoPost.js';
 import type { IVideoPlayer } from './types.js';
 import { ImagePlayer } from './ImagePlayer.js';
-import { VisibilityManager } from './VisibilityManager.js';
+import { ReelPlaybackController } from './ReelPlaybackController.js';
+import { ReelScroller } from './ReelScroller.js';
 import { FavoritesManager } from './FavoritesManager.js';
 import { SettingsPage } from './SettingsPage.js';
 import { debounce, normalizeMediaUrl, detectDeviceCapabilities, DeviceCapabilities, isStandaloneNavigator, isMobileDevice, detectVideoFromVisualFiles, isMp4File, getImageUrlForDisplay, THEME, THEME_DEFAULTS, normalizeHexColor, toRgba, buildFullUrl, applyThemeColors } from './utils.js';
@@ -40,8 +41,6 @@ const DEFAULT_SETTINGS: FeedSettings = {
   shortFormInNonHDMode: true, // Include short-form in non-HD mode
   shortFormMaxDuration: 120, // Maximum duration in seconds for short-form content
   shortFormOnly: false, // When true, only load short-form content and skip regular markers
-  snapToCards: false, // When true, scroll/swipe snaps to center next/previous card
-  reelMode: false, // When true, use full-screen reel layout
   autoHideSearchBar: true,
   themeBackground: THEME_DEFAULTS.backgroundPrimary,
   themePrimary: THEME_DEFAULTS.surface,
@@ -90,7 +89,7 @@ export class FeedContainer {
   private scrollContainer: HTMLElement;
   private readonly api: StashAPI;
   private readonly settingsManager: PluginSettingsManager;
-  private visibilityManager: VisibilityManager;
+  private playback: ReelPlaybackController;
   private favoritesManager: FavoritesManager;
   private discoveryPanel?: DiscoveryPanel;
   private discoveryManager?: DiscoveryManager;
@@ -131,8 +130,6 @@ export class FeedContainer {
   private isPreloading: boolean = false;
   private excludedTagIds: string[] = [];
   private excludedTagNamesNormalized: string[] = [];
-  private readonly reelNextPreloadIds: Set<string> = new Set();
-  private reelPlaybackStarted: boolean = false;
   private lastScrollTop: number = 0;
   private lastScrollTime: number = 0;
   private scrollVelocity: number = 0;
@@ -156,10 +153,8 @@ export class FeedContainer {
   private readonly loadObservers: Map<string, IntersectionObserver> = new Map(); // Track load observers for cleanup
   private deviceCapabilities: DeviceCapabilities; // Device capabilities for adaptive quality
   private updatePlaceholderVisibilityRef?: () => void; // Reference to updatePlaceholderVisibility function
-  // Card snapping state
-  private cardSnapScrollTarget?: Window | HTMLElement;
-  private cardSnapScrollHandler?: () => void;
-  private cardSnapScrollTimeout?: ReturnType<typeof setTimeout>;
+  // Reel scrolling: JS-driven, one-card-per-gesture (replaces CSS scroll-snap)
+  private reelScroller?: ReelScroller;
   private mobileAutoplayUnlockHandler?: (event: Event) => void;
   private autoplayUnlockHandler?: (event: Event) => void;
   private readonly mobileAutoplayUnlockEvents: ReadonlyArray<string> = [
@@ -181,7 +176,7 @@ export class FeedContainer {
     this.api.maxContentLimit = this.settings.contentLimit ?? 5000;
     // Initialize properties that will be set in methods
     this.scrollContainer = null!; // Will be set in initializeContainers
-    this.visibilityManager = null!; // Will be set in initializeManagers
+    this.playback = null!; // Will be set in initializeManagers
     this.favoritesManager = null!; // Will be set in initializeManagers
     this.posts = new Map();
     this.postOrder = [];
@@ -206,8 +201,8 @@ export class FeedContainer {
     // Setup scroll handler
     this.setupScrollHandler();
     
-    // Setup card snapping if enabled
-    this.setupCardSnapping();
+    // Setup JS reel scroller if reel mode is enabled
+    this.setupReelScroller();
     
     // Setup infinite scroll
     this.setupInfiniteScroll();
@@ -325,86 +320,34 @@ export class FeedContainer {
     document.documentElement.dataset.stashgifsThemeReady = 'true';
   }
 
-  private isReelModeEnabled(): boolean {
-    return this.settings.reelMode === true;
-  }
-
-  private getScrollEventTarget(): Window | HTMLElement {
-    return this.isReelModeEnabled() && this.scrollContainer
-      ? this.scrollContainer
-      : (globalThis as unknown as Window);
+  private getScrollEventTarget(): HTMLElement {
+    return this.scrollContainer;
   }
 
   private getViewportTop(): number {
-    if (this.isReelModeEnabled() && this.scrollContainer) {
-      return this.scrollContainer.scrollTop;
-    }
-    return globalThis.scrollY || document.documentElement.scrollTop || 0;
+    return this.scrollContainer.scrollTop;
   }
 
   private getViewportHeight(): number {
-    if (this.isReelModeEnabled() && this.scrollContainer) {
-      return this.scrollContainer.clientHeight;
-    }
-    return globalThis.innerHeight;
+    return this.scrollContainer.clientHeight;
   }
 
   private getViewportRect(): { top: number; left: number; width: number; height: number } {
-    if (this.isReelModeEnabled() && this.scrollContainer) {
-      const rect = this.scrollContainer.getBoundingClientRect();
-      return { top: rect.top, left: rect.left, width: rect.width, height: rect.height };
-    }
-    return { top: 0, left: 0, width: globalThis.innerWidth, height: globalThis.innerHeight };
+    const rect = this.scrollContainer.getBoundingClientRect();
+    return { top: rect.top, left: rect.left, width: rect.width, height: rect.height };
   }
 
-  private isScrollContainerActive(): boolean {
-    if (!this.scrollContainer) {
-      return false;
-    }
-    return this.scrollContainer.scrollHeight > this.scrollContainer.clientHeight;
-  }
-
-  private getObserverRoot(): Element | null {
-    if (this.scrollContainer && (this.isReelModeEnabled() || this.isScrollContainerActive())) {
-      return this.scrollContainer;
-    }
-    return null;
-  }
-
-  private parseRootMarginToPx(rootMargin: string): number {
-    const match = /-?\d+/.exec(rootMargin);
-    if (!match) {
-      return 0;
-    }
-    const value = Number(match[0]);
-    if (!Number.isFinite(value)) {
-      return 0;
-    }
-    return Math.max(0, value);
-  }
-
-  private isElementWithinLazyLoadRange(element: HTMLElement, marginPx: number): boolean {
-    const rect = element.getBoundingClientRect();
-    const viewport = this.getViewportRect();
-    const elementTop = rect.top - viewport.top;
-    const elementBottom = rect.bottom - viewport.top;
-    return elementBottom >= -marginPx && elementTop <= viewport.height + marginPx;
+  private getObserverRoot(): Element {
+    return this.scrollContainer;
   }
 
   private getElementTop(rect: DOMRect): number {
-    if (this.isReelModeEnabled() && this.scrollContainer) {
-      const containerRect = this.scrollContainer.getBoundingClientRect();
-      return this.scrollContainer.scrollTop + rect.top - containerRect.top;
-    }
-    return this.getViewportTop() + rect.top;
+    const containerRect = this.scrollContainer.getBoundingClientRect();
+    return this.scrollContainer.scrollTop + rect.top - containerRect.top;
   }
 
   private scrollToPosition(top: number, behavior: ScrollBehavior = 'auto'): void {
-    if (this.isReelModeEnabled() && this.scrollContainer) {
-      this.scrollContainer.scrollTo({ top, behavior });
-      return;
-    }
-    (globalThis as unknown as Window).scrollTo({ top, behavior });
+    this.scrollContainer.scrollTo({ top, behavior });
   }
 
   private scrollToTop(): void {
@@ -412,119 +355,74 @@ export class FeedContainer {
   }
 
   private applyReelModeLayout(): void {
-    const isReelMode = this.isReelModeEnabled();
-    this.applyReelRootStyles(isReelMode);
-    this.applyReelContainerStyles(isReelMode);
-    this.applyReelHeaderStyles(isReelMode);
-    this.applyReelPostStyles(isReelMode);
-    if (this.visibilityManager) {
-      this.visibilityManager.setObserverRoot(isReelMode ? this.scrollContainer : null);
-    }
+    this.applyReelRootStyles();
+    this.applyReelContainerStyles();
+    this.applyReelHeaderStyles();
+    this.applyReelPostStyles();
     this.setupScrollHandler();
-    this.setupCardSnapping();
+    this.setupReelScroller();
     this.resetScrollObserver();
     this.refreshAutoplayAfterLayout();
-    if (isReelMode) {
-      this.ensureReelInitialCardLoaded();
-    }
-    this.ensureVisiblePostsLoaded();
+    requestAnimationFrame(() => this.reelScroller?.realign());
+    this.ensureReelInitialCardLoaded();
   }
 
   private refreshAutoplayAfterLayout(): void {
-    if (!this.visibilityManager) {
-      return;
-    }
-
     requestAnimationFrame(() => {
-      this.visibilityManager.refreshVisibilityAndAutoplay();
+      this.playback?.retryActive();
     });
   }
 
-  private applyReelRootStyles(isReelMode: boolean): void {
+  private applyReelRootStyles(): void {
     const root = document.documentElement;
     const body = document.body;
-    root.style.scrollSnapType = '';
-    if (isReelMode) {
-      root.dataset.reelMode = 'true';
-      root.style.overflow = 'hidden';
-      if (body.dataset.scrollLock !== 'true') {
-        body.style.overflow = 'hidden';
-      }
-      return;
-    }
-    delete root.dataset.reelMode;
-    root.style.overflow = '';
+    root.dataset.reelMode = 'true';
+    root.style.overflow = 'hidden';
     if (body.dataset.scrollLock !== 'true') {
-      body.style.overflow = '';
+      body.style.overflow = 'hidden';
     }
   }
 
-  private applyReelContainerStyles(isReelMode: boolean): void {
-    this.applyReelContainerLayout(isReelMode);
-    this.applyReelScrollContainerLayout(isReelMode);
-    this.applyReelPostsLayout(isReelMode);
-  }
-
-  private applyReelContainerLayout(isReelMode: boolean): void {
-    if (!this.container) {
-      return;
-    }
-
-    this.container.style.width = isReelMode ? '100vw' : '';
-    this.container.style.maxWidth = isReelMode ? '100vw' : '';
-    this.container.style.margin = isReelMode ? '0' : '';
-    this.container.style.marginLeft = isReelMode ? 'calc(50% - 50vw)' : '';
-    this.container.style.marginRight = isReelMode ? 'calc(50% - 50vw)' : '';
-    this.container.style.padding = isReelMode ? '0' : '';
-    this.container.style.left = '';
-    this.container.style.right = '';
-    this.container.style.transform = '';
-  }
-
-  private applyReelScrollContainerLayout(isReelMode: boolean): void {
-    if (!this.scrollContainer) {
-      return;
+  private applyReelContainerStyles(): void {
+    if (this.container) {
+      this.container.style.width = '100vw';
+      this.container.style.maxWidth = '100vw';
+      this.container.style.margin = '0';
+      this.container.style.marginLeft = 'calc(50% - 50vw)';
+      this.container.style.marginRight = 'calc(50% - 50vw)';
+      this.container.style.padding = '0';
     }
 
     const reelHeight = CSS.supports('height', '100svh') ? '100svh' : '100vh';
-    this.scrollContainer.style.width = isReelMode ? '100vw' : '';
-    this.scrollContainer.style.maxWidth = isReelMode ? '100vw' : '';
-    this.scrollContainer.style.margin = isReelMode ? '0' : '';
-    this.scrollContainer.style.marginLeft = isReelMode ? 'calc(50% - 50vw)' : '';
-    this.scrollContainer.style.marginRight = isReelMode ? 'calc(50% - 50vw)' : '';
-    this.scrollContainer.style.padding = isReelMode ? '0' : '';
-    this.scrollContainer.style.height = isReelMode ? reelHeight : '';
-    this.scrollContainer.style.minHeight = isReelMode ? reelHeight : '';
-    this.scrollContainer.style.overflowY = isReelMode ? 'auto' : '';
-    this.scrollContainer.style.overflowX = isReelMode ? 'hidden' : '';
-    this.scrollContainer.style.overscrollBehavior = isReelMode ? 'contain' : '';
-    this.scrollContainer.style.scrollSnapType = isReelMode ? 'y mandatory' : '';
-  }
+    this.scrollContainer.style.width = '100vw';
+    this.scrollContainer.style.maxWidth = '100vw';
+    this.scrollContainer.style.margin = '0';
+    this.scrollContainer.style.marginLeft = 'calc(50% - 50vw)';
+    this.scrollContainer.style.marginRight = 'calc(50% - 50vw)';
+    this.scrollContainer.style.padding = '0';
+    this.scrollContainer.style.height = reelHeight;
+    this.scrollContainer.style.minHeight = reelHeight;
+    this.scrollContainer.style.overflowY = 'auto';
+    this.scrollContainer.style.overflowX = 'hidden';
+    this.scrollContainer.style.overscrollBehavior = 'contain';
 
-  private applyReelPostsLayout(isReelMode: boolean): void {
-    if (!this.postsContainer) {
-      return;
-    }
-
-    this.postsContainer.style.display = isReelMode ? 'flex' : '';
-    this.postsContainer.style.flexDirection = isReelMode ? 'column' : '';
-    this.postsContainer.style.gap = isReelMode ? '0' : '';
-    this.postsContainer.style.padding = isReelMode ? '0' : '';
-    this.postsContainer.style.margin = isReelMode ? '0' : '';
-
-    const wrappers = this.postsContainer.querySelectorAll<HTMLElement>('.video-post-wrapper');
-    for (const wrapper of wrappers) {
-      wrapper.style.width = isReelMode ? '100%' : '';
-      wrapper.style.maxWidth = isReelMode ? '100%' : '';
-      wrapper.style.margin = isReelMode ? '0' : '';
+    if (this.postsContainer) {
+      this.postsContainer.style.display = 'flex';
+      this.postsContainer.style.flexDirection = 'column';
+      this.postsContainer.style.gap = '0';
+      this.postsContainer.style.padding = '0';
+      this.postsContainer.style.margin = '0';
+      for (const wrapper of this.postsContainer.querySelectorAll<HTMLElement>('.video-post-wrapper')) {
+        wrapper.style.width = '100%';
+        wrapper.style.maxWidth = '100%';
+        wrapper.style.margin = '0';
+      }
     }
   }
 
-  private applyReelHeaderStyles(isReelMode: boolean): void {
-    const header = this.headerBar || this.scrollContainer?.querySelector<HTMLElement>('.feed-header-bar');
-    if (!header) {
-      return;
-    }
+  private applyReelHeaderStyles(): void {
+    const header = this.headerBar || this.scrollContainer.querySelector<HTMLElement>('.feed-header-bar');
+    if (!header) return;
 
     const headerInner = header.querySelector<HTMLElement>('.feed-header-inner');
     const inputWrapper = header.querySelector<HTMLElement>('.feed-input-wrapper');
@@ -532,21 +430,6 @@ export class FeedContainer {
     const brandContainer = header.querySelector<HTMLElement>('.feed-brand-container');
     const settingsButton = header.querySelector<HTMLElement>('[aria-label="Open settings"]');
 
-    if (isReelMode) {
-      this.setReelHeaderActive(header, headerInner, inputWrapper, queryInput, brandContainer, settingsButton);
-    } else {
-      this.setReelHeaderDefault(header, headerInner, inputWrapper, queryInput, brandContainer, settingsButton);
-    }
-  }
-
-  private setReelHeaderActive(
-    header: HTMLElement,
-    headerInner: HTMLElement | null,
-    inputWrapper: HTMLElement | null,
-    queryInput: HTMLInputElement | null,
-    brandContainer: HTMLElement | null,
-    settingsButton: HTMLElement | null
-  ): void {
     header.style.position = 'fixed';
     header.style.left = '0';
     header.style.right = '0';
@@ -566,7 +449,7 @@ export class FeedContainer {
       headerInner.style.width = '100%';
       headerInner.style.margin = '0 auto';
     }
-    if (inputWrapper) { inputWrapper.style.background = 'transparent'; }
+    if (inputWrapper) inputWrapper.style.background = 'transparent';
     if (queryInput) {
       queryInput.style.background = 'rgba(0, 0, 0, 0.35)';
       queryInput.style.border = '1px solid rgba(255, 255, 255, 0.2)';
@@ -584,54 +467,9 @@ export class FeedContainer {
     }
   }
 
-  private setReelHeaderDefault(
-    header: HTMLElement,
-    headerInner: HTMLElement | null,
-    inputWrapper: HTMLElement | null,
-    queryInput: HTMLInputElement | null,
-    brandContainer: HTMLElement | null,
-    settingsButton: HTMLElement | null
-  ): void {
-    header.style.position = '';
-    header.style.left = '';
-    header.style.right = '';
-    header.style.width = '';
-    header.style.maxWidth = `${this.settings.cardMaxWidth + 24}px`;
-    header.style.zIndex = '';
-    header.style.background = '';
-    header.style.backdropFilter = '';
-    header.style.borderRadius = '';
-    header.style.padding = '';
-    header.style.display = '';
-    header.style.justifyContent = '';
-    header.style.alignItems = '';
-
-    if (headerInner) {
-      headerInner.style.maxWidth = `${this.settings.cardMaxWidth}px`;
-      headerInner.style.width = '';
-      headerInner.style.margin = '';
-    }
-    if (inputWrapper) { inputWrapper.style.background = ''; }
-    if (queryInput) {
-      queryInput.style.background = '';
-      queryInput.style.border = '';
-      queryInput.style.color = '';
-      queryInput.style.backdropFilter = '';
-    }
-    if (brandContainer) {
-      brandContainer.style.background = '';
-      brandContainer.style.border = `1px solid ${THEME.colors.border}`;
-    }
-    if (settingsButton) {
-      settingsButton.style.background = THEME.colors.backgroundSecondary;
-      settingsButton.style.border = `1px solid ${THEME.colors.border}`;
-      settingsButton.style.color = THEME.colors.iconInactive;
-    }
-  }
-
-  private applyReelPostStyles(isReelMode: boolean): void {
+  private applyReelPostStyles(): void {
     for (const post of this.posts.values()) {
-      post.setReelMode?.(isReelMode);
+      post.setReelMode?.(true);
     }
   }
 
@@ -656,12 +494,9 @@ export class FeedContainer {
       const newHDMode = newSettings.hdMode;
       this.useHDMode = newHDMode;
       this.settingsManager.save({ hdMode: newHDMode });
-      this.visibilityManager.setHDMode(newHDMode);
-      this.visibilityManager.setAutoPlay(!newHDMode || (updatedSettings.reelMode ?? false));
     }
 
-    const reelModeChanged = newSettings.reelMode !== undefined;
-    this.handleLayoutSettingsChange(newSettings, reelModeChanged);
+    this.handleLayoutSettingsChange();
     this.handlePostDisplaySettingsChange(newSettings, updatedSettings, previousShowVerified, previousShowProductionAge, previousShowStudioChips, previousShowSceneTitle);
 
     const excludedTagsChanged = !this.areExcludedTagNamesEqual(
@@ -701,7 +536,7 @@ export class FeedContainer {
       this.discoveryPanel.setWhisparrClient(WhisparrClient.fromSettings(updatedSettings));
     }
 
-    if (this.shouldReloadFeed(newSettings, excludedTagsChanged, orientationFilterChanged, reelModeChanged)) {
+    if (this.shouldReloadFeed(newSettings, excludedTagsChanged, orientationFilterChanged)) {
       this.loadVideos(this.currentFilters, false, undefined, true).catch((e) => {
         console.error('Failed to reload feed after settings change', e);
       });
@@ -726,16 +561,8 @@ export class FeedContainer {
     this.discoveryPanel = undefined;
   }
 
-  private handleLayoutSettingsChange(newSettings: Partial<FeedSettings>, reelModeChanged: boolean): void {
-    if (newSettings.snapToCards !== undefined || reelModeChanged) {
-      this.setupCardSnapping();
-    }
-    if (reelModeChanged) {
-      this.applyReelModeLayout();
-    }
-    if (!reelModeChanged && newSettings.snapToCards !== undefined) {
-      this.refreshAutoplayAfterLayout();
-    }
+  private handleLayoutSettingsChange(): void {
+    // No layout toggle — reel is always on; nothing to do here.
   }
 
   private handlePostDisplaySettingsChange(
@@ -773,8 +600,7 @@ export class FeedContainer {
   private shouldReloadFeed(
     newSettings: Partial<FeedSettings>,
     excludedTagsChanged: boolean,
-    orientationFilterChanged: boolean,
-    reelModeChanged: boolean
+    orientationFilterChanged: boolean
   ): boolean {
     return !!(
       newSettings.hdMode !== undefined ||
@@ -789,7 +615,6 @@ export class FeedContainer {
       newSettings.galleryIds !== undefined ||
       newSettings.contentLimit !== undefined ||
       orientationFilterChanged ||
-      reelModeChanged ||
       excludedTagsChanged
     );
   }
@@ -1047,17 +872,11 @@ export class FeedContainer {
   private setGlobalMuteState(isMuted: boolean): void {
     this.globalMuteState = isMuted;
     this.settingsManager.save({ globalMuteState: isMuted });
-    
-    // Apply to all players
-    this.applyGlobalMuteState();
-    
-    // Update AudioManager
-    if (this.visibilityManager) {
-      this.visibilityManager.getAudioManager().setGlobalMuteState(isMuted);
-      this.updateAllMuteButtons();
-    }
 
-    // AudioManager will automatically handle audio focus when global mute state changes
+    // Apply to every existing player, then re-apply audio to the active card.
+    this.applyGlobalMuteState();
+    this.playback?.setGlobalMute(isMuted);
+    this.updateAllMuteButtons();
   }
 
   /**
@@ -1084,9 +903,6 @@ export class FeedContainer {
       }
       // ImagePost videos are always muted (no audio playback), no need to handle here
     }
-    
-    // Also update AudioManager to ensure consistency
-    this.visibilityManager?.getAudioManager().setGlobalMuteState(this.globalMuteState);
   }
 
   /**
@@ -1112,27 +928,12 @@ export class FeedContainer {
    * Initialize visibility and favorites managers
    */
   private initializeManagers(): void {
-    // Initialize visibility manager
-    // Enable autoplay for non-HD mode (viewport-based), disable for HD mode (hover-based only)
-    this.visibilityManager = new VisibilityManager({
-      threshold: this.settings.autoPlayThreshold,
-      autoPlay: !this.useHDMode || this.settings.reelMode, // Enable autoplay in non-HD mode or reel mode
-      debug: this.shouldEnableVisibilityDebug(),
-      onHoverLoadRequest: (postId: string) => this.triggerVideoLoadOnHover(postId),
-      onPlaybackStarted: (postId: string) => this.handleReelPlaybackStarted(postId),
-      onPrimaryPostChanged: (postId: string) => {
-        if (!this.discoveryManager) return;
-        this.discoveryManager.onPrimaryPostChanged(postId, this.getPerformersForPost(postId));
-      },
-      isReelMode: this.settings.reelMode, // Pass reel mode state
-      root: this.settings.reelMode ? this.scrollContainer : null,
+    // Reel playback: one active card at a time, driven by ReelScroller.
+    this.playback = new ReelPlaybackController({
+      getOrderedPostIds: () => this.postOrder,
+      getPost: (postId: string) => this.posts.get(postId),
     });
-
-    // Set HD mode state for more aggressive unloading
-    this.visibilityManager.setHDMode(this.useHDMode);
-    
-    // Initialize AudioManager with the loaded global mute state
-    this.visibilityManager.getAudioManager().setGlobalMuteState(this.globalMuteState);
+    this.playback.setGlobalMute(this.globalMuteState);
 
     // Apply global mute state to all existing players and update mute buttons
     // This ensures the loaded state is applied to any posts that were created before managers were initialized
@@ -1191,9 +992,9 @@ export class FeedContainer {
           // Try to play the dummy video to unlock autoplay
           await dummyVideo.play();
 
-          // Try to play all currently visible videos
+          // Try to play the active card now that autoplay is unlocked
           setTimeout(() => {
-            this.visibilityManager.retryVisibleVideos();
+            this.playback.retryActive();
           }, 100);
         } catch (e) {
           // Autoplay unlock failed, user will need to interact
@@ -1223,7 +1024,7 @@ export class FeedContainer {
     // play decision on gesture so any video the browser refused to autoplay starts.
     // reconcile() is idempotent and cheap, so firing on every gesture is fine.
     const handler = () => {
-      this.visibilityManager?.retryVisibleVideos();
+      this.playback?.retryActive();
     };
 
     this.autoplayUnlockHandler = handler;
@@ -2559,7 +2360,7 @@ export class FeedContainer {
     
     queryInput.addEventListener('blur', () => {
       updateSearchBarDisplay();
-      this.applyReelHeaderStyles(this.isReelModeEnabled());
+      this.applyReelHeaderStyles();
     });
     
     queryInput.addEventListener('input', () => {
@@ -3293,7 +3094,7 @@ export class FeedContainer {
     
     this.posts.set(image.id, post);
     this.postOrder.push(image.id);
-    this.visibilityManager.observePost(postContainer, image.id);
+    this.playback.registerCard(image.id, post);
 
     if (signal?.aborted) {
       return null;
@@ -3304,7 +3105,8 @@ export class FeedContainer {
       post.setHQMode(true);
     }
 
-    this.setupLazyLoadingForImageVideo(postContainer, post, image, videoUrl, signal);
+    // Loading is driven by VisibilityManager.reconcile() via onLoadRequest once
+    // this post is visible — no separate per-post load observer.
     return postContainer;
   }
 
@@ -3315,7 +3117,8 @@ export class FeedContainer {
     return {
       favoritesManager: this.favoritesManager,
       api: this.api,
-      visibilityManager: this.visibilityManager,
+      onPlayerReady: (postId: string) => this.playback?.onPlayerReady(postId),
+      onPauseAll: () => this.playback?.pauseAll(),
       onPerformerChipClick: (performerId: number, performerName: string) => { this.handlePerformerChipClick(performerId, performerName); },
       onTagChipClick: (tagId: number, tagName: string) => { this.handleTagChipClick(tagId, tagName); },
       onStudioChipClick: (studioId: number, studioName: string) => { this.handleStudioChipClick(studioId, studioName); },
@@ -3327,10 +3130,11 @@ export class FeedContainer {
       showViewCountBadge: this.settings.showViewCountBadge !== false,
       showAddTagButton: this.settings.showAddTagButton !== false,
       ratingSystemConfig: this.ratingSystemConfig,
-      reelMode: this.settings.reelMode === true,
+      reelMode: true,
       hdModeFromSettings: this.useHDMode,
       discoveryPanel: this.discoveryPanel,
       reelAutoScroll: this.settings.reelAutoScroll === true,
+      onReelAdvance: () => this.reelScroller?.next(),
     };
   }
 
@@ -3492,62 +3296,6 @@ export class FeedContainer {
   }
 
   /**
-   * Setup lazy loading for image video post
-   */
-  private setupLazyLoadingForImageVideo(
-    postContainer: HTMLElement,
-    post: ImageVideoPost,
-    image: Image,
-    videoUrl: string,
-    signal?: AbortSignal
-  ): void {
-    // Load only when the post actually enters the viewport (no speculative
-    // look-ahead). Keeps bandwidth on the video the user is looking at.
-    this.createLazyLoadObserverForImageVideo(postContainer, post, image, LAZY_LOAD_ROOT_MARGIN, signal);
-  }
-
-  /**
-   * Create and setup intersection observer for lazy loading image videos
-   */
-  private createLazyLoadObserverForImageVideo(
-    postContainer: HTMLElement,
-    post: ImageVideoPost,
-    image: Image,
-    rootMargin: string,
-    signal?: AbortSignal
-  ): void {
-    const loadObserver = new IntersectionObserver(
-      (entries) => {
-        for (const entry of entries) {
-          if (entry.isIntersecting) {
-            this.handleImageVideoLoad(entry, post, image, loadObserver, signal);
-          }
-        }
-      },
-      { root: this.getObserverRoot(), rootMargin, threshold: 0 }
-    );
-    
-    this.loadObservers.set(image.id, loadObserver);
-    loadObserver.observe(postContainer);
-    this.scheduleLazyLoadFallback(postContainer, rootMargin, () => {
-      this.loadImageVideoPost(post, image, signal);
-    }, signal);
-  }
-
-  /**
-   * Handle image video loading when intersection observer triggers
-   */
-  private handleImageVideoLoad(
-    entry: IntersectionObserverEntry,
-    post: ImageVideoPost,
-    image: Image,
-    loadObserver: IntersectionObserver,
-    signal?: AbortSignal
-  ): void {
-    this.loadImageVideoPost(post, image, signal, loadObserver);
-  }
-
-  /**
    * Initialize load state for video loading
    */
   private initializeLoadState(append: boolean): void {
@@ -3556,7 +3304,6 @@ export class FeedContainer {
     if (!append) {
       // Clear all cached content when starting a new search/filter
       this.clearPosts();
-      this.reelPlaybackStarted = false;
       this.markers = [];
       this.images = [];
       this.showSkeletonLoaders();
@@ -3643,10 +3390,12 @@ export class FeedContainer {
     this.updateInfiniteScrollTrigger();
 
     if (!append) {
-      this.refreshAutoplayAfterLayout();
+      // First batch rendered: align to the first card and start it playing.
+      requestAnimationFrame(() => {
+        this.reelScroller?.realign();
+        this.ensureReelInitialCardLoaded();
+      });
     }
-
-    this.ensureVisiblePostsLoaded();
   }
 
   /**
@@ -4969,13 +4718,14 @@ export class FeedContainer {
     
     this.posts.set(marker.id, post);
     this.postOrder.push(marker.id);
-    this.visibilityManager.observePost(postContainer, marker.id);
+    this.playback.registerCard(marker.id, post);
 
     if (signal?.aborted) {
       return null;
     }
 
-    this.setupLazyLoading(postContainer, post, marker, safeVideoUrl, signal);
+    // Loading is driven by VisibilityManager.reconcile() via the onLoadRequest
+    // hook once this post is visible — no separate per-post load observer.
     return postContainer;
   }
 
@@ -5060,179 +4810,15 @@ export class FeedContainer {
   }
 
   /**
-   * Setup lazy loading for video post
-   */
-  private setupLazyLoading(
-    postContainer: HTMLElement,
-    post: VideoPost,
-    marker: SceneMarker,
-    safeVideoUrl: string,
-    signal?: AbortSignal
-  ): void {
-    // Load only when the post actually enters the viewport (no speculative
-    // look-ahead). Keeps bandwidth on the video the user is looking at.
-    this.createLazyLoadObserver(postContainer, post, marker, LAZY_LOAD_ROOT_MARGIN, signal);
-  }
-
-  /**
-   * Create and setup intersection observer for lazy loading
-   */
-  private createLazyLoadObserver(
-    postContainer: HTMLElement,
-    post: VideoPost,
-    marker: SceneMarker,
-    rootMargin: string,
-    signal?: AbortSignal
-  ): void {
-    const loadObserver = new IntersectionObserver(
-      (entries) => {
-        for (const entry of entries) {
-          if (entry.isIntersecting) {
-            this.handleVideoLoad(entry, post, marker, loadObserver, signal);
-          }
-        }
-      },
-      { root: this.getObserverRoot(), rootMargin, threshold: 0 }
-    );
-    
-    this.loadObservers.set(marker.id, loadObserver);
-    loadObserver.observe(postContainer);
-    this.scheduleLazyLoadFallback(postContainer, rootMargin, () => {
-      this.loadVideoPost(post, marker, signal);
-    }, signal);
-  }
-
-  /**
-   * Handle video loading when intersection observer triggers
-   */
-  private handleVideoLoad(
-    entry: IntersectionObserverEntry,
-    post: VideoPost,
-    marker: SceneMarker,
-    loadObserver: IntersectionObserver,
-    signal?: AbortSignal
-  ): void {
-    if (this.isReelModeEnabled()) {
-      const reelWindow = this.getReelActiveWindowPostIds();
-      if (!reelWindow.has(marker.id)) {
-        return;
-      }
-    }
-    this.loadVideoPost(post, marker, signal, loadObserver);
-  }
-
-  private loadImageVideoPost(
-    post: ImageVideoPost,
-    image: Image,
-    signal?: AbortSignal,
-    loadObserver?: IntersectionObserver
-  ): void {
-    const container = post.getContainer();
-    if (this.isReelModeEnabled()) {
-      const reelWindow = this.getReelActiveWindowPostIds();
-      if (!reelWindow.has(image.id)) {
-        return;
-      }
-    }
-    if (signal?.aborted && !container.isConnected) {
-      loadObserver?.disconnect();
-      this.loadObservers.delete(image.id);
-      return;
-    }
-
-    if (post.isPlayerLoaded()) {
-      loadObserver?.disconnect();
-      this.loadObservers.delete(image.id);
-      return;
-    }
-
-    const player = post.preload();
-    if (isVideoPlayer(player)) {
-      this.visibilityManager.registerPlayer(image.id, player);
-    } else {
-      console.warn('FeedContainer: Player not created, hiding post', { imageId: image.id });
-      post.hidePost();
-    }
-
-    loadObserver?.disconnect();
-    this.loadObservers.delete(image.id);
-  }
-
-  private loadVideoPost(
-    post: VideoPost,
-    marker: SceneMarker,
-    signal?: AbortSignal,
-    loadObserver?: IntersectionObserver
-  ): void {
-    const container = post.getContainer();
-    if (this.isReelModeEnabled()) {
-      const reelWindow = this.getReelActiveWindowPostIds();
-      if (!reelWindow.has(marker.id)) {
-        return;
-      }
-    }
-    if (signal?.aborted && !container.isConnected) {
-      loadObserver?.disconnect();
-      this.loadObservers.delete(marker.id);
-      return;
-    }
-
-    if (post.isPlayerLoaded()) {
-      loadObserver?.disconnect();
-      this.loadObservers.delete(marker.id);
-      return;
-    }
-
-    const player = post.preload();
-    if (isVideoPlayer(player)) {
-      this.visibilityManager.registerPlayer(marker.id, player);
-    } else {
-      console.warn('FeedContainer: Player not created, hiding post', { markerId: marker.id });
-      post.hidePost();
-    }
-
-    loadObserver?.disconnect();
-    this.loadObservers.delete(marker.id);
-  }
-
-  private scheduleLazyLoadFallback(
-    postContainer: HTMLElement,
-    rootMargin: string,
-    loadHandler: () => void,
-    signal?: AbortSignal
-  ): void {
-    const marginPx = this.parseRootMarginToPx(rootMargin);
-    const check = () => {
-      if (signal?.aborted && !postContainer.isConnected) {
-        return;
-      }
-      if (!postContainer.isConnected) {
-        return;
-      }
-      if (this.isElementWithinLazyLoadRange(postContainer, marginPx)) {
-        loadHandler();
-      }
-    };
-
-    const requestFrame = globalThis.requestAnimationFrame?.bind(globalThis) ?? ((cb: FrameRequestCallback) => setTimeout(cb, 16));
-    requestFrame(() => requestFrame(check));
-  }
-
-
-  /**
    * Clear all posts
    */
   private clearPosts(): void {
     for (const [postId, post] of this.posts.entries()) {
-      if (this.visibilityManager) {
-        this.visibilityManager.unobservePost(postId);
-      }
+      this.playback?.unregisterCard(postId);
       post.destroy();
     }
     this.posts.clear();
     this.postOrder = [];
-    this.reelNextPreloadIds.clear();
-    this.reelPlaybackStarted = false;
     if (this.postsContainer) {
       this.postsContainer.innerHTML = '';
     }
@@ -5309,68 +4895,6 @@ export class FeedContainer {
   private getPerformersForPost(postId: string) {
     const post = this.posts.get(postId);
     return post?.getPerformers() ?? [];
-  }
-
-  private handleReelPlaybackStarted(postId: string): void {
-    if (!this.isReelModeEnabled()) {
-      return;
-    }
-    this.reelPlaybackStarted = true;
-    this.preloadNextReelPosts(postId);
-  }
-
-  private shouldSkipReelPreload(post: PostType | undefined, nextId: string): boolean {
-    if (this.reelNextPreloadIds.has(nextId)) {
-      return true;
-    }
-    if (!post || !(post instanceof VideoPost || post instanceof ImageVideoPost)) {
-      this.reelNextPreloadIds.add(nextId);
-      return true;
-    }
-    if (!post.hasVideoSource()) {
-      this.reelNextPreloadIds.add(nextId);
-      return true;
-    }
-    if (post.isPlayerLoaded()) {
-      this.reelNextPreloadIds.add(nextId);
-      return true;
-    }
-    return false;
-  }
-
-  private tryPreloadReelPost(nextId: string, post: VideoPost | ImageVideoPost): void {
-    try {
-      const player = post.preload();
-      if (isVideoPlayer(player)) {
-        this.visibilityManager.registerPlayer(nextId, player);
-      }
-      this.reelNextPreloadIds.add(nextId);
-    } catch (error) {
-      console.warn('FeedContainer: Reel next preload failed', { postId: nextId, error });
-    }
-  }
-
-  private preloadNextReelPosts(currentPostId: string): void {
-    if (!this.isReelModeEnabled()) {
-      return;
-    }
-    const currentIndex = this.postOrder.indexOf(currentPostId);
-    if (currentIndex === -1) {
-      return;
-    }
-
-    const nextIndexes = [currentIndex + 1, currentIndex + 2];
-    for (const index of nextIndexes) {
-      if (index < 0 || index >= this.postOrder.length) {
-        continue;
-      }
-      const nextId = this.postOrder[index];
-      const post = this.posts.get(nextId);
-      if (this.shouldSkipReelPreload(post, nextId)) {
-        continue;
-      }
-      this.tryPreloadReelPost(nextId, post as VideoPost | ImageVideoPost);
-    }
   }
 
   private shouldEnableVisibilityDebug(): boolean {
@@ -5508,7 +5032,7 @@ export class FeedContainer {
     const post = this.posts.get(postId);
     if (post) {
       this.destroyPostPlayer(post);
-      this.visibilityManager.unobservePost(postId);
+      this.playback.unregisterCard(postId);
       post.destroy();
       this.posts.delete(postId);
       this.removePostFromOrder(postId);
@@ -5571,65 +5095,6 @@ export class FeedContainer {
   /**
    * Trigger video loading when user hovers over a video that hasn't loaded yet
    */
-  private triggerVideoLoadOnHover(postId: string): void {
-    const post = this.posts.get(postId);
-    if (!post) {
-      return;
-    }
-
-    // If player already exists, nothing to do
-    if (post.isPlayerLoaded()) {
-      return;
-    }
-
-    // If post has a video source, trigger preload
-    if (post.hasVideoSource()) {
-      const player = post.preload();
-      if (isVideoPlayer(player)) {
-        // Register player with VisibilityManager - it will handle playing when ready
-        // Only register video players, not image players
-        this.visibilityManager.registerPlayer(postId, player);
-      }
-    }
-  }
-
-  private ensureVisiblePostsLoaded(maxToLoad: number = 1): void {
-    if (this.posts.size === 0) {
-      return;
-    }
-
-    const viewport = this.getViewportRect();
-    let loaded = 0;
-
-    for (const postId of this.postOrder) {
-      if (loaded >= maxToLoad) break;
-
-      const post = this.posts.get(postId);
-      if (!post || post.isPlayerLoaded() || !post.hasVideoSource()) continue;
-      if (!this.isPostVisibleInViewport(post, viewport)) continue;
-
-      loaded += this.tryPreloadPost(postId, post);
-    }
-  }
-
-  private isPostVisibleInViewport(post: PostType, viewport: { top: number; height: number }): boolean {
-    const rect = post.getContainer().getBoundingClientRect();
-    return rect.bottom > viewport.top && rect.top < viewport.top + viewport.height;
-  }
-
-  private tryPreloadPost(postId: string, post: PostType): number {
-    try {
-      const player = post.preload();
-      if (isVideoPlayer(player)) {
-        this.visibilityManager.registerPlayer(postId, player);
-        return 1;
-      }
-    } catch (error) {
-      console.warn('Visible preload failed for post', postId, error);
-    }
-    return 0;
-  }
-
   private aggressiveVideoUnload(): void {
     const viewportTop = this.getViewportTop();
     const viewportBottom = viewportTop + this.getViewportHeight();
@@ -5695,9 +5160,6 @@ export class FeedContainer {
 
   private getReelActiveWindowPostIds(): Set<string> {
     const ids = new Set<string>();
-    if (!this.isReelModeEnabled()) {
-      return ids;
-    }
     const closestCard = this.findCardClosestToCenter();
     if (!closestCard) {
       return ids;
@@ -5729,9 +5191,9 @@ export class FeedContainer {
     viewportBottom: number,
     unloadDistance: number
   ): void {
-    const reelWindow = this.isReelModeEnabled() ? this.getReelActiveWindowPostIds() : null;
+    const reelWindow = this.getReelActiveWindowPostIds();
     for (const [postId, post] of this.posts.entries()) {
-      if (reelWindow?.has(postId)) {
+      if (reelWindow.has(postId)) {
         continue;
       }
       if (this.isPostFarFromViewport(post, viewportTop, viewportBottom, unloadDistance)) {
@@ -5772,12 +5234,12 @@ export class FeedContainer {
     if (loadedVideoCount <= maxLoadedVideos) {
       return;
     }
-    const reelWindow = this.isReelModeEnabled() ? this.getReelActiveWindowPostIds() : null;
+    const reelWindow = this.getReelActiveWindowPostIds();
     for (const [postId, post] of this.posts.entries()) {
       if (loadedVideoCount <= maxLoadedVideos) {
         break;
       }
-      if (reelWindow?.has(postId)) {
+      if (reelWindow.has(postId)) {
         continue;
       }
       if (!this.isPostImmediatelyVisible(post, viewportTop, viewportBottom)) {
@@ -5913,7 +5375,6 @@ export class FeedContainer {
     }
     this.cleanupScrollTimeout = setTimeout(() => {
       this.cleanupScrollTimeout = undefined;
-      this.ensureVisiblePostsLoaded();
       this.cleanupDistantPosts();
     }, 2000);
   }
@@ -5965,52 +5426,34 @@ export class FeedContainer {
     this.scrollEventTarget.addEventListener('scroll', handleScroll, { passive: true });
   }
 
-  private setupCardSnapping(): void {
-    this.cleanupCardSnapping();
+  /**
+   * Enable/disable the JS reel scroller to match the current reel-mode state.
+   * The scroller owns scroll position in reel mode (one card per gesture) and
+   * drives autoplay via onSettle; outside reel mode the feed scrolls natively.
+   */
+  private setupReelScroller(): void {
+    if (!this.scrollContainer) return;
 
-    const shouldSnap = this.settings.snapToCards === true || this.settings.reelMode === true;
-    if (!shouldSnap) return;
-
-    // In snapToCards (non-reel) mode the document root is the scroll container, so set
-    // CSS snap there and mark the posts container so the CSS rule aligns each card.
-    // Reel mode already has scrollSnapType on scrollContainer via updateScrollContainerStyles,
-    // and cards get scrollSnapAlign via applyReelContainerStyles.
-    if (!this.settings.reelMode) {
-      document.documentElement.style.scrollSnapType = 'y mandatory';
-      if (this.postsContainer) this.postsContainer.dataset.snapToCards = 'true';
+    if (!this.reelScroller) {
+      this.reelScroller = new ReelScroller({
+        scrollContainer: this.scrollContainer,
+        getCards: () => this.getAllCardContainers(),
+        getPostId: (card) => this.getPostIdFromCard(card),
+        onSettle: (postId) => this.handleReelSettle(postId),
+      });
     }
-
-    // After the browser's native snap settles, trigger autoplay for the snapped card.
-    this.cardSnapScrollHandler = () => {
-      if (this.cardSnapScrollTimeout) clearTimeout(this.cardSnapScrollTimeout);
-      this.cardSnapScrollTimeout = setTimeout(() => {
-        this.cardSnapScrollTimeout = undefined;
-        const closestCard = this.findCardClosestToCenter();
-        if (!closestCard) return;
-        const postId = this.getPostIdFromCard(closestCard);
-        if (!postId) return;
-        this.triggerAutoplayForSnappedCard(postId).catch(() => {});
-        setTimeout(() => { this.requestAudioFocusForSnappedCard(postId); }, 300);
-      }, 200);
-    };
-    this.cardSnapScrollTarget = this.getScrollEventTarget();
-    this.cardSnapScrollTarget.addEventListener('scroll', this.cardSnapScrollHandler as EventListener, { passive: true });
+    this.reelScroller.enable();
   }
 
-  private cleanupCardSnapping(): void {
-    if (this.cardSnapScrollHandler && this.cardSnapScrollTarget) {
-      this.cardSnapScrollTarget.removeEventListener('scroll', this.cardSnapScrollHandler as EventListener);
-      this.cardSnapScrollHandler = undefined;
-    }
-    this.cardSnapScrollTarget = undefined;
-    if (this.postsContainer?.dataset.snapToCards) {
-      delete this.postsContainer.dataset.snapToCards;
-      document.documentElement.style.scrollSnapType = '';
-    }
-    if (this.cardSnapScrollTimeout) {
-      clearTimeout(this.cardSnapScrollTimeout);
-      this.cardSnapScrollTimeout = undefined;
-    }
+  /** Autoplay + audio for the card the reel scroller just landed on. */
+  private handleReelSettle(postId: string): void {
+    this.playback.setActive(postId);
+    this.discoveryManager?.onPrimaryPostChanged(postId, this.getPerformersForPost(postId));
+  }
+
+  private cleanupReelScroller(): void {
+    this.reelScroller?.destroy();
+    this.reelScroller = undefined;
   }
 
   private teardownListeners(): void {
@@ -6031,7 +5474,7 @@ export class FeedContainer {
       this.suggestionsTouchOutsideHandler = undefined;
     }
 
-    this.cleanupCardSnapping();
+    this.cleanupReelScroller();
 
     if (this.cleanupScrollTimeout) {
       clearTimeout(this.cleanupScrollTimeout);
@@ -6123,139 +5566,12 @@ export class FeedContainer {
   }
 
   private ensureReelInitialCardLoaded(): void {
-    if (!this.isReelModeEnabled()) {
-      return;
-    }
-
     const closestCard = this.findCardClosestToCenter();
-    if (!closestCard) {
-      return;
-    }
-
+    if (!closestCard) return;
     const postId = this.getPostIdFromCard(closestCard);
-    if (!postId) {
-      return;
-    }
-
-    const post = this.posts.get(postId);
-    if (!post || post.isPlayerLoaded() || !post.hasVideoSource()) {
-      return;
-    }
-
-    try {
-      const player = post.preload();
-      if (isVideoPlayer(player)) {
-        this.visibilityManager.registerPlayer(postId, player);
-        this.visibilityManager.observePost(post.getContainer(), postId);
-      }
-    } catch (error) {
-      console.warn('Reel initial preload failed for post', postId, error);
-    }
-
-    if (this.settings.autoPlay) {
-      this.triggerAutoplayForSnappedCard(postId).catch(() => {
-        // Ignore autoplay errors
-      });
-      setTimeout(() => {
-        this.requestAudioFocusForSnappedCard(postId);
-      }, 300);
-    }
-  }
-
-
-  /**
-   * Trigger autoplay for a snapped card
-   */
-  private async triggerAutoplayForSnappedCard(postId: string): Promise<void> {
-    const post = this.posts.get(postId);
-    if (!post) {
-      return; // Post doesn't exist
-    }
-
-    // Skip image posts
-    if (!post.hasVideoSource()) {
-      return;
-    }
-
-    // Check if autoplay is enabled
-    if (!this.settings.autoPlay) {
-      return;
-    }
-
-    // Preload the player if not already loaded
-    const player = post.preload();
-    if (!isVideoPlayer(player)) {
-      return; // Not a video player or failed to load
-    }
-
-    // Register with VisibilityManager if needed
-    this.visibilityManager.registerPlayer(postId, player);
-    this.visibilityManager.observePost(post.getContainer(), postId);
-
-    // Wait a bit for player to initialize and IntersectionObserver to update
-    await new Promise((r) => setTimeout(r, 150));
-
-    // Check if video is manually paused - don't autoplay if user paused it
-    if (player.isManuallyPaused?.()) {
-      return;
-    }
-
-    // Trigger playback via VisibilityManager
-    const container = post.getContainer();
-    const rect = container.getBoundingClientRect();
-    const viewport = this.getViewportRect();
-    const isActuallyVisible = rect.bottom > viewport.top &&
-                              rect.top < viewport.top + viewport.height &&
-                              rect.right > viewport.left &&
-                              rect.left < viewport.left + viewport.width;
-
-    const triggered = this.visibilityManager.triggerSnapPlayback(postId, isActuallyVisible);
-    if (!triggered) return;
-
-    // Wait for playback to start, then ensure audio is granted
-    const checkPlayback = async (attempts: number = 0): Promise<void> => {
-      if (attempts > 10) return;
-      if (player.isPlaying()) {
-        this.visibilityManager.grantSnapAudioFocus(postId);
-      } else {
-        await new Promise((r) => setTimeout(r, 100));
-        await checkPlayback(attempts + 1);
-      }
-    };
-    checkPlayback().catch(() => {});
-  }
-
-  /**
-   * Request audio focus for a snapped card
-   * This is called after playback starts to ensure audio is granted
-   */
-  private requestAudioFocusForSnappedCard(postId: string): void {
-    // Only request audio if global mute is off
-    if (this.globalMuteState) {
-      return; // Global mute is on, don't request audio
-    }
-
-    const post = this.posts.get(postId);
-    if (!post) {
-      return; // Post doesn't exist
-    }
-
-    // Skip image posts
-    if (!post.hasVideoSource()) {
-      return;
-    }
-
-    const player = post.getPlayer();
-    if (!isVideoPlayer(player)) {
-      return;
-    }
-
-    // Only request audio if video is actually playing
-    if (!player.isPlaying()) {
-      return;
-    }
-
-    this.visibilityManager?.grantSnapAudioFocus(postId);
+    if (!postId) return;
+    this.playback.setActive(postId);
+    this.discoveryManager?.onPrimaryPostChanged(postId, this.getPerformersForPost(postId));
   }
 
   /**
@@ -6285,11 +5601,7 @@ export class FeedContainer {
     if (body.dataset.scrollLock !== 'true') {
       return;
     }
-    if (this.isReelModeEnabled()) {
-      body.style.overflow = 'hidden';
-    } else {
-      body.style.overflow = '';
-    }
+    body.style.overflow = 'hidden'; // reel-only: always locked
     body.style.paddingRight = '';
     delete body.dataset.scrollLock;
   }
@@ -6414,42 +5726,35 @@ export class FeedContainer {
     }
     card.appendChild(footer);
 
-    if (this.isReelModeEnabled()) {
-      skeleton.style.height = '100vh';
-      skeleton.style.minHeight = '100vh';
-      skeleton.style.scrollSnapAlign = 'start';
+    skeleton.style.height = '100vh';
+    skeleton.style.minHeight = '100vh';
+    card.style.border = 'none';
+    card.style.borderRadius = '0';
+    card.style.backgroundColor = 'transparent';
+    card.style.height = '100%';
+    card.style.display = 'flex';
+    card.style.flexDirection = 'column';
+    card.style.position = 'relative';
+    header.style.position = 'absolute';
+    header.style.left = '16px';
+    header.style.right = '120px';
+    header.style.bottom = '88px';
+    header.style.top = 'auto';
+    header.style.padding = '10px 14px';
+    header.style.borderRadius = THEME.radius.button;
+    header.style.background = 'rgba(0, 0, 0, 0.35)';
+    player.style.height = '100%';
+    player.style.aspectRatio = 'auto';
+    player.classList.remove('aspect-16-9');
+    footer.style.position = 'absolute';
+    footer.style.right = '16px';
+    footer.style.bottom = '88px';
+    footer.style.top = 'auto';
+    footer.style.transform = 'none';
+    footer.style.padding = '0';
+    footer.style.flexDirection = 'column';
+    footer.style.alignItems = 'center';
 
-      card.style.border = 'none';
-      card.style.borderRadius = '0';
-      card.style.backgroundColor = 'transparent';
-      card.style.height = '100%';
-      card.style.display = 'flex';
-      card.style.flexDirection = 'column';
-      card.style.position = 'relative';
-
-      header.style.position = 'absolute';
-      header.style.left = '16px';
-      header.style.right = '120px';
-      header.style.bottom = '88px';
-      header.style.top = 'auto';
-      header.style.padding = '10px 14px';
-      header.style.borderRadius = THEME.radius.button;
-      header.style.background = 'rgba(0, 0, 0, 0.35)';
-
-      player.style.height = '100%';
-      player.style.aspectRatio = 'auto';
-      player.classList.remove('aspect-16-9');
-
-      footer.style.position = 'absolute';
-      footer.style.right = '16px';
-      footer.style.bottom = '88px';
-      footer.style.top = 'auto';
-      footer.style.transform = 'none';
-      footer.style.padding = '0';
-      footer.style.flexDirection = 'column';
-      footer.style.alignItems = 'center';
-    }
-    
     skeleton.appendChild(card);
     return skeleton;
   }
@@ -6527,23 +5832,9 @@ export class FeedContainer {
     const previousOrientation = this.normalizeOrientationFilter(this.settings.orientationFilter ?? []);
     this.settings = { ...this.settings, ...newSettings };
 
-    const reelModeChanged = newSettings.reelMode !== undefined;
-    if (reelModeChanged || newSettings.snapToCards !== undefined) {
-      this.setupCardSnapping();
-    }
-    if (reelModeChanged) {
-      this.applyReelModeSettings();
-    }
     this.refreshAutoplayAfterLayout();
-
     this.applyPostDisplaySettings(newSettings, previousShowVerified, previousShowProductionAge, previousShowStudioChips, previousShowSceneTitle);
     this.reloadFeedIfFiltersChanged(newSettings, previousExcludedTags, previousOrientation);
-  }
-
-  private applyReelModeSettings(): void {
-    this.applyReelModeLayout();
-    this.visibilityManager.setReelMode(this.settings.reelMode === true);
-    this.visibilityManager.setAutoPlay(!this.useHDMode || this.settings.reelMode === true);
   }
 
   private applyPostDisplaySettings(
@@ -6627,7 +5918,7 @@ export class FeedContainer {
   cleanup(): void {
     this.cancelAllPendingRequests();
     this.stopLoadingVideos();
-    this.visibilityManager.cleanup();
+    this.playback.destroy();
     this.teardownListeners();
     this.clearPosts();
     this.hideSkeletonLoaders();

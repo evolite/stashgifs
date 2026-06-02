@@ -7,7 +7,6 @@ import { ImagePostData } from './types.js';
 import { ImagePlayer } from './ImagePlayer.js';
 import { FavoritesManager } from './FavoritesManager.js';
 import { StashAPI } from './StashAPI.js';
-import { VisibilityManager } from './VisibilityManager.js';
 import { getAspectRatioClass, detectVideoFromVisualFiles, getImageUrlForDisplay } from './utils.js';
 import { BasePost } from './BasePost.js';
 
@@ -30,7 +29,6 @@ export class ImagePost extends BasePost {
     options?: {
       favoritesManager?: FavoritesManager;
       api?: StashAPI;
-      visibilityManager?: VisibilityManager;
       onPerformerChipClick?: (performerId: number, performerName: string) => void;
       onTagChipClick?: (tagId: number, tagName: string) => void;
       showVerifiedCheckmarks?: boolean;
@@ -119,10 +117,6 @@ export class ImagePost extends BasePost {
         objectFit: this.isReelMode ? 'contain' : 'cover',
       });
       this.isLoaded = true;
-
-      if (this.visibilityManager && this.data.image.id) {
-        // Register with visibility manager if needed
-      }
 
       return this.player;
     } catch (error) {

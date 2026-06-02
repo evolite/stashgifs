@@ -6,7 +6,6 @@
 import { VideoPostData, Scene, IVideoPlayer } from './types.js';
 import { VideoJsPlayer } from './VideoJsPlayer.js';
 import { StashAPI } from './StashAPI.js';
-import { VisibilityManager } from './VisibilityManager.js';
 import { calculateAspectRatio, getAspectRatioClass, normalizeMediaUrl, showToast, toAbsoluteUrl, isMobileDevice, THEME, extractValidPerformerIds } from './utils.js';
 import { MARKER_SVG } from './icons.js';
 import { VideoPostBase, BaseVideoPostOptions } from './VideoPostBase.js';
@@ -825,11 +824,11 @@ export class VideoPost extends VideoPostBase {
   }
 
   /**
-   * Register player with visibility manager after upgrade
+   * Notify the playback controller that the player was (re)created after an upgrade.
    */
-  private registerUpgradedPlayerWithVisibilityManager(): void {
-    if (this.visibilityManager && this.data.marker.id && this.player) {
-      this.visibilityManager.registerPlayer(this.data.marker.id, this.player);
+  private notifyPlayerReady(): void {
+    if (this.data.marker.id && this.player) {
+      this.onPlayerReady?.(this.data.marker.id);
     }
   }
 
@@ -888,8 +887,8 @@ export class VideoPost extends VideoPostBase {
     // Create new player with full scene video
     await this.createSceneVideoPlayer(playerContainer, sceneVideoUrl);
 
-    // Register with visibility manager if available
-    this.registerUpgradedPlayerWithVisibilityManager();
+    // Let the playback controller re-apply playback to the upgraded player
+    this.notifyPlayerReady();
 
     // If video was playing, resume playback
     if (wasPlaying) {
@@ -990,8 +989,8 @@ export class VideoPost extends VideoPostBase {
       this.attachReelAutoAdvance();
       this.setupProgressBar();
 
-      if (this.visibilityManager && this.data.marker.id) {
-        this.visibilityManager.registerPlayer(this.data.marker.id, this.player);
+      if (this.data.marker.id) {
+        this.onPlayerReady?.(this.data.marker.id);
       }
 
       this.startWatchTracking();
@@ -1043,15 +1042,6 @@ export class VideoPost extends VideoPostBase {
     return this.isHQMode;
   }
 
-  /**
-   * Register player with visibility manager after upgrade
-   * Called by FeedContainer when player is upgraded
-   */
-  registerPlayerWithVisibilityManager(visibilityManager: VisibilityManager): void {
-    if (this.player && this.data.marker.id) {
-      visibilityManager.registerPlayer(this.data.marker.id, this.player);
-    }
-  }
 
   /**
    * Get the post ID
@@ -1823,9 +1813,7 @@ export class VideoPost extends VideoPostBase {
   }
 
   private prepareForMarkerCreation(): void {
-    if (this.visibilityManager) {
-      this.visibilityManager.pauseAllVideos();
-    }
+    this.onPauseAll?.();
     if (this.onCancelRequests) {
       this.onCancelRequests();
     }

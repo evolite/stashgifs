@@ -54,9 +54,7 @@ function loadThemeEarly(settings: Partial<FeedSettings>): void {
   }
 }
 
-function applyReelModeEarly(settings: Partial<FeedSettings>, container?: HTMLElement | null): void {
-  if (!settings.reelMode) return;
-  document.documentElement.style.scrollSnapType = 'y mandatory';
+function applyReelModeEarly(_settings: Partial<FeedSettings>, container?: HTMLElement | null): void {
   document.documentElement.dataset.stashgifsReelReady = 'true';
 
   if (container) {
