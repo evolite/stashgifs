@@ -5,13 +5,15 @@
  * "which of many visible videos plays / owns audio" arbitration collapses to:
  *
  *   - the active card loads, plays, and (unless global mute) is the audio owner
- *   - every other card is paused and muted
- *   - a small window around the active card is preloaded / kept; the rest unload
+ *   - every other card is paused, muted, and unloaded
  *
- * Single-video playback is enforced with a `play` guard on each video element:
- * any non-active card that starts playing (autoplay race, clip loop) is paused
- * immediately. video.js players are created with `autoplay: true`, so this guard
- * is what keeps preloaded neighbours from running in the background.
+ * Only the active card loads — there is no neighbour preloading. This keeps the
+ * Stash server to one stream request at a time and avoids the concurrent-request
+ * load failures preloading could trigger.
+ *
+ * Single-video playback is enforced with a `play` guard on the active card's
+ * video element: it unmutes the card once playback begins (video.js starts
+ * muted to satisfy autoplay) and pauses any card that plays while not active.
  */
 
 import type { IVideoPlayer } from './types.js';
@@ -32,26 +34,18 @@ export interface ReelPlaybackControllerOptions {
   getPost: (postId: string) => PostType | undefined;
 }
 
-/** Preload this many cards ahead of the active one for an instant next swipe. */
-const PRELOAD_AHEAD = 1;
-/** Unload video players farther than this many cards from the active one. */
-const KEEP_WINDOW = 2;
-
 export class ReelPlaybackController {
   private readonly getOrderedPostIds: () => string[];
   private readonly getPost: (postId: string) => PostType | undefined;
 
   private readonly guards = new Map<string, { el: HTMLVideoElement; handler: () => void }>();
   private activePostId?: string;
-  private globalMute = true;
+  private globalMute = false;
 
   constructor(options: ReelPlaybackControllerOptions) {
     this.getOrderedPostIds = options.getOrderedPostIds;
     this.getPost = options.getPost;
   }
-
-  /** Called when a card enters the feed — no-op now, kept for symmetry with unregisterCard. */
-  registerCard(_postId: string, _post: PostType): void {}
 
   /** Stop tracking a card and detach its guard. */
   unregisterCard(postId: string): void {
@@ -63,7 +57,7 @@ export class ReelPlaybackController {
 
   /**
    * Make `postId` the single playing card: load + play it (audio per global
-   * mute), pause/mute the previous one, preload the next, and unload far cards.
+   * mute), then pause/mute/unload every other card.
    */
   setActive(postId: string): void {
     const post = this.getPost(postId);
@@ -75,8 +69,6 @@ export class ReelPlaybackController {
       this.deactivate(previous);
     }
     this.activate(postId, post);
-    this.preloadNeighbours(postId);
-    this.unloadFarCards(postId);
   }
 
   /** Re-apply playback after a card's player is (re)created — e.g. HQ upgrade. */
@@ -105,9 +97,10 @@ export class ReelPlaybackController {
 
   /** Re-attempt playback of the active card (after a gesture lifts autoplay block). */
   retryActive(): void {
-    if (this.activePostId) {
-      this.setActive(this.activePostId);
-    }
+    if (!this.activePostId) return;
+    const player = this.getPost(this.activePostId)?.getPlayer();
+    if (isVideoPlayer(player) && player.isPlaying() && !player.getIsUnloaded()) return;
+    this.setActive(this.activePostId);
   }
 
   /** Pause every tracked video (used before modal flows like marker creation). */
@@ -158,44 +151,9 @@ export class ReelPlaybackController {
     if (player.isPlaying()) {
       player.pause();
     }
-  }
-
-  private preloadNeighbours(postId: string): void {
-    const order = this.getOrderedPostIds();
-    const index = order.indexOf(postId);
-    if (index === -1) return;
-
-    for (let offset = 1; offset <= PRELOAD_AHEAD; offset++) {
-      const neighbourId = order[index + offset];
-      if (!neighbourId) continue;
-      const post = this.getPost(neighbourId);
-      if (!post || !(post instanceof VideoPost || post instanceof ImageVideoPost)) continue;
-      if (!post.hasVideoSource() || post.isPlayerLoaded()) continue;
-      try {
-        const player = post.preload();
-        if (isVideoPlayer(player)) {
-          this.attachGuard(neighbourId, player);
-          player.setMuted(true);
-        }
-      } catch (error) {
-        console.warn('ReelPlaybackController: neighbour preload failed', { postId: neighbourId, error });
-      }
-    }
-  }
-
-  private unloadFarCards(activeId: string): void {
-    const order = this.getOrderedPostIds();
-    const activeIndex = order.indexOf(activeId);
-    if (activeIndex === -1) return;
-
-    for (const postId of order) {
-      const distance = Math.abs(order.indexOf(postId) - activeIndex);
-      if (distance <= KEEP_WINDOW) continue;
-      const player = this.getPost(postId)?.getPlayer();
-      if (isVideoPlayer(player) && !player.getIsUnloaded()) {
-        player.unload();
-        this.detachGuard(postId);
-      }
+    if (!player.getIsUnloaded()) {
+      player.unload();
+      this.detachGuard(postId);
     }
   }
 

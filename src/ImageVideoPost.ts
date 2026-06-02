@@ -358,7 +358,10 @@ export class ImageVideoPost extends VideoPostBase {
       return undefined;
     }
     const reloaded = this.attemptReloadIfUnloaded();
-    if (reloaded) return reloaded;
+    if (reloaded) {
+      this.attachReelAutoAdvance();
+      return reloaded;
+    }
 
     return this.loadPlayer(videoUrl);
   }

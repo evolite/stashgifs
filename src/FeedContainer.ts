@@ -148,6 +148,7 @@ export class FeedContainer {
   private reelScroller?: ReelScroller;
   private mobileAutoplayUnlockHandler?: (event: Event) => void;
   private autoplayUnlockHandler?: (event: Event) => void;
+  private visibilityResumeHandler?: () => void;
   private readonly mobileAutoplayUnlockEvents: ReadonlyArray<string> = [
     'touchstart',
     'touchend',
@@ -1008,7 +1009,6 @@ export class FeedContainer {
 
     // A real user gesture lifts the browser's autoplay restrictions. Re-run the
     // play decision on gesture so any video the browser refused to autoplay starts.
-    // reconcile() is idempotent and cheap, so firing on every gesture is fine.
     const handler = () => {
       this.playback?.retryActive();
     };
@@ -1016,6 +1016,19 @@ export class FeedContainer {
     this.autoplayUnlockHandler = handler;
     for (const event of this.mobileAutoplayUnlockEvents) {
       document.addEventListener(event, handler, { passive: true });
+    }
+
+    // Resume the active card when the page comes back to the foreground.
+    // Mobile browsers (especially iOS Safari) pause all media when backgrounded,
+    // but never auto-resume — we need to call play() ourselves.
+    if (!this.visibilityResumeHandler) {
+      const visibilityHandler = () => {
+        if (document.visibilityState === 'visible') {
+          this.playback?.retryActive();
+        }
+      };
+      this.visibilityResumeHandler = visibilityHandler;
+      document.addEventListener('visibilitychange', visibilityHandler);
     }
   }
 
@@ -1027,6 +1040,11 @@ export class FeedContainer {
       document.removeEventListener(event, this.autoplayUnlockHandler);
     }
     this.autoplayUnlockHandler = undefined;
+
+    if (this.visibilityResumeHandler) {
+      document.removeEventListener('visibilitychange', this.visibilityResumeHandler);
+      this.visibilityResumeHandler = undefined;
+    }
   }
 
   private removeMobileAutoplayUnlockListeners(): void {
@@ -3080,7 +3098,6 @@ export class FeedContainer {
     
     this.posts.set(image.id, post);
     this.postOrder.push(image.id);
-    this.playback.registerCard(image.id, post);
 
     if (signal?.aborted) {
       return null;
@@ -4704,7 +4721,6 @@ export class FeedContainer {
     
     this.posts.set(marker.id, post);
     this.postOrder.push(marker.id);
-    this.playback.registerCard(marker.id, post);
 
     if (signal?.aborted) {
       return null;

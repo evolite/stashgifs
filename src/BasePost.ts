@@ -135,10 +135,8 @@ export abstract class BasePost {
   private readonly touchCleanups: Array<() => void> = [];
   protected reelAutoScroll: boolean = false;
   private readonly onReelAdvance?: () => void;
-  private autoAdvanceAttached: boolean = false;
   private autoAdvanceFired: boolean = false;
-  private reelAutoAdvanceElement?: HTMLVideoElement;
-  private reelAutoAdvanceHandler?: () => void;
+  private autoAdvanceAttached: boolean = false;
   private readonly performerOverlayMgr: OverlayManager<PerformerExtended>;
   private readonly tagOverlayMgr: OverlayManager<Tag>;
   private readonly studioOverlayMgr: OverlayManager<StudioExtended>;
@@ -3255,39 +3253,30 @@ export abstract class BasePost {
     return addTagBtn;
   }
 
+  /** Override in video-capable subclasses to supply the active player. */
+  protected getAutoAdvancePlayer(): import('./types.js').IVideoPlayer | undefined {
+    return undefined;
+  }
+
   /**
    * Auto-advance to the next post when the post's video loops back.
-   * Only active in reel mode with the reelAutoScroll setting enabled.
-   * Idempotent: subclasses can call this after their video player has mounted;
-   * the first call with a discoverable <video> element wins.
+   * Re-entrant: always resets the fired guard and re-registers on the current player.
    */
   protected attachReelAutoAdvance(): void {
-    if (this.autoAdvanceAttached || !this.isReelMode || !this.reelAutoScroll) return;
-    const video = this.container.querySelector<HTMLVideoElement>('video');
-    if (!video) return;
-    let lastTime = 0;
-    this.reelAutoAdvanceHandler = () => {
-      const t = video.currentTime;
-      // A backwards jump > 0.4s means the clip looped (back to startAt, not 0).
-      if (t + 0.4 < lastTime && !this.autoAdvanceFired) {
-        this.autoAdvanceFired = true;
-        this.scrollToNextPost();
-      }
-      lastTime = t;
-    };
-    video.addEventListener('timeupdate', this.reelAutoAdvanceHandler);
-    this.reelAutoAdvanceElement = video;
-    this.autoAdvanceAttached = true;
+    if (!this.isReelMode || !this.reelAutoScroll) return;
+    const player = this.getAutoAdvancePlayer();
+    if (!player) return;
+    this.autoAdvanceFired = false;
+    player.onLoop(() => {
+      if (this.autoAdvanceFired) return;
+      this.autoAdvanceFired = true;
+      this.scrollToNextPost();
+    });
   }
 
   protected detachReelAutoAdvance(): void {
-    if (this.reelAutoAdvanceElement && this.reelAutoAdvanceHandler) {
-      this.reelAutoAdvanceElement.removeEventListener('timeupdate', this.reelAutoAdvanceHandler);
-      this.reelAutoAdvanceElement = undefined;
-      this.reelAutoAdvanceHandler = undefined;
-    }
-    this.autoAdvanceAttached = false;
     this.autoAdvanceFired = false;
+    this.autoAdvanceAttached = false;
   }
 
   /**

@@ -1018,7 +1018,10 @@ export class VideoPost extends VideoPostBase {
     }
 
     const reloaded = this.attemptReloadIfUnloaded();
-    if (reloaded) return reloaded;
+    if (reloaded) {
+      this.attachReelAutoAdvance();
+      return reloaded;
+    }
 
     return this.loadPlayer(
       this.data.videoUrl!,
@@ -1450,6 +1453,9 @@ export class VideoPost extends VideoPostBase {
     document.removeEventListener('mousedown', this.onMarkerDialogOutsideClick);
     document.removeEventListener('touchstart', this.onMarkerDialogOutsideClick);
     document.removeEventListener('keydown', this.onMarkerDialogKeydown);
+
+    // Marker creation paused the active card via onPauseAll; resume it now.
+    this.onPlayerReady?.(this.data.marker.id);
   }
 
   /**

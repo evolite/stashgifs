@@ -44,6 +44,7 @@ export class ReelScroller {
 
   private enabled = false;
   private isAnimating = false;
+  private pendingAdvance = false;
   private animationFrameId?: number;
   private wheelCooldownUntil = 0;
 
@@ -84,6 +85,7 @@ export class ReelScroller {
     if (!this.enabled) return;
     this.enabled = false;
     this.cancelAnimation();
+    this.pendingAdvance = false;
     this.scrollContainer.removeEventListener('wheel', this.onWheel);
     this.scrollContainer.removeEventListener('touchstart', this.onTouchStart);
     this.scrollContainer.removeEventListener('touchmove', this.onTouchMove);
@@ -98,7 +100,11 @@ export class ReelScroller {
 
   /** Programmatically advance one card (e.g. reel auto-advance on video loop). */
   next(): void {
-    if (!this.enabled || this.isAnimating) return;
+    if (!this.enabled) return;
+    if (this.isAnimating) {
+      this.pendingAdvance = true;
+      return;
+    }
     this.goToIndex(this.getCurrentIndex() + 1, true);
   }
 
@@ -136,21 +142,14 @@ export class ReelScroller {
     return Math.max(0, Math.min(index, cardCount - 1));
   }
 
-  /** Index of the card whose top is currently nearest the container top. */
+  /** Index of the card currently at the top of the scroll container. */
   private getCurrentIndex(): number {
     const cards = this.getCards();
     if (cards.length === 0) return 0;
-    const containerTop = this.scrollContainer.getBoundingClientRect().top;
-    let closest = 0;
-    let minDistance = Infinity;
-    for (let i = 0; i < cards.length; i++) {
-      const distance = Math.abs(cards[i].getBoundingClientRect().top - containerTop);
-      if (distance < minDistance) {
-        minDistance = distance;
-        closest = i;
-      }
-    }
-    return closest;
+    const cardHeight = this.scrollContainer.clientHeight;
+    if (cardHeight <= 0) return 0;
+    const estimated = Math.round(this.scrollContainer.scrollTop / cardHeight);
+    return Math.max(0, Math.min(estimated, cards.length - 1));
   }
 
   // --- Core motion ---------------------------------------------------------
@@ -200,12 +199,17 @@ export class ReelScroller {
       this.animationFrameId = undefined;
     }
     this.isAnimating = false;
+    this.pendingAdvance = false;
   }
 
   private settle(card: HTMLElement, index: number): void {
     const postId = this.getPostId(card);
     if (postId) {
       this.onSettle(postId, index);
+    }
+    if (this.pendingAdvance) {
+      this.pendingAdvance = false;
+      this.goToIndex(index + 1, true);
     }
   }
 

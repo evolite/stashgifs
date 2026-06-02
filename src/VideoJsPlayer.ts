@@ -42,6 +42,10 @@ export class VideoJsPlayer implements IVideoPlayer {
   private manuallyPaused: boolean = false;
   private destroyed: boolean = false;
   private sourcesExhausted: boolean = false;
+  private clipping = false;
+  private clippingResetTimer?: ReturnType<typeof setTimeout>;
+  private loopTrackTime = 0;
+  private onLoopCallback?: () => void;
 
   private readyPromise: Promise<void>;
   private readyResolver?: () => void;
@@ -168,12 +172,19 @@ export class VideoJsPlayer implements IVideoPlayer {
       this.state.isPlaying = false;
     });
     player.on('timeupdate', () => {
-      this.state.currentTime = this.safeNumber(() => player.currentTime());
+      const t = this.safeNumber(() => player.currentTime());
+      // Detect native loops for non-clipped videos (loop:true suppresses 'ended').
+      if (!this.hasClip && this.loopTrackTime > 0.5 && t + 0.4 < this.loopTrackTime) {
+        this.fireLoop();
+      }
+      this.loopTrackTime = t;
+      this.state.currentTime = t;
       this.enforceClip(player);
     });
     player.on('ended', () => {
-      // Only fires for clipped markers (native loop is off then); restart the clip.
-      if (this.hasClip) this.restartClip(player);
+      if (this.hasClip) {
+        this.restartClip(player); // restartClip fires onLoop itself
+      }
     });
     player.on('volumechange', () => {
       this.state.isMuted = this.safeBool(() => player.muted());
@@ -192,10 +203,25 @@ export class VideoJsPlayer implements IVideoPlayer {
   }
 
   private restartClip(player: VjsPlayer): void {
+    if (this.clipping) return;
+    this.clipping = true;
+    clearTimeout(this.clippingResetTimer);
     try {
       player.currentTime(this.startAt);
       if (player.paused()) player.play()?.catch(() => {});
+      this.fireLoop();
     } catch { /* not seekable */ }
+    const clearClipping = () => {
+      clearTimeout(this.clippingResetTimer);
+      this.clippingResetTimer = undefined;
+      this.clipping = false;
+    };
+    player.one('seeked', clearClipping);
+    this.clippingResetTimer = setTimeout(clearClipping, 500);
+  }
+
+  private fireLoop(): void {
+    this.onLoopCallback?.();
   }
 
   /**
@@ -366,6 +392,10 @@ export class VideoJsPlayer implements IVideoPlayer {
       this.isUnloaded = true;
       return;
     }
+    clearTimeout(this.clippingResetTimer);
+    this.clippingResetTimer = undefined;
+    this.clipping = false;
+    this.loopTrackTime = 0;
     try {
       this.player!.pause();
       this.player!.reset();
@@ -379,6 +409,7 @@ export class VideoJsPlayer implements IVideoPlayer {
     if (!this.isUnloaded || !this.isUsable()) return;
     this.sourceIndex = 0;
     this.sourcesExhausted = false;
+    this.loopTrackTime = 0;
     this.readyPromise = new Promise<void>((resolve) => { this.readyResolver = resolve; });
     this.applyCurrentSource();
     this.isUnloaded = false;
@@ -413,9 +444,17 @@ export class VideoJsPlayer implements IVideoPlayer {
     return 'play';
   }
 
+  onLoop(callback: () => void): void {
+    this.onLoopCallback = callback;
+  }
+
   destroy(): void {
     this.destroyed = true;
+    this.clipping = false;
+    clearTimeout(this.clippingResetTimer);
+    this.clippingResetTimer = undefined;
     this.readyResolver = undefined;
+    this.onLoopCallback = undefined;
     if (this.player) {
       try {
         if (!this.player.isDisposed()) this.player.dispose();

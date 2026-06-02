@@ -189,6 +189,8 @@ export interface IVideoPlayer {
   getIsUnloaded(): boolean;
   hasLoadError(): boolean;
   getLoadErrorType(): 'timeout' | 'network' | 'play' | null;
+  /** Register a callback fired once each time the media loops back to its start. */
+  onLoop(callback: () => void): void;
   destroy(): void;
 }
 

@@ -47,6 +47,10 @@ export abstract class VideoPostBase extends BasePost {
   protected abstract checkForLoadError(): void;
   protected abstract getHQButtonOffLabel(): string;
 
+  protected getAutoAdvancePlayer(): IVideoPlayer | undefined {
+    return this.getPlayer();
+  }
+
   protected capturePlayerState(): { playerContainer: HTMLElement; wasPlaying: boolean } {
     const playerContainer = this.playerContainer || this.container.querySelector('.video-post__player') as HTMLElement;
     if (!playerContainer) {

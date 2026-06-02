@@ -706,7 +706,6 @@ export class SettingsPage {
     reelAutoScrollContainer.style.justifyContent = 'space-between';
     reelAutoScrollContainer.style.alignItems = 'center';
     reelAutoScrollContainer.style.marginBottom = '16px';
-    reelAutoScrollContainer.style.paddingLeft = '20px';
     reelAutoScrollContainer.appendChild(
       buildInfoLabel(
         'Auto-Scroll',
