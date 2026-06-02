@@ -114,7 +114,7 @@ export class ImagePost extends BasePost {
       this.player = new ImagePlayer(this.playerContainer, imageUrl, {
         isGif,
         isVideo,
-        objectFit: this.isReelMode ? 'contain' : 'cover',
+        objectFit: 'contain',
       });
       this.isLoaded = true;
 

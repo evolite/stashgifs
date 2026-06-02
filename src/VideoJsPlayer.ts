@@ -22,7 +22,6 @@ export interface VideoJsPlayerOptions {
   endTime?: number;
   showLoadingIndicator?: boolean;
   objectFit?: 'cover' | 'contain';
-  onStateChange?: (state: VideoPlayerState) => void;
   /** Ordered candidate sources (for codec/transcode fallback). Overrides videoUrl. */
   sources?: VideoSource[];
 }
@@ -32,9 +31,6 @@ export class VideoJsPlayer implements IVideoPlayer {
   private videoEl: HTMLVideoElement;
   private player?: VjsPlayer;
   private readonly state: VideoPlayerState;
-  private onStateChange?: (state: VideoPlayerState) => void;
-  private externalStateListener?: (state: VideoPlayerState) => void;
-
   private readonly sources: VideoSource[];
   private sourceIndex: number = 0;
   // Marker clip window, handled natively (no videojs-offset). 0 = no bound.
@@ -52,8 +48,6 @@ export class VideoJsPlayer implements IVideoPlayer {
 
   constructor(container: HTMLElement, videoUrl: string, options?: VideoJsPlayerOptions) {
     this.container = container;
-    this.onStateChange = options?.onStateChange;
-
     this.sources = this.buildSources(videoUrl, options?.sources);
     if (this.sources.length === 0) {
       throw new Error(`VideoJsPlayer: no valid source for ${videoUrl}`);
@@ -159,7 +153,6 @@ export class VideoJsPlayer implements IVideoPlayer {
       if (this.startAt > 0) {
         try { player.currentTime(this.startAt); } catch { /* not seekable yet */ }
       }
-      this.notifyStateChange();
     });
     player.on('loadeddata', resolveReady);
     player.on('canplay', resolveReady);
@@ -167,20 +160,16 @@ export class VideoJsPlayer implements IVideoPlayer {
     player.on('play', () => {
       this.state.isPlaying = true;
       this.manuallyPaused = false;
-      this.notifyStateChange();
     });
     player.on('playing', () => {
       this.state.isPlaying = true;
-      this.notifyStateChange();
     });
     player.on('pause', () => {
       this.state.isPlaying = false;
-      this.notifyStateChange();
     });
     player.on('timeupdate', () => {
       this.state.currentTime = this.safeNumber(() => player.currentTime());
       this.enforceClip(player);
-      this.notifyStateChange();
     });
     player.on('ended', () => {
       // Only fires for clipped markers (native loop is off then); restart the clip.
@@ -189,7 +178,6 @@ export class VideoJsPlayer implements IVideoPlayer {
     player.on('volumechange', () => {
       this.state.isMuted = this.safeBool(() => player.muted());
       this.state.volume = this.safeNumber(() => player.volume());
-      this.notifyStateChange();
     });
     player.on('error', () => this.handleSourceError());
   }
@@ -231,12 +219,6 @@ export class VideoJsPlayer implements IVideoPlayer {
     this.player.src(this.sources[this.sourceIndex]);
     // The clip start is re-applied by the 'loadedmetadata' handler after the
     // new source loads, so nothing extra is needed here.
-  }
-
-  private notifyStateChange(): void {
-    const snapshot = { ...this.state };
-    this.onStateChange?.(snapshot);
-    this.externalStateListener?.(snapshot);
   }
 
   private isUsable(): boolean {
@@ -283,7 +265,6 @@ export class VideoJsPlayer implements IVideoPlayer {
     if (this.isUsable()) {
       this.state.isPlaying = !player.paused();
       this.manuallyPaused = false;
-      this.notifyStateChange();
     }
   }
 
@@ -392,7 +373,6 @@ export class VideoJsPlayer implements IVideoPlayer {
     this.isUnloaded = true;
     this.state.isPlaying = false;
     this.state.currentTime = 0;
-    this.notifyStateChange();
   }
 
   reload(): void {
@@ -406,10 +386,6 @@ export class VideoJsPlayer implements IVideoPlayer {
 
   getIsUnloaded(): boolean {
     return this.isUnloaded;
-  }
-
-  setStateChangeListener(listener?: (state: VideoPlayerState) => void): void {
-    this.externalStateListener = listener;
   }
 
   hasLoadError(): boolean {
@@ -439,8 +415,6 @@ export class VideoJsPlayer implements IVideoPlayer {
 
   destroy(): void {
     this.destroyed = true;
-    this.onStateChange = undefined;
-    this.externalStateListener = undefined;
     this.readyResolver = undefined;
     if (this.player) {
       try {

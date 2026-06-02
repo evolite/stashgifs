@@ -258,9 +258,7 @@ export abstract class BasePost {
     this.playerContainer = playerContainer;
     this.footer = footer;
 
-    if (this.isReelMode) {
-      this.applyReelModeLayout({ header, playerContainer, footer });
-    }
+    this.applyReelModeLayout({ header, playerContainer, footer });
   }
 
   destroy(): void {
@@ -411,10 +409,6 @@ export abstract class BasePost {
       existingOverlay.remove();
     }
     
-    // Only add gradient if in reel mode
-    if (!this.isReelMode) {
-      return;
-    }
     
     // Create gradient overlay
     const gradient = document.createElement('div');
@@ -625,7 +619,7 @@ export abstract class BasePost {
   }
 
   protected buildTitleElement(title: string): HTMLElement {
-    const color = this.isReelMode ? THEME.colors.textPrimary : THEME.colors.textSecondary;
+    const color = THEME.colors.textPrimary;
 
     const el = document.createElement('div');
     el.className = 'video-post__scene-title';
@@ -964,21 +958,15 @@ export abstract class BasePost {
     chip.style.minHeight = '44px';
     chip.style.height = '44px';
 
-    if (this.isReelMode) {
-      chip.style.background = 'transparent';
-      chip.style.border = 'none';
-      chip.style.boxShadow = 'none';
-      chip.style.backdropFilter = 'none';
-      chip.style.color = '#ffffff';
-      chip.style.textShadow = '0 2px 8px rgba(0, 0, 0, 0.65)';
-    }
+    chip.style.background = 'transparent';
+    chip.style.border = 'none';
+    chip.style.boxShadow = 'none';
+    chip.style.backdropFilter = 'none';
+    chip.style.color = '#ffffff';
+    chip.style.textShadow = '0 2px 8px rgba(0, 0, 0, 0.65)';
 
-    chip.addEventListener('mouseenter', () => {
-      chip.style.color = this.isReelMode ? '#ffffff' : THEME.colors.textPrimary;
-    });
-    chip.addEventListener('mouseleave', () => {
-      chip.style.color = this.isReelMode ? '#ffffff' : THEME.colors.textSecondary;
-    });
+    chip.addEventListener('mouseenter', () => { chip.style.color = '#ffffff'; });
+    chip.addEventListener('mouseleave', () => { chip.style.color = '#ffffff'; });
 
     return chip;
   }
@@ -1089,7 +1077,7 @@ export abstract class BasePost {
       if (favorite) {
         return THEME.colors.accentPrimary;
       }
-      return this.isReelMode ? THEME.colors.textPrimary : THEME.colors.textSecondary;
+      return THEME.colors.textPrimary;
     };
 
     const favoriteButton = document.createElement('button');
@@ -1960,16 +1948,13 @@ export abstract class BasePost {
     hashtag.style.minHeight = '44px';
     hashtag.style.height = '44px';
     
-    // Apply reel mode specific styling
-    if (this.isReelMode) {
-      hashtag.style.background = 'transparent';
-      hashtag.style.border = 'none';
-      hashtag.style.boxShadow = 'none';
-      hashtag.style.backdropFilter = 'none';
-      hashtag.style.color = '#ffffff';
-      hashtag.style.textShadow = '0 2px 8px rgba(0, 0, 0, 0.65)';
-    }
-    
+    hashtag.style.background = 'transparent';
+    hashtag.style.border = 'none';
+    hashtag.style.boxShadow = 'none';
+    hashtag.style.backdropFilter = 'none';
+    hashtag.style.color = '#ffffff';
+    hashtag.style.textShadow = '0 2px 8px rgba(0, 0, 0, 0.65)';
+
     const handleClick = () => {
       this.tagOverlayMgr.hide(true);
       this.tagOverlayMgr.recordClick();
@@ -1982,12 +1967,8 @@ export abstract class BasePost {
       }
     };
     
-    hashtag.addEventListener('mouseenter', () => {
-      hashtag.style.color = this.isReelMode ? '#ffffff' : THEME.colors.textPrimary;
-    });
-    hashtag.addEventListener('mouseleave', () => {
-      hashtag.style.color = this.isReelMode ? '#ffffff' : THEME.colors.textSecondary;
-    });
+    hashtag.addEventListener('mouseenter', () => { hashtag.style.color = '#ffffff'; });
+    hashtag.addEventListener('mouseleave', () => { hashtag.style.color = '#ffffff'; });
     
     const isMobile = isMobileDevice();
     // Add hover overlay handlers for tags (desktop only)
@@ -2090,9 +2071,7 @@ export abstract class BasePost {
         this.appendTagChips(tagsSection, options.tags!, options.favoriteTagName, performers.length > 0);
       }
       if (addTagChip) tagsSection.appendChild(addTagChip);
-      if (this.isReelMode) {
-        this.applyReelModeTagStyles(tagsSection);
-      }
+      this.applyReelModeTagStyles(tagsSection);
       header.appendChild(tagsSection);
     }
 
@@ -2151,7 +2130,7 @@ export abstract class BasePost {
       }
       const chip = this.createTagChip(tag);
       if (hasPerformers && isFirstTag) {
-        chip.style.marginLeft = this.isReelMode ? '0' : '8px';
+        chip.style.marginLeft = '0';
         isFirstTag = false;
       }
       chips.appendChild(chip);
@@ -2190,17 +2169,15 @@ export abstract class BasePost {
       opacity: '0.4',
       verticalAlign: 'middle',
     });
-    if (this.isReelMode) {
-      chip.style.color = '#ffffff';
-      chip.style.textShadow = '0 2px 8px rgba(0, 0, 0, 0.65)';
-    }
+    chip.style.color = '#ffffff';
+    chip.style.textShadow = '0 2px 8px rgba(0, 0, 0, 0.65)';
     chip.addEventListener('mouseenter', () => {
       chip.style.opacity = '1';
-      chip.style.color = this.isReelMode ? '#ffffff' : THEME.colors.textPrimary;
+      chip.style.color = '#ffffff';
     });
     chip.addEventListener('mouseleave', () => {
       chip.style.opacity = '0.4';
-      chip.style.color = this.isReelMode ? '#ffffff' : THEME.colors.textMuted;
+      chip.style.color = '#ffffff';
     });
     chip.addEventListener('click', (e) => {
       e.preventDefault();
@@ -3343,18 +3320,7 @@ export abstract class BasePost {
   }
 
   private scrollToNextPost(): void {
-    // In reel mode the JS scroller owns scroll position; defer to it so the
-    // auto-advance obeys the same one-card-per-gesture motion as manual input.
-    if (this.onReelAdvance) {
-      this.onReelAdvance();
-      return;
-    }
-    let next = this.container.nextElementSibling as HTMLElement | null;
-    // Skip over non-post siblings (e.g. lazy-load triggers/sentinels).
-    while (next && !next.matches('.video-post, .image-post, [class*="post-wrapper"]')) {
-      next = next.nextElementSibling as HTMLElement | null;
-    }
-    next?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    this.onReelAdvance?.();
   }
 
   /**
@@ -3451,7 +3417,7 @@ export abstract class BasePost {
     const btn = button || this.heartButton;
     if (!btn) return;
 
-    const inactiveColor = this.isReelMode ? THEME.colors.textPrimary : THEME.colors.textSecondary;
+    const inactiveColor = THEME.colors.textPrimary;
     
     if (this.isFavorite) {
       btn.innerHTML = HEART_SVG_FILLED;

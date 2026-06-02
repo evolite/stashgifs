@@ -97,13 +97,8 @@ export interface FilterOptions {
 
 export interface FeedSettings {
   hdMode?: boolean; // Whether to load full HD scene videos instead of preview clips
-  autoPlay: boolean;
-  autoPlayThreshold: number; // 0-1, how much of video must be visible
-  unloadDistance: number; // pixels from viewport to unload
   cardMaxWidth: number; // pixels
   aspectRatio: 'preserve' | '16:9' | '9:16' | '1:1';
-  showControls: 'always' | 'hover' | 'never';
-  enableFullscreen: boolean;
   enabledFileTypes?: string[]; // File extensions to include (e.g., ['.gif', '.webm']), default: ['.gif']
   includeMarkersInFeed?: boolean; // Whether to include scene markers in feed, default: true
   includeRandomInFeed?: boolean; // Include random scenes played from a random timeframe, default: false
@@ -192,7 +187,6 @@ export interface IVideoPlayer {
   unload(): void;
   reload(): void;
   getIsUnloaded(): boolean;
-  setStateChangeListener(listener?: (state: VideoPlayerState) => void): void;
   hasLoadError(): boolean;
   getLoadErrorType(): 'timeout' | 'network' | 'play' | null;
   destroy(): void;

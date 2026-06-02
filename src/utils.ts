@@ -172,16 +172,6 @@ export function subscribeWindowScroll(handler: () => void): () => void {
 /**
  * Format duration in seconds to HH:MM:SS or MM:SS
  */
-export function formatDuration(seconds: number): string {
-  const hours = Math.floor(seconds / 3600);
-  const minutes = Math.floor((seconds % 3600) / 60);
-  const secs = Math.floor(seconds % 60);
-
-  if (hours > 0) {
-    return `${hours}:${minutes.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
-  }
-  return `${minutes}:${secs.toString().padStart(2, '0')}`;
-}
 
 export function formatViewCount(n: number): string {
   if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1).replace(/\.0$/, '')}M`;
@@ -599,9 +589,6 @@ export function isMobileDevice(): boolean {
  * Returns true when the device's primary pointer supports hover (i.e. a real cursor).
  * Used to gate hover-based UI behaviours like hover-to-unmute.
  */
-export function supportsHover(): boolean {
-  return 'matchMedia' in globalThis && globalThis.matchMedia('(hover: hover)').matches;
-}
 
 /**
  * Detect if the current device is an iOS device

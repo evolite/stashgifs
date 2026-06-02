@@ -162,7 +162,7 @@ export class ImageVideoPost extends VideoPostBase {
         startTime: undefined, // Start from beginning for images
         endTime: undefined,
         showLoadingIndicator: false,
-        objectFit: this.isReelMode ? 'contain' : 'cover',
+        objectFit: 'contain',
       });
 
       this.isLoaded = true;
@@ -254,7 +254,7 @@ export class ImageVideoPost extends VideoPostBase {
         startTime: finalStartTime,
         endTime: undefined,
         showLoadingIndicator: false,
-        objectFit: this.isReelMode ? 'contain' : 'cover',
+        objectFit: 'contain',
       });
 
       this.isLoaded = true;

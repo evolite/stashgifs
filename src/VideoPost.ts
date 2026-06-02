@@ -92,9 +92,7 @@ export class VideoPost extends VideoPostBase {
     this.playerContainer = playerContainer;
     this.footer = footer;
 
-    if (this.isReelMode) {
-      this.applyReelModeLayout({ header, playerContainer, footer });
-    }
+    this.applyReelModeLayout({ header, playerContainer, footer });
   }
 
 
@@ -162,7 +160,7 @@ export class VideoPost extends VideoPostBase {
     if (hasStudio) tagsSection.appendChild(this.createStudioChip(studio));
     if (canShowTags) this.addTagChips(tagsSection);
     if (addTagChip) tagsSection.appendChild(addTagChip);
-    if (this.isReelMode) this.applyReelModeTagStyles(tagsSection);
+    this.applyReelModeTagStyles(tagsSection);
     return tagsSection;
   }
 
@@ -640,11 +638,6 @@ export class VideoPost extends VideoPostBase {
       this.seekResetTimerId = undefined;
     }
 
-    // Clear the state change listener first to prevent it from firing after destroy
-    // This is critical - the old player's listener might try to update visibility manager
-    // with the destroyed player's state, causing conflicts
-    this.player.setStateChangeListener();
-    
     // Unload first to release video buffers immediately
     if (this.player.getIsUnloaded()) {
       this.player.destroy();
@@ -798,7 +791,7 @@ export class VideoPost extends VideoPostBase {
         startTime: startTime,
         endTime: this.data.endTime ?? this.data.marker.end_seconds,
         showLoadingIndicator: false,
-        objectFit: this.isReelMode ? 'contain' : 'cover',
+        objectFit: 'contain',
         sources: sources && sources.length > 0 ? sources : undefined,
       });
 
@@ -977,7 +970,7 @@ export class VideoPost extends VideoPostBase {
         startTime: finalStartTime,
         endTime: endTime ?? this.data.endTime ?? this.data.marker.end_seconds,
         showLoadingIndicator: false,
-        objectFit: this.isReelMode ? 'contain' : 'cover',
+        objectFit: 'contain',
         sources: sources && sources.length > 0 ? sources : undefined,
       });
 

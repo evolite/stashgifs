@@ -710,7 +710,7 @@ export class SettingsPage {
     reelAutoScrollContainer.appendChild(
       buildInfoLabel(
         'Auto-Scroll',
-        'Reel Mode only: automatically advance to the next post when the current video loops.'
+        'Automatically advance to the next post when the current video loops.'
       )
     );
     const { container: reelAutoScrollToggleContainer, input: reelAutoScrollToggle } = this.createToggleSwitch(

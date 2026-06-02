@@ -1,8 +1,7 @@
 /**
  * ReelPlaybackController — owns video playback for the reel.
  *
- * Replaces VisibilityManager + AudioManager. In a reel-only world exactly one
- * card is active at a time (the ReelScroller knows which), so the elaborate
+ * In a reel-only world exactly one card is active at a time, so the elaborate
  * "which of many visible videos plays / owns audio" arbitration collapses to:
  *
  *   - the active card loads, plays, and (unless global mute) is the audio owner
@@ -42,7 +41,6 @@ export class ReelPlaybackController {
   private readonly getOrderedPostIds: () => string[];
   private readonly getPost: (postId: string) => PostType | undefined;
 
-  private readonly cards = new Map<string, PostType>();
   private readonly guards = new Map<string, { el: HTMLVideoElement; handler: () => void }>();
   private activePostId?: string;
   private globalMute = true;
@@ -52,15 +50,12 @@ export class ReelPlaybackController {
     this.getPost = options.getPost;
   }
 
-  /** Track a card so the controller can drive its player (where observePost was). */
-  registerCard(postId: string, post: PostType): void {
-    this.cards.set(postId, post);
-  }
+  /** Called when a card enters the feed — no-op now, kept for symmetry with unregisterCard. */
+  registerCard(_postId: string, _post: PostType): void {}
 
-  /** Stop tracking a card and detach its guard (where unobservePost was). */
+  /** Stop tracking a card and detach its guard. */
   unregisterCard(postId: string): void {
     this.detachGuard(postId);
-    this.cards.delete(postId);
     if (this.activePostId === postId) {
       this.activePostId = undefined;
     }
@@ -117,8 +112,8 @@ export class ReelPlaybackController {
 
   /** Pause every tracked video (used before modal flows like marker creation). */
   pauseAll(): void {
-    for (const post of this.cards.values()) {
-      const player = post.getPlayer();
+    for (const postId of this.getOrderedPostIds()) {
+      const player = this.getPost(postId)?.getPlayer();
       if (isVideoPlayer(player) && player.isPlaying()) {
         player.pause();
       }
@@ -129,7 +124,6 @@ export class ReelPlaybackController {
     for (const postId of [...this.guards.keys()]) {
       this.detachGuard(postId);
     }
-    this.cards.clear();
     this.activePostId = undefined;
   }
 
@@ -151,9 +145,7 @@ export class ReelPlaybackController {
     // muted and let the play-guard unmute the active card once playback begins.
     player.setMuted(true);
     if (!player.isPlaying() && !player.isManuallyPaused()) {
-      player.play()?.catch(() => {
-        // Fire-and-forget: muted autoplay also covers the not-ready case.
-      });
+      player.play()?.catch(() => {});
     } else if (!this.globalMute) {
       player.setMuted(false); // already playing — apply audio now
     }
@@ -182,7 +174,6 @@ export class ReelPlaybackController {
       try {
         const player = post.preload();
         if (isVideoPlayer(player)) {
-          // Created with autoplay; the guard pauses it because it isn't active.
           this.attachGuard(neighbourId, player);
           player.setMuted(true);
         }
@@ -197,10 +188,10 @@ export class ReelPlaybackController {
     const activeIndex = order.indexOf(activeId);
     if (activeIndex === -1) return;
 
-    for (const [postId, post] of this.cards) {
+    for (const postId of order) {
       const distance = Math.abs(order.indexOf(postId) - activeIndex);
       if (distance <= KEEP_WINDOW) continue;
-      const player = post.getPlayer();
+      const player = this.getPost(postId)?.getPlayer();
       if (isVideoPlayer(player) && !player.getIsUnloaded()) {
         player.unload();
         this.detachGuard(postId);
@@ -216,17 +207,15 @@ export class ReelPlaybackController {
     const el = player.getVideoElement();
     const existing = this.guards.get(postId);
     if (existing) {
-      if (existing.el === el) return; // already guarding this element
-      existing.el.removeEventListener('play', existing.handler); // element was recreated
+      if (existing.el === el) return;
+      existing.el.removeEventListener('play', existing.handler);
     }
     const handler = () => {
       if (this.activePostId === postId) {
-        // Active card started playing — grant audio unless globally muted.
         if (!this.globalMute) {
           player.setMuted(false);
         }
       } else {
-        // Anything else that autoplays (neighbour preload, clip loop) is silenced.
         player.setMuted(true);
         player.pause();
       }

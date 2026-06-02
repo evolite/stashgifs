@@ -54,7 +54,7 @@ function loadThemeEarly(settings: Partial<FeedSettings>): void {
   }
 }
 
-function applyReelModeEarly(_settings: Partial<FeedSettings>, container?: HTMLElement | null): void {
+function applyReelModeEarly(container?: HTMLElement | null): void {
   document.documentElement.dataset.stashgifsReelReady = 'true';
 
   if (container) {
@@ -119,7 +119,7 @@ function init(): void {
 
   // Create feed container
   appContainer.className = 'feed-container';
-  applyReelModeEarly(savedSettings, appContainer);
+  applyReelModeEarly(appContainer);
 
   // Don't clear content - let browser handle cleanup naturally
 

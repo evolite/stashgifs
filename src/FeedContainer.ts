@@ -26,13 +26,8 @@ import { DiscoveryManager } from './DiscoveryManager.js';
 const LAZY_LOAD_ROOT_MARGIN = '0px';
 
 const DEFAULT_SETTINGS: FeedSettings = {
-  autoPlay: true, // Enable autoplay for markers
-  autoPlayThreshold: 0.2, // Lower threshold - start playing when 20% visible instead of 50%
-  unloadDistance: 1000,
   cardMaxWidth: 800,
   aspectRatio: 'preserve',
-  showControls: 'hover',
-  enableFullscreen: true,
   enabledFileTypes: ['.jpg', '.png', '.gif', '.mp4', '.m4v'], // Default file types to include
   includeImagesInFeed: true, // Whether to include images in feed
   imagesOnly: false,
@@ -130,11 +125,7 @@ export class FeedContainer {
   private isPreloading: boolean = false;
   private excludedTagIds: string[] = [];
   private excludedTagNamesNormalized: string[] = [];
-  private lastScrollTop: number = 0;
-  private lastScrollTime: number = 0;
-  private scrollVelocity: number = 0;
   private scrollRafPending: boolean = false;
-  private videoUnloadTimer?: ReturnType<typeof setTimeout>;
   private seenSetCache?: { ids: string[]; set: Set<string> };
   private seenFlushTimer?: ReturnType<typeof setTimeout>;
   private cleanupScrollTimeout?: ReturnType<typeof setTimeout>;
@@ -496,7 +487,6 @@ export class FeedContainer {
       this.settingsManager.save({ hdMode: newHDMode });
     }
 
-    this.handleLayoutSettingsChange();
     this.handlePostDisplaySettingsChange(newSettings, updatedSettings, previousShowVerified, previousShowProductionAge, previousShowStudioChips, previousShowSceneTitle);
 
     const excludedTagsChanged = !this.areExcludedTagNamesEqual(
@@ -559,10 +549,6 @@ export class FeedContainer {
     this.discoveryPanel.destroy();
     this.discoveryManager = undefined;
     this.discoveryPanel = undefined;
-  }
-
-  private handleLayoutSettingsChange(): void {
-    // No layout toggle — reel is always on; nothing to do here.
   }
 
   private handlePostDisplaySettingsChange(
@@ -5093,219 +5079,6 @@ export class FeedContainer {
   }
 
   /**
-   * Trigger video loading when user hovers over a video that hasn't loaded yet
-   */
-  private aggressiveVideoUnload(): void {
-    const viewportTop = this.getViewportTop();
-    const viewportBottom = viewportTop + this.getViewportHeight();
-    // Unload only videos more than ~one screen away so small scrolls don't
-    // re-download a video the user is likely to return to. maxLoadedVideos is
-    // the hard memory ceiling; the count margin matches unloadDistance so every
-    // resident video is counted (no escape band between the two passes).
-    const unloadDistance = this.getViewportHeight();
-    const maxLoadedVideos = this.getMaxLoadedVideos();
-
-    const loadedVideoCount = this.countLoadedVideosInViewport(viewportTop, viewportBottom, unloadDistance);
-    this.unloadVideosFarFromViewport(viewportTop, viewportBottom, unloadDistance);
-    this.unloadExcessVideos(viewportTop, viewportBottom, maxLoadedVideos, loadedVideoCount);
-  }
-
-  /**
-   * Maximum number of video players kept loaded at once. Mobile stays lean to
-   * bound memory; desktop keeps a larger working set to avoid reloading
-   * neighbors on normal scrolling.
-   */
-  private getMaxLoadedVideos(): number {
-    if (isMobileDevice()) {
-      return this.useHDMode ? 2 : 3;
-    }
-    return this.useHDMode ? 3 : 5;
-  }
-
-  /**
-   * Count loaded videos that are in or near the viewport
-   */
-  private countLoadedVideosInViewport(viewportTop: number, viewportBottom: number, viewportMargin: number = 200): number {
-    let loadedVideoCount = 0;
-
-    for (const [, post] of this.posts.entries()) {
-      if (this.isPostNearViewport(post, viewportTop, viewportBottom, viewportMargin)) {
-        const player = post.getPlayer();
-        // Only count video players (images don't need unloading)
-        if (player && 'getIsUnloaded' in player && !player.getIsUnloaded()) {
-          loadedVideoCount++;
-        }
-      }
-    }
-    
-    return loadedVideoCount;
-  }
-
-  /**
-   * Check if a post is near the viewport
-   */
-  private isPostNearViewport(
-    post: PostType,
-    viewportTop: number,
-    viewportBottom: number,
-    margin: number
-  ): boolean {
-    const container = post.getContainer();
-    const rect = container.getBoundingClientRect();
-    const elementTop = this.getElementTop(rect);
-    const elementBottom = elementTop + rect.height;
-    
-    return elementBottom > viewportTop - margin && elementTop < viewportBottom + margin;
-  }
-
-  private getReelActiveWindowPostIds(): Set<string> {
-    const ids = new Set<string>();
-    const closestCard = this.findCardClosestToCenter();
-    if (!closestCard) {
-      return ids;
-    }
-    const centerPostId = this.getPostIdFromCard(closestCard);
-    if (!centerPostId) {
-      return ids;
-    }
-    const centerIndex = this.postOrder.indexOf(centerPostId);
-    if (centerIndex === -1) {
-      ids.add(centerPostId);
-      return ids;
-    }
-    const offsets = [-2, -1, 0, 1, 2];
-    for (const offset of offsets) {
-      const index = centerIndex + offset;
-      if (index >= 0 && index < this.postOrder.length) {
-        ids.add(this.postOrder[index]);
-      }
-    }
-    return ids;
-  }
-
-  /**
-   * Unload videos that are far from the viewport
-   */
-  private unloadVideosFarFromViewport(
-    viewportTop: number,
-    viewportBottom: number,
-    unloadDistance: number
-  ): void {
-    const reelWindow = this.getReelActiveWindowPostIds();
-    for (const [postId, post] of this.posts.entries()) {
-      if (reelWindow.has(postId)) {
-        continue;
-      }
-      if (this.isPostFarFromViewport(post, viewportTop, viewportBottom, unloadDistance)) {
-        this.unloadPostVideo(post);
-      }
-    }
-  }
-
-  /**
-   * Check if a post is far from the viewport
-   */
-  private isPostFarFromViewport(
-    post: PostType,
-    viewportTop: number,
-    viewportBottom: number,
-    unloadDistance: number
-  ): boolean {
-    const container = post.getContainer();
-    const rect = container.getBoundingClientRect();
-    const elementTop = viewportTop + rect.top;
-    const elementBottom = elementTop + rect.height;
-    
-    const isFarAbove = elementBottom < viewportTop - unloadDistance;
-    const isFarBelow = elementTop > viewportBottom + unloadDistance;
-    
-    return isFarAbove || isFarBelow;
-  }
-
-  /**
-   * Unload excess videos when we exceed the maximum limit
-   */
-  private unloadExcessVideos(
-    viewportTop: number,
-    viewportBottom: number,
-    maxLoadedVideos: number,
-    loadedVideoCount: number
-  ): void {
-    if (loadedVideoCount <= maxLoadedVideos) {
-      return;
-    }
-    const reelWindow = this.getReelActiveWindowPostIds();
-    for (const [postId, post] of this.posts.entries()) {
-      if (loadedVideoCount <= maxLoadedVideos) {
-        break;
-      }
-      if (reelWindow.has(postId)) {
-        continue;
-      }
-      if (!this.isPostImmediatelyVisible(post, viewportTop, viewportBottom)) {
-        const player = post.getPlayer();
-        // Only unload video players (images don't need unloading)
-        if (isVideoPlayer(player) && !player.getIsUnloaded()) {
-          player.unload();
-          loadedVideoCount--;
-        }
-      }
-    }
-  }
-
-  /**
-   * Check if a post is immediately visible in the viewport
-   */
-  private isPostImmediatelyVisible(
-    post: PostType,
-    viewportTop: number,
-    viewportBottom: number
-  ): boolean {
-    const container = post.getContainer();
-    const rect = container.getBoundingClientRect();
-    const elementTop = viewportTop + rect.top;
-    const elementBottom = elementTop + rect.height;
-    
-    return elementBottom > viewportTop && elementTop < viewportBottom;
-  }
-
-  /**
-   * Unload a post's video if it's loaded
-   */
-  private unloadPostVideo(post: PostType): void {
-    const player = post.getPlayer();
-    // Only unload video players (images don't need unloading)
-    if (isVideoPlayer(player) && !player.getIsUnloaded()) {
-      player.unload();
-    }
-  }
-
-  /**
-   * Update scroll velocity for background preloading
-   */
-  private updateScrollVelocity(currentScrollY: number, timeDelta: number): void {
-    if (timeDelta > 0) {
-      const scrollDelta = Math.abs(currentScrollY - this.lastScrollTop);
-      this.scrollVelocity = scrollDelta / timeDelta; // pixels per ms
-    }
-    
-    this.lastScrollTop = currentScrollY;
-    this.lastScrollTime = Date.now();
-  }
-
-  /**
-   * Debounce aggressiveVideoUnload so it fires once after scrolling settles,
-   * not on every scroll event.
-   */
-  private scheduleVideoUnload(): void {
-    if (this.videoUnloadTimer) clearTimeout(this.videoUnloadTimer);
-    this.videoUnloadTimer = setTimeout(() => {
-      this.videoUnloadTimer = undefined;
-      this.aggressiveVideoUnload();
-    }, 300);
-  }
-
-  /**
    * Check if header handling should be skipped
    */
   private shouldSkipHeaderHandling(): boolean {
@@ -5386,19 +5159,10 @@ export class FeedContainer {
   private setupScrollHandler(): void {
     let lastScrollY = this.getViewportTop();
     let isHeaderHidden = false;
-    
-    // Initialize scroll tracking
-    this.lastScrollTop = this.getViewportTop();
-    this.lastScrollTime = Date.now();
 
     const processScroll = () => {
       this.scrollRafPending = false;
-      const now = Date.now();
       const currentScrollY = this.getViewportTop();
-      const timeDelta = now - this.lastScrollTime;
-
-      this.updateScrollVelocity(currentScrollY, timeDelta);
-      this.scheduleVideoUnload();
 
       if (!this.shouldSkipHeaderHandling()) {
         const headerState = this.handleHeaderVisibility(currentScrollY, lastScrollY, isHeaderHidden);
@@ -5479,10 +5243,6 @@ export class FeedContainer {
     if (this.cleanupScrollTimeout) {
       clearTimeout(this.cleanupScrollTimeout);
       this.cleanupScrollTimeout = undefined;
-    }
-    if (this.videoUnloadTimer) {
-      clearTimeout(this.videoUnloadTimer);
-      this.videoUnloadTimer = undefined;
     }
     if (this.seenFlushTimer) {
       clearTimeout(this.seenFlushTimer);
