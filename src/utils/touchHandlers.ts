@@ -20,7 +20,7 @@ const TOUCH_THRESHOLDS = {
 /**
  * Touch tracking state for a single element
  */
-export interface TouchState {
+interface TouchState {
   startX: number;
   startY: number;
   startTime: number;
@@ -33,7 +33,7 @@ export interface TouchState {
 /**
  * Initialize touch state
  */
-export function createTouchState(): TouchState {
+function createTouchState(): TouchState {
   return {
     startX: 0,
     startY: 0,

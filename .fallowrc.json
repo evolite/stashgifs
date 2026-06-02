@@ -5,10 +5,14 @@
   ],
   "ignorePatterns": [
     "stashgifs/**",
-    "src/graphql/generated/**"
+    "src/graphql/**"
   ],
   "ignoreExports": [
     { "file": "src/PluginSettingsManager.ts", "exports": ["PluginSettingsData"] }
+  ],
+  "ignoreDependencies": [
+    "video.js",
+    "videojs-offset"
   ],
   "usedClassMembers": [
     "initialize", "destroy", "cleanup", "preload", "getPlayer", "isPlayerLoaded",
@@ -29,7 +33,11 @@
     "removeTagFromMarker", "removeTagFromScene",
     "updateSceneRating", "updateScenePerformers",
     "updateImageRating", "updateImageTags", "updateImagePerformers",
-    "updatePerformerFavorite", "incrementOCount", "incrementImageOCount"
+    "updatePerformerFavorite", "incrementOCount", "incrementImageOCount",
+    "getSceneSources",
+    "toggle", "onCollapseChange",
+    "isFullyConfigured", "invalidateCaches", "getSceneByStashId", "getQueueForMovie", "addScene",
+    "pauseManually", "clearManualPause", "getProgress", "seekToProgress", "reload", "onLoop"
   ],
   "duplicates": {
     "mode": "semantic"

@@ -13,9 +13,10 @@
 
 import { VideoPlayerState, VideoSource, IVideoPlayer } from './types.js';
 import { normalizeMediaUrl, isMobileDevice } from './utils.js';
+// fallow-ignore-next-line unresolved-import
 import type { VjsPlayer } from './vendor/videojs.js';
 
-export interface VideoJsPlayerOptions {
+interface VideoJsPlayerOptions {
   muted?: boolean;
   autoplay?: boolean;
   startTime?: number;

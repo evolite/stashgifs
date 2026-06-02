@@ -28,7 +28,7 @@ function isVideoPlayer(player: IVideoPlayer | ImagePlayer | undefined): player i
   return player !== undefined && 'getVideoElement' in player;
 }
 
-export interface ReelPlaybackControllerOptions {
+interface ReelPlaybackControllerOptions {
   /** Post ids in feed order — used to find neighbours of the active card. */
   getOrderedPostIds: () => string[];
   getPost: (postId: string) => PostType | undefined;

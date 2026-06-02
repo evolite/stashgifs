@@ -52,11 +52,11 @@ export const CLAPPERBOARD_SVG = `<svg viewBox="0 0 54.57 54.57" width="14" heigh
 export const INFO_SVG = `<svg viewBox="${ICON_VIEWBOX}" width="16" height="16" class="${ICON_SVG_CLASS}" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true" focusable="false" xmlns="http://www.w3.org/2000/svg" preserveAspectRatio="xMidYMid meet"><circle cx="12" cy="12" r="9"/><path d="M12 10v6" stroke-linecap="round"/><circle cx="12" cy="7.5" r="1" fill="currentColor" stroke="none"/></svg>`;
 
 // Video player control icons (action size)
-export const PLAY_BUTTON_SVG = `<svg viewBox="${ICON_VIEWBOX}" width="24" height="24" class="${ICON_SVG_CLASS}" fill="currentColor" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" preserveAspectRatio="xMidYMid meet"><path d="M8 5v14l11-7z"/></svg>`;
+const PLAY_BUTTON_SVG = `<svg viewBox="${ICON_VIEWBOX}" width="24" height="24" class="${ICON_SVG_CLASS}" fill="currentColor" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" preserveAspectRatio="xMidYMid meet"><path d="M8 5v14l11-7z"/></svg>`;
 
-export const PAUSE_SVG = `<svg viewBox="${ICON_VIEWBOX}" width="24" height="24" class="${ICON_SVG_CLASS}" fill="currentColor" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" preserveAspectRatio="xMidYMid meet"><path d="M6 4h4v16H6V4zm8 0h4v16h-4V4z"/></svg>`;
+const PAUSE_SVG = `<svg viewBox="${ICON_VIEWBOX}" width="24" height="24" class="${ICON_SVG_CLASS}" fill="currentColor" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" preserveAspectRatio="xMidYMid meet"><path d="M6 4h4v16H6V4zm8 0h4v16h-4V4z"/></svg>`;
 
-export const FULLSCREEN_SVG = `<svg viewBox="${ICON_VIEWBOX}" width="24" height="24" class="${ICON_SVG_CLASS}" fill="currentColor" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" preserveAspectRatio="xMidYMid meet"><path d="M7 14H5v5h5v-2H7v-3zm-2-4h2V7h3V5H5v5zm12 7h-3v2h5v-5h-2v3zM14 5v2h3v3h2V5h-5z"/></svg>`;
+const FULLSCREEN_SVG = `<svg viewBox="${ICON_VIEWBOX}" width="24" height="24" class="${ICON_SVG_CLASS}" fill="currentColor" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" preserveAspectRatio="xMidYMid meet"><path d="M7 14H5v5h5v-2H7v-3zm-2-4h2V7h3V5H5v5zm12 7h-3v2h5v-5h-2v3zM14 5v2h3v3h2V5h-5z"/></svg>`;
 
 // Eye / view count icon (action size)
 export const EYE_SVG = `<svg viewBox="${ICON_VIEWBOX}" width="24" height="24" class="${ICON_SVG_CLASS}" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" preserveAspectRatio="xMidYMid meet"><g transform="translate(12, 12) scale(0.82) translate(-12, -12)"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></g></svg>`;

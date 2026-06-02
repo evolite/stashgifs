@@ -11,7 +11,7 @@
  * `getCards` callback, so dynamically appended posts (infinite scroll) just work.
  */
 
-export interface ReelScrollerOptions {
+interface ReelScrollerOptions {
   /** The element that actually scrolls (overflow-y:auto, fixed viewport height). */
   scrollContainer: HTMLElement;
   /** Ordered list of the post-card elements currently in the DOM. */

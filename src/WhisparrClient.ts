@@ -12,12 +12,12 @@
  * pattern used in DiscoveryManager for StashBox fetches.
  */
 
-export interface WhisparrRootFolder {
+interface WhisparrRootFolder {
   id: number;
   path: string;
 }
 
-export interface WhisparrQualityProfile {
+interface WhisparrQualityProfile {
   id: number;
   name: string;
 }
@@ -44,7 +44,7 @@ export interface WhisparrQueueItem {
   trackedDownloadState?: string;
 }
 
-export interface WhisparrClientConfig {
+interface WhisparrClientConfig {
   baseUrl: string;
   apiKey: string;
   rootFolderPath?: string;
