@@ -114,9 +114,10 @@ export class ReelPlaybackController {
   }
 
   destroy(): void {
-    for (const postId of [...this.guards.keys()]) {
-      this.detachGuard(postId);
+    for (const guard of this.guards.values()) {
+      guard.el.removeEventListener('play', guard.handler);
     }
+    this.guards.clear();
     this.activePostId = undefined;
   }
 

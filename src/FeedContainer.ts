@@ -3,7 +3,7 @@
  * Main application container managing the feed
  */
 
-import { SceneMarker, Scene, FilterOptions, FeedSettings, VideoPostData, ImagePostData, ImageVideoPostData, Image } from './types.js';
+import { SceneMarker, FilterOptions, FeedSettings, VideoPostData, ImagePostData, ImageVideoPostData, Image } from './types.js';
 import { StashAPI, generateRandomSortSeed } from './StashAPI.js';
 import { PluginSettingsManager } from './PluginSettingsManager.js';
 import { VideoPost } from './VideoPost.js';
@@ -5214,14 +5214,12 @@ export class FeedContainer {
   private setupReelScroller(): void {
     if (!this.scrollContainer) return;
 
-    if (!this.reelScroller) {
-      this.reelScroller = new ReelScroller({
-        scrollContainer: this.scrollContainer,
-        getCards: () => this.getAllCardContainers(),
-        getPostId: (card) => this.getPostIdFromCard(card),
-        onSettle: (postId) => this.handleReelSettle(postId),
-      });
-    }
+    this.reelScroller ??= new ReelScroller({
+      scrollContainer: this.scrollContainer,
+      getCards: () => this.getAllCardContainers(),
+      getPostId: (card) => this.getPostIdFromCard(card),
+      onSettle: (postId) => this.handleReelSettle(postId),
+    });
     this.reelScroller.enable();
   }
 

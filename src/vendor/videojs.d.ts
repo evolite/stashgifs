@@ -89,4 +89,6 @@ declare global {
   interface Window {
     videojs?: VideoJsFactory;
   }
+  // eslint-disable-next-line no-var
+  var videojs: VideoJsFactory | undefined;
 }

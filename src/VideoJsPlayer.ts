@@ -104,7 +104,7 @@ export class VideoJsPlayer implements IVideoPlayer {
   }
 
   private createPlayer(options?: VideoJsPlayerOptions): VjsPlayer {
-    const videojs = window.videojs;
+    const videojs = globalThis.videojs;
     if (!videojs) {
       throw new Error('VideoJsPlayer: window.videojs is not loaded (vendored script missing)');
     }
