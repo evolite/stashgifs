@@ -32,7 +32,7 @@ export class ReelPlaybackController {
 
   /**
    * Make `postId` the single playing card: load + play it (audio per global
-   * mute), then pause/mute/unload every other card.
+   * mute), then pause/unload every other card.
    */
   setActive(postId: string): void {
     const post = this.getPost(postId);
@@ -77,8 +77,7 @@ export class ReelPlaybackController {
     if (postId === this.activePostId) {
       this.enforceActive(player);
     } else if (player.isPlaying()) {
-      player.setMuted(true);
-      player.pause();
+      player.pause(); // stray non-active player — pause silences it
     }
   }
 
@@ -108,9 +107,6 @@ export class ReelPlaybackController {
       if (player.isPlaying()) {
         player.pause();
       }
-      if (postId === this.activePostId) {
-        player.setMuted(true);
-      }
     }
   }
 
@@ -126,31 +122,26 @@ export class ReelPlaybackController {
 
   /**
    * Bring `player` to the desired active state: reload if unloaded, respect a
-   * user pause, then either apply audio (if already playing — a gesture has
-   * lifted the autoplay gate) or start muted autoplay. Audio is applied on the
-   * *next* enforceActive (gesture/visibility/re-settle) via the isPlaying branch.
+   * user pause, apply audio strictly from the global mute setting, then play.
+   * Mute is never forced here — globalMute is the single source of truth.
    */
   private enforceActive(player: IVideoPlayer): void {
     if (player.getIsUnloaded()) {
       player.reload();
     }
     if (player.isManuallyPaused()) return;
-    if (player.isPlaying()) {
-      player.setMuted(this.globalMute); // already playing — audio is safe now
-      return;
+    player.setMuted(this.globalMute);
+    if (!player.isPlaying()) {
+      void player.play();
     }
-    // Browsers only allow gesture-less autoplay while muted, so always start muted.
-    player.setMuted(true);
-    void player.play();
   }
 
   private deactivate(postId: string): void {
     const player = this.getPost(postId)?.getPlayer();
     if (!isVideoPlayer(player)) return;
-    player.setMuted(true);
     player.clearManualPause();
     if (player.isPlaying()) {
-      player.pause();
+      player.pause(); // pausing silences it — no need to touch mute state
     }
     if (!player.getIsUnloaded()) {
       player.unload();
