@@ -44,6 +44,25 @@ export class ReelPlaybackController {
       this.deactivate(previous);
     }
     this.activate(postId, post);
+    this.preloadNext(postId);
+  }
+
+  /**
+   * Warm the card immediately after the active one: create + buffer its player so
+   * scrolling to it plays instantly. All video posts create paused (see
+   * VideoPostBase.AUTOPLAY_ON_CREATE), so this only buffers — it never plays the
+   * neighbour offscreen. The next setActive() reuses the already-loaded player.
+   */
+  private preloadNext(activePostId: string): void {
+    const order = this.getOrderedPostIds();
+    const idx = order.indexOf(activePostId);
+    if (idx < 0) return;
+    const nextId = order[idx + 1];
+    if (!nextId) return;
+    const post = this.getPost(nextId);
+    if (!(post instanceof VideoPost || post instanceof ImageVideoPost)) return;
+    if (!post.hasVideoSource()) return;
+    post.preload(); // creates + buffers (paused); playback waits for activation
   }
 
   /**

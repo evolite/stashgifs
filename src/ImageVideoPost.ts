@@ -4,7 +4,6 @@
  */
 
 import { ImageVideoPostData, IVideoPlayer } from './types.js';
-import { VideoJsPlayer } from './VideoJsPlayer.js';
 import { calculateAspectRatio, getAspectRatioClass, normalizeMediaUrl, toAbsoluteUrl } from './utils.js';
 import { VideoPostBase, BaseVideoPostOptions } from './VideoPostBase.js';
 interface ImageVideoPostOptions extends BaseVideoPostOptions {}
@@ -151,13 +150,10 @@ export class ImageVideoPost extends VideoPostBase {
     try {
       // Respect global mute state when creating HD player
       const shouldBeMuted = this.getGlobalMuteState ? this.getGlobalMuteState() : true;
-      this.player = new VideoJsPlayer(playerContainer, hdVideoUrl, {
+      this.player = this.createVideoPlayer(playerContainer, hdVideoUrl, {
         muted: shouldBeMuted,
-        autoplay: true,
         startTime: undefined, // Start from beginning for images
         endTime: undefined,
-        showLoadingIndicator: false,
-        objectFit: 'contain',
       });
 
       this.isLoaded = true;
@@ -228,13 +224,10 @@ export class ImageVideoPost extends VideoPostBase {
       const shouldBeMuted = this.isHQMode && this.getGlobalMuteState
         ? this.getGlobalMuteState()
         : true;
-      this.player = new VideoJsPlayer(this.playerContainer, videoUrl, {
+      this.player = this.createVideoPlayer(this.playerContainer, videoUrl, {
         muted: shouldBeMuted,
-        autoplay: false,
         startTime: finalStartTime,
         endTime: undefined,
-        showLoadingIndicator: false,
-        objectFit: 'contain',
       });
 
       this.isLoaded = true;

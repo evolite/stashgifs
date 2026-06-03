@@ -4,7 +4,6 @@
  */
 
 import { VideoPostData, Scene, IVideoPlayer } from './types.js';
-import { VideoJsPlayer } from './VideoJsPlayer.js';
 import { StashAPI } from './StashAPI.js';
 import { calculateAspectRatio, getAspectRatioClass, normalizeMediaUrl, showToast, toAbsoluteUrl, THEME, extractValidPerformerIds } from './utils.js';
 import { MARKER_SVG } from './icons.js';
@@ -689,14 +688,11 @@ export class VideoPost extends VideoPostBase {
         ? this.api.getSceneSources(this.data.marker.scene)
         : undefined;
 
-      this.player = new VideoJsPlayer(playerContainer, sceneVideoUrl, {
+      this.player = this.createVideoPlayer(playerContainer, sceneVideoUrl, {
         muted: true,
-        autoplay: true,
         startTime: startTime,
         endTime: this.data.endTime ?? this.data.marker.end_seconds,
-        showLoadingIndicator: false,
-        objectFit: 'contain',
-        sources: sources && sources.length > 0 ? sources : undefined,
+        sources,
       });
 
       this.isLoaded = true;
@@ -859,14 +855,11 @@ export class VideoPost extends VideoPostBase {
         ? this.api.getSceneSources(this.data.marker.scene)
         : undefined;
 
-      this.player = new VideoJsPlayer(playerContainer, normalizedVideoUrl, {
+      this.player = this.createVideoPlayer(playerContainer, normalizedVideoUrl, {
         muted: shouldBeMuted,
-        autoplay: true,
         startTime: finalStartTime,
         endTime: endTime ?? this.data.endTime ?? this.data.marker.end_seconds,
-        showLoadingIndicator: false,
-        objectFit: 'contain',
-        sources: sources && sources.length > 0 ? sources : undefined,
+        sources,
       });
 
       this.isLoaded = true;

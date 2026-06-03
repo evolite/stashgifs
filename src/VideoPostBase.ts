@@ -4,7 +4,8 @@
  * Extracts shared video-player management logic to reduce code duplication.
  */
 
-import type { IVideoPlayer } from './types.js';
+import type { IVideoPlayer, VideoSource } from './types.js';
+import { VideoJsPlayer } from './VideoJsPlayer.js';
 import { isMobileDevice, THEME, showToast, createCoverDiv } from './utils.js';
 import { HQ_SVG_OUTLINE, HQ_SVG_FILLED, VOLUME_MUTED_SVG, VOLUME_UNMUTED_SVG } from './icons.js';
 import { BasePost, BasePostOptions } from './BasePost.js';
@@ -44,6 +45,32 @@ export abstract class VideoPostBase extends BasePost {
 
   protected getAutoAdvancePlayer(): IVideoPlayer | undefined {
     return this.getPlayer();
+  }
+
+  /**
+   * Single construction point for every video player across both post types and
+   * both quality tiers. The call sites only resolve what varies (url, muted,
+   * clip window, candidate sources); the shared config lives here.
+   *
+   * Players are always created paused: ReelPlaybackController is the sole driver
+   * of playback (it plays the active card and warms — but does not play — the
+   * preloaded next card). Autoplaying a neighbour offscreen would buffer-compete
+   * and trigger false view counts.
+   */
+  protected createVideoPlayer(
+    container: HTMLElement,
+    videoUrl: string,
+    opts: { muted: boolean; startTime?: number; endTime?: number; sources?: VideoSource[] }
+  ): VideoJsPlayer {
+    return new VideoJsPlayer(container, videoUrl, {
+      muted: opts.muted,
+      autoplay: false,
+      startTime: opts.startTime,
+      endTime: opts.endTime,
+      showLoadingIndicator: false,
+      objectFit: 'contain',
+      sources: opts.sources && opts.sources.length > 0 ? opts.sources : undefined,
+    });
   }
 
   protected capturePlayerState(): { playerContainer: HTMLElement; wasPlaying: boolean } {
