@@ -191,6 +191,10 @@ export interface IVideoPlayer {
   onLoop(callback: () => void): void;
   /** Remove the registered loop callback. */
   offLoop(): void;
+  /** Register a callback fired on each playback time update. */
+  onTimeUpdate(callback: () => void): void;
+  /** Remove the registered time-update callback. */
+  offTimeUpdate(): void;
   destroy(): void;
 }
 

@@ -362,8 +362,11 @@ export abstract class VideoPostBase extends BasePost {
       track.setAttribute('aria-valuenow', String(Math.round(pct)));
     };
 
-    const video = player.getVideoElement();
-    video.addEventListener('timeupdate', update);
+    // Bind to the player abstraction, not the raw <video> element: video.js
+    // recreates the element on unload/reload, which would freeze an element-bound
+    // listener after scrolling away and back. The player instance persists.
+    player.onTimeUpdate(update);
+    update(); // paint current progress immediately, don't wait for the first event
 
     // Drag-to-seek via pointer events (works for mouse and touch).
     let dragging = false;
@@ -418,7 +421,7 @@ export abstract class VideoPostBase extends BasePost {
       track,
       fill,
       cleanup: () => {
-        video.removeEventListener('timeupdate', update);
+        player.offTimeUpdate();
         track.remove();
       },
     };

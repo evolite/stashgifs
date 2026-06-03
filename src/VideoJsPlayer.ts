@@ -48,6 +48,7 @@ export class VideoJsPlayer implements IVideoPlayer {
   private looping = false;
   private startSeekFixed = false;
   private onLoopCallback?: () => void;
+  private onTimeUpdateCallback?: () => void;
 
   constructor(container: HTMLElement, videoUrl: string, options?: VideoJsPlayerOptions) {
     this.container = container;
@@ -165,6 +166,8 @@ export class VideoJsPlayer implements IVideoPlayer {
       if (endBound > 0 && t >= endBound) {
         this.loopBack(player);
       }
+      // Player-level (not element-level) so progress consumers survive reload.
+      this.onTimeUpdateCallback?.();
     });
     player.on('ended', () => this.loopBack(player));
     player.on('volumechange', () => {
@@ -300,7 +303,10 @@ export class VideoJsPlayer implements IVideoPlayer {
   }
 
   getVideoElement(): HTMLVideoElement {
-    return this.videoEl;
+    // Return the live tech element: video.js recreates it on reset()/src(), so a
+    // cached reference goes stale after an unload/reload cycle.
+    const el = this.player?.tech(true)?.el();
+    return el instanceof HTMLVideoElement ? el : this.videoEl;
   }
 
   getState(): VideoPlayerState {
@@ -400,10 +406,19 @@ export class VideoJsPlayer implements IVideoPlayer {
     this.onLoopCallback = undefined;
   }
 
+  onTimeUpdate(callback: () => void): void {
+    this.onTimeUpdateCallback = callback;
+  }
+
+  offTimeUpdate(): void {
+    this.onTimeUpdateCallback = undefined;
+  }
+
   destroy(): void {
     this.destroyed = true;
     this.looping = false;
     this.onLoopCallback = undefined;
+    this.onTimeUpdateCallback = undefined;
     if (this.player) {
       try {
         if (!this.player.isDisposed()) this.player.dispose();

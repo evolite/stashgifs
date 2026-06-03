@@ -37,7 +37,9 @@
     "getSceneSources",
     "toggle", "onCollapseChange",
     "isFullyConfigured", "invalidateCaches", "getSceneByStashId", "getQueueForMovie", "addScene",
-    "pauseManually", "clearManualPause", "getProgress", "seekToProgress", "reload", "onLoop"
+    "pauseManually", "clearManualPause", "getProgress", "seekToProgress", "reload", "onLoop",
+    "play", "isPlaying", "getVideoElement", "getState", "setMuted", "unload",
+    "getIsUnloaded", "hasLoadError", "offLoop", "onTimeUpdate", "offTimeUpdate"
   ],
   "duplicates": {
     "mode": "semantic"
