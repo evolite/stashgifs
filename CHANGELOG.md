@@ -5,6 +5,43 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [7.0.0] - 2026-06-03
+
+### Bug Fixes
+
+- Prevent tag/performer popups from being hidden under next post card
+- Fire reel auto-advance on clipped marker loops
+- Stop reel snapping back on fast wheel flick
+- Repair four review findings from opus audit
+- Resolve 4 SonarQube violations (new_violations gate)
+- Keep reel progress bar updating after scrolling back to a card
+- Mute audio only from the global mute setting
+- Stop reel swipe ghost-click from pausing the next card on mobile
+- Autoplay reel cards that finish loading after a fast scroll
+
+### Features
+
+- Replace NativeVideoPlayer with video.js engine for codec/HLS support
+- Add draggable accent progress bar to video posts
+
+### Performance
+
+- Load videos only when visible and stop re-downloading on scroll
+- Remove posters and prefetching, simplify marker-clip loading
+- Cut ~200ms of artificial stalls from HD upgrade path
+- Preload the next reel card for instant playback
+
+### Refactoring
+
+- Collapse play orchestration to single reconcile() function
+- Replace JS card-snapping with native CSS scroll-snap
+- Replace VisibilityManager/AudioManager with reel-only architecture
+- Apply dead-code cleanup from post-reel-only review
+- Simplify playback layer and harden reel video stability
+- Extract shared clip-window computation in VideoJsPlayer
+- Eliminate remaining code duplication across the project
+- Clear SonarQube violations from recent changes
+
 ## [6.7.1] - 2026-05-31
 
 ### Bug Fixes
