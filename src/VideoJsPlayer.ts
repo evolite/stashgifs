@@ -348,23 +348,29 @@ export class VideoJsPlayer implements IVideoPlayer {
     try { this.player!.currentTime(time); } catch { /* disposed */ }
   }
 
-  getProgress(): number {
-    if (!this.isUsable()) return 0;
-    const current = this.safeNumber(() => this.player!.currentTime());
+  /**
+   * The active clip window as [start, span]. span <= 0 means the duration isn't
+   * known yet (metadata not loaded), so progress/seek consumers should no-op.
+   */
+  private clipWindow(): { start: number; span: number } {
     const start = this.startAt;
     const end = this.endAt > 0 ? this.endAt : this.safeNumber(() => this.player!.duration());
-    const span = end - start;
+    return { start, span: end - start };
+  }
+
+  getProgress(): number {
+    if (!this.isUsable()) return 0;
+    const { start, span } = this.clipWindow();
     if (span <= 0) return 0;
+    const current = this.safeNumber(() => this.player!.currentTime());
     return Math.max(0, Math.min(1, (current - start) / span));
   }
 
   seekToProgress(ratio: number): void {
     if (!this.isUsable()) return;
-    const clamped = Math.max(0, Math.min(1, ratio));
-    const start = this.startAt;
-    const end = this.endAt > 0 ? this.endAt : this.safeNumber(() => this.player!.duration());
-    const span = end - start;
+    const { start, span } = this.clipWindow();
     if (span <= 0) return;
+    const clamped = Math.max(0, Math.min(1, ratio));
     this.seekTo(start + clamped * span);
   }
 
