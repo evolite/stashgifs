@@ -4815,7 +4815,7 @@ export class FeedContainer {
    * Clear all posts
    */
   private clearPosts(): void {
-    for (const [postId, post] of this.posts.entries()) {
+    for (const post of this.posts.values()) {
       post.destroy();
     }
     this.posts.clear();

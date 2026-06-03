@@ -118,10 +118,10 @@ export abstract class VideoPostBase extends BasePost {
       this.touchCleanups.push(
         setupTouchHandlers(container, {
           onTap: (e) => togglePlayback(e.target),
-        })
+        }),
+        // Belt-and-suspenders: swallow the ghost click after any touch on the player.
+        preventClickAfterTouch(container)
       );
-      // Belt-and-suspenders: swallow the ghost click after any touch on the player.
-      this.touchCleanups.push(preventClickAfterTouch(container));
     } else {
       container.addEventListener('click', (e: MouseEvent) => togglePlayback(e.target));
     }
@@ -166,7 +166,7 @@ export abstract class VideoPostBase extends BasePost {
   protected handlePlayerError(): void {
     setTimeout(() => {
       const player = this.getPlayer();
-      if (!player || !player.hasLoadError()) return;
+      if (!player?.hasLoadError()) return;
       this.hasFailedPermanently = true;
       this.showErrorPlaceholder();
     }, 50);
