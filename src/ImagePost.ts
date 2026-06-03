@@ -153,13 +153,7 @@ export class ImagePost extends BasePost {
     this.buttonGroup = buttonGroup;
 
     this.appendCommonImageFooterButtons(buttonGroup, this.data.image.id);
-
-    const discoveryBtn = this.createDiscoveryButton();
-    if (discoveryBtn) buttonGroup.appendChild(discoveryBtn);
-
-    // Image button (open in Stash)
-    const imageBtn = this.createImageButton(this.data.image.id);
-    buttonGroup.appendChild(imageBtn);
+    this.appendDiscoveryAndImageButtons(buttonGroup, this.data.image.id);
 
     return footer;
   }
@@ -223,14 +217,11 @@ export class ImagePost extends BasePost {
    * Destroy the post
    */
   destroy(): void {
-    this.cleanupAddTagDialogState();
-
     if (this.player) {
       this.player.destroy();
       this.player = undefined;
     }
     this.isLoaded = false;
     super.destroy();
-    this.container?.remove();
   }
 }

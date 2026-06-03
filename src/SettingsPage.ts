@@ -464,11 +464,7 @@ export class SettingsPage {
       const select = document.createElement('select');
       select.style.minWidth = '200px';
       select.style.padding = '8px 12px';
-      select.style.borderRadius = THEME.radius.button;
-      select.style.border = `1px solid ${THEME.colors.border}`;
-      select.style.backgroundColor = THEME.colors.surface;
-      select.style.color = THEME.colors.textPrimary;
-      select.style.fontSize = THEME.typography.sizeBody;
+      this.applySelectBaseStyle(select);
       select.style.fontWeight = THEME.typography.weightBodyStrong;
       select.style.cursor = 'pointer';
 
@@ -1645,12 +1641,17 @@ export class SettingsPage {
   private styleSelect(select: HTMLSelectElement): void {
     select.style.width = '100%';
     select.style.padding = '10px 12px';
+    this.applySelectBaseStyle(select);
+    select.style.boxSizing = 'border-box';
+  }
+
+  /** The border/background/color/size styling common to all settings selects. */
+  private applySelectBaseStyle(select: HTMLSelectElement): void {
     select.style.borderRadius = THEME.radius.button;
     select.style.border = `1px solid ${THEME.colors.border}`;
     select.style.backgroundColor = THEME.colors.surface;
     select.style.color = THEME.colors.textPrimary;
     select.style.fontSize = THEME.typography.sizeBody;
-    select.style.boxSizing = 'border-box';
   }
 
   private buildWhisparrSection(

@@ -229,7 +229,8 @@ export class DiscoveryPanel {
     }
   }
 
-  private buildGhostCard(): HTMLElement {
+  /** Card wrapper shared by the ghost (loading) and real scene cards. */
+  private createCardShell(): HTMLElement {
     const card = document.createElement('div');
     Object.assign(card.style, {
       background: THEME.colors.surface,
@@ -240,6 +241,11 @@ export class DiscoveryPanel {
       width: '100%',
       boxSizing: 'border-box',
     });
+    return card;
+  }
+
+  private buildGhostCard(): HTMLElement {
+    const card = this.createCardShell();
 
     const thumb = document.createElement('div');
     thumb.style.cssText = `width: 100%; aspect-ratio: 16/9; background: ${THEME.colors.backgroundPrimary}; display: flex; align-items: center; justify-content: center;`;
@@ -370,16 +376,7 @@ export class DiscoveryPanel {
   }
 
   private buildCard(scene: StashBoxScene, baseUrl: string, performerName: string, localStashId?: string): HTMLElement {
-    const card = document.createElement('div');
-    Object.assign(card.style, {
-      background: THEME.colors.surface,
-      borderRadius: THEME.radius.card,
-      overflow: 'hidden',
-      border: `1px solid ${THEME.colors.border}`,
-      minWidth: '0',
-      width: '100%',
-      boxSizing: 'border-box',
-    });
+    const card = this.createCardShell();
 
     const thumb = document.createElement('a');
     thumb.style.cssText = `position: relative; width: 100%; aspect-ratio: 16/9; background: ${THEME.colors.backgroundPrimary}; overflow: hidden; display: block; text-decoration: none; color: inherit;`;

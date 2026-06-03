@@ -536,6 +536,11 @@ export class FeedContainer {
 
   private mountDiscoveryPanel(): void {
     if (this.discoveryPanel || isMobileDevice()) return;
+    this.createDiscoveryPanel();
+  }
+
+  /** Construct the discovery panel + manager. Callers gate on platform/settings. */
+  private createDiscoveryPanel(): void {
     this.discoveryPanel = new DiscoveryPanel(
       this.container,
       this.settings.discoveryPanelSize ?? 260,
@@ -932,12 +937,7 @@ export class FeedContainer {
 
     // Initialize discovery panel (opt-out via setting; hidden on mobile)
     if (this.settings.enableDiscoveryPanel === true && !isMobileDevice()) {
-      this.discoveryPanel = new DiscoveryPanel(
-        this.container,
-        this.settings.discoveryPanelSize ?? 260,
-        WhisparrClient.fromSettings(this.settings),
-      );
-      this.discoveryManager = new DiscoveryManager(this.api, this.discoveryPanel, this.settings.discoverySceneOrder ?? 'latest');
+      this.createDiscoveryPanel();
     }
   }
   

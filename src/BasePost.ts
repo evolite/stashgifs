@@ -295,6 +295,8 @@ export abstract class BasePost {
     this.detachReelAutoAdvance();
     this.ratingControl?.destroy();
     this.ratingControl = undefined;
+    // All concrete posts remove their container last; do it once here.
+    this.container?.remove();
   }
 
   private static loadFavoritePerformerCache(): void {
@@ -723,6 +725,14 @@ export abstract class BasePost {
     }
     const ratingControl = this.createRatingSection();
     buttonGroup.appendChild(ratingControl);
+  }
+
+  /** Trailing footer buttons shared by image-type posts: discovery + open-in-Stash. */
+  protected appendDiscoveryAndImageButtons(buttonGroup: HTMLElement, imageId: string): void {
+    const discoveryBtn = this.createDiscoveryButton();
+    if (discoveryBtn) buttonGroup.appendChild(discoveryBtn);
+    const imageBtn = this.createImageButton(imageId);
+    buttonGroup.appendChild(imageBtn);
   }
 
   private static readonly VIEW_COUNT_LS_PREFIX = 'stashgifs_views_';

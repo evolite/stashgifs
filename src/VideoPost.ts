@@ -1870,9 +1870,8 @@ export class VideoPost extends VideoPostBase {
       this.player = undefined;
     }
 
-    // Base destroy() detaches the load-error handler and removes the placeholder.
+    // Base destroy() detaches the load-error handler, removes the placeholder,
+    // and removes the container from the DOM.
     super.destroy();
-    // Remove container from DOM
-    this.container.remove();
   }
 }

@@ -73,12 +73,7 @@ export class ImageVideoPost extends VideoPostBase {
     const muteBtn = this.createMuteOverlayButton();
     buttonGroup.appendChild(muteBtn);
 
-    const discoveryBtn = this.createDiscoveryButton();
-    if (discoveryBtn) buttonGroup.appendChild(discoveryBtn);
-
-    // Image button (open in Stash)
-    const imageBtn = this.createImageButton(this.data.image.id);
-    buttonGroup.appendChild(imageBtn);
+    this.appendDiscoveryAndImageButtons(buttonGroup, this.data.image.id);
 
     return footer;
   }
@@ -322,16 +317,13 @@ export class ImageVideoPost extends VideoPostBase {
    * Destroy the post
    */
   destroy(): void {
-    this.cleanupAddTagDialogState();
-
     if (this.player) {
       this.player.destroy();
       this.player = undefined;
     }
     this.isLoaded = false;
-
-    // Base destroy() detaches the load-error handler and removes the placeholder.
+    // Base destroy() detaches the load-error handler, removes the placeholder,
+    // and removes the container from the DOM.
     super.destroy();
-    this.container?.remove();
   }
 }
