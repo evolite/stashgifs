@@ -176,7 +176,6 @@ export interface IVideoPlayer {
   clearManualPause(): void;
   getVideoElement(): HTMLVideoElement;
   getState(): VideoPlayerState;
-  waitForReady(timeoutMs?: number): Promise<void>;
   seekTo(time: number): void;
   /** Playback position as 0–1 within the clip window (respects startAt/endAt). */
   getProgress(): number;
@@ -188,9 +187,10 @@ export interface IVideoPlayer {
   reload(): void;
   getIsUnloaded(): boolean;
   hasLoadError(): boolean;
-  getLoadErrorType(): 'timeout' | 'network' | 'play' | null;
   /** Register a callback fired once each time the media loops back to its start. */
   onLoop(callback: () => void): void;
+  /** Remove the registered loop callback. */
+  offLoop(): void;
   destroy(): void;
 }
 

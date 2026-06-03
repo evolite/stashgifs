@@ -6,7 +6,7 @@
 import { VideoPostData, Scene, IVideoPlayer } from './types.js';
 import { VideoJsPlayer } from './VideoJsPlayer.js';
 import { StashAPI } from './StashAPI.js';
-import { calculateAspectRatio, getAspectRatioClass, normalizeMediaUrl, showToast, toAbsoluteUrl, isMobileDevice, THEME, extractValidPerformerIds } from './utils.js';
+import { calculateAspectRatio, getAspectRatioClass, normalizeMediaUrl, showToast, toAbsoluteUrl, THEME, extractValidPerformerIds } from './utils.js';
 import { MARKER_SVG } from './icons.js';
 import { VideoPostBase, BaseVideoPostOptions } from './VideoPostBase.js';
 
@@ -36,8 +36,6 @@ export class VideoPost extends VideoPostBase {
   private selectedTagName?: string;
   private autocompleteDebounceTimer?: ReturnType<typeof setTimeout>;
   private tagSearchLoadingTimer?: ReturnType<typeof setTimeout>;
-  private retryLoadDelayId?: ReturnType<typeof setTimeout>;
-  private seekResetTimerId?: ReturnType<typeof setTimeout>;
   private isTagSearchLoading: boolean = false;
   private hasCreatedMarker: boolean = false; // Track if marker has been created for this scene
 
@@ -630,13 +628,8 @@ export class VideoPost extends VideoPostBase {
     }
 
     this.stopWatchTracking();
-    this.clearLoadErrorCheckTimeout();
     this.detachLoadErrorHandler();
     this.detachReelAutoAdvance();
-    if (this.seekResetTimerId) {
-      clearTimeout(this.seekResetTimerId);
-      this.seekResetTimerId = undefined;
-    }
 
     // Unload first to release video buffers immediately
     if (this.player.getIsUnloaded()) {
@@ -681,95 +674,6 @@ export class VideoPost extends VideoPostBase {
   }
 
   /**
-   * Attempt to start playback with retry logic
-   */
-  private async attemptPlayback(waitTimeout: number, checkDelay: number): Promise<boolean> {
-    if (!this.player) {
-      return false;
-    }
-    
-    try {
-      // Wait for video to be actually loaded (fires on loadeddata/canplay events)
-      await this.player.waitForReady(waitTimeout);
-      
-      // Attempt to play
-      await this.player.play();
-      
-      // Wait for play() to take effect (longer on mobile)
-      await new Promise(resolve => setTimeout(resolve, checkDelay));
-      
-      // Check if playback actually started
-      if (this.player.isPlaying()) {
-        return true;
-      }
-      
-      // If not playing, check readyState as additional verification
-      const videoElement = this.player.getVideoElement();
-      if (videoElement && videoElement.readyState >= 2) {
-        // Video is loaded, might just need more time
-        // Wait a bit more and check again
-        await new Promise(resolve => setTimeout(resolve, checkDelay));
-        return this.player.isPlaying();
-      }
-      
-      return false;
-    } catch (error: unknown) {
-      // Error occurred, check if video is actually playing despite the error
-      // Sometimes waitForReady or play() throws even when playback succeeds
-      // Error is intentionally handled - we check playback state as fallback
-      if (error instanceof Error) {
-        // Silently handle - playback may have succeeded despite error
-      }
-      await new Promise(resolve => setTimeout(resolve, checkDelay));
-      if (!this.player) return false;
-      return this.player.isPlaying() ?? false;
-    }
-  }
-
-  /**
-   * Resume playback after upgrading to scene video
-   */
-  private async resumePlaybackAfterUpgrade(): Promise<void> {
-    if (!this.player) {
-      return;
-    }
-    
-    const waitTimeout = 6000;
-    const checkDelay = 300;
-
-    // Retry logic with exponential backoff
-    let retryCount = 0;
-    const maxRetries = 2; // Try up to 3 times total (initial + 2 retries)
-    const retryDelays = [0, 500, 1000]; // Initial attempt, then 500ms, then 1000ms
-    
-    while (retryCount <= maxRetries) {
-      const success = await this.attemptPlayback(waitTimeout, checkDelay);
-      if (success) {
-        return;
-      }
-      
-      // If we get here, playback didn't start
-      // Retry if we haven't exhausted retries
-      if (retryCount < maxRetries) {
-        const delay = retryDelays[retryCount + 1];
-        await new Promise(resolve => setTimeout(resolve, delay));
-        retryCount++;
-        continue;
-      }
-      
-      // All retries exhausted, show error
-      if (!this.player) return;
-      const videoElement = this.player.getVideoElement();
-      console.warn('Failed to resume playback after upgrade - video not playing after retries', {
-        retryCount,
-        readyState: videoElement?.readyState,
-      });
-      showToast('Video upgraded but playback failed. Click play to start.');
-      return;
-    }
-  }
-
-  /**
    * Create new scene video player
    */
   private async createSceneVideoPlayer(playerContainer: HTMLElement, sceneVideoUrl: string): Promise<void> {
@@ -796,12 +700,8 @@ export class VideoPost extends VideoPostBase {
       });
 
       this.isLoaded = true;
-      // Also ensure seek happens after metadata loads (redundant but ensures it works on mobile)
-      if (startTime !== undefined) {
-        void this.seekPlayerToStart(this.player, startTime);
-      }
-      this.clearLoadErrorTimerOnPlayback(this.player);
-      this.scheduleLoadErrorCheck();
+      // The player seeks to startTime itself on loadedmetadata (and re-seeks once
+      // on first playback for mobile), so no extra seek orchestration is needed.
       this.attachLoadErrorHandler();
       this.attachReelAutoAdvance();
       this.setupProgressBar();
@@ -869,7 +769,7 @@ export class VideoPost extends VideoPostBase {
    * Upgrade from marker video to full scene video with audio
    */
   private async upgradeToSceneVideo(): Promise<void> {
-    const { sceneVideoUrl, playerContainer, wasPlaying } = this.validateAndPrepareUpgrade();
+    const { sceneVideoUrl, playerContainer } = this.validateAndPrepareUpgrade();
 
     // Unload and destroy current marker player to free memory before creating new one
     this.destroyCurrentPlayer();
@@ -880,13 +780,8 @@ export class VideoPost extends VideoPostBase {
     // Create new player with full scene video
     await this.createSceneVideoPlayer(playerContainer, sceneVideoUrl);
 
-    // Let the playback controller re-apply playback to the upgraded player
+    // The playback controller plays the active card via onPlayerReady.
     this.notifyPlayerReady();
-
-    // If video was playing, resume playback
-    if (wasPlaying) {
-      await this.resumePlaybackAfterUpgrade();
-    }
   }
 
   /**
@@ -975,16 +870,9 @@ export class VideoPost extends VideoPostBase {
       });
 
       this.isLoaded = true;
-      this.clearLoadErrorTimerOnPlayback(this.player);
-
-      this.scheduleLoadErrorCheck();
       this.attachLoadErrorHandler();
       this.attachReelAutoAdvance();
       this.setupProgressBar();
-
-      if (this.data.marker.id) {
-        this.onPlayerReady?.(this.data.marker.id);
-      }
 
       this.startWatchTracking();
 
@@ -1074,188 +962,6 @@ export class VideoPost extends VideoPostBase {
   hidePost(): void {
     this.container.style.display = 'none';
     this.hasFailedPermanently = true;
-  }
-
-  /**
-   * Show error placeholder with "Failed to load" text
-   */
-  private showErrorPlaceholder(): void {
-    if (this.errorPlaceholder) {
-      // Already showing placeholder
-      return;
-    }
-
-    const playerContainer = this.playerContainer || this.container.querySelector('.video-post__player') as HTMLElement;
-    if (!playerContainer) {
-      return;
-    }
-
-    // Hide the video player container
-    playerContainer.style.display = 'none';
-
-    // Create placeholder element
-    const placeholder = document.createElement('div');
-    placeholder.className = 'video-post__error-placeholder';
-    placeholder.style.backgroundColor = THEME.colors.backgroundSecondary;
-
-    // Create error text overlay
-    const errorText = document.createElement('div');
-    errorText.className = 'video-post__error-text';
-    errorText.textContent = 'Failed to load';
-    placeholder.appendChild(errorText);
-
-    // Insert placeholder before player container
-    if (playerContainer.parentNode) {
-      playerContainer.parentNode.insertBefore(placeholder, playerContainer);
-    }
-
-    this.errorPlaceholder = placeholder;
-  }
-
-  /**
-   * Hide error placeholder and show video player
-   */
-  private hideErrorPlaceholder(): void {
-    if (this.errorPlaceholder) {
-      this.errorPlaceholder.remove();
-      this.errorPlaceholder = undefined;
-    }
-
-    const playerContainer = this.playerContainer || this.container.querySelector('.video-post__player') as HTMLElement;
-    if (playerContainer) {
-      playerContainer.style.display = '';
-    }
-  }
-
-  /**
-   * Check if player has a load error and handle it
-   */
-  public checkForLoadError(): void {
-    if (!this.player) {
-      return;
-    }
-
-    if (this.player.hasLoadError()) {
-      const errorType = this.player.getLoadErrorType();
-      const error = new Error(`Video load failed: ${errorType || 'unknown'}`);
-      // Add errorType property for error handling
-      if (errorType) {
-        Object.defineProperty(error, 'errorType', {
-          value: errorType,
-          writable: false,
-          enumerable: true,
-        });
-      }
-      this.handleLoadError(error);
-    }
-  }
-
-  /**
-   * Handle video load error with retry logic
-   */
-  private handleLoadError(error: Error): void {
-    this.loadErrorCount++;
-
-    const MAX_RETRIES = 2;
-    if (this.loadErrorCount >= MAX_RETRIES) {
-      // Exhausted retries, show placeholder
-      this.hasFailedPermanently = true;
-      this.showErrorPlaceholder();
-      console.warn('VideoPost: Video failed to load, showing placeholder', {
-        markerId: this.data.marker.id,
-        error,
-        attempts: this.loadErrorCount,
-      });
-    } else {
-      // Schedule a single short-backoff retry
-      const delay = this.loadErrorCount === 1 ? 1000 : 2000;
-
-      console.warn('VideoPost: Video load failed, retrying...', {
-        markerId: this.data.marker.id,
-        attempt: this.loadErrorCount,
-        maxAttempts: MAX_RETRIES,
-        retryDelay: delay,
-        error,
-      });
-
-      this.retryTimeoutId = globalThis.setTimeout(() => {
-        this.retryLoad();
-      }, delay) as unknown as number;
-    }
-  }
-
-  /**
-   * Retry loading the video player
-   */
-  private retryLoad(): void {
-    if (this.hasFailedPermanently) {
-      return;
-    }
-
-    // Clear current player (this will properly clean up the video element and clear src)
-    if (this.player) {
-      this.clearLoadErrorCheckTimeout();
-      this.detachLoadErrorHandler();
-      this.player.destroy();
-      this.player = undefined;
-    }
-    this.isLoaded = false;
-
-    // Hide placeholder if showing (cleanup before retry)
-    this.hideErrorPlaceholder();
-
-    // Small delay to ensure cleanup completes and browser releases resources
-    // This helps with blocked requests by giving the browser time to clear the connection
-    this.retryLoadDelayId = setTimeout(() => {
-      this.retryLoadDelayId = undefined;
-      // Get video URL and reload
-      if (this.hasVideoSource() && this.data.videoUrl) {
-        const player = this.loadPlayer(
-          this.data.videoUrl,
-          this.data.startTime ?? this.data.marker.seconds,
-          this.data.endTime ?? this.data.marker.end_seconds
-        );
-        // If retry succeeds, ensure placeholder stays hidden
-        if (player) {
-          this.hideErrorPlaceholder();
-        }
-      }
-    }, 100); // Small delay to allow cleanup
-  }
-
-  private async seekPlayerToStart(player: IVideoPlayer, startTime: number): Promise<void> {
-    const clamped = Number.isFinite(startTime) ? Math.max(0, startTime) : 0;
-    try {
-      await player.waitForReady(4000);
-    } catch (error) {
-      console.warn('VideoPost: Player not ready before seeking', {
-        error,
-        markerId: this.data.marker.id,
-      });
-    }
-    try {
-      player.seekTo(clamped);
-
-      // Re-seek after a short delay and on the first playing event — some browsers
-      // reset currentTime when play() is called after seek.
-      if (isMobileDevice()) {
-        const videoElement = player.getVideoElement();
-        const reSeek = () => {
-          this.seekResetTimerId = undefined;
-          if (Math.abs(videoElement.currentTime - clamped) > 0.5) {
-            player.seekTo(clamped);
-          }
-        };
-        this.seekResetTimerId = setTimeout(reSeek, 100);
-        videoElement.addEventListener('playing', () => reSeek(), { once: true });
-      }
-    } catch (error) {
-      console.warn('VideoPost: Failed to seek player to marker start', {
-        error,
-        markerId: this.data.marker.id,
-        startTime: clamped,
-      });
-    }
   }
 
   /**
@@ -2165,37 +1871,13 @@ export class VideoPost extends VideoPostBase {
     this.stopWatchTracking();
     this.closeMarkerDialog();
 
-    // Clear any pending retry
-    if (this.retryTimeoutId) {
-      clearTimeout(this.retryTimeoutId);
-      this.retryTimeoutId = undefined;
-    }
-
-    if (this.retryLoadDelayId) {
-      clearTimeout(this.retryLoadDelayId);
-      this.retryLoadDelayId = undefined;
-    }
-    if (this.seekResetTimerId) {
-      clearTimeout(this.seekResetTimerId);
-      this.seekResetTimerId = undefined;
-    }
-
-    this.clearLoadErrorCheckTimeout();
-    this.detachLoadErrorHandler();
-
-    // Remove error placeholder if exists
-    if (this.errorPlaceholder) {
-      this.errorPlaceholder.remove();
-      this.errorPlaceholder = undefined;
-    }
-
-
     // Destroy player
     if (this.player) {
       this.player.destroy();
       this.player = undefined;
     }
 
+    // Base destroy() detaches the load-error handler and removes the placeholder.
     super.destroy();
     // Remove container from DOM
     this.container.remove();

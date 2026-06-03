@@ -912,7 +912,7 @@ export class FeedContainer {
   }
 
   /**
-   * Initialize visibility and favorites managers
+   * Initialize playback and favorites managers
    */
   private initializeManagers(): void {
     // Reel playback: one active card at a time, driven by ReelScroller.
@@ -3108,8 +3108,8 @@ export class FeedContainer {
       post.setHQMode(true);
     }
 
-    // Loading is driven by VisibilityManager.reconcile() via onLoadRequest once
-    // this post is visible — no separate per-post load observer.
+    // Loading is driven by ReelPlaybackController.activate() → post.preload() once
+    // the reel scroller settles on this card — no separate per-post load observer.
     return postContainer;
   }
 
@@ -4726,8 +4726,8 @@ export class FeedContainer {
       return null;
     }
 
-    // Loading is driven by VisibilityManager.reconcile() via the onLoadRequest
-    // hook once this post is visible — no separate per-post load observer.
+    // Loading is driven by ReelPlaybackController.activate() → post.preload() once
+    // the reel scroller settles on this card — no separate per-post load observer.
     return postContainer;
   }
 
@@ -4816,7 +4816,6 @@ export class FeedContainer {
    */
   private clearPosts(): void {
     for (const [postId, post] of this.posts.entries()) {
-      this.playback?.unregisterCard(postId);
       post.destroy();
     }
     this.posts.clear();
@@ -5034,7 +5033,6 @@ export class FeedContainer {
     const post = this.posts.get(postId);
     if (post) {
       this.destroyPostPlayer(post);
-      this.playback.unregisterCard(postId);
       post.destroy();
       this.posts.delete(postId);
       this.removePostFromOrder(postId);
@@ -5340,9 +5338,11 @@ export class FeedContainer {
   }
 
   private ensureReelInitialCardLoaded(): void {
-    const closestCard = this.findCardClosestToCenter();
-    if (!closestCard) return;
-    const postId = this.getPostIdFromCard(closestCard);
+    // Prefer the scroller's top-aligned index (consistent with how it computes the
+    // current card during normal scrolling). Fall back to center-distance for the
+    // initial call before the scroller exists.
+    const postId = this.reelScroller?.getCurrentPostId()
+      ?? this.getPostIdFromCard(this.findCardClosestToCenter() ?? document.createElement('div'));
     if (!postId) return;
     this.playback.setActive(postId);
     this.discoveryManager?.onPrimaryPostChanged(postId, this.getPerformersForPost(postId));
@@ -5692,7 +5692,6 @@ export class FeedContainer {
   cleanup(): void {
     this.cancelAllPendingRequests();
     this.stopLoadingVideos();
-    this.playback.destroy();
     this.teardownListeners();
     this.clearPosts();
     this.hideSkeletonLoaders();

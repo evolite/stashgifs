@@ -7,12 +7,13 @@
  * give us HLS, transcode fallback, and source selection, so scenes whose codec the
  * browser can't decode natively (HEVC/AV1) or that are HLS-only now play.
  *
- * Marker start/end clipping is handled by the videojs-offset plugin instead of the
- * old desiredStartTime/re-seek machinery.
+ * Clip start/end and looping are handled natively here: seek to startAt on load,
+ * and loopBack() (driven by timeupdate + ended) returns every video — clipped or
+ * not — to its start and fires onLoop for reel auto-advance.
  */
 
 import { VideoPlayerState, VideoSource, IVideoPlayer } from './types.js';
-import { normalizeMediaUrl, isMobileDevice } from './utils.js';
+import { normalizeMediaUrl } from './utils.js';
 // fallow-ignore-next-line unresolved-import
 import type { VjsPlayer } from './vendor/videojs.js';
 
@@ -34,22 +35,19 @@ export class VideoJsPlayer implements IVideoPlayer {
   private readonly state: VideoPlayerState;
   private readonly sources: VideoSource[];
   private sourceIndex: number = 0;
-  // Marker clip window, handled natively (no videojs-offset). 0 = no bound.
+  // Clip window. startAt > 0 = seek there on load; endAt > 0 = loop at that bound.
   private readonly startAt: number;
   private readonly endAt: number;
-  private readonly hasClip: boolean;
 
   private isUnloaded: boolean = false;
   private manuallyPaused: boolean = false;
   private destroyed: boolean = false;
   private sourcesExhausted: boolean = false;
-  private clipping = false;
-  private clippingResetTimer?: ReturnType<typeof setTimeout>;
-  private loopTrackTime = 0;
+  // Re-entrancy guard so a single loop-back doesn't fire twice from the
+  // overlapping timeupdate/ended events.
+  private looping = false;
+  private startSeekFixed = false;
   private onLoopCallback?: () => void;
-
-  private readyPromise: Promise<void>;
-  private readyResolver?: () => void;
 
   constructor(container: HTMLElement, videoUrl: string, options?: VideoJsPlayerOptions) {
     this.container = container;
@@ -60,7 +58,6 @@ export class VideoJsPlayer implements IVideoPlayer {
 
     this.startAt = typeof options?.startTime === 'number' && options.startTime > 0 ? options.startTime : 0;
     this.endAt = typeof options?.endTime === 'number' && options.endTime > 0 ? options.endTime : 0;
-    this.hasClip = this.startAt > 0 || this.endAt > 0;
 
     this.state = {
       isPlaying: false,
@@ -70,8 +67,6 @@ export class VideoJsPlayer implements IVideoPlayer {
       volume: 1,
       isFullscreen: false,
     };
-
-    this.readyPromise = new Promise<void>((resolve) => { this.readyResolver = resolve; });
 
     this.videoEl = this.createVideoElement(options);
     this.player = this.createPlayer(options);
@@ -113,9 +108,9 @@ export class VideoJsPlayer implements IVideoPlayer {
     const player = videojs(this.videoEl, {
       controls: false,
       muted: options?.muted ?? true,
-      // Native loop only for unclipped media; clipped markers loop manually so they
-      // return to startAt (not 0). See enforceClip().
-      loop: !this.hasClip,
+      // All media loops manually via loopBack() so it returns to startAt (not 0)
+      // and fires onLoop for reel auto-advance. Native loop is never used.
+      loop: false,
       autoplay: options?.autoplay ? 'muted' : false,
       preload: 'auto',
       playsinline: true,
@@ -144,23 +139,13 @@ export class VideoJsPlayer implements IVideoPlayer {
   }
 
   private attachEventListeners(player: VjsPlayer): void {
-    const resolveReady = () => {
-      if (this.readyResolver) {
-        const r = this.readyResolver;
-        this.readyResolver = undefined;
-        r();
-      }
-    };
-
     player.on('loadedmetadata', () => {
       this.state.duration = this.safeNumber(() => player.duration());
-      // Seek to the marker's start once metadata is available.
+      // Seek to the clip's start once metadata is available.
       if (this.startAt > 0) {
         try { player.currentTime(this.startAt); } catch { /* not seekable yet */ }
       }
     });
-    player.on('loadeddata', resolveReady);
-    player.on('canplay', resolveReady);
 
     player.on('play', () => {
       this.state.isPlaying = true;
@@ -168,25 +153,20 @@ export class VideoJsPlayer implements IVideoPlayer {
     });
     player.on('playing', () => {
       this.state.isPlaying = true;
+      this.fixStartSeek(player);
     });
     player.on('pause', () => {
       this.state.isPlaying = false;
     });
     player.on('timeupdate', () => {
       const t = this.safeNumber(() => player.currentTime());
-      // Detect native loops for non-clipped videos (loop:true suppresses 'ended').
-      if (!this.hasClip && this.loopTrackTime > 0.5 && t + 0.4 < this.loopTrackTime) {
-        this.fireLoop();
-      }
-      this.loopTrackTime = t;
       this.state.currentTime = t;
-      this.enforceClip(player);
-    });
-    player.on('ended', () => {
-      if (this.hasClip) {
-        this.restartClip(player); // restartClip fires onLoop itself
+      const endBound = this.endAt > 0 ? this.endAt : this.state.duration;
+      if (endBound > 0 && t >= endBound) {
+        this.loopBack(player);
       }
     });
+    player.on('ended', () => this.loopBack(player));
     player.on('volumechange', () => {
       this.state.isMuted = this.safeBool(() => player.muted());
       this.state.volume = this.safeNumber(() => player.volume());
@@ -194,35 +174,37 @@ export class VideoJsPlayer implements IVideoPlayer {
     player.on('error', () => this.handleSourceError());
   }
 
-  /** Loop a marker clip back to its start once it passes the end boundary. */
-  private enforceClip(player: VjsPlayer): void {
-    if (!this.hasClip || this.endAt <= 0) return;
-    const t = this.safeNumber(() => player.currentTime());
-    if (t >= this.endAt) {
-      this.restartClip(player);
-    }
-  }
-
-  private restartClip(player: VjsPlayer): void {
-    if (this.clipping) return;
-    this.clipping = true;
-    clearTimeout(this.clippingResetTimer);
+  /**
+   * Loop all media back to its start (startAt, not 0), resume if paused, and
+   * fire onLoop for reel auto-advance. Driven from both timeupdate (clip end)
+   * and the native 'ended' event; the re-entrancy guard collapses the two into
+   * a single loop.
+   */
+  private loopBack(player: VjsPlayer): void {
+    if (this.looping) return;
+    this.looping = true;
     try {
       player.currentTime(this.startAt);
       if (player.paused()) player.play()?.catch(() => {});
-      this.fireLoop();
+      this.onLoopCallback?.();
     } catch { /* not seekable */ }
-    const clearClipping = () => {
-      clearTimeout(this.clippingResetTimer);
-      this.clippingResetTimer = undefined;
-      this.clipping = false;
-    };
-    player.one('seeked', clearClipping);
-    this.clippingResetTimer = setTimeout(clearClipping, 500);
+    // Release the guard only once the seek actually lands. A timer fallback here
+    // could clear it mid-seek and let a second timeupdate/ended re-enter loopBack
+    // (double reel auto-advance), so the 'seeked' event is the single release.
+    player.one('seeked', () => { this.looping = false; });
   }
 
-  private fireLoop(): void {
-    this.onLoopCallback?.();
+  /**
+   * Some browsers reset currentTime when play() runs right after a seek, so the
+   * first frame can land at 0 instead of the clip start. Re-seek once on the
+   * first 'playing' event if the position drifted from startAt.
+   */
+  private fixStartSeek(player: VjsPlayer): void {
+    if (this.startSeekFixed || this.startAt <= 0) return;
+    this.startSeekFixed = true;
+    if (Math.abs(this.safeNumber(() => player.currentTime()) - this.startAt) > 0.5) {
+      try { player.currentTime(this.startAt); } catch { /* not seekable */ }
+    }
   }
 
   /**
@@ -275,24 +257,18 @@ export class VideoJsPlayer implements IVideoPlayer {
     if (!this.isUsable() || this.isUnloaded) return;
     const player = this.player!;
 
-    // Browsers only allow autoplay without a gesture while muted (touch devices).
-    if (isMobileDevice() && !this.safeBool(() => player.muted())) {
-      player.muted(true);
-      this.state.isMuted = true;
-    }
-
+    // The caller (ReelPlaybackController.enforceActive) guarantees the player is
+    // already muted on the gesture-less autoplay path, so no mute reconciliation
+    // is needed here — keeping the engine's muted state the single owner.
     try {
       await player.play();
     } catch {
-      // Non-fatal: blocked autoplay or transient interruption. The next reconcile()
+      // Non-fatal: blocked autoplay or transient interruption. The next reconcile
       // (scroll/intersection/gesture) calls play() again. Codec errors go through
       // the 'error' event → source fallback.
-      return;
     }
-    if (this.isUsable()) {
-      this.state.isPlaying = !player.paused();
-      this.manuallyPaused = false;
-    }
+    // state.isPlaying / manuallyPaused are owned by the 'playing'/'play'/'pause'
+    // event handlers — no imperative write needed here.
   }
 
   pause(): void {
@@ -329,17 +305,6 @@ export class VideoJsPlayer implements IVideoPlayer {
 
   getState(): VideoPlayerState {
     return { ...this.state };
-  }
-
-  waitForReady(timeoutMs: number = 3000): Promise<void> {
-    if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) {
-      return this.readyPromise;
-    }
-    let handle: ReturnType<typeof setTimeout> | undefined;
-    return Promise.race([
-      this.readyPromise,
-      new Promise<void>((resolve) => { handle = setTimeout(resolve, timeoutMs); }),
-    ]).finally(() => { if (handle !== undefined) clearTimeout(handle); });
   }
 
   seekTo(time: number): void {
@@ -393,10 +358,7 @@ export class VideoJsPlayer implements IVideoPlayer {
       this.isUnloaded = true;
       return;
     }
-    clearTimeout(this.clippingResetTimer);
-    this.clippingResetTimer = undefined;
-    this.clipping = false;
-    this.loopTrackTime = 0;
+    this.looping = false;
     try {
       this.player!.pause();
       this.player!.reset();
@@ -410,8 +372,8 @@ export class VideoJsPlayer implements IVideoPlayer {
     if (!this.isUnloaded || !this.isUsable()) return;
     this.sourceIndex = 0;
     this.sourcesExhausted = false;
-    this.loopTrackTime = 0;
-    this.readyPromise = new Promise<void>((resolve) => { this.readyResolver = resolve; });
+    this.looping = false;
+    this.startSeekFixed = false;
     this.applyCurrentSource();
     this.isUnloaded = false;
   }
@@ -430,31 +392,17 @@ export class VideoJsPlayer implements IVideoPlayer {
     }
   }
 
-  getLoadErrorType(): 'timeout' | 'network' | 'play' | null {
-    if (!this.isUsable()) return this.sourcesExhausted ? 'play' : null;
-    let code: number | undefined;
-    try {
-      code = this.player!.error()?.code;
-    } catch {
-      code = undefined;
-    }
-    if (code === undefined && !this.sourcesExhausted) return null;
-    // MediaError codes: 2 = NETWORK, 3 = DECODE, 4 = SRC_NOT_SUPPORTED.
-    if (code === 2) return 'network';
-    if (code === 3 || code === 4 || this.sourcesExhausted) return 'play';
-    return 'play';
-  }
-
   onLoop(callback: () => void): void {
     this.onLoopCallback = callback;
   }
 
+  offLoop(): void {
+    this.onLoopCallback = undefined;
+  }
+
   destroy(): void {
     this.destroyed = true;
-    this.clipping = false;
-    clearTimeout(this.clippingResetTimer);
-    this.clippingResetTimer = undefined;
-    this.readyResolver = undefined;
+    this.looping = false;
     this.onLoopCallback = undefined;
     if (this.player) {
       try {

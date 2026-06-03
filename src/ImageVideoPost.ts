@@ -5,7 +5,7 @@
 
 import { ImageVideoPostData, IVideoPlayer } from './types.js';
 import { VideoJsPlayer } from './VideoJsPlayer.js';
-import { calculateAspectRatio, getAspectRatioClass, normalizeMediaUrl, toAbsoluteUrl, THEME, createCoverDiv } from './utils.js';
+import { calculateAspectRatio, getAspectRatioClass, normalizeMediaUrl, toAbsoluteUrl } from './utils.js';
 import { VideoPostBase, BaseVideoPostOptions } from './VideoPostBase.js';
 interface ImageVideoPostOptions extends BaseVideoPostOptions {}
 
@@ -129,7 +129,7 @@ export class ImageVideoPost extends VideoPostBase {
       throw new Error('Image video URL not available');
     }
 
-    const { playerContainer, wasPlaying } = this.capturePlayerState();
+    const { playerContainer } = this.capturePlayerState();
 
     // Unload and destroy current player
     this.destroyCurrentPlayer();
@@ -140,13 +140,8 @@ export class ImageVideoPost extends VideoPostBase {
     // Create new player with full HD video
     await this.createHDVideoPlayer(playerContainer, hdVideoUrl);
 
-    // Let the playback controller re-apply playback to the upgraded player
+    // The playback controller plays the active card via onPlayerReady.
     this.notifyPlayerReady();
-
-    // If video was playing, resume playback
-    if (wasPlaying) {
-      await this.resumePlaybackAfterUpgrade();
-    }
   }
 
   /**
@@ -166,8 +161,6 @@ export class ImageVideoPost extends VideoPostBase {
       });
 
       this.isLoaded = true;
-      this.clearLoadErrorTimerOnPlayback(this.player);
-      this.scheduleLoadErrorCheck();
       this.attachLoadErrorHandler();
       this.attachReelAutoAdvance();
       this.setupProgressBar();
@@ -191,23 +184,10 @@ export class ImageVideoPost extends VideoPostBase {
   }
 
   /**
-   * Resume playback after upgrade
-   */
-  private async resumePlaybackAfterUpgrade(): Promise<void> {
-    if (!this.player) return;
-    try {
-      await this.player.play();
-    } catch (error) {
-      console.warn('ImageVideoPost: Failed to resume playback after upgrade', error);
-    }
-  }
-
-  /**
    * Destroy current player
    */
   private destroyCurrentPlayer(): void {
     if (this.player) {
-      this.clearLoadErrorCheckTimeout();
       this.detachLoadErrorHandler();
       this.player.destroy();
       this.player = undefined;
@@ -250,7 +230,7 @@ export class ImageVideoPost extends VideoPostBase {
         : true;
       this.player = new VideoJsPlayer(this.playerContainer, videoUrl, {
         muted: shouldBeMuted,
-        autoplay: true,
+        autoplay: false,
         startTime: finalStartTime,
         endTime: undefined,
         showLoadingIndicator: false,
@@ -258,16 +238,9 @@ export class ImageVideoPost extends VideoPostBase {
       });
 
       this.isLoaded = true;
-      this.clearLoadErrorTimerOnPlayback(this.player);
-
-      this.scheduleLoadErrorCheck();
       this.attachLoadErrorHandler();
       this.attachReelAutoAdvance();
       this.setupProgressBar();
-
-      if (this.data.image.id) {
-        this.onPlayerReady?.(this.data.image.id);
-      }
 
     } catch (error) {
       console.error('ImageVideoPost: Failed to create video player', {
@@ -279,43 +252,6 @@ export class ImageVideoPost extends VideoPostBase {
     }
 
     return this.player;
-  }
-
-  /**
-   * Check for load errors
-   */
-  protected checkForLoadError(): void {
-    if (!this.player) return;
-    
-    const videoElement = this.player.getVideoElement();
-    if (!videoElement) return;
-
-    if (videoElement.error) {
-      this.loadErrorCount += 1;
-      this.hasFailedPermanently = true;
-      this.showErrorPlaceholder();
-      console.warn('ImageVideoPost: Video failed to load, showing placeholder', {
-        imageId: this.data.image.id,
-        error: videoElement.error?.message,
-      });
-    }
-  }
-
-  /**
-   * Show error placeholder
-   */
-  private showErrorPlaceholder(): void {
-    if (this.errorPlaceholder || !this.playerContainer) return;
-
-    const placeholder = createCoverDiv('video-post__error-placeholder');
-    placeholder.style.display = 'flex';
-    placeholder.style.alignItems = 'center';
-    placeholder.style.justifyContent = 'center';
-    placeholder.style.backgroundColor = THEME.colors.backgroundSecondary;
-    placeholder.style.color = THEME.colors.textPrimary;
-    placeholder.textContent = 'Failed to load video';
-    this.playerContainer.appendChild(placeholder);
-    this.errorPlaceholder = placeholder;
   }
 
   /**
@@ -395,19 +331,13 @@ export class ImageVideoPost extends VideoPostBase {
   destroy(): void {
     this.cleanupAddTagDialogState();
 
-    this.clearLoadErrorCheckTimeout();
-    this.detachLoadErrorHandler();
-    if (this.retryTimeoutId) {
-      clearTimeout(this.retryTimeoutId);
-      this.retryTimeoutId = undefined;
-    }
-
     if (this.player) {
       this.player.destroy();
       this.player = undefined;
     }
     this.isLoaded = false;
 
+    // Base destroy() detaches the load-error handler and removes the placeholder.
     super.destroy();
     this.container?.remove();
   }

@@ -137,6 +137,8 @@ export abstract class BasePost {
   private readonly onReelAdvance?: () => void;
   private autoAdvanceFired: boolean = false;
   private autoAdvanceAttached: boolean = false;
+  private autoAdvanceDwellObserver?: IntersectionObserver;
+  private autoAdvanceDwellTimerId?: ReturnType<typeof setTimeout>;
   private readonly performerOverlayMgr: OverlayManager<PerformerExtended>;
   private readonly tagOverlayMgr: OverlayManager<Tag>;
   private readonly studioOverlayMgr: OverlayManager<StudioExtended>;
@@ -3275,8 +3277,17 @@ export abstract class BasePost {
   }
 
   protected detachReelAutoAdvance(): void {
+    this.getAutoAdvancePlayer()?.offLoop();
     this.autoAdvanceFired = false;
     this.autoAdvanceAttached = false;
+    if (this.autoAdvanceDwellTimerId !== undefined) {
+      clearTimeout(this.autoAdvanceDwellTimerId);
+      this.autoAdvanceDwellTimerId = undefined;
+    }
+    if (this.autoAdvanceDwellObserver) {
+      this.autoAdvanceDwellObserver.disconnect();
+      this.autoAdvanceDwellObserver = undefined;
+    }
   }
 
   /**
@@ -3287,25 +3298,24 @@ export abstract class BasePost {
   protected attachReelAutoAdvanceTimer(dwellMs: number = 5000): void {
     if (this.autoAdvanceAttached || !this.isReelMode || !this.reelAutoScroll) return;
     this.autoAdvanceAttached = true;
-    let timerId: ReturnType<typeof setTimeout> | undefined;
-    const observer = new IntersectionObserver((entries) => {
+    this.autoAdvanceDwellObserver = new IntersectionObserver((entries) => {
       const entry = entries[0];
       if (!entry) return;
       if (entry.isIntersecting && entry.intersectionRatio >= 0.6) {
-        if (timerId === undefined && !this.autoAdvanceFired) {
-          timerId = setTimeout(() => {
+        if (this.autoAdvanceDwellTimerId === undefined && !this.autoAdvanceFired) {
+          this.autoAdvanceDwellTimerId = setTimeout(() => {
             if (this.autoAdvanceFired) return;
             this.autoAdvanceFired = true;
             this.scrollToNextPost();
-            observer.disconnect();
+            this.detachReelAutoAdvance();
           }, dwellMs);
         }
-      } else if (timerId !== undefined) {
-        clearTimeout(timerId);
-        timerId = undefined;
+      } else if (this.autoAdvanceDwellTimerId !== undefined) {
+        clearTimeout(this.autoAdvanceDwellTimerId);
+        this.autoAdvanceDwellTimerId = undefined;
       }
     }, { threshold: [0, 0.6, 1] });
-    observer.observe(this.container);
+    this.autoAdvanceDwellObserver.observe(this.container);
   }
 
   private scrollToNextPost(): void {

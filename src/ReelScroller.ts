@@ -98,6 +98,13 @@ export class ReelScroller {
     this.disable();
   }
 
+  /** Post id of the card currently at the top of the scroll container, or null if none. */
+  getCurrentPostId(): string | null {
+    const cards = this.getCards();
+    const card = cards[this.getCurrentIndex()];
+    return card ? this.getPostId(card) : null;
+  }
+
   /** Programmatically advance one card (e.g. reel auto-advance on video loop). */
   next(): void {
     if (!this.enabled) return;

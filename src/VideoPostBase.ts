@@ -5,7 +5,7 @@
  */
 
 import type { IVideoPlayer } from './types.js';
-import { isMobileDevice, THEME, showToast } from './utils.js';
+import { isMobileDevice, THEME, showToast, createCoverDiv } from './utils.js';
 import { HQ_SVG_OUTLINE, HQ_SVG_FILLED, VOLUME_MUTED_SVG, VOLUME_UNMUTED_SVG } from './icons.js';
 import { BasePost, BasePostOptions } from './BasePost.js';
 import { setupTouchHandlers, preventClickAfterTouch } from './utils/touchHandlers.js';
@@ -22,15 +22,12 @@ export interface BaseVideoPostOptions extends BasePostOptions {
 export abstract class VideoPostBase extends BasePost {
   protected isLoaded: boolean = false;
   protected isHQMode: boolean = false;
-  protected loadErrorCount: number = 0;
   protected hqButton?: HTMLElement;
   protected muteOverlayButton?: HTMLElement;
   protected onMuteToggle?: (isMuted: boolean) => void;
   protected getGlobalMuteState?: () => boolean;
   protected hasFailedPermanently: boolean = false;
   protected errorPlaceholder?: HTMLElement;
-  protected retryTimeoutId?: number;
-  protected loadErrorCheckTimeoutId?: ReturnType<typeof setTimeout>;
   protected loadErrorHandler?: () => void;
   protected hdModeFromSettings: boolean = false;
   private progressBar?: { track: HTMLElement; fill: HTMLElement; cleanup: () => void };
@@ -43,7 +40,6 @@ export abstract class VideoPostBase extends BasePost {
   }
 
   protected abstract getPlayer(): IVideoPlayer | undefined;
-  protected abstract checkForLoadError(): void;
   protected abstract getHQButtonOffLabel(): string;
 
   protected getAutoAdvancePlayer(): IVideoPlayer | undefined {
@@ -94,56 +90,64 @@ export abstract class VideoPostBase extends BasePost {
 
     player.reload();
     this.isLoaded = true;
-    this.clearLoadErrorTimerOnPlayback(player);
     return player;
   }
 
-  protected clearLoadErrorCheckTimeout(): void {
-    if (this.loadErrorCheckTimeoutId) {
-      clearTimeout(this.loadErrorCheckTimeoutId);
-      this.loadErrorCheckTimeoutId = undefined;
-    }
-  }
-
+  /**
+   * Listen for media errors on the current player. VideoJsPlayer retries through
+   * its candidate sources (codec/transcode/HLS) on its own; this only surfaces a
+   * failure once every source is spent — see handlePlayerError().
+   */
   protected attachLoadErrorHandler(): void {
-    const player = this.getPlayer();
-    if (!player) {
-      return;
-    }
-    const videoElement = player.getVideoElement();
-    if (!videoElement) {
-      return;
-    }
+    const videoElement = this.getPlayer()?.getVideoElement();
+    if (!videoElement) return;
     this.detachLoadErrorHandler();
-    this.loadErrorHandler = () => this.checkForLoadError();
-    videoElement.addEventListener('error', this.loadErrorHandler, { once: true });
+    this.loadErrorHandler = () => this.handlePlayerError();
+    videoElement.addEventListener('error', this.loadErrorHandler);
   }
 
   protected detachLoadErrorHandler(): void {
-    const player = this.getPlayer();
-    if (!player || !this.loadErrorHandler) {
+    if (this.loadErrorHandler) {
+      this.getPlayer()?.getVideoElement()?.removeEventListener('error', this.loadErrorHandler);
       this.loadErrorHandler = undefined;
-      return;
     }
-    const videoElement = player.getVideoElement();
-    if (videoElement) {
-      videoElement.removeEventListener('error', this.loadErrorHandler);
-    }
-    this.loadErrorHandler = undefined;
   }
 
-  protected scheduleLoadErrorCheck(): void {
-    if (!this.getPlayer() || this.hasFailedPermanently) {
-      return;
-    }
-    this.clearLoadErrorCheckTimeout();
-    this.loadErrorCheckTimeoutId = setTimeout(() => {
-      if (!this.getPlayer() || this.hasFailedPermanently) {
-        this.clearLoadErrorCheckTimeout();
-        return;
-      }
-      this.checkForLoadError();
-    }, 16000);
+  /**
+   * Show the failure placeholder once the player has exhausted all sources.
+   * Deferred so VideoJsPlayer's own 'error' handler can advance to the next
+   * candidate source first; intermediate source switches must not surface.
+   */
+  protected handlePlayerError(): void {
+    setTimeout(() => {
+      const player = this.getPlayer();
+      if (!player || !player.hasLoadError()) return;
+      this.hasFailedPermanently = true;
+      this.showErrorPlaceholder();
+    }, 50);
+  }
+
+  /** Cover the player with a "Failed to load" placeholder. Shared by subclasses. */
+  protected showErrorPlaceholder(): void {
+    if (this.errorPlaceholder) return;
+    const playerContainer = this.playerContainer
+      ?? this.container.querySelector('.video-post__player') as HTMLElement | null;
+    if (!playerContainer) return;
+
+    const placeholder = createCoverDiv('video-post__error-placeholder');
+    placeholder.style.display = 'flex';
+    placeholder.style.alignItems = 'center';
+    placeholder.style.justifyContent = 'center';
+    placeholder.style.backgroundColor = THEME.colors.backgroundSecondary;
+    placeholder.style.color = THEME.colors.textPrimary;
+    placeholder.textContent = 'Failed to load';
+    playerContainer.appendChild(placeholder);
+    this.errorPlaceholder = placeholder;
+  }
+
+  protected hideErrorPlaceholder(): void {
+    this.errorPlaceholder?.remove();
+    this.errorPlaceholder = undefined;
   }
 
   protected updateHQButton(button: HTMLElement): void {
@@ -156,20 +160,6 @@ export abstract class VideoPostBase extends BasePost {
       button.style.color = THEME.colors.textSecondary;
       button.title = this.getHQButtonOffLabel();
     }
-  }
-
-  /**
-   * Clear the stuck-load error check once the video confirms it is playing.
-   * The player reveals its own surface (opacity 0 -> 1 + hide placeholder) on the
-   * 'playing' event, so no visual reveal orchestration is needed here.
-   */
-  protected clearLoadErrorTimerOnPlayback(player: IVideoPlayer): void {
-    const videoElement = player.getVideoElement();
-    if (!videoElement) return;
-
-    const onReady = () => this.clearLoadErrorCheckTimeout();
-    videoElement.addEventListener('playing', onReady, { once: true });
-    videoElement.addEventListener('loadeddata', onReady, { once: true });
   }
 
   protected createMuteOverlayButton(): HTMLElement {
@@ -414,6 +404,8 @@ export abstract class VideoPostBase extends BasePost {
 
   override destroy(): void {
     this.destroyProgressBar();
+    this.detachLoadErrorHandler();
+    this.hideErrorPlaceholder();
     super.destroy();
   }
 }
