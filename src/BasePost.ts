@@ -132,7 +132,7 @@ export abstract class BasePost {
   protected discoveryPanel?: DiscoveryPanelControl;
   private discoveryCollapseUnsubscribe?: () => void;
   private discoveryJiggleTimerId?: ReturnType<typeof setTimeout>;
-  private readonly touchCleanups: Array<() => void> = [];
+  protected readonly touchCleanups: Array<() => void> = [];
   protected reelAutoScroll: boolean = false;
   private readonly onReelAdvance?: () => void;
   private autoAdvanceFired: boolean = false;

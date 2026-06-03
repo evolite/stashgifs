@@ -95,9 +95,10 @@ export abstract class VideoPostBase extends BasePost {
     }
     container.classList.add(aspectRatioClass);
 
-    container.addEventListener('click', (e: MouseEvent) => {
-      // Ignore clicks that land on a child control (buttons, the progress bar, etc.)
-      if (e.target !== container && (e.target as HTMLElement).closest('button, [role="slider"]')) return;
+    // Toggle deliberate play/pause. Ignore events that land on a child control
+    // (buttons, the progress bar, etc.) — those own their own handling.
+    const togglePlayback = (target: EventTarget | null): void => {
+      if (target !== container && (target as HTMLElement | null)?.closest('button, [role="slider"]')) return;
       const player = this.getPlayer();
       if (!player) return;
       if (player.isPlaying()) {
@@ -106,7 +107,24 @@ export abstract class VideoPostBase extends BasePost {
         player.clearManualPause();
         player.play()?.catch(() => {});
       }
-    });
+    };
+
+    if (isMobileDevice()) {
+      // On touch, route through the tap arbiter: setupTouchHandlers only fires
+      // onTap when movement <15px and duration <250ms and the touch wasn't a
+      // scroll — so the tail of a reel swipe can never register as a tap-to-pause.
+      // A raw `click` here would be hit by the browser's synthetic ghost-click
+      // ~300ms after a swipe's touchend and pause the freshly-autoplayed card.
+      this.touchCleanups.push(
+        setupTouchHandlers(container, {
+          onTap: (e) => togglePlayback(e.target),
+        })
+      );
+      // Belt-and-suspenders: swallow the ghost click after any touch on the player.
+      this.touchCleanups.push(preventClickAfterTouch(container));
+    } else {
+      container.addEventListener('click', (e: MouseEvent) => togglePlayback(e.target));
+    }
 
     return container;
   }
