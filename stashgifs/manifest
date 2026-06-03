@@ -3,15 +3,27 @@ name: StashGifs
 metadata:
   description: Social Media style browsing experience
 version: 7.0.0
-date: "2026-06-03 09:44:04"
+date: "2026-06-03 11:31:45"
 requires: []
 source_repository: https://raw.githubusercontent.com/evolite/stashgifs/refs/heads/master/index.yml
 files:
 - stashgifs.yml
 - app\favicon.svg
-- app\apple-touch-icon.svg
 - app\manifest.json
 - app\index.html
+- app\apple-touch-icon.svg
+- app\assets\ReelPlaybackController.js
+- app\assets\ReelPlaybackController.js.map
+- app\assets\ReelScroller.js
+- app\assets\ReelScroller.js.map
+- app\assets\utils\OverlayManager.js
+- app\assets\utils\OverlayManager.js.map
+- app\assets\vendor\video-js.min.css
+- app\assets\vendor\video.min.js
+- app\assets\VideoJsPlayer.js
+- app\assets\VideoJsPlayer.js.map
+- app\assets\WhisparrClient.js
+- app\assets\WhisparrClient.js.map
 - app\assets\FavoritesManager.js
 - app\assets\FavoritesManager.js.map
 - app\assets\feed.css
@@ -31,8 +43,6 @@ files:
 - app\assets\ImageVideoPost.js.map
 - app\assets\index.js
 - app\assets\index.js.map
-- app\assets\NativeVideoPlayer.js
-- app\assets\NativeVideoPlayer.js.map
 - app\assets\PluginSettingsManager.js
 - app\assets\PluginSettingsManager.js.map
 - app\assets\SettingsPage.js
@@ -55,8 +65,6 @@ files:
 - app\assets\VideoPostBase.js.map
 - app\assets\VisibilityManager.js
 - app\assets\VisibilityManager.js.map
-- app\assets\PosterPreloader.js
-- app\assets\PosterPreloader.js.map
 - app\assets\RatingControl.js
 - app\assets\RatingControl.js.map
 - app\assets\graphql\client.js
