@@ -41,6 +41,12 @@ export class VideoJsPlayer implements IVideoPlayer {
 
   private isUnloaded: boolean = false;
   private manuallyPaused: boolean = false;
+  // Sticky "should be playing" intent. On a fast reel scroll, play() is issued the
+  // instant the card is activated — often before the source is ready, so the play
+  // promise rejects and there's no later reconcile to retry. We remember the intent
+  // and resume from the readiness events (canplay/loadeddata) so the card autoplays
+  // as soon as it can instead of sitting black and paused.
+  private wantsToPlay: boolean = false;
   private destroyed: boolean = false;
   private sourcesExhausted: boolean = false;
   // Re-entrancy guard so a single loop-back doesn't fire twice from the
@@ -170,6 +176,11 @@ export class VideoJsPlayer implements IVideoPlayer {
       this.onTimeUpdateCallback?.();
     });
     player.on('ended', () => this.loopBack(player));
+    // The source became playable — honour a pending play intent that an earlier
+    // (too-early) play() couldn't satisfy. This is what unsticks a fast-scrolled
+    // card from a black, paused state once its media finally loads.
+    player.on('canplay', () => this.resumeIfWanted());
+    player.on('loadeddata', () => this.resumeIfWanted());
     player.on('volumechange', () => {
       this.state.isMuted = this.safeBool(() => player.muted());
       this.state.volume = this.safeNumber(() => player.volume());
@@ -259,6 +270,10 @@ export class VideoJsPlayer implements IVideoPlayer {
   async play(): Promise<void> {
     if (!this.isUsable() || this.isUnloaded) return;
     const player = this.player!;
+    // Record the intent first so the canplay/loadeddata handlers retry if this
+    // attempt loses the race against the source finishing loading.
+    this.wantsToPlay = true;
+    this.manuallyPaused = false;
 
     // The caller (ReelPlaybackController.enforceActive) guarantees the player is
     // already muted on the gesture-less autoplay path, so no mute reconciliation
@@ -266,16 +281,31 @@ export class VideoJsPlayer implements IVideoPlayer {
     try {
       await player.play();
     } catch {
-      // Non-fatal: blocked autoplay or transient interruption. The next reconcile
-      // (scroll/intersection/gesture) calls play() again. Codec errors go through
-      // the 'error' event → source fallback.
+      // Non-fatal: blocked autoplay, or play() issued before the source was ready
+      // (common on a fast reel scroll). wantsToPlay stays set, so the next
+      // canplay/loadeddata event resumes playback. Codec errors go through the
+      // 'error' event → source fallback.
     }
     // state.isPlaying / manuallyPaused are owned by the 'playing'/'play'/'pause'
     // event handlers — no imperative write needed here.
   }
 
+  /**
+   * Resume a deferred play once the media is ready. Only the explicit pause paths
+   * (pause/pauseManually/unload) clear wantsToPlay, so a transient buffering
+   * 'pause' event never cancels the intent.
+   */
+  private resumeIfWanted(): void {
+    if (!this.wantsToPlay || this.manuallyPaused || !this.isUsable() || this.isUnloaded) return;
+    const player = this.player!;
+    try {
+      if (player.paused()) player.play()?.catch(() => {});
+    } catch { /* disposed */ }
+  }
+
   pause(): void {
     if (!this.isUsable()) return;
+    this.wantsToPlay = false;
     try { this.player!.pause(); } catch { /* disposed */ }
   }
 
@@ -368,8 +398,18 @@ export class VideoJsPlayer implements IVideoPlayer {
     try {
       this.player!.pause();
       this.player!.reset();
+      // reset() detaches the source but leaves the tech element's WebMediaPlayer
+      // (and its hardware video decode session) alive. Across a feed of many
+      // cards that exhausts the GPU decode pool — new videos then play audio but
+      // render black. Force the element to drop its WebMediaPlayer.
+      const el = this.player!.tech(true)?.el();
+      if (el instanceof HTMLVideoElement) {
+        el.removeAttribute('src');
+        el.load();
+      }
     } catch { /* disposed */ }
     this.isUnloaded = true;
+    this.wantsToPlay = false;
     this.state.isPlaying = false;
     this.state.currentTime = 0;
   }
@@ -389,6 +429,7 @@ export class VideoJsPlayer implements IVideoPlayer {
   }
 
   hasLoadError(): boolean {
+    if (this.isUnloaded) return false; // an unloaded player has no meaningful error
     if (this.sourcesExhausted) return true;
     if (!this.isUsable()) return false;
     try {
