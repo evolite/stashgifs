@@ -10,12 +10,11 @@ Install it via Stash's plugin system using the `index.yml` file. - https://surgi
 
 ## Features
 
-- **Endless vertical feed** - Scroll through your markers, gifs, and short clips in a continuous feed that loads more content as you go.
-- **Modes** - Select between dynamic Cards or fullscreen Reels.
-- **Configurable Feeds** - Select the content yyou want, including random scene positons, markers, images and short form videos.
+- **Endless feed** - Scroll through your markers, gifs, and short clips in a continuous feed that loads more content as you go.
+- **Configurable** - Select the content yyou want, including random scene positons, markers, images and short form videos.
 - **Filtering** - Narrow down content by performers, tags, or use your saved Stash filters to find exactly what you're looking for.
 - **Interactions** - Favorite content with a tap, add tags to content, rate scenes and images. Each post links back to the content in Stash.
-- **Mobile-friendly** - Touch-optimized interface that works great on phones and tablets.
+- **Mobile-friendly** - Touch-optimized interface that works on phones and tablets.
 
 Includes detailed customization!
 
