@@ -937,6 +937,20 @@ export class SettingsPage {
     imagesRow.appendChild(includeImagesToggleContainer);
     contentTypesSection.appendChild(imagesRow);
 
+    // Marker name search toggle
+    const { container: searchMarkersByNameToggleContainer, input: searchMarkersByNameToggle } = this.createToggleSwitch(
+      this.settings.searchMarkersByName === true,
+      () => this.saveSettings()
+    );
+    const searchMarkersByNameRow = document.createElement('div');
+    searchMarkersByNameRow.style.display = 'flex';
+    searchMarkersByNameRow.style.justifyContent = 'space-between';
+    searchMarkersByNameRow.style.alignItems = 'center';
+    searchMarkersByNameRow.style.marginBottom = '12px';
+    searchMarkersByNameRow.appendChild(buildInfoLabel('Marker Title Search', 'Show a Title section in the search bar so you can find markers by title.'));
+    searchMarkersByNameRow.appendChild(searchMarkersByNameToggleContainer);
+    contentTypesSection.appendChild(searchMarkersByNameRow);
+
     // Random toggle
     const { container: includeRandomToggleContainer, input: includeRandomToggle } = this.createToggleSwitch(
       this.settings.includeRandomInFeed === true,
@@ -1597,6 +1611,7 @@ export class SettingsPage {
     (this as any).includeMarkersToggle = includeMarkersToggle;
     (this as any).includeRandomToggle = includeRandomToggle;
     (this as any).includeImagesToggle = includeImagesToggle;
+    (this as any).searchMarkersByNameToggle = searchMarkersByNameToggle;
     (this as any).shortFormIncludeToggle = shortFormIncludeToggle;
 
     this.container.appendChild(modal);
@@ -1866,7 +1881,7 @@ export class SettingsPage {
 
   private collectFormInputs(): Record<string, HTMLInputElement> | undefined {
     const inputNames = [
-      'fileTypesInput', 'maxDurationInput', 'includeMarkersToggle', 'includeRandomToggle', 'randomIncludeScenesWithMarkersToggle', 'includeImagesToggle',
+      'fileTypesInput', 'maxDurationInput', 'includeMarkersToggle', 'includeRandomToggle', 'randomIncludeScenesWithMarkersToggle', 'includeImagesToggle', 'searchMarkersByNameToggle',
       'shortFormIncludeToggle', 'reelAutoScrollToggle', 'autoHideSearchBarToggle', 'hdVideoToggle',
       'portraitToggle', 'landscapeToggle',
       'themeBackgroundInput', 'themePrimaryInput', 'themeSecondaryInput', 'themeAccentInput',
@@ -1918,6 +1933,7 @@ export class SettingsPage {
       includeRandomInFeed: inputs.includeRandomToggle.checked,
       randomIncludeScenesWithMarkers: inputs.randomIncludeScenesWithMarkersToggle.checked,
       includeImagesInFeed: inputs.includeImagesToggle.checked,
+      searchMarkersByName: inputs.searchMarkersByNameToggle.checked,
       enabledFileTypes: extensions.length > 0 ? extensions : ['.jpg', '.png', '.gif', '.mp4', '.m4v', '.webm'],
       shortFormInHDMode: inputs.shortFormIncludeToggle.checked,
       shortFormInNonHDMode: inputs.shortFormIncludeToggle.checked,

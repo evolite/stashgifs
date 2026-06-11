@@ -101,6 +101,7 @@ export interface FeedSettings {
   aspectRatio: 'preserve' | '16:9' | '9:16' | '1:1';
   enabledFileTypes?: string[]; // File extensions to include (e.g., ['.gif', '.webm']), default: ['.gif']
   includeMarkersInFeed?: boolean; // Whether to include scene markers in feed, default: true
+  searchMarkersByName?: boolean; // Show a Markers section in search suggestions, default: false
   includeRandomInFeed?: boolean; // Include random scenes played from a random timeframe, default: false
   randomIncludeScenesWithMarkers?: boolean; // Random mode includes scenes that have existing markers, default: false
   includeImagesInFeed?: boolean; // Whether to include images in feed, default: true

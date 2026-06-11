@@ -30,6 +30,7 @@ const DEFAULT_SETTINGS: FeedSettings = {
   aspectRatio: 'preserve',
   enabledFileTypes: ['.jpg', '.png', '.gif', '.mp4', '.m4v'], // Default file types to include
   includeImagesInFeed: true, // Whether to include images in feed
+  searchMarkersByName: false, // Show a Markers section in search suggestions
   imagesOnly: false,
   includeShortFormContent: false, // Enable/disable short-form content
   shortFormInHDMode: true, // Include short-form in HD mode
@@ -107,6 +108,7 @@ export class FeedContainer {
   private readonly selectedTagIds: Map<number, string> = new Map();
   private readonly selectedPerformerIds: Map<number, string> = new Map();
   private readonly selectedStudioIds: Map<number, string> = new Map();
+  private selectedMarkerName?: string; // Active "search markers by name" filter (exact title)
   private readonly debouncedApplyFilters!: () => void;
   private activePillsBar?: HTMLElement;
   private hasMore: boolean = true;
@@ -1264,6 +1266,7 @@ export class FeedContainer {
     this.selectedSavedFilter = { id: filter.id, name: filter.name };
     this.selectedTagIds.clear();
     this.selectedPerformerIds.clear();
+    this.selectedMarkerName = undefined;
     this.closeSuggestions();
     updateSearchBarDisplay();
     this.currentFilters = { savedFilterId: filter.id, limit: FeedContainer.CONTENT_LOAD_LIMIT, offset: 0 };
@@ -1452,6 +1455,71 @@ export class FeedContainer {
     container.appendChild(studiosSection);
   }
 
+  /**
+   * Create markers section — lists markers by title. Selecting one runs a
+   * free-text title search (via filters.query) showing all matching markers.
+   */
+  private createMarkersSection(
+    container: HTMLElement,
+    markers: Array<{ id: string; title: string }>,
+    label: string = 'Title'
+  ): void {
+    if (markers.length === 0) return;
+    const markersSection = document.createElement('div');
+    markersSection.style.display = 'flex';
+    markersSection.style.flexDirection = 'column';
+    markersSection.style.gap = '8px';
+    markersSection.appendChild(this.createSectionLabel(label));
+    for (const marker of markers) {
+      const btn = this.createListButton(
+        marker.title,
+        () => this.applyMarkerTitleSearch(marker.title),
+        { leadingText: '▶' }
+      );
+      markersSection.appendChild(btn);
+    }
+    container.appendChild(markersSection);
+  }
+
+  /**
+   * Run a marker title search. Bypasses resolveQueryToFilters (which would coerce
+   * the text into a tag/performer chip) and instead passes the title straight
+   * through as filters.query → findSceneMarkers `q`.
+   */
+  private applyMarkerTitleSearch(title: string): void {
+    this.selectedSavedFilter = undefined;
+    this.selectedTagIds.clear();
+    this.selectedPerformerIds.clear();
+    this.selectedStudioIds.clear();
+    this.selectedMarkerName = title;
+    this.closeSuggestions();
+
+    const queryInput = this.container.querySelector<HTMLInputElement>('.feed-filters__input');
+    if (queryInput) queryInput.value = '';
+    this.updateActivePills();
+
+    this.currentFilters = {
+      query: title,
+      limit: FeedContainer.CONTENT_LOAD_LIMIT,
+      offset: 0,
+      tagDepth: this.settings.includeSubtags ? -1 : 0,
+      studioDepth: this.settings.includeSubtags ? -1 : 0,
+    };
+    this.scrollToTop();
+    this.loadVideos(this.currentFilters, false).catch((e) => console.error('Apply marker search failed', e));
+  }
+
+  /**
+   * Restrict markers to those whose title exactly matches the active marker-name
+   * filter. Stash's SceneMarkerFilterType has no title field, so the `query`/`q`
+   * narrows server-side (fuzzy) and this enforces "only markers with that name".
+   */
+  private filterMarkersByName(markers: SceneMarker[]): SceneMarker[] {
+    if (!this.selectedMarkerName) return markers;
+    const target = this.selectedMarkerName.trim().toLowerCase();
+    return markers.filter((marker) => (marker.title ?? '').trim().toLowerCase() === target);
+  }
+
   private filterUnselected<T extends { id: string }>(items: T[], selectedIds: Map<number, string>): T[] {
     return items.filter((item) => {
       const id = Number.parseInt(item.id, 10);
@@ -1574,12 +1642,16 @@ export class FeedContainer {
     let tagItems: Array<{ id: string; name: string }> = [];
     let performerItems: Array<{ id: string; name: string; image_path?: string }> = [];
     let studioItems: Array<{ id: string; name: string; image_path?: string }> = [];
+    let markerItems: Array<{ id: string; title: string }> = [];
+
+    const searchMarkers = this.settings.searchMarkersByName === true;
 
     try {
-      [tagItems, performerItems, studioItems] = await Promise.all([
+      [tagItems, performerItems, studioItems, markerItems] = await Promise.all([
         this.api.searchMarkerTags(trimmedText, 20),
         this.api.searchPerformers(trimmedText, 20),
         this.api.searchStudios(trimmedText, 20),
+        searchMarkers ? this.api.searchMarkersByTitle(trimmedText, 20) : Promise.resolve([]),
       ]);
     } catch (error) {
       console.warn('Failed to fetch search suggestions', error);
@@ -1598,6 +1670,14 @@ export class FeedContainer {
     const filteredStudios = this.filterUnselected(studioItems, this.selectedStudioIds).slice(0, 20);
 
     this.createStudiosSection(container, this.sortByMatchAccuracy(filteredStudios, trimmedText), updateSearchBarDisplay, apply);
+
+    if (searchMarkers) {
+      const sortedMarkers = this.sortByMatchAccuracy(
+        markerItems.map((m) => ({ ...m, name: m.title })),
+        trimmedText
+      ).slice(0, 20);
+      this.createMarkersSection(container, sortedMarkers);
+    }
 
     if (container.children.length === 0) {
       this.appendEmptyState(container, `No matches found for "${trimmedText}".`);
@@ -1716,6 +1796,7 @@ export class FeedContainer {
       this.selectedTagIds.clear();
       this.selectedPerformerIds.clear();
       this.selectedStudioIds.clear();
+      this.selectedMarkerName = undefined;
       this.selectedSavedFilter = undefined;
       this.currentFilters = undefined;
 
@@ -2611,7 +2692,7 @@ export class FeedContainer {
 
     const filterValues = this.buildFiltersForApply();
     const newFilters: FilterOptions = {
-      query: undefined,
+      query: this.selectedMarkerName,
       tags: filterValues.tags,
       performers: filterValues.performers,
       studios: filterValues.studios,
@@ -2634,6 +2715,16 @@ export class FeedContainer {
     sep.setAttribute('aria-hidden', 'true');
     sep.style.cssText = `font-size:11px;color:${THEME.colors.textSecondary};align-self:center;flex-shrink:0;padding:0 2px;`;
     return sep;
+  }
+
+  private appendMarkerNamePill(): void {
+    if (!this.selectedMarkerName) return;
+    this.activePillsBar!.appendChild(this.createActivePill(`▶ ${this.selectedMarkerName}`, () => {
+      this.selectedMarkerName = undefined;
+      this.updateActivePills();
+      this.updateQueryInputDisplay();
+      this.debouncedApplyFilters();
+    }));
   }
 
   private appendTagPills(): void {
@@ -2691,13 +2782,15 @@ export class FeedContainer {
       this.activePillsBar.firstChild.remove();
     }
 
-    const total = this.selectedTagIds.size + this.selectedPerformerIds.size + this.selectedStudioIds.size;
+    const total = this.selectedTagIds.size + this.selectedPerformerIds.size + this.selectedStudioIds.size
+      + (this.selectedMarkerName ? 1 : 0);
     if (total === 0) {
       this.activePillsBar.style.display = 'none';
       return;
     }
 
     this.activePillsBar.style.display = 'flex';
+    this.appendMarkerNamePill();
     this.appendTagPills();
     this.appendPerformerPills();
     this.appendStudioPills();
@@ -2707,6 +2800,7 @@ export class FeedContainer {
         this.selectedTagIds.clear();
         this.selectedPerformerIds.clear();
         this.selectedStudioIds.clear();
+        this.selectedMarkerName = undefined;
         this.updateActivePills();
         this.updateQueryInputDisplay();
         this.debouncedApplyFilters();
@@ -3361,7 +3455,7 @@ export class FeedContainer {
 
     return {
       ...result,
-      markers: this.filterMarkersByExcludedTags(result.markers),
+      markers: this.filterMarkersByName(this.filterMarkersByExcludedTags(result.markers)),
     };
   }
 
@@ -3483,11 +3577,12 @@ export class FeedContainer {
     // Use provided filters or fall back to currentFilters
     const activeFilters = filters || this.currentFilters || {};
     
-    // When using saved filters (marker-specific), only load markers
-    // Saved filters are only for markers, so don't show other content types
+    // When using saved filters (marker-specific) or a marker-name search, only
+    // load markers — other content types ignore the query and would pollute results.
     const isUsingSavedFilter = !!(activeFilters.savedFilterId);
-    
-    if (isUsingSavedFilter) {
+    const isMarkerNameSearch = !!this.selectedMarkerName;
+
+    if (isUsingSavedFilter || isMarkerNameSearch) {
       return {
         shouldLoadMarkers: true,
         shouldLoadImages: false,
@@ -3718,7 +3813,7 @@ export class FeedContainer {
     };
     const result = await this.api.fetchSceneMarkers(filters, signal);
     return {
-      markers: this.filterMarkersByExcludedTags(result.markers),
+      markers: this.filterMarkersByName(this.filterMarkersByExcludedTags(result.markers)),
       totalCount: result.totalCount
     };
   }
@@ -4270,7 +4365,7 @@ export class FeedContainer {
 
     return {
       ...result,
-      markers: this.filterMarkersByExcludedTags(result.markers),
+      markers: this.filterMarkersByName(this.filterMarkersByExcludedTags(result.markers)),
     };
   }
 

@@ -382,6 +382,48 @@ export class StashAPI {
   }
 
   /**
+   * Search scene markers by title (for autocomplete).
+   * Uses the free-text `q` filter, which Stash matches against the marker title.
+   * Returns distinct titles (multiple markers can share a title).
+   */
+  async searchMarkersByTitle(term: string, limit: number = 20, signal?: AbortSignal): Promise<Array<{ id: string; title: string }>> {
+    const trimmed = term?.trim() ?? '';
+    if (trimmed === '') return [];
+
+    const cacheKey = this.buildCacheKey('markers', trimmed, limit);
+
+    return this.searchWithCache(
+      cacheKey,
+      false,
+      async () => {
+        const result = await this.gqlClient.query<FindSceneMarkersResponse>({
+          query: queries.FIND_SCENE_MARKERS,
+          variables: {
+            filter: { q: trimmed, per_page: limit, page: 1 },
+            scene_marker_filter: {},
+          },
+          signal,
+        });
+
+        const markers = result.data?.findSceneMarkers?.scene_markers ?? [];
+        const seen = new Set<string>();
+        const distinct: Array<{ id: string; title: string }> = [];
+        for (const marker of markers) {
+          const title = marker.title?.trim();
+          if (!title) continue;
+          const key = title.toLowerCase();
+          if (seen.has(key)) continue;
+          seen.add(key);
+          distinct.push({ id: String(marker.id), title });
+          if (distinct.length >= limit) break;
+        }
+        return distinct;
+      },
+      signal
+    );
+  }
+
+  /**
    * Check if operation is aborted (only check at critical points)
    */
   private isAborted(signal?: AbortSignal): boolean {
