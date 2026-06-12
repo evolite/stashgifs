@@ -80,6 +80,11 @@ type PostType = VideoPost | ImagePost | ImageVideoPost;
 
 export class FeedContainer {
   private static readonly CONTENT_LOAD_LIMIT: number = 8;
+  // Reel scroll advances one card per gesture, so the pixel-based loadMoreTrigger only
+  // enters its prefetch margin once the user is basically on the last card. Prefetch the
+  // next batch this many cards before the end so the (often multi-second) fetch is ready
+  // by the time they arrive.
+  private static readonly PREFETCH_CARDS_AHEAD = 4;
   private static readonly SEEN_IDS_KEY = 'stashgifs-seen-ids';
   private readonly container: HTMLElement;
   private scrollContainer: HTMLElement;
@@ -5338,15 +5343,30 @@ export class FeedContainer {
       scrollContainer: this.scrollContainer,
       getCards: () => this.getAllCardContainers(),
       getPostId: (card) => this.getPostIdFromCard(card),
-      onSettle: (postId) => this.handleReelSettle(postId),
+      onSettle: (postId, index) => this.handleReelSettle(postId, index),
     });
     this.reelScroller.enable();
   }
 
   /** Autoplay + audio for the card the reel scroller just landed on. */
-  private handleReelSettle(postId: string): void {
+  private handleReelSettle(postId: string, index: number): void {
     this.playback.setActive(postId);
     this.discoveryManager?.onPrimaryPostChanged(postId, this.getPerformersForPost(postId));
+    this.maybePrefetchMore(index);
+  }
+
+  /**
+   * Kick off the next batch once the active card is within PREFETCH_CARDS_AHEAD of the
+   * last loaded card. Complements the pixel-based loadMoreTrigger, which fires too late
+   * in reel mode (one full-viewport card per gesture). loadVideos guards against
+   * concurrent loads, so an overlap with the observer is harmless.
+   */
+  private maybePrefetchMore(index: number): void {
+    if (!this.hasMore || this.isLoading) return;
+    if (index < this.postOrder.length - FeedContainer.PREFETCH_CARDS_AHEAD) return;
+    this.loadVideos(undefined, true).catch((error) => {
+      console.error('Error prefetching more content:', error);
+    });
   }
 
   private cleanupReelScroller(): void {
