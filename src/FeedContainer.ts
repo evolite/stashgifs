@@ -5025,12 +5025,39 @@ export class FeedContainer {
 
     const postsWithDistance = this.calculatePostDistances();
     const postsToRemove = this.determinePostsToRemove(postsWithDistance, maxPostsInMemory);
-    
+
+    this.removePostsAnchored(postsToRemove);
+  }
+
+  /**
+   * Remove the given posts while keeping the currently-viewed card visually fixed.
+   *
+   * Every reel card is a full viewport (100svh), so deleting cards above the current
+   * scroll position shrinks the content above without moving scrollTop — the viewport
+   * would jump to a later card (the "image flashes and changes" bug). We capture the
+   * current card's viewport offset, remove, then nudge scrollTop by the delta so it
+   * stays put. If the browser already scroll-anchored, the delta is ~0 (no-op).
+   */
+  private removePostsAnchored(
+    postsToRemove: Array<{ postId: string; distance: number; isVisible: boolean }>
+  ): void {
+    // The current card is visible, so determinePostsToRemove never selects it as an
+    // anchor candidate; fall back to the card nearest the viewport centre.
+    const anchorId = this.reelScroller?.getCurrentPostId() ?? null;
+    const anchor = (anchorId ? this.posts.get(anchorId)?.getContainer() : null)
+      ?? this.findCardClosestToCenter();
+    const beforeTop = anchor?.getBoundingClientRect().top;
+
     for (const { postId } of postsToRemove) {
       this.removePost(postId);
     }
-    
+
     this.cleanupMarkersForRemovedPosts(postsToRemove);
+
+    if (anchor && beforeTop !== undefined && anchor.parentNode) {
+      const afterTop = anchor.getBoundingClientRect().top;
+      this.scrollContainer.scrollTop += afterTop - beforeTop;
+    }
   }
 
   /**
