@@ -5,6 +5,7 @@
 
 import { Scene, SceneMarker, FilterOptions, VideoSource } from './types.js';
 import { normalizeMediaUrl, stripApiKey } from './utils.js';
+import { getStashBaseUrl } from './utils/baseUrl.js';
 import * as queries from './graphql/queries.js';
 import * as mutations from './graphql/mutations.js';
 import {
@@ -127,10 +128,10 @@ export class StashAPI {
     } else if (this.pluginApi?.baseURL) {
       this.baseUrl = this.pluginApi.baseURL;
     } else {
-      // Fallback: use current origin (for plugin context)
-      this.baseUrl = globalThis.location.origin;
+      // Fallback: derive base (origin + any path prefix) for standalone-app context
+      this.baseUrl = getStashBaseUrl();
     }
-    
+
     this.apiKey = apiKey || this.pluginApi?.apiKey;
     
     // Initialize GraphQL client (response caching disabled - we handle caching selectively)

@@ -3,6 +3,7 @@
  */
 
 import { Image } from './types.js';
+import { getStashBaseUrl } from './utils/baseUrl.js';
 
 export const THEME_DEFAULTS = {
   backgroundPrimary: '#1F2A33',
@@ -357,15 +358,17 @@ function getOptimizedThumbnailUrl(baseUrl: string, maxWidth: number, maxHeight?:
  */
 export function toAbsoluteUrl(url?: string): string | undefined {
   if (!url) return undefined;
+  if (/^https?:\/\//i.test(url)) return url;
+  // Preserve any base path prefix (e.g. /stash) — `new URL('/x', base)` would drop it.
+  const base = getStashBaseUrl();
+  if (url.startsWith('/')) return `${base}${url}`;
   try {
-    return new URL(url, globalThis.location.origin).toString();
+    return new URL(url, `${base}/`).toString();
   } catch {
     try {
-      return new URL(encodeURI(url), globalThis.location.origin).toString();
+      return new URL(encodeURI(url), `${base}/`).toString();
     } catch {
-      if (/^https?:\/\//i.test(url)) return url;
-      if (url.startsWith('/')) return `${globalThis.location.origin}${url}`;
-      return `${globalThis.location.origin}/${url}`;
+      return `${base}/${url}`;
     }
   }
 }
@@ -390,13 +393,15 @@ export function normalizeMediaUrl(url?: string): string | undefined {
   const trimmed = url.trim();
   if (!trimmed) return undefined;
   if (trimmed.startsWith('data:') || trimmed.startsWith('blob:')) return trimmed;
+  if (/^https?:\/\//i.test(trimmed)) return stripApiKey(trimmed);
+  // Preserve any base path prefix (e.g. /stash) — `new URL('/x', base)` would drop it.
+  const base = getStashBaseUrl();
+  if (trimmed.startsWith('/')) return stripApiKey(`${base}${trimmed}`);
   try {
-    const normalized = new URL(trimmed, globalThis.location.origin).toString();
-    return stripApiKey(normalized);
+    return stripApiKey(new URL(trimmed, `${base}/`).toString());
   } catch {
     try {
-      const normalized = new URL(encodeURI(trimmed), globalThis.location.origin).toString();
-      return stripApiKey(normalized);
+      return stripApiKey(new URL(encodeURI(trimmed), `${base}/`).toString());
     } catch {
       return undefined;
     }
@@ -719,15 +724,10 @@ export function isMp4File(path?: string): boolean {
  * Build full URL from path
  */
 export function buildFullUrl(path: string, baseUrl: string): string {
-  try {
-    return new URL(path, baseUrl).toString();
-  } catch {
-    try {
-      return new URL(encodeURI(path), baseUrl).toString();
-    } catch {
-      return path.startsWith('http') ? path : `${baseUrl}${path}`;
-    }
-  }
+  if (/^(https?:|data:|blob:)/i.test(path)) return path;
+  // Concatenate (not `new URL`) so a base path prefix like /stash is preserved for
+  // root-relative paths — `new URL('/image/1', 'https://host/stash')` drops it.
+  return baseUrl.replace(/\/+$/, '') + (path.startsWith('/') ? path : `/${path}`);
 }
 
 /**
@@ -771,7 +771,7 @@ function getImageUrl(image: Image, baseUrl: string): string | undefined {
 }
 
 export function getImageUrlForDisplay(image: Image, treatMp4AsVideo: boolean): string | undefined {
-  const baseUrl = globalThis.location.origin;
+  const baseUrl = getStashBaseUrl();
   
   // Detect if this is a video from visualFiles
   const { isVideo, videoFile } = detectVideoFromVisualFiles(image.visualFiles);

@@ -6,6 +6,7 @@
 import { VideoPostData, Scene, IVideoPlayer } from './types.js';
 import { StashAPI } from './StashAPI.js';
 import { calculateAspectRatio, getAspectRatioClass, normalizeMediaUrl, showToast, toAbsoluteUrl, THEME, extractValidPerformerIds } from './utils.js';
+import { getStashBaseUrl } from './utils/baseUrl.js';
 import { MARKER_SVG } from './icons.js';
 import { VideoPostBase, BaseVideoPostOptions } from './VideoPostBase.js';
 
@@ -804,7 +805,7 @@ export class VideoPost extends VideoPostBase {
   private getSceneLink(): string {
     const s = this.data.marker.scene;
     const t = Math.max(0, Math.floor(this.data.marker.seconds || 0));
-    return `${globalThis.location.origin}/scenes/${s.id}?t=${t}`;
+    return `${getStashBaseUrl()}/scenes/${s.id}?t=${t}`;
   }
 
 

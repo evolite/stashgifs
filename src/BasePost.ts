@@ -9,6 +9,7 @@ import { normalizeMediaUrl, showToast, isMobileDevice, THEME, subscribeWindowScr
 import { RatingControl } from './RatingControl.js';
 import { ADD_TAG_SVG, HEART_SVG_OUTLINE, HEART_SVG_FILLED, OCOUNT_SVG, EXTERNAL_LINK_SVG, STAR_SVG, STAR_SVG_OUTLINE, VERIFIED_SVG, EYE_SVG, CLAPPERBOARD_SVG } from './icons.js';
 import { DISCOVERY_ICON_SVG, type DiscoveryPanelControl } from './DiscoveryPanel.js';
+import { getStashBaseUrl } from './utils/baseUrl.js';
 import { setupTouchHandlers, preventClickAfterTouch } from './utils/touchHandlers.js';
 import { adjustImageDialogPosition, toggleImageFavorite } from './utils/imagePostUtils.js';
 import { OverlayManager } from './utils/OverlayManager.js';
@@ -781,14 +782,14 @@ export abstract class BasePost {
    * Get link to performer page
    */
   protected getPerformerLink(performerId: string): string {
-    return `${globalThis.location.origin}/performers/${performerId}`;
+    return `${getStashBaseUrl()}/performers/${performerId}`;
   }
 
   /**
    * Get link to tag page
    */
   protected getTagLink(tagId: string): string {
-    return `${globalThis.location.origin}/tags/${tagId}`;
+    return `${getStashBaseUrl()}/tags/${tagId}`;
   }
 
   /**
@@ -903,7 +904,7 @@ export abstract class BasePost {
   }
 
   protected createStudioChip(studio: { id: string; name: string; image_path?: string }): HTMLElement {
-    const chip = this.buildBaseChipElement('studio-chip', `${globalThis.location.origin}/studios/${studio.id}`);
+    const chip = this.buildBaseChipElement('studio-chip', `${getStashBaseUrl()}/studios/${studio.id}`);
 
     chip.addEventListener('click', (e) => {
       e.preventDefault();
@@ -1867,7 +1868,7 @@ export abstract class BasePost {
     const contentSection = this.createOverlayContentSection();
 
     const nameLink = this.createOverlayNameLink(
-      `${globalThis.location.origin}/studios/${studioData.id}`,
+      `${getStashBaseUrl()}/studios/${studioData.id}`,
       studioData.name
     );
     nameLink.style.marginBottom = '8px';
@@ -1879,7 +1880,7 @@ export abstract class BasePost {
       parentRow.style.color = THEME.colors.textSecondary;
       parentRow.style.marginBottom = '6px';
       const parentLink = document.createElement('a');
-      parentLink.href = `${globalThis.location.origin}/studios/${studioData.parent_studio.id}`;
+      parentLink.href = `${getStashBaseUrl()}/studios/${studioData.parent_studio.id}`;
       parentLink.target = '_blank';
       parentLink.rel = 'noopener noreferrer';
       parentLink.textContent = studioData.parent_studio.name;
@@ -2199,7 +2200,7 @@ export abstract class BasePost {
   }
 
   protected getImageLink(imageId: string): string {
-    return `${globalThis.location.origin}/images/${imageId}`;
+    return `${getStashBaseUrl()}/images/${imageId}`;
   }
 
   protected createImageButton(imageId: string): HTMLElement {

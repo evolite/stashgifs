@@ -17,6 +17,7 @@ import { FavoritesManager } from './FavoritesManager.js';
 import { SettingsPage } from './SettingsPage.js';
 import { debounce, normalizeMediaUrl, detectDeviceCapabilities, DeviceCapabilities, isStandaloneNavigator, isMobileDevice, detectVideoFromVisualFiles, isMp4File, getImageUrlForDisplay, THEME, THEME_DEFAULTS, normalizeHexColor, toRgba, buildFullUrl, applyThemeColors } from './utils.js';
 import { GQLImage } from './graphql/types.js';
+import { getStashBaseUrl } from './utils/baseUrl.js';
 import { SETTINGS_SVG, STASHGIFS_LOGO_SVG } from './icons.js';
 import { DiscoveryPanel } from './DiscoveryPanel.js';
 import { WhisparrClient } from './WhisparrClient.js';
@@ -3319,7 +3320,7 @@ export class FeedContainer {
    * For regular images: uses centralized utility
    */
   private getImageUrlForPost(image: Image): string | undefined {
-    const baseUrl = globalThis.location.origin;
+    const baseUrl = getStashBaseUrl();
     
     // Detect if this is a video from visualFiles
     const { isVideo, videoFile } = detectVideoFromVisualFiles(image.visualFiles);

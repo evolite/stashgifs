@@ -16,6 +16,7 @@ import {
   isAbortError,
   createGraphQLError,
 } from './errors.js';
+import { getStashBaseUrl } from '../utils/baseUrl.js';
 
 interface StashPluginApi {
   GQL: {
@@ -95,8 +96,8 @@ export class GraphQLClient {
     } else if (this.pluginApi?.baseURL) {
       this.baseUrl = this.pluginApi.baseURL;
     } else {
-      // Fallback: use current origin (for plugin context)
-      this.baseUrl = globalThis.location.origin;
+      // Fallback: derive base (origin + any path prefix) for standalone-app context
+      this.baseUrl = getStashBaseUrl();
     }
 
     this.apiKey = config.apiKey || this.pluginApi?.apiKey;
