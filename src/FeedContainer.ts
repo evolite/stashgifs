@@ -2945,17 +2945,24 @@ export class FeedContainer {
   /**
    * Prepare for loading videos (setup abort controller, check loading state)
    */
-  private prepareLoadVideos(signal?: AbortSignal): AbortSignal {
-    if (this.activeLoadVideosAbortController) {
+  private prepareLoadVideos(signal?: AbortSignal, append: boolean = false): AbortSignal {
+    if (!append && this.activeLoadVideosAbortController) {
+      // Fresh load: cancel the previous batch and its in-flight image lazy-load observers.
+      // (clearPosts() in initializeLoadState also clears observers, so this only matters
+      // for cancelling in-flight fetches.) On append we must NOT abort, or the previous
+      // batch's not-yet-fired image observers would be orphaned and never load.
       this.activeLoadVideosAbortController.abort();
       this.cleanupLoadObservers();
       this.stopLoadingVideos();
+      this.activeLoadVideosAbortController = undefined;
     }
-    if (!signal) {
-      this.activeLoadVideosAbortController = new AbortController();
-      signal = this.activeLoadVideosAbortController.signal;
+    if (signal) {
+      return signal;
     }
-    return signal;
+    // Reuse the live controller across appends so earlier batches' image observers
+    // (which captured this signal) keep loading instead of being aborted/orphaned.
+    this.activeLoadVideosAbortController ??= new AbortController();
+    return this.activeLoadVideosAbortController.signal;
   }
 
   /**
@@ -4008,7 +4015,7 @@ export class FeedContainer {
       return;
     }
 
-    signal = this.prepareLoadVideos(signal);
+    signal = this.prepareLoadVideos(signal, append);
     this.initializeLoadState(append);
     const reqId = ++this.latestLoadId;
 
