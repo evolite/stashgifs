@@ -730,6 +730,20 @@ export class SettingsPage {
     layoutSection.appendChild(autoHideSearchBarContainer);
     (this as any).autoHideSearchBarToggle = autoHideSearchBarToggle;
 
+    // Marker title search toggle (search-bar feature — lives alongside Auto-Hide Search Bar)
+    const { container: searchMarkersByNameToggleContainer, input: searchMarkersByNameToggle } = this.createToggleSwitch(
+      this.settings.searchMarkersByName === true,
+      () => this.saveSettings()
+    );
+    const searchMarkersByNameRow = document.createElement('div');
+    searchMarkersByNameRow.style.display = 'flex';
+    searchMarkersByNameRow.style.justifyContent = 'space-between';
+    searchMarkersByNameRow.style.alignItems = 'center';
+    searchMarkersByNameRow.style.marginBottom = '16px';
+    searchMarkersByNameRow.appendChild(buildInfoLabel('Marker Title Search', 'Show a Title section in the search bar so you can find markers by title.'));
+    searchMarkersByNameRow.appendChild(searchMarkersByNameToggleContainer);
+    layoutSection.appendChild(searchMarkersByNameRow);
+
     const hdVideoContainer = document.createElement('div');
     hdVideoContainer.style.display = 'flex';
     hdVideoContainer.style.justifyContent = 'space-between';
@@ -936,20 +950,6 @@ export class SettingsPage {
     imagesRow.appendChild(buildInfoLabel('Images', 'Images and image-video files from your Stash library.'));
     imagesRow.appendChild(includeImagesToggleContainer);
     contentTypesSection.appendChild(imagesRow);
-
-    // Marker name search toggle
-    const { container: searchMarkersByNameToggleContainer, input: searchMarkersByNameToggle } = this.createToggleSwitch(
-      this.settings.searchMarkersByName === true,
-      () => this.saveSettings()
-    );
-    const searchMarkersByNameRow = document.createElement('div');
-    searchMarkersByNameRow.style.display = 'flex';
-    searchMarkersByNameRow.style.justifyContent = 'space-between';
-    searchMarkersByNameRow.style.alignItems = 'center';
-    searchMarkersByNameRow.style.marginBottom = '12px';
-    searchMarkersByNameRow.appendChild(buildInfoLabel('Marker Title Search', 'Show a Title section in the search bar so you can find markers by title.'));
-    searchMarkersByNameRow.appendChild(searchMarkersByNameToggleContainer);
-    contentTypesSection.appendChild(searchMarkersByNameRow);
 
     // Random toggle
     const { container: includeRandomToggleContainer, input: includeRandomToggle } = this.createToggleSwitch(
