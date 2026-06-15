@@ -4,7 +4,7 @@
   "description": "StashGifs - TikTok-like vertical scroller interface for Stash.",
   "scripts": {
     "prebuild": "node scripts/generate-version.js && cp node_modules/video.js/dist/video.min.js stashgifs/app/assets/vendor/video.min.js",
-    "build": "tsc",
+    "build": "tsc && node scripts/cache-bust.js",
     "watch": "tsc --watch",
     "deploy:local": "rm -rf /home/evotech/Services/containers/data/stash/plugins/surging9143/stashgifs/stashgifs/app/assets && mkdir -p /home/evotech/Services/containers/data/stash/plugins/surging9143/stashgifs/stashgifs/app && cp -r stashgifs/app/assets /home/evotech/Services/containers/data/stash/plugins/surging9143/stashgifs/stashgifs/app/ && cp stashgifs/app/index.html /home/evotech/Services/containers/data/stash/plugins/surging9143/stashgifs/stashgifs/app/",
     "release": "pnpm run build",
