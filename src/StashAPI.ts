@@ -1055,15 +1055,19 @@ export class StashAPI {
     if (this.isAborted(signal)) return { markers: [], totalCount: 0 };
     
     const responseData = result.data?.findSceneMarkers;
-    let markers = responseData?.scene_markers || [];
+    const markers = responseData?.scene_markers || [];
     const totalCount = Math.min(responseData?.count ?? 0, this._maxContentLimit);
-    
-    // Retry if we have a count but no markers (can happen due to race conditions or data inconsistencies)
-    if (totalCount > 0 && markers.length === 0) {
-      const retryResult = await this.retryMarkerQueryWithCount(filter, sceneMarkerFilter, signal);
-      return retryResult;
+
+    // A positive count with no markers on PAGE 1 indicates a genuine race/inconsistency
+    // worth retrying. On a later page it just means we've paged past the end of the
+    // available markers — return empty so the feed moves on to other content. Retrying
+    // page 1 here would re-fetch the first markers, duplicating them and making the feed
+    // loop the same handful of markers once they're exhausted.
+    const page = typeof filter.page === 'number' ? filter.page : 1;
+    if (totalCount > 0 && markers.length === 0 && page <= 1) {
+      return this.retryMarkerQueryWithCount(filter, sceneMarkerFilter, signal);
     }
-    
+
     return { markers, totalCount };
   }
 
