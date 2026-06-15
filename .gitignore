@@ -32,6 +32,7 @@ src/version.ts
 opencode.json
 
 # AI tooling / local docs
+CLAUDE.md
 AGENTS.md
 codegen.yml
 stashapp_arch.md

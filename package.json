@@ -6,8 +6,8 @@
     "prebuild": "node scripts/generate-version.js && cp node_modules/video.js/dist/video.min.js stashgifs/app/assets/vendor/video.min.js",
     "build": "tsc",
     "watch": "tsc --watch",
-    "deploy": "rm -rf /home/evotech/Services/containers/data/stash/plugins/surging9143/stashgifs/stashgifs/app/assets && mkdir -p /home/evotech/Services/containers/data/stash/plugins/surging9143/stashgifs/stashgifs/app && cp -r stashgifs/app/assets /home/evotech/Services/containers/data/stash/plugins/surging9143/stashgifs/stashgifs/app/ && cp stashgifs/app/index.html /home/evotech/Services/containers/data/stash/plugins/surging9143/stashgifs/stashgifs/app/",
-    "release": "pnpm run build && pnpm run deploy",
+    "deploy:local": "rm -rf /home/evotech/Services/containers/data/stash/plugins/surging9143/stashgifs/stashgifs/app/assets && mkdir -p /home/evotech/Services/containers/data/stash/plugins/surging9143/stashgifs/stashgifs/app && cp -r stashgifs/app/assets /home/evotech/Services/containers/data/stash/plugins/surging9143/stashgifs/stashgifs/app/ && cp stashgifs/app/index.html /home/evotech/Services/containers/data/stash/plugins/surging9143/stashgifs/stashgifs/app/",
+    "release": "pnpm run build",
     "clean": "rm -rf app/assets/*.js app/assets/*.js.map",
     "type-check": "tsc --noEmit"
   },
