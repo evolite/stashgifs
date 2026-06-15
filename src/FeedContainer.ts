@@ -85,7 +85,7 @@ export class FeedContainer {
   // enters its prefetch margin once the user is basically on the last card. Prefetch the
   // next batch this many cards before the end so the (often multi-second) fetch is ready
   // by the time they arrive.
-  private static readonly PREFETCH_CARDS_AHEAD = 4;
+  private static readonly PREFETCH_CARDS_AHEAD = 5;
   private static readonly SEEN_IDS_KEY = 'stashgifs-seen-ids';
   private readonly container: HTMLElement;
   private scrollContainer: HTMLElement;
@@ -122,6 +122,9 @@ export class FeedContainer {
   private currentPage: number = 1;
   private appendRetryCount = 0;
   private appendRetryTimeoutId?: ReturnType<typeof setTimeout>;
+  // Coalesce the rapid per-toggle reloads fired while the settings page is open into a
+  // single full reset, so concurrent force-loads can't race and blank the feed.
+  private settingsReloadTimeoutId?: ReturnType<typeof setTimeout>;
   private latestLoadId = 0;
   private scrollObserver?: IntersectionObserver;
   private loadMoreTrigger?: HTMLElement;
@@ -405,6 +408,12 @@ export class FeedContainer {
     this.scrollContainer.style.overflowY = 'auto';
     this.scrollContainer.style.overflowX = 'hidden';
     this.scrollContainer.style.overscrollBehavior = 'contain';
+    // The reel owns scroll position outright. Without this, the browser's native
+    // scroll-anchoring silently shifts scrollTop whenever DOM above the viewport changes
+    // (video.js players mounting/unmounting, images decoding) as the user scrolls — which
+    // surfaces as sudden backward/up jumps. Cards are fixed-height, so there is nothing
+    // legitimate to anchor; pruning compensates explicitly via ReelScroller.snapToCard.
+    this.scrollContainer.style.overflowAnchor = 'none';
 
     if (this.postsContainer) {
       this.postsContainer.style.display = 'flex';
@@ -536,10 +545,27 @@ export class FeedContainer {
     }
 
     if (this.shouldReloadFeed(newSettings, excludedTagsChanged, orientationFilterChanged)) {
-      this.loadVideos(this.currentFilters, false, undefined, true).catch((e) => {
+      this.scheduleSettingsReload();
+    }
+  }
+
+  /**
+   * Debounce content-affecting settings reloads. Toggling several content types in the
+   * overflow menu (e.g. markers off, short-form off, images on) used to fire one
+   * forced loadVideos per toggle; those ran concurrently, mutated the shared filter
+   * object, and aborted each other — leaving hasMore=false and a blank feed until a
+   * manual refresh. Collapsing them into a single delayed refreshFeed() removes the race.
+   */
+  private scheduleSettingsReload(): void {
+    if (this.settingsReloadTimeoutId) {
+      clearTimeout(this.settingsReloadTimeoutId);
+    }
+    this.settingsReloadTimeoutId = setTimeout(() => {
+      this.settingsReloadTimeoutId = undefined;
+      this.refreshFeed().catch((e) => {
         console.error('Failed to reload feed after settings change', e);
       });
-    }
+    }, 250);
   }
 
   private mountDiscoveryPanel(): void {
@@ -3124,6 +3150,14 @@ export class FeedContainer {
     fragment: DocumentFragment | null,
     signal?: AbortSignal
   ): Promise<{ fragment: DocumentFragment; postContainer: HTMLElement | null }> {
+    // Guard against rendering an id that's already on screen (e.g. a paginated re-fetch
+    // returned a duplicate): adding it twice would push a second entry into postOrder and a
+    // second DOM card, desyncing index/next tracking. Skip it.
+    const itemId = (item.data as { id: string }).id;
+    if (this.posts.has(itemId)) {
+      return { fragment: fragment ?? document.createDocumentFragment(), postContainer: null };
+    }
+
     const result = item.type === 'marker'
       ? await this.processMarkerForRender(item.data as SceneMarker, fragment, signal)
       : await this.processImageForRender(item.data as Image, fragment, signal);
@@ -4006,7 +4040,10 @@ export class FeedContainer {
       return;
     }
 
-    this.cleanupDistantPosts();
+    // Memory cleanup is driven solely by scheduleCleanupAfterScroll (debounced after the
+    // user stops scrolling). Pruning synchronously here — right after appending to the
+    // bottom while the user is scrolling toward those new cards — risked removing cards and
+    // shifting layout mid-gesture; the debounced path runs only once the reel has settled.
     this.finalizeLoadState(append, page);
   }
 
@@ -4020,7 +4057,11 @@ export class FeedContainer {
     const reqId = ++this.latestLoadId;
 
     try {
-      const currentFilters = filters || this.currentFilters || {};
+      // Work on a shallow copy: ensureSortSeed/applyExcludedTags/applyOrientation and the
+      // image fetch all mutate this object, so a superseded concurrent load must not be able
+      // to corrupt the winning load's filters/sortSeed. The resolved copy is written back to
+      // this.currentFilters below for pagination persistence.
+      const currentFilters: FilterOptions = { ...(filters || this.currentFilters || {}) };
       await this.updateExcludedTagIds();
       this.applyExcludedTagsToFilters(currentFilters);
       this.applyOrientationFilterToFilters(currentFilters);
@@ -4209,6 +4250,13 @@ export class FeedContainer {
     if (totalAvailable > 0) {
       this.hasMore = totalLoaded < totalAvailable;
       console.log(`[hasMore] Total loaded: ${totalLoaded}, Total available: ${totalAvailable}, hasMore: ${this.hasMore}`);
+    } else if (!append && totalContentLength === 0) {
+      // Fresh load returned nothing AND no count — could be a transient/raced fetch rather
+      // than a truly empty feed. Don't latch hasMore=false (which bricks the feed until a
+      // manual refresh); leave it true so the append path retries once. If the feed really
+      // is empty, that retry hits the `append && 0 results` guard below and stops cleanly.
+      this.hasMore = true;
+      console.log('[hasMore] Fresh load returned 0 with no count — keeping hasMore true to retry');
     } else {
       // Fallback: if counts are unavailable (e.g., shuffle mode), use length-based check
       this.hasMore = totalContentLength >= expectedLimit;
@@ -5022,143 +5070,76 @@ export class FeedContainer {
   // the viewport (see LAZY_LOAD_ROOT_MARGIN), so nothing is fetched ahead of time.
 
   /**
-   * Clean up posts that are far from viewport to free memory
-   * Called periodically during scrolling
-   * More aggressive cleanup to prevent excessive RAM usage
+   * Free memory by removing cards the user has already scrolled past.
+   *
+   * Only ever removes cards strictly BEHIND the current one (lower DOM index). The current
+   * card, everything ahead, and a buffer behind are never touched — so the scroller's
+   * current/next indices below the removal point don't move, nothing ahead/below shrinks,
+   * and there's no oscillation or "lost track of next". The current card is re-aligned
+   * once afterwards because native scroll-anchoring is disabled.
    */
   private cleanupDistantPosts(): void {
-    // Less aggressive: keep more posts in memory to avoid jarring DOM removals
-    // Keep 15 posts in HD mode, 20 in normal mode
-    const maxPostsInMemory = this.useHDMode ? 15 : 20;
-    
-    // Only enforce maximum if we significantly exceed limit
-    if (this.posts.size <= maxPostsInMemory * 1.5) {
+    const keepBehind = this.useHDMode ? 8 : 12;
+
+    // Never prune mid-interaction: removing cards while the reel is snapping or the user is
+    // mid-swipe would shift geometry under the gesture. Wait until it settles.
+    if (this.reelScroller?.isBusy()) {
       return;
     }
 
-    const postsWithDistance = this.calculatePostDistances();
-    const postsToRemove = this.determinePostsToRemove(postsWithDistance, maxPostsInMemory);
+    const currentIdx = this.getCurrentPostOrderIndex();
+    if (currentIdx < 0) {
+      return;
+    }
 
-    this.removePostsAnchored(postsToRemove);
-  }
+    const firstToKeep = currentIdx - keepBehind;
+    if (firstToKeep <= 0) {
+      return; // nothing far enough behind to prune
+    }
 
-  /**
-   * Remove the given posts while keeping the currently-viewed card visually fixed.
-   *
-   * Every reel card is a full viewport (100svh), so deleting cards above the current
-   * scroll position shrinks the content above without moving scrollTop — the viewport
-   * would jump to a later card (the "image flashes and changes" bug). We capture the
-   * current card's viewport offset, remove, then nudge scrollTop by the delta so it
-   * stays put. If the browser already scroll-anchored, the delta is ~0 (no-op).
-   */
-  private removePostsAnchored(
-    postsToRemove: Array<{ postId: string; distance: number; isVisible: boolean }>
-  ): void {
-    // The current card is visible, so determinePostsToRemove never selects it as an
-    // anchor candidate; fall back to the card nearest the viewport centre.
-    const anchorId = this.reelScroller?.getCurrentPostId() ?? null;
-    const anchor = (anchorId ? this.posts.get(anchorId)?.getContainer() : null)
-      ?? this.findCardClosestToCenter();
-    const beforeTop = anchor?.getBoundingClientRect().top;
+    const currentCard = this.posts.get(this.postOrder[currentIdx])?.getContainer();
+    const removeIds = this.postOrder.slice(0, firstToKeep);
 
-    for (const { postId } of postsToRemove) {
+    for (const postId of removeIds) {
       this.removePost(postId);
     }
+    this.cleanupMarkersForRemovedPosts(removeIds);
 
-    this.cleanupMarkersForRemovedPosts(postsToRemove);
-
-    if (anchor && beforeTop !== undefined && anchor.parentNode) {
-      const afterTop = anchor.getBoundingClientRect().top;
-      this.scrollContainer.scrollTop += afterTop - beforeTop;
+    // Deleting cards above shifts content up; re-anchor the current card explicitly (single
+    // source of compensation now that native scroll-anchoring is off).
+    if (currentCard?.parentNode) {
+      this.reelScroller?.snapToCard(currentCard);
     }
   }
 
   /**
-   * Calculate distance from viewport for each post
+   * Index in postOrder of the card currently at the top of the viewport, or -1 if it
+   * can't be determined. Prefers the reel scroller's geometry; falls back to the card
+   * whose top is nearest the container top (same rule as the scroller) so every consumer
+   * shares one definition of "current card".
    */
-  private calculatePostDistances(): Array<{ postId: string; distance: number; isVisible: boolean }> {
-    const viewportTop = this.getViewportTop();
-    const viewportBottom = viewportTop + this.getViewportHeight();
-    const postsWithDistance: Array<{ postId: string; distance: number; isVisible: boolean }> = [];
-    
-    for (const [postId, post] of this.posts.entries()) {
-      const container = post.getContainer();
-      const rect = container.getBoundingClientRect();
-      const elementTop = this.getElementTop(rect);
-      const elementBottom = elementTop + rect.height;
-      
-      const isVisible = elementBottom > viewportTop && elementTop < viewportBottom;
-      const distance = this.calculateDistanceFromViewport(elementTop, elementBottom, viewportTop, viewportBottom);
-      
-      postsWithDistance.push({ postId, distance, isVisible });
-    }
-    
-    // Sort by distance (furthest first), but prioritize non-visible posts
-    postsWithDistance.sort((a, b) => {
-      if (a.isVisible !== b.isVisible) {
-        return a.isVisible ? 1 : -1; // Non-visible first
-      }
-      return b.distance - a.distance; // Furthest first
-    });
-    
-    return postsWithDistance;
+  private getCurrentPostOrderIndex(): number {
+    const currentId = this.reelScroller?.getCurrentPostId() ?? this.getTopMostCardPostId();
+    return currentId ? this.postOrder.indexOf(currentId) : -1;
   }
 
-  /**
-   * Calculate distance from viewport for an element
-   */
-  private calculateDistanceFromViewport(
-    elementTop: number,
-    elementBottom: number,
-    viewportTop: number,
-    viewportBottom: number
-  ): number {
-    if (elementBottom < viewportTop) {
-      return viewportTop - elementBottom;
+  /** Post id of the card whose top is nearest the scroll container's top edge. */
+  private getTopMostCardPostId(): string | null {
+    const cards = this.getAllCardContainers();
+    if (cards.length === 0) {
+      return null;
     }
-    if (elementTop > viewportBottom) {
-      return elementTop - viewportBottom;
-    }
-    return 0;
-  }
-
-  /**
-   * Determine which posts should be removed based on distance and memory limits
-   */
-  private determinePostsToRemove(
-    postsWithDistance: Array<{ postId: string; distance: number; isVisible: boolean }>,
-    maxPostsInMemory: number
-  ): Array<{ postId: string; distance: number; isVisible: boolean }> {
-    const minPostsToKeep = Math.max(5, maxPostsInMemory - 3);
-    const postsToRemove = postsWithDistance.slice(0, Math.max(0, this.posts.size - minPostsToKeep));
-    
-    // Also remove posts that are very far from viewport (even if under limit)
-    const cleanupDistance = this.useHDMode ? 1000 : 1500;
-    for (const postInfo of postsWithDistance) {
-      if (this.shouldRemoveDistantPost(postInfo, cleanupDistance, postsToRemove, minPostsToKeep)) {
-        postsToRemove.push(postInfo);
+    const containerTop = this.scrollContainer.getBoundingClientRect().top;
+    let best: HTMLElement = cards[0];
+    let bestDistance = Infinity;
+    for (const card of cards) {
+      const distance = Math.abs(card.getBoundingClientRect().top - containerTop);
+      if (distance < bestDistance) {
+        bestDistance = distance;
+        best = card;
       }
     }
-    
-    return postsToRemove;
-  }
-
-  /**
-   * Check if a distant post should be removed
-   */
-  private shouldRemoveDistantPost(
-    postInfo: { postId: string; distance: number; isVisible: boolean },
-    cleanupDistance: number,
-    postsToRemove: Array<{ postId: string; distance: number; isVisible: boolean }>,
-    minPostsToKeep: number
-  ): boolean {
-    if (postInfo.isVisible || postInfo.distance <= cleanupDistance) {
-      return false;
-    }
-    if (postsToRemove.some(p => p.postId === postInfo.postId)) {
-      return false;
-    }
-    return this.posts.size - postsToRemove.length > minPostsToKeep;
+    return this.getPostIdFromCard(best);
   }
 
   /**
@@ -5216,14 +5197,12 @@ export class FeedContainer {
   /**
    * Remove markers for deleted posts to free memory
    */
-  private cleanupMarkersForRemovedPosts(
-    postsToRemove: Array<{ postId: string; distance: number; isVisible: boolean }>
-  ): void {
-    if (postsToRemove.length === 0) {
+  private cleanupMarkersForRemovedPosts(removedIds: string[]): void {
+    if (removedIds.length === 0) {
       return;
     }
-    
-    const removedPostIds = new Set(postsToRemove.map(p => p.postId));
+
+    const removedPostIds = new Set(removedIds);
     this.markers = this.markers.filter(marker => !removedPostIds.has(marker.id));
   }
 
@@ -5352,15 +5331,19 @@ export class FeedContainer {
       getCards: () => this.getAllCardContainers(),
       getPostId: (card) => this.getPostIdFromCard(card),
       onSettle: (postId, index) => this.handleReelSettle(postId, index),
+      onAdvance: (index) => this.maybePrefetchMore(index),
     });
     this.reelScroller.enable();
   }
 
-  /** Autoplay + audio for the card the reel scroller just landed on. */
-  private handleReelSettle(postId: string, index: number): void {
+  /**
+   * Autoplay + audio for the card the reel scroller just landed on. Prefetch is driven
+   * separately by the scroller's onAdvance hook (which fires earlier, as soon as a gesture
+   * commits to a new index), so we don't repeat it here.
+   */
+  private handleReelSettle(postId: string, _index: number): void {
     this.playback.setActive(postId);
     this.discoveryManager?.onPrimaryPostChanged(postId, this.getPerformersForPost(postId));
-    this.maybePrefetchMore(index);
   }
 
   /**
@@ -5429,6 +5412,10 @@ export class FeedContainer {
   }
 
   destroy(): void {
+    if (this.settingsReloadTimeoutId) {
+      clearTimeout(this.settingsReloadTimeoutId);
+      this.settingsReloadTimeoutId = undefined;
+    }
     this.teardownListeners();
     this.clearPosts();
     this.discoveryManager?.destroy();
@@ -5437,17 +5424,22 @@ export class FeedContainer {
   }
 
   /**
-   * Get all card containers ordered by postOrder
+   * Get all card containers in true visual (DOM) order.
+   *
+   * The reel addresses "current" and "next" by index into this list, so it MUST match
+   * what's on screen top-to-bottom. Reading the live DOM children (rather than walking
+   * postOrder) guarantees that — any drift between postOrder and the DOM can no longer
+   * make the scroller advance to the wrong card. Cards carry data-post-id; the
+   * load-more trigger and skeletons don't, so they're filtered out.
    */
   private getAllCardContainers(): HTMLElement[] {
+    if (!this.postsContainer) {
+      return [];
+    }
     const cards: HTMLElement[] = [];
-    for (const postId of this.postOrder) {
-      const post = this.posts.get(postId);
-      if (post) {
-        const container = post.getContainer();
-        if (container?.parentNode) {
-          cards.push(container);
-        }
+    for (const child of this.postsContainer.children) {
+      if (child instanceof HTMLElement && child.dataset.postId) {
+        cards.push(child);
       }
     }
     return cards;

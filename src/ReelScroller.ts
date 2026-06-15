@@ -20,6 +20,12 @@ interface ReelScrollerOptions {
   getPostId: (card: HTMLElement) => string | null;
   /** Called once the scroller settles on a card (after the animation finishes). */
   onSettle: (postId: string, index: number) => void;
+  /**
+   * Called as soon as a gesture starts moving toward a new card index (before the
+   * animation lands). Lets the feed kick off prefetch a card or two earlier so a
+   * slow fetch is ready by the time the user arrives. Optional.
+   */
+  onAdvance?: (index: number) => void;
 }
 
 const ANIMATION_MS = 360;
@@ -41,6 +47,7 @@ export class ReelScroller {
   private readonly getCards: () => HTMLElement[];
   private readonly getPostId: (card: HTMLElement) => string | null;
   private readonly onSettle: (postId: string, index: number) => void;
+  private readonly onAdvance?: (index: number) => void;
 
   private enabled = false;
   private isAnimating = false;
@@ -68,6 +75,25 @@ export class ReelScroller {
     this.getCards = options.getCards;
     this.getPostId = options.getPostId;
     this.onSettle = options.onSettle;
+    this.onAdvance = options.onAdvance;
+  }
+
+  /**
+   * True while a snap animation is in flight OR the user is mid-swipe — callers (e.g.
+   * memory cleanup) must avoid mutating the card list or scrollTop, which would jerk the
+   * viewport onto a different card.
+   */
+  isBusy(): boolean {
+    return this.isAnimating || this.touchActive;
+  }
+
+  /**
+   * Align `card` to the top of the scroll container immediately (no animation). Used to
+   * deterministically re-anchor after memory cleanup removes cards above the viewport —
+   * with native scroll-anchoring disabled, this is the single source of that compensation.
+   */
+  snapToCard(card: HTMLElement): void {
+    this.scrollContainer.scrollTop = this.targetScrollTopFor(card);
   }
 
   enable(): void {
@@ -149,14 +175,29 @@ export class ReelScroller {
     return Math.max(0, Math.min(index, cardCount - 1));
   }
 
-  /** Index of the card currently at the top of the scroll container. */
+  /**
+   * Index of the card currently at the top of the scroll container.
+   *
+   * Image cards are sized by aspect ratio, so they are NOT all one viewport tall —
+   * a `scrollTop / clientHeight` estimate picks the wrong card and makes prune
+   * anchoring jump the viewport (the "images swap on scroll-back" bug). Instead pick
+   * the card whose top edge is closest to the container's top edge, using live
+   * geometry that works for any card height.
+   */
   private getCurrentIndex(): number {
     const cards = this.getCards();
     if (cards.length === 0) return 0;
-    const cardHeight = this.scrollContainer.clientHeight;
-    if (cardHeight <= 0) return 0;
-    const estimated = Math.round(this.scrollContainer.scrollTop / cardHeight);
-    return Math.max(0, Math.min(estimated, cards.length - 1));
+    const containerTop = this.scrollContainer.getBoundingClientRect().top;
+    let bestIndex = 0;
+    let bestDistance = Infinity;
+    for (let i = 0; i < cards.length; i++) {
+      const distance = Math.abs(cards[i].getBoundingClientRect().top - containerTop);
+      if (distance < bestDistance) {
+        bestDistance = distance;
+        bestIndex = i;
+      }
+    }
+    return bestIndex;
   }
 
   // --- Core motion ---------------------------------------------------------
@@ -166,6 +207,10 @@ export class ReelScroller {
     const clamped = this.clampIndex(index, cards.length);
     const card = cards[clamped];
     if (!card) return;
+
+    // Kick off prefetch as soon as we commit to a new card, not after the animation
+    // settles — a multi-second fetch otherwise can't keep up with fast scrolling.
+    this.onAdvance?.(clamped);
 
     const target = this.targetScrollTopFor(card);
     if (!animate || Math.abs(target - this.scrollContainer.scrollTop) < 1) {
