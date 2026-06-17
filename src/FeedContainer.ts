@@ -4061,7 +4061,7 @@ export class FeedContainer {
       // image fetch all mutate this object, so a superseded concurrent load must not be able
       // to corrupt the winning load's filters/sortSeed. The resolved copy is written back to
       // this.currentFilters below for pagination persistence.
-      const currentFilters: FilterOptions = { ...(filters || this.currentFilters || {}) };
+      const currentFilters: FilterOptions = { ...(filters || this.currentFilters) };
       await this.updateExcludedTagIds();
       this.applyExcludedTagsToFilters(currentFilters);
       this.applyOrientationFilterToFilters(currentFilters);

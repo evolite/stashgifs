@@ -19,7 +19,7 @@ export function getStashBaseUrl(): string {
   if (api) {
     return /^https?:\/\//i.test(api)
       ? api.replace(/\/+$/, '')
-      : globalThis.location.origin + '/' + api.replace(/^\/+|\/+$/g, '');
+      : globalThis.location.origin + '/' + api.replaceAll(/^\/+|\/+$/g, '');
   }
 
   // Standalone app: recover the prefix from our own path (…/plugin/stashgifs/…).
