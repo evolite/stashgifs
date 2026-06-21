@@ -836,11 +836,11 @@ export class VideoPost extends VideoPostBase {
     }
 
     try {
-      // For non-HD videos, don't pass startTime (intentionally ignored like old version)
-      // This allows browser to show first frame naturally
-      // Only pass startTime for HD videos (when in HQ mode or explicitly upgrading)
-      // For regular marker videos, pass undefined to use simple loading path
-      const finalStartTime = this.isHQMode
+      // Pre-rendered clip videos (marker.stream set) already start at the marker position —
+      // no seek needed. Full-scene videos (no pre-rendered stream) and HQ mode must seek
+      // to the marker timestamp so playback begins at the right position.
+      const hasPrerenderedClip = !!this.data.marker.stream;
+      const finalStartTime = (this.isHQMode || !hasPrerenderedClip)
         ? (startTime ?? this.data.startTime ?? this.data.marker.seconds)
         : undefined;
 

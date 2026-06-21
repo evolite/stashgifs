@@ -53,6 +53,7 @@ const DEFAULT_SETTINGS: FeedSettings = {
   seenHistorySize: 500,
   contentLimit: 5000,
   enableDiscoveryPanel: true,
+  hdMode: true,
 };
 
 /**
@@ -4937,11 +4938,14 @@ export class FeedContainer {
     safeVideoUrl: string,
     startTime: number | undefined
   ): VideoPost {
+    // Shortform plays the whole scene (seconds=0, no end); other synthetic markers
+    // default to a 20-second clip from their random start position.
+    const isShortForm = typeof marker.id === 'string' && marker.id.startsWith('shortform-');
     const postData: VideoPostData = {
       marker,
       videoUrl: safeVideoUrl,
       startTime: startTime,
-      endTime: marker.end_seconds ?? (marker.seconds + 20),
+      endTime: isShortForm ? marker.end_seconds : (marker.end_seconds ?? (marker.seconds + 20)),
     };
 
     const post = new VideoPost(
@@ -4957,9 +4961,8 @@ export class FeedContainer {
     );
     
     post.initialize();
-    
+
     // Short form content is always HD by default, even when feed-level HD mode is off
-    const isShortForm = typeof marker.id === 'string' && marker.id.startsWith('shortform-');
     if (isShortForm || this.useHDMode) {
       post.setHQMode(true);
     }

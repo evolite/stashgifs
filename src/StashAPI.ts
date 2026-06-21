@@ -1416,7 +1416,17 @@ export class StashAPI {
    * These play from start to end (seconds: 0, no end_seconds)
    */
   private createShortFormMarkers(scenes: Scene[]): SceneMarker[] {
-    return this.createSyntheticMarkers(scenes, 'shortform');
+    const nonce = Math.random().toString(36).slice(2, 7);
+    return scenes.map((scene, i) => ({
+      id: `shortform-${scene.id}-${nonce}-${i}`,
+      title: scene.title || 'Untitled',
+      seconds: 0,
+      end_seconds: undefined,
+      stream: undefined,
+      scene,
+      primary_tag: undefined,
+      tags: [],
+    }));
   }
 
   /**
