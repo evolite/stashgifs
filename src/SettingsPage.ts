@@ -299,9 +299,11 @@ export class SettingsPage {
     };
 
     const layoutTabButton = createTabButton('Feed');
+    const filtersTabButton = createTabButton('Filters');
     const contentTabButton = createTabButton('Appearance');
     const whisparrTabButton = createTabButton('Discovery');
     tabBar.appendChild(layoutTabButton);
+    tabBar.appendChild(filtersTabButton);
     tabBar.appendChild(contentTabButton);
     tabBar.appendChild(whisparrTabButton);
     modal.appendChild(tabBar);
@@ -313,18 +315,22 @@ export class SettingsPage {
     contentWrapper.style.marginRight = '-4px';
 
     const layoutContent = document.createElement('div');
+    const filtersContent = document.createElement('div');
+    filtersContent.style.display = 'none';
     const contentTabContent = document.createElement('div');
     contentTabContent.style.display = 'none';
     const whisparrContent = document.createElement('div');
     whisparrContent.style.display = 'none';
 
-    const setActiveTab = (active: 'layout' | 'content' | 'whisparr') => {
+    const setActiveTab = (active: 'layout' | 'filters' | 'content' | 'whisparr') => {
       layoutContent.style.display     = active === 'layout'   ? 'block' : 'none';
+      filtersContent.style.display    = active === 'filters'  ? 'block' : 'none';
       contentTabContent.style.display = active === 'content'  ? 'block' : 'none';
       whisparrContent.style.display   = active === 'whisparr' ? 'block' : 'none';
 
       const tabs = [
         { btn: layoutTabButton,   key: 'layout'   },
+        { btn: filtersTabButton,  key: 'filters'  },
         { btn: contentTabButton,  key: 'content'  },
         { btn: whisparrTabButton, key: 'whisparr' },
       ];
@@ -337,11 +343,13 @@ export class SettingsPage {
     };
 
     layoutTabButton.addEventListener('click',   () => setActiveTab('layout'));
+    filtersTabButton.addEventListener('click',  () => setActiveTab('filters'));
     contentTabButton.addEventListener('click',  () => setActiveTab('content'));
     whisparrTabButton.addEventListener('click', () => setActiveTab('whisparr'));
     setActiveTab('layout');
 
     contentWrapper.appendChild(layoutContent);
+    contentWrapper.appendChild(filtersContent);
     contentWrapper.appendChild(contentTabContent);
     contentWrapper.appendChild(whisparrContent);
     modal.appendChild(contentWrapper);
@@ -1428,7 +1436,7 @@ export class SettingsPage {
     (this as any).excludedTagsInput = excludedTagsInput;
     (this as any).includeSubtagsToggle = includeSubtagsToggle;
 
-    layoutContent.appendChild(filtersSection);
+    filtersContent.appendChild(filtersSection);
     layoutContent.appendChild(reelAutoScrollContainer);
     layoutContent.appendChild(autoHideSearchBarContainer);
     layoutContent.appendChild(searchMarkersByNameRow);
