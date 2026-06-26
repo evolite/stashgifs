@@ -34,35 +34,7 @@ export class SettingsPage {
   /**
    * Create an info button with hover tooltip
    */
-  private createInfoButton(tooltipText: string): HTMLElement {
-    const infoButton = document.createElement('button');
-    infoButton.type = 'button';
-    infoButton.setAttribute('aria-label', 'Information');
-    infoButton.innerHTML = INFO_SVG;
-    infoButton.style.background = 'transparent';
-    infoButton.style.border = 'none';
-    infoButton.style.color = THEME.colors.textMuted;
-    infoButton.style.fontSize = THEME.typography.sizeBody;
-    infoButton.style.cursor = 'help';
-    infoButton.style.padding = '0';
-    infoButton.style.width = '20px';
-    infoButton.style.height = '20px';
-    infoButton.style.display = 'flex';
-    infoButton.style.alignItems = 'center';
-    infoButton.style.justifyContent = 'center';
-    infoButton.style.marginLeft = '8px';
-    infoButton.style.position = 'relative';
-    infoButton.style.transition = 'color 0.2s';
-
-    // Hover effect
-    infoButton.addEventListener('mouseenter', () => {
-      infoButton.style.color = THEME.colors.textPrimary;
-    });
-    infoButton.addEventListener('mouseleave', () => {
-      infoButton.style.color = THEME.colors.textMuted;
-    });
-
-    // Create tooltip - append to container to avoid overflow clipping
+  private attachTooltip(trigger: HTMLElement, tooltipText: string): void {
     const tooltip = document.createElement('div');
     tooltip.textContent = tooltipText;
     tooltip.style.position = 'fixed';
@@ -81,47 +53,23 @@ export class SettingsPage {
     tooltip.style.transition = 'opacity 0.2s';
     tooltip.style.zIndex = '10001';
     tooltip.style.lineHeight = '1.5';
-    tooltip.style.pointerEvents = 'none';
-    
-    // Append tooltip to container (not button) to avoid overflow clipping
     this.container.appendChild(tooltip);
 
-    // Update tooltip position on hover
-    const updateTooltipPosition = () => {
-      const buttonRect = infoButton.getBoundingClientRect();
+    const updatePosition = () => {
+      const rect = trigger.getBoundingClientRect();
       const tooltipRect = tooltip.getBoundingClientRect();
       const containerRect = this.container.getBoundingClientRect();
-      
-      // Position above the button, centered horizontally
-      let left = buttonRect.left + (buttonRect.width / 2) - (tooltipRect.width / 2);
-      let top = buttonRect.top - tooltipRect.height - 8;
-      
-      // Adjust if tooltip would go off screen
-      if (left < containerRect.left + 10) {
-        left = containerRect.left + 10;
-      }
-      if (left + tooltipRect.width > containerRect.right - 10) {
-        left = containerRect.right - tooltipRect.width - 10;
-      }
-      if (top < containerRect.top + 10) {
-        // If not enough space above, show below
-        top = buttonRect.bottom + 8;
-      }
-      
+      let left = rect.left + rect.width / 2 - tooltipRect.width / 2;
+      let top = rect.top - tooltipRect.height - 8;
+      if (left < containerRect.left + 10) left = containerRect.left + 10;
+      if (left + tooltipRect.width > containerRect.right - 10) left = containerRect.right - tooltipRect.width - 10;
+      if (top < containerRect.top + 10) top = rect.bottom + 8;
       tooltip.style.left = `${left}px`;
       tooltip.style.top = `${top}px`;
     };
 
-    // Show tooltip on hover
-    infoButton.addEventListener('mouseenter', () => {
-      updateTooltipPosition();
-      tooltip.style.opacity = '1';
-    });
-    infoButton.addEventListener('mouseleave', () => {
-      tooltip.style.opacity = '0';
-    });
-
-    return infoButton;
+    trigger.addEventListener('mouseenter', () => { updatePosition(); tooltip.style.opacity = '1'; });
+    trigger.addEventListener('mouseleave', () => { tooltip.style.opacity = '0'; });
   }
 
   /**
@@ -414,38 +362,13 @@ export class SettingsPage {
 
     const buildInfoLabel = (labelText: string, tooltipText: string): HTMLElement => {
       const labelContainer = document.createElement('div');
-      labelContainer.style.display = 'flex';
-      labelContainer.style.alignItems = 'center';
-
+      labelContainer.style.cssText = 'display: flex; align-items: center;';
       const label = document.createElement('span');
       label.textContent = labelText;
-      label.style.color = THEME.colors.textSecondary;
-      label.style.fontSize = THEME.typography.sizeBody;
+      label.style.cssText = `color: ${THEME.colors.textSecondary}; font-size: ${THEME.typography.sizeBody}; cursor: help;`;
       labelContainer.appendChild(label);
-
-      const infoButton = this.createInfoButton(tooltipText);
-      labelContainer.appendChild(infoButton);
-
+      this.attachTooltip(label, tooltipText);
       return labelContainer;
-    };
-
-    const buildInputLabel = (labelText: string, tooltipText: string): { container: HTMLElement; label: HTMLLabelElement } => {
-      const container = document.createElement('div');
-      container.style.display = 'flex';
-      container.style.alignItems = 'center';
-      container.style.marginBottom = '8px';
-
-      const label = document.createElement('label');
-      label.textContent = labelText;
-      label.style.color = THEME.colors.textSecondary;
-      label.style.fontSize = THEME.typography.sizeBody;
-      label.style.fontWeight = THEME.typography.weightBodyStrong;
-      container.appendChild(label);
-
-      const infoButton = this.createInfoButton(tooltipText);
-      container.appendChild(infoButton);
-
-      return { container, label };
     };
 
     const createLabelledRow = (labelText: string, tooltipText: string): HTMLDivElement => {
@@ -889,14 +812,15 @@ export class SettingsPage {
     contentTypesTitle.style.color = THEME.colors.textPrimary;
     contentTypesTitle.style.fontSize = THEME.typography.sizeTitle;
     contentTypesTitle.style.fontWeight = THEME.typography.weightTitle;
-    contentTypesTitleRow.appendChild(contentTypesTitle);
-    contentTypesTitleRow.appendChild(this.createInfoButton(
+    contentTypesTitle.style.cursor = 'help';
+    this.attachTooltip(contentTypesTitle,
       'Select which content types appear in your feed.\n\n' +
       'Markers — Scene marker clips from your Stash library.\n' +
       'Random — Full scenes played from a random position. Tag filters and search do not apply.\n' +
       'Short-Form — Full scenes shorter than a set length (default 120 seconds).\n' +
       'Images — Images and image-video files (GIFs, MP4s, etc.).'
-    ));
+    );
+    contentTypesTitleRow.appendChild(contentTypesTitle);
     contentTypesSection.appendChild(contentTypesTitleRow);
 
     // Markers toggle
@@ -1070,12 +994,14 @@ export class SettingsPage {
     fileTypesSubRow.style.cssText = `margin-top: 6px; padding: 6px 8px 6px 12px; background: ${THEME.colors.backgroundSecondary}; border-radius: ${THEME.radius.card}; display: flex; justify-content: space-between; align-items: center;`;
     const fileTypesLabel = document.createElement('span');
     fileTypesLabel.textContent = 'File types';
-    fileTypesLabel.style.cssText = `color: ${THEME.colors.textSecondary}; font-size: ${THEME.typography.sizeBody};`;
+    fileTypesLabel.style.cssText = `color: ${THEME.colors.textSecondary}; font-size: ${THEME.typography.sizeBody}; cursor: help;`;
+    this.attachTooltip(fileTypesLabel, 'Image and video formats to include.\nComma-separated, e.g. jpg, png, gif, mp4, m4v, webm.\nLeaving blank uses the default set.');
     fileTypesSubRow.appendChild(fileTypesLabel);
     const fileTypesInput = document.createElement('input');
     fileTypesInput.type = 'text';
-    fileTypesInput.value = (this.settings.enabledFileTypes || ['.jpg', '.png', '.gif', '.mp4', '.m4v', '.webm']).join(', ');
-    fileTypesInput.placeholder = '.gif, .webm, .mp4';
+    fileTypesInput.value = (this.settings.enabledFileTypes || ['.jpg', '.png', '.gif', '.mp4', '.m4v', '.webm'])
+      .map(ext => ext.replace(/^\./, '')).join(', ');
+    fileTypesInput.placeholder = 'jpg, png, gif, mp4';
     fileTypesInput.style.cssText = `width: 160px; padding: 4px 8px; border-radius: ${THEME.radius.button}; border: 1px solid ${THEME.colors.border}; background: ${THEME.colors.surface}; color: ${THEME.colors.textPrimary}; font-size: ${THEME.typography.sizeBody}; box-sizing: border-box;`;
     fileTypesInput.addEventListener('input', () => {
       clearTimeout((fileTypesInput as any).saveTimeout);
