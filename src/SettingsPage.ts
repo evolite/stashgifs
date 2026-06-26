@@ -993,8 +993,16 @@ export class SettingsPage {
     randomWrapper.appendChild(randomMarkersRow);
     contentTypesSection.appendChild(randomWrapper);
 
-    hdVideoContainer.style.marginBottom = '24px';
-    layoutContent.appendChild(hdVideoContainer);
+    const behaviorSection = document.createElement('div');
+    behaviorSection.style.cssText = `margin-bottom: 24px; border: 1px solid ${THEME.colors.border}; border-radius: ${THEME.radius.card}; padding: 16px;`;
+    const behaviorTitle = document.createElement('h3');
+    behaviorTitle.textContent = 'Behavior';
+    behaviorTitle.style.cssText = `margin: 0 0 16px 0; color: ${THEME.colors.textPrimary}; font-size: ${THEME.typography.sizeTitle}; font-weight: ${THEME.typography.weightTitle};`;
+    behaviorSection.appendChild(behaviorTitle);
+    hdVideoContainer.style.marginBottom = '16px';
+    behaviorSection.appendChild(hdVideoContainer);
+
+    layoutContent.appendChild(behaviorSection);
     layoutContent.appendChild(contentTypesSection);
     contentTabContent.appendChild(layoutSection);
 
@@ -1423,9 +1431,10 @@ export class SettingsPage {
     (this as any).includeSubtagsToggle = includeSubtagsToggle;
 
     filtersContent.appendChild(filtersSection);
-    layoutContent.appendChild(reelAutoScrollContainer);
-    layoutContent.appendChild(autoHideSearchBarContainer);
-    layoutContent.appendChild(searchMarkersByNameRow);
+    behaviorSection.appendChild(reelAutoScrollContainer);
+    behaviorSection.appendChild(autoHideSearchBarContainer);
+    searchMarkersByNameRow.style.marginBottom = '0';
+    behaviorSection.appendChild(searchMarkersByNameRow);
 
     // Whisparr tab content
     whisparrContent.appendChild(this.buildWhisparrSection(buildInputLabel));
