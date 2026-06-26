@@ -1067,16 +1067,16 @@ export class SettingsPage {
     // ── Images ──────────────────────────────────────────────────────
     // File types sub-row (under Images toggle)
     const fileTypesSubRow = document.createElement('div');
-    fileTypesSubRow.style.cssText = `margin-top: 6px; padding: 6px 8px 6px 12px; background: ${THEME.colors.backgroundSecondary}; border-radius: ${THEME.radius.card};`;
+    fileTypesSubRow.style.cssText = `margin-top: 6px; padding: 6px 8px 6px 12px; background: ${THEME.colors.backgroundSecondary}; border-radius: ${THEME.radius.card}; display: flex; justify-content: space-between; align-items: center;`;
     const fileTypesLabel = document.createElement('span');
     fileTypesLabel.textContent = 'File types';
-    fileTypesLabel.style.cssText = `display: block; color: ${THEME.colors.textSecondary}; font-size: ${THEME.typography.sizeBody}; margin-bottom: 4px;`;
+    fileTypesLabel.style.cssText = `color: ${THEME.colors.textSecondary}; font-size: ${THEME.typography.sizeBody};`;
     fileTypesSubRow.appendChild(fileTypesLabel);
     const fileTypesInput = document.createElement('input');
     fileTypesInput.type = 'text';
     fileTypesInput.value = (this.settings.enabledFileTypes || ['.jpg', '.png', '.gif', '.mp4', '.m4v', '.webm']).join(', ');
     fileTypesInput.placeholder = '.gif, .webm, .mp4';
-    fileTypesInput.style.cssText = `width: 100%; padding: 4px 8px; border-radius: ${THEME.radius.button}; border: 1px solid ${THEME.colors.border}; background: ${THEME.colors.surface}; color: ${THEME.colors.textPrimary}; font-size: ${THEME.typography.sizeBody}; box-sizing: border-box;`;
+    fileTypesInput.style.cssText = `width: 160px; padding: 4px 8px; border-radius: ${THEME.radius.button}; border: 1px solid ${THEME.colors.border}; background: ${THEME.colors.surface}; color: ${THEME.colors.textPrimary}; font-size: ${THEME.typography.sizeBody}; box-sizing: border-box;`;
     fileTypesInput.addEventListener('input', () => {
       clearTimeout((fileTypesInput as any).saveTimeout);
       (fileTypesInput as any).saveTimeout = setTimeout(() => { this.saveSettings(); }, 500);
