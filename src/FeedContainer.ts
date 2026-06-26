@@ -487,6 +487,7 @@ export class FeedContainer {
    * Save settings to localStorage
    */
   private handleSettingsChange(newSettings: Partial<FeedSettings>): void {
+    const previousSettings = { ...this.settings };
     const previousShowVerified = this.settings.showVerifiedCheckmarks;
     const previousShowProductionAge = this.settings.showProductionAge;
     const previousShowStudioChips = this.settings.showStudioChips;
@@ -545,7 +546,7 @@ export class FeedContainer {
       this.discoveryPanel.setWhisparrClient(WhisparrClient.fromSettings(updatedSettings));
     }
 
-    if (this.shouldReloadFeed(newSettings, excludedTagsChanged, orientationFilterChanged)) {
+    if (this.shouldReloadFeed(newSettings, previousSettings, excludedTagsChanged, orientationFilterChanged)) {
       this.scheduleSettingsReload();
     }
   }
@@ -626,21 +627,35 @@ export class FeedContainer {
 
   private shouldReloadFeed(
     newSettings: Partial<FeedSettings>,
+    previousSettings: FeedSettings,
     excludedTagsChanged: boolean,
     orientationFilterChanged: boolean
   ): boolean {
+    const changed = <K extends keyof FeedSettings>(key: K): boolean =>
+      newSettings[key] !== undefined && newSettings[key] !== previousSettings[key];
+
+    const enabledFileTypesChanged = newSettings.enabledFileTypes !== undefined
+      && !this.areStringListsEqual(newSettings.enabledFileTypes, previousSettings.enabledFileTypes ?? []);
+    const galleryIdsChanged = newSettings.galleryIds !== undefined
+      && !this.areStringListsEqual(newSettings.galleryIds, previousSettings.galleryIds ?? []);
+
     return !!(
-      newSettings.hdMode !== undefined ||
-      newSettings.includeImagesInFeed !== undefined ||
-      newSettings.enabledFileTypes ||
-      newSettings.imagesOnly !== undefined ||
-      newSettings.shortFormInHDMode !== undefined ||
-      newSettings.shortFormInNonHDMode !== undefined ||
-      newSettings.shortFormMaxDuration !== undefined ||
-      newSettings.shortFormOnly !== undefined ||
-      newSettings.imagesInGalleryOnly !== undefined ||
-      newSettings.galleryIds !== undefined ||
-      newSettings.contentLimit !== undefined ||
+      changed('hdMode') ||
+      changed('includeMarkersInFeed') ||
+      changed('includeImagesInFeed') ||
+      changed('includeRandomInFeed') ||
+      changed('randomIncludeScenesWithMarkers') ||
+      enabledFileTypesChanged ||
+      changed('imagesOnly') ||
+      changed('shortFormInHDMode') ||
+      changed('shortFormInNonHDMode') ||
+      changed('shortFormMaxDuration') ||
+      changed('shortFormOnly') ||
+      changed('imagesInGalleryOnly') ||
+      galleryIdsChanged ||
+      changed('contentLimit') ||
+      changed('includeSubtags') ||
+      changed('seenHistorySize') ||
       orientationFilterChanged ||
       excludedTagsChanged
     );
@@ -2108,11 +2123,8 @@ export class FeedContainer {
       (signal) => this.api.findGalleries(signal),
       (newSettings) => this.handleSettingsChange(newSettings),
       () => {
-        // On close, remove settings container and clear reference
         this.settingsContainer?.remove();
         this.settingsContainer = undefined;
-        // Refresh feed to apply any settings changes
-        this.refreshFeed().catch((e) => console.error('Failed to refresh feed after settings close', e));
       }
     );
   }
