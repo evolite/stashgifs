@@ -597,7 +597,9 @@ export class VideoPost extends VideoPostBase {
 
       if (!this.viewCounted && this.accumulatedWatchSeconds >= this.getViewThresholdSeconds()) {
         this.viewCounted = true;
-        void this.api!.incrementScenePlayCount(sceneId);
+        if (this.isShortFormContent()) {
+          void this.api!.incrementScenePlayCount(sceneId);
+        }
       }
 
       if (this.accumulatedWatchSeconds - this.lastActivitySubmitTime >= 30) {
