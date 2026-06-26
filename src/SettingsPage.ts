@@ -1287,6 +1287,10 @@ export class SettingsPage {
 
     // ── Filters Section ────────────────────────────────────────────────────
     const filtersSection = document.createElement('div');
+    filtersSection.style.marginBottom = '24px';
+    filtersSection.style.border = `1px solid ${THEME.colors.border}`;
+    filtersSection.style.borderRadius = THEME.radius.card;
+    filtersSection.style.padding = '16px';
 
     // Orientation toggles
     const orientationFilter = this.settings.orientationFilter ?? [];
