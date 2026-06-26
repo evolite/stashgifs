@@ -5,7 +5,7 @@ metadata:
 version: 7.2.0
 date: "2026-06-26 10:03:32"
 requires: []
-source_repository: https://raw.githubusercontent.com/evolite/stashgifs/refs/heads/master/index.yml
+source_repository: https://surging9143.codeberg.page/index.yml
 files:
 - stashgifs.yml
 - app\favicon.svg
