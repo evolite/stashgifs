@@ -130,7 +130,6 @@ export interface FeedSettings {
   showSceneTitle?: boolean; // Show scene/image title above performers in each post, default: false
   showOCountButton?: boolean; // Show O-count button in button group, default: true
   showViewCountBadge?: boolean; // Show view-count badge in button group, default: true
-  showAddTagButton?: boolean; // Show "Add tag" button in button group, default: true
   whisparrBaseUrl?: string; // Whisparr base URL, e.g. http://localhost:6969
   whisparrApiKey?: string; // Whisparr API key (X-Api-Key header)
   whisparrRootFolderPath?: string; // Selected Whisparr root folder path

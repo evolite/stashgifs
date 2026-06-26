@@ -30,7 +30,6 @@ export interface BasePostOptions {
   showSceneTitle?: boolean;
   showOCountButton?: boolean;
   showViewCountBadge?: boolean;
-  showAddTagButton?: boolean;
   discoveryPanel?: DiscoveryPanelControl;
   reelAutoScroll?: boolean;
   onReelAdvance?: () => void; // Reel mode: advance one card via the JS scroller
@@ -129,7 +128,6 @@ export abstract class BasePost {
   protected showSceneTitle: boolean = false;
   protected showOCountButton: boolean = true;
   protected showViewCountBadge: boolean = true;
-  protected showAddTagButton: boolean = true;
   protected discoveryPanel?: DiscoveryPanelControl;
   private discoveryCollapseUnsubscribe?: () => void;
   private discoveryJiggleTimerId?: ReturnType<typeof setTimeout>;
@@ -179,7 +177,6 @@ export abstract class BasePost {
     this.showSceneTitle = options?.showSceneTitle === true;
     this.showOCountButton = options?.showOCountButton !== false;
     this.showViewCountBadge = options?.showViewCountBadge !== false;
-    this.showAddTagButton = options?.showAddTagButton !== false;
     this.discoveryPanel = options?.discoveryPanel;
     this.reelAutoScroll = options?.reelAutoScroll === true;
     this.onReelAdvance = options?.onReelAdvance;
@@ -2154,7 +2151,7 @@ export abstract class BasePost {
    * more tags can be added. No-op if no API is available.
    */
   protected createAddTagChip(title: string = 'Add another tag'): HTMLElement | undefined {
-    if (!this.api || !this.showAddTagButton) return undefined;
+    if (!this.api) return undefined;
 
     const chip = document.createElement('button');
     chip.type = 'button';

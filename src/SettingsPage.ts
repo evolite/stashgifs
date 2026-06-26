@@ -298,13 +298,11 @@ export class SettingsPage {
       return button;
     };
 
-    const layoutTabButton = createTabButton('Layout');
-    const contentTabButton = createTabButton('Options');
-    const themeTabButton = createTabButton('Theme');
+    const layoutTabButton = createTabButton('Feed');
+    const contentTabButton = createTabButton('Appearance');
     const whisparrTabButton = createTabButton('Discovery');
     tabBar.appendChild(layoutTabButton);
     tabBar.appendChild(contentTabButton);
-    tabBar.appendChild(themeTabButton);
     tabBar.appendChild(whisparrTabButton);
     modal.appendChild(tabBar);
 
@@ -317,21 +315,17 @@ export class SettingsPage {
     const layoutContent = document.createElement('div');
     const contentTabContent = document.createElement('div');
     contentTabContent.style.display = 'none';
-    const themeContent = document.createElement('div');
-    themeContent.style.display = 'none';
     const whisparrContent = document.createElement('div');
     whisparrContent.style.display = 'none';
 
-    const setActiveTab = (active: 'layout' | 'content' | 'theme' | 'whisparr') => {
+    const setActiveTab = (active: 'layout' | 'content' | 'whisparr') => {
       layoutContent.style.display     = active === 'layout'   ? 'block' : 'none';
       contentTabContent.style.display = active === 'content'  ? 'block' : 'none';
-      themeContent.style.display      = active === 'theme'    ? 'block' : 'none';
       whisparrContent.style.display   = active === 'whisparr' ? 'block' : 'none';
 
       const tabs = [
         { btn: layoutTabButton,   key: 'layout'   },
         { btn: contentTabButton,  key: 'content'  },
-        { btn: themeTabButton,    key: 'theme'    },
         { btn: whisparrTabButton, key: 'whisparr' },
       ];
       for (const { btn, key } of tabs) {
@@ -344,13 +338,11 @@ export class SettingsPage {
 
     layoutTabButton.addEventListener('click',   () => setActiveTab('layout'));
     contentTabButton.addEventListener('click',  () => setActiveTab('content'));
-    themeTabButton.addEventListener('click',    () => setActiveTab('theme'));
     whisparrTabButton.addEventListener('click', () => setActiveTab('whisparr'));
     setActiveTab('layout');
 
     contentWrapper.appendChild(layoutContent);
     contentWrapper.appendChild(contentTabContent);
-    contentWrapper.appendChild(themeContent);
     contentWrapper.appendChild(whisparrContent);
     modal.appendChild(contentWrapper);
 
@@ -679,7 +671,7 @@ export class SettingsPage {
     (this as any).themeSecondaryInput = secondaryRow.input;
     (this as any).themeAccentInput = accentRow.input;
 
-    themeContent.appendChild(themeSection);
+    contentTabContent.appendChild(themeSection);
 
     // Layout Settings Section
     const layoutSection = document.createElement('div');
@@ -689,7 +681,7 @@ export class SettingsPage {
     layoutSection.style.padding = '16px';
 
     const layoutSectionTitle = document.createElement('h3');
-    layoutSectionTitle.textContent = 'Layout';
+    layoutSectionTitle.textContent = 'Post';
     layoutSectionTitle.style.margin = '0 0 16px 0';
     layoutSectionTitle.style.color = THEME.colors.textPrimary;
     layoutSectionTitle.style.fontSize = THEME.typography.sizeTitle;
@@ -713,7 +705,6 @@ export class SettingsPage {
       () => this.saveSettings()
     );
     reelAutoScrollContainer.appendChild(reelAutoScrollToggleContainer);
-    layoutSection.appendChild(reelAutoScrollContainer);
     (this as any).reelAutoScrollToggle = reelAutoScrollToggle;
 
     const autoHideSearchBarContainer = document.createElement('div');
@@ -727,7 +718,6 @@ export class SettingsPage {
       () => this.saveSettings()
     );
     autoHideSearchBarContainer.appendChild(autoHideSearchBarToggleContainer);
-    layoutSection.appendChild(autoHideSearchBarContainer);
     (this as any).autoHideSearchBarToggle = autoHideSearchBarToggle;
 
     // Marker title search toggle (search-bar feature — lives alongside Auto-Hide Search Bar)
@@ -742,7 +732,6 @@ export class SettingsPage {
     searchMarkersByNameRow.style.marginBottom = '16px';
     searchMarkersByNameRow.appendChild(buildInfoLabel('Marker Title Search', 'Show a Title section in the search bar so you can find markers by title.'));
     searchMarkersByNameRow.appendChild(searchMarkersByNameToggleContainer);
-    layoutSection.appendChild(searchMarkersByNameRow);
 
     const hdVideoContainer = document.createElement('div');
     hdVideoContainer.style.display = 'flex';
@@ -762,7 +751,6 @@ export class SettingsPage {
       () => this.saveSettings()
     );
     hdVideoContainer.appendChild(hdVideoToggleContainer);
-    layoutSection.appendChild(hdVideoContainer);
     (this as any).hdVideoToggle = hdVideoToggle;
 
     const verifiedCheckmarksContainer = document.createElement('div');
@@ -874,12 +862,6 @@ export class SettingsPage {
       this.settings.showViewCountBadge !== false,
       'showViewCountToggle',
     );
-    appendButtonToggle(
-      'Show Add Tag Button',
-      'Show the "Add tag" button in the post button group.',
-      this.settings.showAddTagButton !== false,
-      'showAddTagToggle',
-    );
 
     // ── Content Types Section ──────────────────────────────────────────────
     const contentTypesSection = document.createElement('div');
@@ -932,10 +914,32 @@ export class SettingsPage {
     shortFormRow.style.display = 'flex';
     shortFormRow.style.justifyContent = 'space-between';
     shortFormRow.style.alignItems = 'center';
-    shortFormRow.style.marginBottom = '12px';
     shortFormRow.appendChild(buildInfoLabel('Short-Form', 'Full scenes shorter than a set length (default 120 seconds).'));
     shortFormRow.appendChild(shortFormIncludeToggleContainer);
-    contentTypesSection.appendChild(shortFormRow);
+
+    const shortFormMaxDurationRow = document.createElement('div');
+    shortFormMaxDurationRow.style.cssText = `margin-top: 6px; padding: 6px 8px 6px 12px; background: ${THEME.colors.backgroundSecondary}; border-radius: ${THEME.radius.card}; display: flex; justify-content: space-between; align-items: center;`;
+    const maxDurationLabel = document.createElement('span');
+    maxDurationLabel.textContent = 'Max duration (seconds)';
+    maxDurationLabel.style.cssText = `color: ${THEME.colors.textSecondary}; font-size: ${THEME.typography.sizeBody};`;
+    shortFormMaxDurationRow.appendChild(maxDurationLabel);
+    const maxDurationInput = document.createElement('input');
+    maxDurationInput.type = 'number';
+    maxDurationInput.value = String(this.settings.shortFormMaxDuration || 120);
+    maxDurationInput.min = '1';
+    maxDurationInput.max = '600';
+    maxDurationInput.style.cssText = `width: 72px; padding: 4px 8px; border-radius: ${THEME.radius.button}; border: 1px solid ${THEME.colors.border}; background: ${THEME.colors.surface}; color: ${THEME.colors.textPrimary}; font-size: ${THEME.typography.sizeBody}; text-align: right; box-sizing: border-box;`;
+    maxDurationInput.addEventListener('input', () => {
+      clearTimeout((maxDurationInput as any).saveTimeout);
+      (maxDurationInput as any).saveTimeout = setTimeout(() => { this.saveSettings(); }, 500);
+    });
+    shortFormMaxDurationRow.appendChild(maxDurationInput);
+
+    const shortFormWrapper = document.createElement('div');
+    shortFormWrapper.style.marginBottom = '12px';
+    shortFormWrapper.appendChild(shortFormRow);
+    shortFormWrapper.appendChild(shortFormMaxDurationRow);
+    contentTypesSection.appendChild(shortFormWrapper);
 
     // Images toggle
     const { container: includeImagesToggleContainer, input: includeImagesToggle } = this.createToggleSwitch(
@@ -943,13 +947,9 @@ export class SettingsPage {
       () => this.saveSettings()
     );
     const imagesRow = document.createElement('div');
-    imagesRow.style.display = 'flex';
-    imagesRow.style.justifyContent = 'space-between';
-    imagesRow.style.alignItems = 'center';
-    imagesRow.style.marginBottom = '12px';
-    imagesRow.appendChild(buildInfoLabel('Images', 'Images and image-video files from your Stash library.'));
+    imagesRow.style.cssText = 'display: flex; justify-content: space-between; align-items: center;';
+    imagesRow.appendChild(buildInfoLabel('Images', 'Images and image-video files from your Stash library. Supports: jpg, png, gif, mp4, m4v, webm, etc.'));
     imagesRow.appendChild(includeImagesToggleContainer);
-    contentTypesSection.appendChild(imagesRow);
 
     // Random toggle
     const { container: includeRandomToggleContainer, input: includeRandomToggle } = this.createToggleSwitch(
@@ -985,8 +985,10 @@ export class SettingsPage {
     randomWrapper.appendChild(randomMarkersRow);
     contentTypesSection.appendChild(randomWrapper);
 
+    hdVideoContainer.style.marginBottom = '24px';
+    layoutContent.appendChild(hdVideoContainer);
     layoutContent.appendChild(contentTypesSection);
-    layoutContent.appendChild(layoutSection);
+    contentTabContent.appendChild(layoutSection);
 
     // ── StashDB Discovery Section ──────────────────────────────────────────
     const discoverySection = document.createElement('div');
@@ -1045,139 +1047,30 @@ export class SettingsPage {
 
     whisparrContent.appendChild(discoverySection);
 
-    // ── Short-Form ─────────────────────────────────────────────────
-    const shortFormSection = document.createElement('div');
-    shortFormSection.style.marginBottom = '24px';
-    shortFormSection.style.border = `1px solid ${THEME.colors.border}`;
-    shortFormSection.style.borderRadius = THEME.radius.card;
-    shortFormSection.style.padding = '16px';
-
-    const shortFormSectionTitleContainer = document.createElement('div');
-    shortFormSectionTitleContainer.style.display = 'flex';
-    shortFormSectionTitleContainer.style.alignItems = 'center';
-    shortFormSectionTitleContainer.style.marginBottom = '16px';
-
-    const shortFormSectionTitle = document.createElement('h3');
-    shortFormSectionTitle.textContent = 'Short-Form';
-    shortFormSectionTitle.style.margin = '0';
-    shortFormSectionTitle.style.color = THEME.colors.textPrimary;
-    shortFormSectionTitle.style.fontSize = THEME.typography.sizeTitle;
-    shortFormSectionTitle.style.fontWeight = THEME.typography.weightTitle;
-    shortFormSectionTitleContainer.appendChild(shortFormSectionTitle);
-    shortFormSectionTitleContainer.appendChild(this.createInfoButton(
-      'Full scenes shorter than a set length (default 120 seconds).\n\n' +
-      'Treated as Videos by Stash (not Images).\n' +
-      'Full video playback with controls.'
-    ));
-    shortFormSection.appendChild(shortFormSectionTitleContainer);
-
-    // Max duration input
-    const maxDurationContainer = document.createElement('div');
-    maxDurationContainer.style.marginBottom = '0';
-
-    const maxDurationLabelRow = buildInputLabel(
-      'Max Duration (seconds)',
-      'Videos at or below this length are treated as short-form.'
-    );
-    maxDurationContainer.appendChild(maxDurationLabelRow.container);
-
-    const maxDurationInput = document.createElement('input');
-    maxDurationInput.type = 'number';
-    maxDurationInput.value = String(this.settings.shortFormMaxDuration || 120);
-    maxDurationInput.min = '1';
-    maxDurationInput.max = '600';
-    maxDurationInput.style.width = '100%';
-    maxDurationInput.style.padding = '12px';
-    maxDurationInput.style.borderRadius = THEME.radius.button;
-    maxDurationInput.style.border = `1px solid ${THEME.colors.border}`;
-    maxDurationInput.style.backgroundColor = THEME.colors.surface;
-    maxDurationInput.style.color = THEME.colors.textPrimary;
-    maxDurationInput.style.fontSize = THEME.typography.sizeBody;
-    maxDurationInput.style.boxSizing = 'border-box';
-    maxDurationInput.addEventListener('input', () => {
-      clearTimeout((maxDurationInput as any).saveTimeout);
-      (maxDurationInput as any).saveTimeout = setTimeout(() => {
-        this.saveSettings();
-      }, 500);
-    });
-    maxDurationContainer.appendChild(maxDurationInput);
-    shortFormSection.appendChild(maxDurationContainer);
-
-    contentTabContent.appendChild(shortFormSection);
 
     // ── Images ──────────────────────────────────────────────────────
-    const imageSection = document.createElement('div');
-    imageSection.style.marginBottom = '24px';
-    imageSection.style.border = `1px solid ${THEME.colors.border}`;
-    imageSection.style.borderRadius = THEME.radius.card;
-    imageSection.style.padding = '16px';
-
-    const imageSectionTitleContainer = document.createElement('div');
-    imageSectionTitleContainer.style.display = 'flex';
-    imageSectionTitleContainer.style.alignItems = 'center';
-    imageSectionTitleContainer.style.marginBottom = '16px';
-
-    const imageSectionTitle = document.createElement('h3');
-    imageSectionTitle.textContent = 'Images';
-    imageSectionTitle.style.margin = '0';
-    imageSectionTitle.style.color = THEME.colors.textPrimary;
-    imageSectionTitle.style.fontSize = THEME.typography.sizeTitle;
-    imageSectionTitle.style.fontWeight = THEME.typography.weightTitle;
-    imageSectionTitleContainer.appendChild(imageSectionTitle);
-    imageSectionTitleContainer.appendChild(this.createInfoButton(
-      'Images and image-video files from your Stash library.\n\n' +
-      'Treated as Images by Stash (not Videos).\n' +
-      'Supports a variety of web formats: jpg, png, gif, mp4, m4v, webm, etc.'
-    ));
-    imageSection.appendChild(imageSectionTitleContainer);
-
-    // File types input
-    const fileTypesContainer = document.createElement('div');
-    fileTypesContainer.style.marginBottom = '16px';
-
-    const fileTypesLabelRow = buildInputLabel(
-      'Allowed File Types',
-      'Limit image feed items to these file extensions.'
-    );
-    fileTypesContainer.appendChild(fileTypesLabelRow.container);
-
+    // File types sub-row (under Images toggle)
+    const fileTypesSubRow = document.createElement('div');
+    fileTypesSubRow.style.cssText = `margin-top: 6px; padding: 6px 8px 6px 12px; background: ${THEME.colors.backgroundSecondary}; border-radius: ${THEME.radius.card};`;
+    const fileTypesLabel = document.createElement('span');
+    fileTypesLabel.textContent = 'File types';
+    fileTypesLabel.style.cssText = `display: block; color: ${THEME.colors.textSecondary}; font-size: ${THEME.typography.sizeBody}; margin-bottom: 4px;`;
+    fileTypesSubRow.appendChild(fileTypesLabel);
     const fileTypesInput = document.createElement('input');
     fileTypesInput.type = 'text';
     fileTypesInput.value = (this.settings.enabledFileTypes || ['.jpg', '.png', '.gif', '.mp4', '.m4v', '.webm']).join(', ');
-    fileTypesInput.style.width = '100%';
-    fileTypesInput.style.padding = '12px';
-    fileTypesInput.style.borderRadius = THEME.radius.button;
-    fileTypesInput.style.border = `1px solid ${THEME.colors.border}`;
-    fileTypesInput.style.backgroundColor = THEME.colors.surface;
-    fileTypesInput.style.color = THEME.colors.textPrimary;
-    fileTypesInput.style.fontSize = THEME.typography.sizeBody;
-    fileTypesInput.style.boxSizing = 'border-box';
     fileTypesInput.placeholder = '.gif, .webm, .mp4';
-    fileTypesContainer.appendChild(fileTypesInput);
-
+    fileTypesInput.style.cssText = `width: 100%; padding: 4px 8px; border-radius: ${THEME.radius.button}; border: 1px solid ${THEME.colors.border}; background: ${THEME.colors.surface}; color: ${THEME.colors.textPrimary}; font-size: ${THEME.typography.sizeBody}; box-sizing: border-box;`;
     fileTypesInput.addEventListener('input', () => {
       clearTimeout((fileTypesInput as any).saveTimeout);
-      (fileTypesInput as any).saveTimeout = setTimeout(() => {
-        this.saveSettings();
-      }, 500);
+      (fileTypesInput as any).saveTimeout = setTimeout(() => { this.saveSettings(); }, 500);
     });
+    fileTypesSubRow.appendChild(fileTypesInput);
 
-    imageSection.appendChild(fileTypesContainer);
-
-    // Gallery Images Only toggle
-    const galleryOnlyContainer = document.createElement('div');
-    galleryOnlyContainer.style.display = 'flex';
-    galleryOnlyContainer.style.justifyContent = 'space-between';
-    galleryOnlyContainer.style.alignItems = 'center';
-    galleryOnlyContainer.style.marginBottom = '16px';
-
-    galleryOnlyContainer.appendChild(
-      buildInfoLabel(
-        'Gallery Images Only',
-        'Only show images that belong to a Stash gallery.'
-      )
-    );
-
+    // Gallery only sub-row
+    const galleryOnlySubRow = document.createElement('div');
+    galleryOnlySubRow.style.cssText = `margin-top: 6px; padding: 8px 0 8px 12px; background: ${THEME.colors.backgroundSecondary}; border-radius: ${THEME.radius.card}; display: flex; justify-content: space-between; align-items: center;`;
+    galleryOnlySubRow.appendChild(buildInfoLabel('Gallery only', 'Only show images that belong to a Stash gallery.'));
     const { container: galleryOnlyToggleContainer, input: galleryOnlyToggle } = this.createToggleSwitch(
       this.settings.imagesInGalleryOnly === true,
       (checked) => {
@@ -1185,13 +1078,12 @@ export class SettingsPage {
         this.saveSettings();
       }
     );
-    galleryOnlyContainer.appendChild(galleryOnlyToggleContainer);
-    imageSection.appendChild(galleryOnlyContainer);
+    galleryOnlySubRow.appendChild(galleryOnlyToggleContainer);
 
     // Gallery selector (shown when toggle is on)
     const gallerySelectorWrapper = document.createElement('div');
+    gallerySelectorWrapper.style.cssText = `margin-top: 6px; padding: 6px 8px 6px 12px; background: ${THEME.colors.backgroundSecondary}; border-radius: ${THEME.radius.card};`;
     gallerySelectorWrapper.style.display = this.settings.imagesInGalleryOnly ? 'block' : 'none';
-    gallerySelectorWrapper.style.marginBottom = '0';
 
     // Chip container — styled like a text input
     const galleryChipContainer = document.createElement('div');
@@ -1223,7 +1115,6 @@ export class SettingsPage {
     galleryChipContainer.appendChild(gallerySearchInput);
 
     gallerySelectorWrapper.appendChild(galleryChipContainer);
-    imageSection.appendChild(gallerySelectorWrapper);
 
     // Dropdown — fixed positioned, appended to modal overlay to escape overflow clipping
     const galleryDropdown = document.createElement('div');
@@ -1373,11 +1264,18 @@ export class SettingsPage {
       });
     }
 
-    // Store references for saveSettings
+    // Assemble images wrapper and insert before random in Content Types
+    const imagesWrapper = document.createElement('div');
+    imagesWrapper.style.marginBottom = '12px';
+    imagesWrapper.appendChild(imagesRow);
+    imagesWrapper.appendChild(fileTypesSubRow);
+    imagesWrapper.appendChild(galleryOnlySubRow);
+    imagesWrapper.appendChild(gallerySelectorWrapper);
+    contentTypesSection.insertBefore(imagesWrapper, randomWrapper);
+
+    (this as any).fileTypesInput = fileTypesInput;
     (this as any).galleryOnlyToggle = galleryOnlyToggle;
     (this as any).gallerySelectedIds = selectedGalleryIds;
-
-    contentTabContent.appendChild(imageSection);
 
     // ── Filters Section ────────────────────────────────────────────────────
     const filtersSection = document.createElement('div');
@@ -1530,7 +1428,10 @@ export class SettingsPage {
     (this as any).excludedTagsInput = excludedTagsInput;
     (this as any).includeSubtagsToggle = includeSubtagsToggle;
 
-    contentTabContent.appendChild(filtersSection);
+    layoutContent.appendChild(filtersSection);
+    layoutContent.appendChild(reelAutoScrollContainer);
+    layoutContent.appendChild(autoHideSearchBarContainer);
+    layoutContent.appendChild(searchMarkersByNameRow);
 
     // Whisparr tab content
     whisparrContent.appendChild(this.buildWhisparrSection(buildInputLabel));
@@ -1606,7 +1507,6 @@ export class SettingsPage {
     layoutContent.appendChild(versionFooter);
 
     // Store references to inputs for saveSettings method
-    (this as any).fileTypesInput = fileTypesInput;
     (this as any).maxDurationInput = maxDurationInput;
     (this as any).includeMarkersToggle = includeMarkersToggle;
     (this as any).includeRandomToggle = includeRandomToggle;
@@ -1886,7 +1786,7 @@ export class SettingsPage {
       'portraitToggle', 'landscapeToggle',
       'themeBackgroundInput', 'themePrimaryInput', 'themeSecondaryInput', 'themeAccentInput',
       'showVerifiedCheckmarksToggle', 'showProductionAgeToggle', 'showStudioChipsToggle', 'sceneTitleToggle',
-      'showOCountToggle', 'showViewCountToggle', 'showAddTagToggle',
+      'showOCountToggle', 'showViewCountToggle',
       'discoveryPanelToggle', 'excludedTagsInput',
       'includeSubtagsToggle', 'seenHistorySizeInput', 'contentLimitInput',
     ];
@@ -1950,7 +1850,6 @@ export class SettingsPage {
       showSceneTitle: inputs.sceneTitleToggle.checked,
       showOCountButton: inputs.showOCountToggle.checked,
       showViewCountBadge: inputs.showViewCountToggle.checked,
-      showAddTagButton: inputs.showAddTagToggle.checked,
       enableDiscoveryPanel: inputs.discoveryPanelToggle.checked,
       discoveryPanelSize: Number(((this as any).discoverySizeSlider as HTMLInputElement)?.value ?? 260),
       discoverySceneOrder: ((this as any).discoveryOrderSelect as HTMLSelectElement)?.value as 'latest' | 'random' | 'trending' ?? 'latest',
