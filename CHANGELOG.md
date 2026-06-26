@@ -5,6 +5,28 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [7.2.0] - 2026-06-26
+
+### Features
+
+- Redesign settings into 3 tabs (Feed / Appearance / Discovery)
+- Move Filters to its own settings tab
+- Group HD Video and behavior toggles in a Behavior box on Feed tab
+
+### Performance
+
+- Skip feed reload when settings haven't actually changed
+
+### Refactoring
+
+- Remove dead settings and consolidate short-form toggle
+- Remove redundant Filters box and title inside Filters tab
+- Restore Filters box without redundant title
+- Inline label+input layout for Excluded Tags, Recency Bias, Content Limit
+- Inline label+input layout for File types sub-row
+- Inline label+input layout for all Whisparr settings
+- Tooltips on label hover instead of (i) buttons; file types without dots
+
 ## [7.1.7] - 2026-06-21
 
 ### Bug Fixes
