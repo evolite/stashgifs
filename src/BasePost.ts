@@ -618,6 +618,17 @@ export abstract class BasePost {
     this.refreshHeader();
   }
 
+  public setShowOCountButton(show: boolean): void {
+    this.showOCountButton = show;
+    if (this.oCountButton) this.oCountButton.style.display = show ? '' : 'none';
+  }
+
+  public setShowViewCountBadge(show: boolean): void {
+    this.showViewCountBadge = show;
+    const badge = this.container.querySelector<HTMLElement>('.icon-btn--views');
+    if (badge) badge.style.display = show ? '' : 'none';
+  }
+
   protected buildTitleElement(title: string): HTMLElement {
     const color = THEME.colors.textPrimary;
 
@@ -3282,6 +3293,16 @@ export abstract class BasePost {
       this.autoAdvanceFired = true;
       this.scrollToNextPost();
     });
+  }
+
+  public setReelAutoScroll(enabled: boolean): void {
+    this.reelAutoScroll = enabled;
+    this.detachReelAutoAdvance();
+    if (enabled) this.reattachAutoAdvance();
+  }
+
+  protected reattachAutoAdvance(): void {
+    this.attachReelAutoAdvance();
   }
 
   protected detachReelAutoAdvance(): void {

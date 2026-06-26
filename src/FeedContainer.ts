@@ -520,6 +520,13 @@ export class FeedContainer {
       this.showHeader();
     }
 
+    if (newSettings.cardMaxWidth !== undefined && this.headerBar) {
+      const w = updatedSettings.cardMaxWidth;
+      this.headerBar.style.maxWidth = `${w + 24}px`;
+      const headerInner = this.headerBar.querySelector<HTMLElement>('.feed-header-inner');
+      if (headerInner) headerInner.style.maxWidth = `${w}px`;
+    }
+
     if (newSettings.enableDiscoveryPanel !== undefined) {
       if (updatedSettings.enableDiscoveryPanel === true) {
         this.mountDiscoveryPanel();
@@ -618,6 +625,21 @@ export class FeedContainer {
       const show = updatedSettings.showSceneTitle === true;
       for (const post of this.posts.values()) {
         post.setShowSceneTitle?.(show);
+      }
+    }
+    if (newSettings.reelAutoScroll !== undefined) {
+      for (const post of this.posts.values()) {
+        post.setReelAutoScroll(newSettings.reelAutoScroll);
+      }
+    }
+    if (newSettings.showOCountButton !== undefined) {
+      for (const post of this.posts.values()) {
+        post.setShowOCountButton(newSettings.showOCountButton);
+      }
+    }
+    if (newSettings.showViewCountBadge !== undefined) {
+      for (const post of this.posts.values()) {
+        post.setShowViewCountBadge(newSettings.showViewCountBadge);
       }
     }
   }

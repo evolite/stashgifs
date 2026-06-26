@@ -46,6 +46,10 @@ export class ImagePost extends BasePost {
     this.attachReelAutoAdvanceTimer();
   }
 
+  protected override reattachAutoAdvance(): void {
+    this.attachReelAutoAdvanceTimer();
+  }
+
   /**
    * Render the complete image post structure
    */
