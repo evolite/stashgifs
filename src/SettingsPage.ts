@@ -1332,20 +1332,12 @@ export class SettingsPage {
 
     // Excluded Tags
     const excludedTagsContainer = document.createElement('div');
-    excludedTagsContainer.style.marginBottom = '16px';
-    const excludedTagsLabelRow = buildInputLabel('Excluded Tags', 'Hide any content that contains one of these tags.');
-    excludedTagsContainer.appendChild(excludedTagsLabelRow.container);
+    excludedTagsContainer.style.cssText = 'display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;';
+    excludedTagsContainer.appendChild(buildInfoLabel('Excluded Tags', 'Hide any content that contains one of these tags.'));
     const excludedTagsInput = document.createElement('input');
     excludedTagsInput.type = 'text';
     excludedTagsInput.value = (this.settings.excludedTagNames || []).join(', ');
-    excludedTagsInput.style.width = '100%';
-    excludedTagsInput.style.padding = '12px';
-    excludedTagsInput.style.borderRadius = THEME.radius.button;
-    excludedTagsInput.style.border = `1px solid ${THEME.colors.border}`;
-    excludedTagsInput.style.backgroundColor = THEME.colors.surface;
-    excludedTagsInput.style.color = THEME.colors.textPrimary;
-    excludedTagsInput.style.fontSize = THEME.typography.sizeBody;
-    excludedTagsInput.style.boxSizing = 'border-box';
+    excludedTagsInput.style.cssText = `width: 160px; padding: 4px 8px; border-radius: ${THEME.radius.button}; border: 1px solid ${THEME.colors.border}; background: ${THEME.colors.surface}; color: ${THEME.colors.textPrimary}; font-size: ${THEME.typography.sizeBody}; box-sizing: border-box;`;
     excludedTagsInput.placeholder = 'VR, POV';
     excludedTagsContainer.appendChild(excludedTagsInput);
     excludedTagsInput.addEventListener('input', () => {
@@ -1369,25 +1361,17 @@ export class SettingsPage {
 
     // Recency Bias
     const seenHistoryContainer = document.createElement('div');
-    seenHistoryContainer.style.marginBottom = '16px';
-    const seenHistoryLabelRow = buildInputLabel(
+    seenHistoryContainer.style.cssText = 'display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;';
+    seenHistoryContainer.appendChild(buildInfoLabel(
       'Recency Bias',
       'Tracks up to this many recently seen items and hides them from the feed.\nSet to 0 to disable. Default: 500.'
-    );
-    seenHistoryContainer.appendChild(seenHistoryLabelRow.container);
+    ));
     const seenHistorySizeInput = document.createElement('input');
     seenHistorySizeInput.type = 'number';
     seenHistorySizeInput.value = String(this.settings.seenHistorySize ?? 500);
     seenHistorySizeInput.min = '0';
     seenHistorySizeInput.max = '2000';
-    seenHistorySizeInput.style.width = '100%';
-    seenHistorySizeInput.style.padding = '12px';
-    seenHistorySizeInput.style.borderRadius = THEME.radius.button;
-    seenHistorySizeInput.style.border = `1px solid ${THEME.colors.border}`;
-    seenHistorySizeInput.style.backgroundColor = THEME.colors.surface;
-    seenHistorySizeInput.style.color = THEME.colors.textPrimary;
-    seenHistorySizeInput.style.fontSize = THEME.typography.sizeBody;
-    seenHistorySizeInput.style.boxSizing = 'border-box';
+    seenHistorySizeInput.style.cssText = `width: 80px; padding: 4px 8px; border-radius: ${THEME.radius.button}; border: 1px solid ${THEME.colors.border}; background: ${THEME.colors.surface}; color: ${THEME.colors.textPrimary}; font-size: ${THEME.typography.sizeBody}; text-align: right; box-sizing: border-box;`;
     seenHistorySizeInput.addEventListener('input', () => {
       clearTimeout((seenHistorySizeInput as any).saveTimeout);
       (seenHistorySizeInput as any).saveTimeout = setTimeout(() => { this.saveSettings(); }, 500);
@@ -1398,25 +1382,17 @@ export class SettingsPage {
 
     // Content Limit
     const contentLimitContainer = document.createElement('div');
-    contentLimitContainer.style.marginBottom = '0';
-    const contentLimitLabelRow = buildInputLabel(
+    contentLimitContainer.style.cssText = 'display: flex; justify-content: space-between; align-items: center;';
+    contentLimitContainer.appendChild(buildInfoLabel(
       'Content Limit',
       'Maximum items per content type to paginate through.\nLower values improve performance for large libraries. Default: 5000.'
-    );
-    contentLimitContainer.appendChild(contentLimitLabelRow.container);
+    ));
     const contentLimitInput = document.createElement('input');
     contentLimitInput.type = 'number';
     contentLimitInput.value = String(this.settings.contentLimit ?? 5000);
     contentLimitInput.min = '100';
     contentLimitInput.max = '50000';
-    contentLimitInput.style.width = '100%';
-    contentLimitInput.style.padding = '12px';
-    contentLimitInput.style.borderRadius = THEME.radius.button;
-    contentLimitInput.style.border = `1px solid ${THEME.colors.border}`;
-    contentLimitInput.style.backgroundColor = THEME.colors.surface;
-    contentLimitInput.style.color = THEME.colors.textPrimary;
-    contentLimitInput.style.fontSize = THEME.typography.sizeBody;
-    contentLimitInput.style.boxSizing = 'border-box';
+    contentLimitInput.style.cssText = `width: 80px; padding: 4px 8px; border-radius: ${THEME.radius.button}; border: 1px solid ${THEME.colors.border}; background: ${THEME.colors.surface}; color: ${THEME.colors.textPrimary}; font-size: ${THEME.typography.sizeBody}; text-align: right; box-sizing: border-box;`;
     contentLimitInput.addEventListener('input', () => {
       clearTimeout((contentLimitInput as any).saveTimeout);
       (contentLimitInput as any).saveTimeout = setTimeout(() => { this.saveSettings(); }, 500);
