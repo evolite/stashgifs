@@ -925,7 +925,7 @@ export class SettingsPage {
 
     // Short-Form toggle
     const { container: shortFormIncludeToggleContainer, input: shortFormIncludeToggle } = this.createToggleSwitch(
-      this.settings.shortFormInHDMode !== false || this.settings.shortFormInNonHDMode !== false,
+      this.settings.includeShortForm !== false,
       () => this.saveSettings()
     );
     const shortFormRow = document.createElement('div');
@@ -1935,8 +1935,7 @@ export class SettingsPage {
       includeImagesInFeed: inputs.includeImagesToggle.checked,
       searchMarkersByName: inputs.searchMarkersByNameToggle.checked,
       enabledFileTypes: extensions.length > 0 ? extensions : ['.jpg', '.png', '.gif', '.mp4', '.m4v', '.webm'],
-      shortFormInHDMode: inputs.shortFormIncludeToggle.checked,
-      shortFormInNonHDMode: inputs.shortFormIncludeToggle.checked,
+      includeShortForm: inputs.shortFormIncludeToggle.checked,
       shortFormMaxDuration: validMaxDuration,
       reelAutoScroll: inputs.reelAutoScrollToggle.checked,
       autoHideSearchBar: inputs.autoHideSearchBarToggle.checked,

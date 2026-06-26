@@ -33,11 +33,8 @@ const DEFAULT_SETTINGS: FeedSettings = {
   includeImagesInFeed: true, // Whether to include images in feed
   searchMarkersByName: false, // Show a Markers section in search suggestions
   imagesOnly: false,
-  includeShortFormContent: false, // Enable/disable short-form content
-  shortFormInHDMode: true, // Include short-form in HD mode
-  shortFormInNonHDMode: true, // Include short-form in non-HD mode
+  includeShortForm: true, // Include short-form content
   shortFormMaxDuration: 120, // Maximum duration in seconds for short-form content
-  shortFormOnly: false, // When true, only load short-form content and skip regular markers
   autoHideSearchBar: true,
   themeBackground: THEME_DEFAULTS.backgroundPrimary,
   themePrimary: THEME_DEFAULTS.surface,
@@ -647,10 +644,8 @@ export class FeedContainer {
       changed('randomIncludeScenesWithMarkers') ||
       enabledFileTypesChanged ||
       changed('imagesOnly') ||
-      changed('shortFormInHDMode') ||
-      changed('shortFormInNonHDMode') ||
+      changed('includeShortForm') ||
       changed('shortFormMaxDuration') ||
-      changed('shortFormOnly') ||
       changed('imagesInGalleryOnly') ||
       galleryIdsChanged ||
       changed('contentLimit') ||
@@ -4395,11 +4390,7 @@ export class FeedContainer {
    * Check if short-form content should be loaded based on settings and HD mode
    */
   private shouldLoadShortFormContent(): boolean {
-    if (this.useHDMode) {
-      return this.settings.shortFormInHDMode === true;
-    } else {
-      return this.settings.shortFormInNonHDMode !== false;
-    }
+    return this.settings.includeShortForm !== false;
   }
 
   /**
