@@ -1413,7 +1413,7 @@ export class SettingsPage {
     behaviorSection.appendChild(searchMarkersByNameRow);
 
     // Whisparr tab content
-    whisparrContent.appendChild(this.buildWhisparrSection(buildInputLabel));
+    whisparrContent.appendChild(this.buildWhisparrSection(buildInfoLabel));
 
     // Version footer
     const versionFooter = document.createElement('div');
@@ -1549,7 +1549,7 @@ export class SettingsPage {
   }
 
   private buildWhisparrSection(
-    buildInputLabel: (labelText: string, tooltipText: string) => { container: HTMLElement; label: HTMLLabelElement }
+    buildInfoLabel: (labelText: string, tooltipText: string) => HTMLElement
   ): HTMLElement {
     const section = document.createElement('div');
     section.style.marginTop = '24px';
@@ -1575,16 +1575,15 @@ export class SettingsPage {
 
     // URL
     const urlContainer = document.createElement('div');
-    urlContainer.style.marginBottom = '12px';
-    urlContainer.appendChild(buildInputLabel(
-      'Whisparr URL',
-      'Base URL of your Whisparr instance, e.g. http://localhost:6969'
-    ).container);
+    urlContainer.style.cssText = 'display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;';
+    urlContainer.appendChild(buildInfoLabel('Whisparr URL', 'Base URL of your Whisparr instance, e.g. http://localhost:6969'));
     const urlInput = document.createElement('input');
     urlInput.type = 'url';
     urlInput.placeholder = 'http://localhost:6969';
     urlInput.value = this.settings.whisparrBaseUrl ?? '';
     this.styleTextInput(urlInput);
+    urlInput.style.width = '200px';
+    urlInput.style.padding = '4px 8px';
     urlInput.addEventListener('input', () => {
       clearTimeout((urlInput as any).saveTimeout);
       (urlInput as any).saveTimeout = setTimeout(() => {
@@ -1596,16 +1595,15 @@ export class SettingsPage {
 
     // API Key
     const apiKeyContainer = document.createElement('div');
-    apiKeyContainer.style.marginBottom = '12px';
-    apiKeyContainer.appendChild(buildInputLabel(
-      'API Key',
-      'Whisparr API key. Found in Whisparr → Settings → General.'
-    ).container);
+    apiKeyContainer.style.cssText = 'display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;';
+    apiKeyContainer.appendChild(buildInfoLabel('API Key', 'Whisparr API key. Found in Whisparr → Settings → General.'));
     const apiKeyInput = document.createElement('input');
     apiKeyInput.type = 'password';
     apiKeyInput.autocomplete = 'off';
     apiKeyInput.value = this.settings.whisparrApiKey ?? '';
     this.styleTextInput(apiKeyInput);
+    apiKeyInput.style.width = '200px';
+    apiKeyInput.style.padding = '4px 8px';
     apiKeyInput.addEventListener('input', () => {
       clearTimeout((apiKeyInput as any).saveTimeout);
       (apiKeyInput as any).saveTimeout = setTimeout(() => {
@@ -1644,13 +1642,11 @@ export class SettingsPage {
 
     // Root folder select
     const rootFolderContainer = document.createElement('div');
-    rootFolderContainer.style.marginBottom = '12px';
-    rootFolderContainer.appendChild(buildInputLabel(
-      'Root Folder',
-      'Where Whisparr should download scenes added from StashGifs.'
-    ).container);
+    rootFolderContainer.style.cssText = 'display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;';
+    rootFolderContainer.appendChild(buildInfoLabel('Root Folder', 'Where Whisparr should download scenes added from StashGifs.'));
     const rootFolderSelect = document.createElement('select');
     this.styleSelect(rootFolderSelect);
+    rootFolderSelect.style.width = '200px';
     rootFolderSelect.disabled = true;
     const placeholderRoot = document.createElement('option');
     placeholderRoot.value = '';
@@ -1663,13 +1659,10 @@ export class SettingsPage {
 
     // Quality profile select
     const qualityContainer = document.createElement('div');
-    qualityContainer.style.marginBottom = '0';
-    qualityContainer.appendChild(buildInputLabel(
-      'Quality Profile',
-      'Whisparr quality profile to use for scenes added from StashGifs.'
-    ).container);
+    qualityContainer.appendChild(buildInfoLabel('Quality Profile', 'Whisparr quality profile to use for scenes added from StashGifs.'));
     const qualitySelect = document.createElement('select');
     this.styleSelect(qualitySelect);
+    qualitySelect.style.width = '200px';
     qualitySelect.disabled = true;
     const placeholderQuality = document.createElement('option');
     placeholderQuality.value = '';
