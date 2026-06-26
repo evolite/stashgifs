@@ -1287,24 +1287,6 @@ export class SettingsPage {
 
     // ── Filters Section ────────────────────────────────────────────────────
     const filtersSection = document.createElement('div');
-    filtersSection.style.marginBottom = '24px';
-    filtersSection.style.border = `1px solid ${THEME.colors.border}`;
-    filtersSection.style.borderRadius = THEME.radius.card;
-    filtersSection.style.padding = '16px';
-
-    const filtersTitleRow = document.createElement('div');
-    filtersTitleRow.style.display = 'flex';
-    filtersTitleRow.style.alignItems = 'center';
-    filtersTitleRow.style.marginBottom = '16px';
-
-    const filtersSectionTitle = document.createElement('h3');
-    filtersSectionTitle.textContent = 'Filters';
-    filtersSectionTitle.style.margin = '0';
-    filtersSectionTitle.style.color = THEME.colors.textPrimary;
-    filtersSectionTitle.style.fontSize = THEME.typography.sizeTitle;
-    filtersSectionTitle.style.fontWeight = THEME.typography.weightTitle;
-    filtersTitleRow.appendChild(filtersSectionTitle);
-    filtersSection.appendChild(filtersTitleRow);
 
     // Orientation toggles
     const orientationFilter = this.settings.orientationFilter ?? [];
