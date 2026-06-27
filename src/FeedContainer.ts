@@ -3300,6 +3300,7 @@ export class FeedContainer {
       showProductionAge: this.settings.showProductionAge === true,
       showStudioChips: this.settings.showStudioChips !== false,
       showSceneTitle: this.settings.showSceneTitle === true,
+      showMarkerTitle: this.settings.searchMarkersByName === true,
       showOCountButton: this.settings.showOCountButton !== false,
       showViewCountBadge: this.settings.showViewCountBadge !== false,
       ratingSystemConfig: this.ratingSystemConfig,

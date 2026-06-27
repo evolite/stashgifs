@@ -661,7 +661,7 @@ export class SettingsPage {
     searchMarkersByNameRow.style.justifyContent = 'space-between';
     searchMarkersByNameRow.style.alignItems = 'center';
     searchMarkersByNameRow.style.marginBottom = '16px';
-    searchMarkersByNameRow.appendChild(buildInfoLabel('Marker Title Search', 'Show a Title section in the search bar so you can find markers by title.'));
+    searchMarkersByNameRow.appendChild(buildInfoLabel('Marker Title Search', 'Show a Title section in the search bar so you can find markers by title. When enabled, marker posts also display the marker\'s title instead of its tags.'));
     searchMarkersByNameRow.appendChild(searchMarkersByNameToggleContainer);
 
     const hdVideoContainer = document.createElement('div');

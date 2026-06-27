@@ -18,6 +18,7 @@ const OCOUNT_MIN_WIDTH_PX = 14;
 
 interface VideoPostOptions extends BaseVideoPostOptions {
   useShuffleMode?: boolean;
+  showMarkerTitle?: boolean;
 }
 
 export class VideoPost extends VideoPostBase {
@@ -51,6 +52,7 @@ export class VideoPost extends VideoPostBase {
   private readonly onCancelRequests?: () => void; // Callback to cancel pending requests
 
   private readonly useShuffleMode: boolean = false;
+  private readonly showMarkerTitle: boolean = false;
 
   constructor(
     container: HTMLElement, 
@@ -60,6 +62,7 @@ export class VideoPost extends VideoPostBase {
     super(container, options);
     this.data = data;
     this.useShuffleMode = options.useShuffleMode || false;
+    this.showMarkerTitle = options.showMarkerTitle === true;
     this.hdModeFromSettings = options.hdModeFromSettings === true;
     this.onCancelRequests = options.onCancelRequests;
     this.onMuteToggle = options.onMuteToggle;
@@ -247,6 +250,20 @@ export class VideoPost extends VideoPostBase {
    * Add tag chips to the chips container
    */
   private addTagChips(chips: HTMLElement): void {
+    if (this.showMarkerTitle && !this.isShortFormContent() && this.data.marker.title) {
+      const title = document.createElement('span');
+      title.textContent = this.data.marker.title;
+      title.style.fontSize = '14px';
+      title.style.lineHeight = '1.4';
+      title.style.color = '#ffffff';
+      title.style.textShadow = '0 2px 8px rgba(0, 0, 0, 0.65)';
+      title.style.minHeight = '44px';
+      title.style.display = 'inline-flex';
+      title.style.alignItems = 'center';
+      chips.appendChild(title);
+      return;
+    }
+
     const hasPerformers = !!(this.data.marker.scene.performers && this.data.marker.scene.performers.length > 0);
     const displayedTagIds = new Set<string>();
     let isFirstTag = true;
