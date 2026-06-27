@@ -14,6 +14,7 @@ import { ImagePlayer } from './ImagePlayer.js';
 import { ReelPlaybackController } from './ReelPlaybackController.js';
 import { ReelScroller } from './ReelScroller.js';
 import { FavoritesManager } from './FavoritesManager.js';
+import { BookmarkManager } from './BookmarkManager.js';
 import { SettingsPage } from './SettingsPage.js';
 import { debounce, normalizeMediaUrl, detectDeviceCapabilities, DeviceCapabilities, isStandaloneNavigator, isMobileDevice, detectVideoFromVisualFiles, isMp4File, getImageUrlForDisplay, THEME, THEME_DEFAULTS, normalizeHexColor, toRgba, buildFullUrl, applyThemeColors } from './utils.js';
 import { GQLImage } from './graphql/types.js';
@@ -91,6 +92,7 @@ export class FeedContainer {
   private readonly settingsManager: PluginSettingsManager;
   private playback: ReelPlaybackController;
   private favoritesManager: FavoritesManager;
+  private bookmarkManager: BookmarkManager;
   private discoveryPanel?: DiscoveryPanel;
   private discoveryManager?: DiscoveryManager;
   private posts: Map<string, PostType>;
@@ -179,6 +181,7 @@ export class FeedContainer {
     this.scrollContainer = null!; // Will be set in initializeContainers
     this.playback = null!; // Will be set in initializeManagers
     this.favoritesManager = null!; // Will be set in initializeManagers
+    this.bookmarkManager = null!; // Will be set in initializeManagers
     this.posts = new Map();
     this.postOrder = [];
 
@@ -642,6 +645,13 @@ export class FeedContainer {
         post.setShowViewCountBadge(newSettings.showViewCountBadge);
       }
     }
+    if (newSettings.showBookmarkButton !== undefined) {
+      for (const post of this.posts.values()) {
+        if (post instanceof VideoPost) {
+          post.setShowBookmarkButton(newSettings.showBookmarkButton);
+        }
+      }
+    }
   }
 
   private shouldReloadFeed(
@@ -999,8 +1009,9 @@ export class FeedContainer {
     this.applyGlobalMuteState();
     this.updateAllMuteButtons();
 
-    // Initialize favorites manager
+    // Initialize favorites and bookmark managers
     this.favoritesManager = new FavoritesManager(this.api);
+    this.bookmarkManager = new BookmarkManager(this.api);
 
     // Initialize discovery panel (opt-out via setting; hidden on mobile)
     if (this.settings.enableDiscoveryPanel === true && !isMobileDevice()) {
@@ -3301,6 +3312,7 @@ export class FeedContainer {
       showStudioChips: this.settings.showStudioChips !== false,
       showSceneTitle: this.settings.showSceneTitle === true,
       showMarkerTitle: this.settings.searchMarkersByName === true,
+      showBookmarkButton: this.settings.showBookmarkButton === true,
       showOCountButton: this.settings.showOCountButton !== false,
       showViewCountBadge: this.settings.showViewCountBadge !== false,
       ratingSystemConfig: this.ratingSystemConfig,
@@ -4982,6 +4994,8 @@ export class FeedContainer {
         onCancelRequests: () => this.cancelAllPendingRequests(),
         onMuteToggle: (isMuted: boolean) => this.setGlobalMuteState(isMuted),
         getGlobalMuteState: () => this.getGlobalMuteState(),
+        bookmarkManager: this.bookmarkManager,
+        onMarkerTitleChipClick: (title: string) => this.applyMarkerTitleSearch(title),
       }
     );
     

@@ -782,6 +782,12 @@ export class SettingsPage {
       (this as any)[refKey] = input;
     };
     appendButtonToggle(
+      'Show Bookmark Button',
+      'Show a bookmark button to add the scene to your "Stashgifs bookmark" tag in Stash.',
+      this.settings.showBookmarkButton === true,
+      'showBookmarkToggle',
+    );
+    appendButtonToggle(
       'Show O-Count Button',
       'Show the O-count button in the post button group.',
       this.settings.showOCountButton !== false,
@@ -1684,7 +1690,7 @@ export class SettingsPage {
       'portraitToggle', 'landscapeToggle',
       'themeBackgroundInput', 'themePrimaryInput', 'themeSecondaryInput', 'themeAccentInput',
       'showVerifiedCheckmarksToggle', 'showProductionAgeToggle', 'showStudioChipsToggle', 'sceneTitleToggle',
-      'showOCountToggle', 'showViewCountToggle',
+      'showBookmarkToggle', 'showOCountToggle', 'showViewCountToggle',
       'discoveryPanelToggle', 'excludedTagsInput',
       'includeSubtagsToggle', 'seenHistorySizeInput', 'contentLimitInput',
     ];
@@ -1746,6 +1752,7 @@ export class SettingsPage {
       showProductionAge: inputs.showProductionAgeToggle.checked,
       showStudioChips: inputs.showStudioChipsToggle.checked,
       showSceneTitle: inputs.sceneTitleToggle.checked,
+      showBookmarkButton: inputs.showBookmarkToggle.checked,
       showOCountButton: inputs.showOCountToggle.checked,
       showViewCountBadge: inputs.showViewCountToggle.checked,
       enableDiscoveryPanel: inputs.discoveryPanelToggle.checked,

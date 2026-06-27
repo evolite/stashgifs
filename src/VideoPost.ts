@@ -7,8 +7,9 @@ import { VideoPostData, Scene, IVideoPlayer } from './types.js';
 import { StashAPI } from './StashAPI.js';
 import { calculateAspectRatio, getAspectRatioClass, normalizeMediaUrl, showToast, toAbsoluteUrl, THEME, extractValidPerformerIds } from './utils.js';
 import { getStashBaseUrl } from './utils/baseUrl.js';
-import { MARKER_SVG } from './icons.js';
+import { MARKER_SVG, BOOKMARK_SVG_OUTLINE, BOOKMARK_SVG_FILLED } from './icons.js';
 import { VideoPostBase, BaseVideoPostOptions } from './VideoPostBase.js';
+import { BookmarkManager } from './BookmarkManager.js';
 
 // Constants for magic numbers and strings
 const FAVORITE_TAG_NAME = 'StashGifs Favorite';
@@ -19,6 +20,9 @@ const OCOUNT_MIN_WIDTH_PX = 14;
 interface VideoPostOptions extends BaseVideoPostOptions {
   useShuffleMode?: boolean;
   showMarkerTitle?: boolean;
+  bookmarkManager?: BookmarkManager;
+  showBookmarkButton?: boolean;
+  onMarkerTitleChipClick?: (title: string) => void;
 }
 
 export class VideoPost extends VideoPostBase {
@@ -53,6 +57,12 @@ export class VideoPost extends VideoPostBase {
 
   private readonly useShuffleMode: boolean = false;
   private readonly showMarkerTitle: boolean = false;
+  private readonly bookmarkManager?: BookmarkManager;
+  private isBookmarked: boolean = false;
+  private bookmarkButton?: HTMLElement;
+  private isTogglingBookmark: boolean = false;
+  private showBookmarkButton: boolean = false;
+  private readonly onMarkerTitleChipClick?: (title: string) => void;
 
   constructor(
     container: HTMLElement, 
@@ -63,6 +73,9 @@ export class VideoPost extends VideoPostBase {
     this.data = data;
     this.useShuffleMode = options.useShuffleMode || false;
     this.showMarkerTitle = options.showMarkerTitle === true;
+    this.bookmarkManager = options.bookmarkManager;
+    this.showBookmarkButton = options.showBookmarkButton === true;
+    this.onMarkerTitleChipClick = options.onMarkerTitleChipClick;
     this.hdModeFromSettings = options.hdModeFromSettings === true;
     this.onCancelRequests = options.onCancelRequests;
     this.onMuteToggle = options.onMuteToggle;
@@ -260,6 +273,10 @@ export class VideoPost extends VideoPostBase {
       title.style.minHeight = '44px';
       title.style.display = 'inline-flex';
       title.style.alignItems = 'center';
+      if (this.onMarkerTitleChipClick) {
+        title.style.cursor = 'pointer';
+        title.addEventListener('click', () => this.onMarkerTitleChipClick!(this.data.marker.title));
+      }
       chips.appendChild(title);
       return;
     }
@@ -316,6 +333,10 @@ export class VideoPost extends VideoPostBase {
   private addStandardButtons(buttonGroup: HTMLElement): void {
     if (this.favoritesManager) {
       buttonGroup.appendChild(this.createHeartButton());
+    }
+    if (this.showBookmarkButton && this.bookmarkManager) {
+      this.bookmarkButton = this.createBookmarkButton();
+      buttonGroup.appendChild(this.bookmarkButton);
     }
   }
 
@@ -389,6 +410,82 @@ export class VideoPost extends VideoPostBase {
     return await this.favoritesManager.toggleFavorite(this.data.marker);
   }
 
+  private createBookmarkButton(): HTMLElement {
+    const btn = document.createElement('button');
+    btn.className = 'icon-btn icon-btn--bookmark';
+    btn.type = 'button';
+    btn.setAttribute('aria-label', 'Toggle bookmark');
+    btn.title = 'Add to bookmarks';
+    this.applyIconButtonStyles(btn);
+    btn.style.padding = '0';
+    btn.style.flexShrink = '0';
+    this.updateBookmarkButton(btn);
+
+    btn.addEventListener('click', async (e: Event) => {
+      e.preventDefault();
+      e.stopPropagation();
+      if (this.isTogglingBookmark) return;
+      this.isTogglingBookmark = true;
+      btn.disabled = true;
+      btn.style.opacity = '0.5';
+      try {
+        this.isBookmarked = await this.bookmarkManager!.toggleBookmark(this.data.marker);
+        this.updateBookmarkButton(btn);
+      } catch (error) {
+        console.error('Failed to toggle bookmark', error);
+        showToast('Failed to update bookmark. Please try again.');
+      } finally {
+        this.isTogglingBookmark = false;
+        btn.disabled = false;
+        btn.style.opacity = '1';
+      }
+    });
+
+    this.addHoverEffect(btn);
+    return btn;
+  }
+
+  private updateBookmarkButton(button?: HTMLElement): void {
+    const btn = button || this.bookmarkButton;
+    if (!btn) return;
+    if (this.isBookmarked) {
+      btn.innerHTML = BOOKMARK_SVG_FILLED;
+      btn.style.color = THEME.colors.accentPrimary;
+      btn.title = 'Remove from bookmarks';
+    } else {
+      btn.innerHTML = BOOKMARK_SVG_OUTLINE;
+      btn.style.color = THEME.colors.textPrimary;
+      btn.title = 'Add to bookmarks';
+    }
+  }
+
+  private async checkBookmarkStatus(): Promise<void> {
+    if (!this.bookmarkManager || !this.bookmarkButton) return;
+    try {
+      this.isBookmarked = await this.bookmarkManager.isBookmarked(this.data.marker);
+      this.updateBookmarkButton();
+    } catch (error) {
+      console.error('Failed to check bookmark status', error);
+    }
+  }
+
+  public setShowBookmarkButton(show: boolean): void {
+    this.showBookmarkButton = show;
+    if (this.bookmarkButton) {
+      this.bookmarkButton.style.display = show ? '' : 'none';
+    } else if (show && this.bookmarkManager && this.buttonGroup) {
+      this.bookmarkButton = this.createBookmarkButton();
+      // Insert after heart button (first child of buttonGroup)
+      const firstBtn = this.buttonGroup.firstChild;
+      if (firstBtn?.nextSibling) {
+        this.buttonGroup.insertBefore(this.bookmarkButton, firstBtn.nextSibling);
+      } else {
+        this.buttonGroup.appendChild(this.bookmarkButton);
+      }
+      void this.checkBookmarkStatus();
+    }
+  }
+
   /**
    * Create marker button for creating new markers in shuffle mode
    */
@@ -454,6 +551,7 @@ export class VideoPost extends VideoPostBase {
 
     // Check favorite status to ensure heart button shows correct state
     this.checkFavoriteStatus();
+    void this.checkBookmarkStatus();
   }
 
   /**

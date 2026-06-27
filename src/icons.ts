@@ -7,6 +7,11 @@ const ICON_SVG_CLASS = 'icon-svg';
 const LOGO_SVG_CLASS = 'logo-svg';
 const ICON_VIEWBOX = '0 0 24 24';
 
+// Bookmark icons (action size)
+export const BOOKMARK_SVG_OUTLINE = `<svg viewBox="${ICON_VIEWBOX}" width="24" height="24" class="${ICON_SVG_CLASS}" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" preserveAspectRatio="xMidYMid meet"><path d="M17.593 3.322c1.1.128 1.907 1.077 1.907 2.185V21L12 17.25 4.5 21V5.507c0-1.108.806-2.057 1.907-2.185a48.507 48.507 0 0111.186 0z"/></svg>`;
+
+export const BOOKMARK_SVG_FILLED = `<svg viewBox="${ICON_VIEWBOX}" width="24" height="24" class="${ICON_SVG_CLASS}" fill="currentColor" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" preserveAspectRatio="xMidYMid meet"><path d="M17.593 3.322c1.1.128 1.907 1.077 1.907 2.185V21L12 17.25 4.5 21V5.507c0-1.108.806-2.057 1.907-2.185a48.507 48.507 0 0111.186 0z"/></svg>`;
+
 // Heart icons (action size)
 export const HEART_SVG_OUTLINE = `<svg viewBox="${ICON_VIEWBOX}" width="24" height="24" class="${ICON_SVG_CLASS}" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" preserveAspectRatio="xMidYMid meet"><path d="M4.45067 13.9082L11.4033 20.4395C11.6428 20.6644 11.7625 20.7769 11.9037 20.8046C11.9673 20.8171 12.0327 20.8171 12.0963 20.8046C12.2375 20.7769 12.3572 20.6644 12.5967 20.4395L19.5493 13.9082C21.5055 12.0706 21.743 9.0466 20.0978 6.92607L19.7885 6.52734C17.8203 3.99058 13.8696 4.41601 12.4867 7.31365C12.2913 7.72296 11.7087 7.72296 11.5133 7.31365C10.1304 4.41601 6.17972 3.99058 4.21154 6.52735L3.90219 6.92607C2.25695 9.0466 2.4945 12.0706 4.45067 13.9082Z"/></svg>`;
 
