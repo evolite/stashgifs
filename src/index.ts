@@ -72,7 +72,8 @@ function applyReelModeEarly(container?: HTMLElement | null): void {
 // It's non-fatal noise we can't fix at the source.
 const _origConsoleError = console.error.bind(console);
 console.error = (...args: unknown[]) => {
-  const msg = typeof args[0] === 'string' ? args[0] : args[0] instanceof Error ? args[0].message : '';
+  const first = args[0];
+  const msg = typeof first === 'string' ? first : first instanceof Error ? first.message : '';
   if (msg.includes('postMessage on disconnected port')) return;
   _origConsoleError(...args);
 };
