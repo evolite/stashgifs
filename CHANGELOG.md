@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [7.5.1] - 2026-06-28
+
+### Bug Fixes
+
+- Show production age with * indicator and current age as fallback in performer chip
+
+### Features
+
+- Show performer and scene tags on posts with separate display toggles
+
 ## [7.5.0] - 2026-06-28
 
 ### Features
