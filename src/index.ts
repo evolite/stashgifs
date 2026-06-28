@@ -67,18 +67,19 @@ function applyReelModeEarly(container?: HTMLElement | null): void {
   }
 }
 
+// Stash's Apollo client logs "Attempt to postMessage on disconnected port" via
+// console.error when its internal MessageChannel closes during rapid GQL queries.
+// It's non-fatal noise we can't fix at the source.
+const _origConsoleError = console.error.bind(console);
+console.error = (...args: unknown[]) => {
+  const msg = typeof args[0] === 'string' ? args[0] : args[0] instanceof Error ? args[0].message : '';
+  if (msg.includes('postMessage on disconnected port')) return;
+  _origConsoleError(...args);
+};
+
 // Initialize when DOM is ready
 function init(): void {
   const handleMediaError = (event: Event): void => {
-    // Suppress the race-condition error from video.js VHS (HTTP Streaming) web
-    // workers: when a player is disposed while an HLS segment XHR is in-flight,
-    // the worker callback fires on a closed MessageChannel port. The error is
-    // non-fatal and un-catchable at the dispose site because it's async.
-    if (event instanceof ErrorEvent && event.message?.includes('postMessage on disconnected port')) {
-      event.preventDefault();
-      return;
-    }
-
     const target = event.target as HTMLElement | null;
     if (!target) return;
     if (target instanceof HTMLImageElement) {
