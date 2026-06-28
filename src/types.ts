@@ -93,6 +93,7 @@ export interface FilterOptions {
   excludedTagIds?: string[]; // Tags to exclude (resolved IDs)
   tagDepth?: number; // Depth for tag hierarchy traversal (-1 = all subtags, 0 = exact match only)
   studioDepth?: number; // Depth for studio hierarchy traversal (-1 = all child studios, 0 = exact match only)
+  includeSceneTagsInMarkerFilter?: boolean; // When true, filter markers by scene tags instead of marker tags
 }
 
 export interface FeedSettings {
@@ -123,6 +124,7 @@ export interface FeedSettings {
   seenHistorySize?: number; // Max IDs tracked in seen ring buffer (0 = disabled, default 500)
   contentLimit?: number; // Max items per content type to paginate through (default 5000)
   includeSubtags?: boolean; // When true, tag and studio search includes all descendants
+  includeSceneTagsInMarkerFilter?: boolean; // When true, filter markers by parent scene's tags instead of marker's own tags
   showStudioChips?: boolean; // Show studio logo + name chips alongside performer chips, default: true
   enableDiscoveryPanel?: boolean; // Show StashDB discovery sidebar panel, default: true
   discoveryPanelSize?: number; // Panel width in px (1–1000), default 260

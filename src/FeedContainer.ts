@@ -52,6 +52,7 @@ const DEFAULT_SETTINGS: FeedSettings = {
   contentLimit: 5000,
   enableDiscoveryPanel: true,
   hdMode: true,
+  includeSceneTagsInMarkerFilter: false,
 };
 
 /**
@@ -779,6 +780,10 @@ export class FeedContainer {
     }
 
     delete filters.orientationFilter;
+  }
+
+  private applySceneTagSettingToFilters(filters: FilterOptions): void {
+    filters.includeSceneTagsInMarkerFilter = this.settings.includeSceneTagsInMarkerFilter ?? false;
   }
 
 
@@ -4097,6 +4102,7 @@ export class FeedContainer {
       await this.updateExcludedTagIds();
       this.applyExcludedTagsToFilters(currentFilters);
       this.applyOrientationFilterToFilters(currentFilters);
+      this.applySceneTagSettingToFilters(currentFilters);
       const { limit, offset, page } = this.calculatePaginationParams(currentFilters, append);
 
       if (this.checkAbortAndCleanup(signal)) {

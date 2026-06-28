@@ -633,10 +633,29 @@ export class StashAPI {
 
       const filter = this.buildFindFilter(filters, savedFilterCriteria, page, limit);
       const sceneMarkerFilter = this.buildSceneMarkerFilter(filters, savedFilterCriteria);
-      
+
+      // OR logic: also match markers whose parent scene has the selected tags.
+      // ponytail: two parallel calls + dedup; both use the same page offset so a marker
+      // could appear twice across page boundaries — acceptable for a scroll feed.
+      const useSceneTagsOR = !filters?.savedFilterId
+        && filters?.includeSceneTagsInMarkerFilter
+        && (sceneMarkerFilter.tags?.value?.length ?? 0) > 0;
+
+      if (useSceneTagsOR) {
+        const sceneTagsFilter = this.buildSceneTagsVariant(sceneMarkerFilter);
+        const [r1, r2] = await Promise.all([
+          this.executeMarkerQueryWithCount(filter, sceneMarkerFilter, signal),
+          this.executeMarkerQueryWithCount(filter, sceneTagsFilter, signal),
+        ]);
+        if (this.isAborted(signal)) return { markers: [], totalCount: 0 };
+        const seen = new Set<string>();
+        const markers = [...r1.markers, ...r2.markers].filter(m => !seen.has(m.id) && !!seen.add(m.id));
+        return { markers, totalCount: Math.max(r1.totalCount, r2.totalCount), sortSeed: filter.sort };
+      }
+
       const { markers, totalCount } = await this.executeMarkerQueryWithCount(filter, sceneMarkerFilter, signal);
       if (this.isAborted(signal)) return { markers: [], totalCount: 0 };
-      
+
       return { markers, totalCount, sortSeed: filter.sort };
     } catch (error: unknown) {
       return this.handleError('fetchSceneMarkers', error, signal, { markers: [], totalCount: 0 });
@@ -883,6 +902,18 @@ export class StashAPI {
         depth,
       };
     }
+  }
+
+  /** Build a copy of a marker filter that uses scene_tags instead of tags for positive matching. */
+  private buildSceneTagsVariant(f: SceneMarkerFilterInput): SceneMarkerFilterInput {
+    const copy: SceneMarkerFilterInput = { ...f };
+    if (copy.tags?.value?.length) {
+      copy.scene_tags = { value: copy.tags.value, modifier: copy.tags.modifier, depth: copy.tags.depth };
+      copy.tags = copy.tags.excludes?.length
+        ? { value: [], modifier: 'INCLUDES', excludes: copy.tags.excludes }
+        : undefined;
+    }
+    return copy;
   }
 
   /**
