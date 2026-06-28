@@ -468,17 +468,7 @@ export class VideoJsPlayer implements IVideoPlayer {
     this.onTimeUpdateCallback = undefined;
     if (this.player) {
       try {
-        if (!this.player.isDisposed()) {
-          // Abort VHS (HTTP Streaming) in-flight segment fetches before dispose.
-          // Without this, the XHR worker callback can fire on an already-closed
-          // MessageChannel port, producing "postMessage on disconnected port" errors.
-          // ponytail: internal VHS API — safe to swallow if absent or renamed.
-          try {
-            const tech = (this.player as any).tech_?.(true) ?? (this.player as any).tech?.(true);
-            tech?.vhs?.playlistController_?.dispose?.();
-          } catch { /* VHS not present or already gone */ }
-          this.player.dispose();
-        }
+        if (!this.player.isDisposed()) this.player.dispose();
       } catch { /* already disposed */ }
       this.player = undefined;
     }
