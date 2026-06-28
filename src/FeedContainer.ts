@@ -530,6 +530,14 @@ export class FeedContainer {
       if (headerInner) headerInner.style.maxWidth = `${w}px`;
     }
 
+    this.handleDiscoverySettingsChange(newSettings, updatedSettings);
+
+    if (this.shouldReloadFeed(newSettings, previousSettings, excludedTagsChanged, orientationFilterChanged)) {
+      this.scheduleSettingsReload();
+    }
+  }
+
+  private handleDiscoverySettingsChange(newSettings: Partial<FeedSettings>, updatedSettings: FeedSettings): void {
     if (newSettings.enableDiscoveryPanel !== undefined) {
       if (updatedSettings.enableDiscoveryPanel === true) {
         this.mountDiscoveryPanel();
@@ -551,10 +559,6 @@ export class FeedContainer {
         || newSettings.whisparrQualityProfileId !== undefined)
     ) {
       this.discoveryPanel.setWhisparrClient(WhisparrClient.fromSettings(updatedSettings));
-    }
-
-    if (this.shouldReloadFeed(newSettings, previousSettings, excludedTagsChanged, orientationFilterChanged)) {
-      this.scheduleSettingsReload();
     }
   }
 
@@ -600,6 +604,13 @@ export class FeedContainer {
     this.discoveryPanel = undefined;
   }
 
+  private forEachPost(condition: boolean, fn: (post: PostType) => void): void {
+    if (!condition) return;
+    for (const post of this.posts.values()) {
+      fn(post);
+    }
+  }
+
   private handlePostDisplaySettingsChange(
     newSettings: Partial<FeedSettings>,
     updatedSettings: FeedSettings,
@@ -608,50 +619,29 @@ export class FeedContainer {
     previousShowStudioChips: boolean | undefined,
     previousShowSceneTitle: boolean | undefined
   ): void {
-    if (newSettings.showVerifiedCheckmarks !== undefined && updatedSettings.showVerifiedCheckmarks !== previousShowVerified) {
-      for (const post of this.posts.values()) {
-        post.setShowVerifiedCheckmarks?.(updatedSettings.showVerifiedCheckmarks !== false);
-      }
-    }
-    if (newSettings.showProductionAge !== undefined && updatedSettings.showProductionAge !== previousShowProductionAge) {
-      for (const post of this.posts.values()) {
-        post.setShowProductionAge?.(updatedSettings.showProductionAge === true);
-      }
-    }
-    if (newSettings.showStudioChips !== undefined) {
-      const show = updatedSettings.showStudioChips !== false;
-      for (const post of this.posts.values()) {
-        post.setShowStudioChips?.(show);
-      }
-    }
-    if (newSettings.showSceneTitle !== undefined && updatedSettings.showSceneTitle !== previousShowSceneTitle) {
-      const show = updatedSettings.showSceneTitle === true;
-      for (const post of this.posts.values()) {
-        post.setShowSceneTitle?.(show);
-      }
-    }
-    if (newSettings.reelAutoScroll !== undefined) {
-      for (const post of this.posts.values()) {
-        post.setReelAutoScroll(newSettings.reelAutoScroll);
-      }
-    }
-    if (newSettings.showOCountButton !== undefined) {
-      for (const post of this.posts.values()) {
-        post.setShowOCountButton(newSettings.showOCountButton);
-      }
-    }
-    if (newSettings.showViewCountBadge !== undefined) {
-      for (const post of this.posts.values()) {
-        post.setShowViewCountBadge(newSettings.showViewCountBadge);
-      }
-    }
-    if (newSettings.showBookmarkButton !== undefined) {
-      for (const post of this.posts.values()) {
-        if (post instanceof VideoPost) {
-          post.setShowBookmarkButton(newSettings.showBookmarkButton);
-        }
-      }
-    }
+    this.forEachPost(
+      newSettings.showVerifiedCheckmarks !== undefined && updatedSettings.showVerifiedCheckmarks !== previousShowVerified,
+      p => p.setShowVerifiedCheckmarks?.(updatedSettings.showVerifiedCheckmarks !== false)
+    );
+    this.forEachPost(
+      newSettings.showProductionAge !== undefined && updatedSettings.showProductionAge !== previousShowProductionAge,
+      p => p.setShowProductionAge?.(updatedSettings.showProductionAge === true)
+    );
+    this.forEachPost(
+      newSettings.showStudioChips !== undefined,
+      p => p.setShowStudioChips?.(updatedSettings.showStudioChips !== false)
+    );
+    this.forEachPost(
+      newSettings.showSceneTitle !== undefined && updatedSettings.showSceneTitle !== previousShowSceneTitle,
+      p => p.setShowSceneTitle?.(updatedSettings.showSceneTitle === true)
+    );
+    this.forEachPost(newSettings.reelAutoScroll !== undefined, p => p.setReelAutoScroll(newSettings.reelAutoScroll!));
+    this.forEachPost(newSettings.showOCountButton !== undefined, p => p.setShowOCountButton(newSettings.showOCountButton!));
+    this.forEachPost(newSettings.showViewCountBadge !== undefined, p => p.setShowViewCountBadge(newSettings.showViewCountBadge!));
+    this.forEachPost(
+      newSettings.showBookmarkButton !== undefined,
+      p => { if (p instanceof VideoPost) p.setShowBookmarkButton(newSettings.showBookmarkButton!); }
+    );
   }
 
   private shouldReloadFeed(

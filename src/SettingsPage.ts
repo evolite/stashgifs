@@ -3,7 +3,7 @@
  * Allows users to configure file types and image feed settings
  */
 
-import { INFO_SVG } from './icons.js';
+
 import { FeedSettings } from './types.js';
 import * as version from './version.js';
 import { THEME, THEME_DEFAULTS, normalizeHexColor } from './utils.js';
@@ -1219,7 +1219,7 @@ export class SettingsPage {
     imagesWrapper.appendChild(fileTypesSubRow);
     imagesWrapper.appendChild(galleryOnlySubRow);
     imagesWrapper.appendChild(gallerySelectorWrapper);
-    contentTypesSection.insertBefore(imagesWrapper, randomWrapper);
+    randomWrapper.before(imagesWrapper);
 
     (this as any).fileTypesInput = fileTypesInput;
     (this as any).galleryOnlyToggle = galleryOnlyToggle;
