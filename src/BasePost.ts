@@ -908,7 +908,7 @@ export abstract class BasePost {
       const age = Math.floor((referenceDate.getTime() - birthDate.getTime()) / (365.25 * 24 * 60 * 60 * 1000));
       const ageSpan = document.createElement('span');
       ageSpan.className = 'performer-chip__age';
-      ageSpan.textContent = `(${age})`;
+      ageSpan.textContent = productionDate ? `(${age}*)` : `(${age})`;
       ageSpan.style.fontSize = 'inherit';
       ageSpan.style.fontFamily = 'inherit';
       ageSpan.style.opacity = '0.6';

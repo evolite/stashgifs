@@ -723,8 +723,8 @@ export class SettingsPage {
 
     productionAgeContainer.appendChild(
       buildInfoLabel(
-        'Performer Production Age',
-        'Shows the performer\'s age at the time of the scene or image next to their name.'
+        'Performer Age',
+        'Shows the performer\'s age next to their name. Shows age at time of production (marked with *) when a date is available, otherwise current age.'
       )
     );
 
