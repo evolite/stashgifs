@@ -3,7 +3,7 @@
  * This will interface with the Stash GraphQL API
  */
 
-import { Scene, SceneMarker, FilterOptions, VideoSource } from './types.js';
+import { Scene, SceneMarker, FilterOptions, VideoSource, Performer } from './types.js';
 import { normalizeMediaUrl, stripApiKey } from './utils.js';
 import { getStashBaseUrl } from './utils/baseUrl.js';
 import * as queries from './graphql/queries.js';
@@ -99,6 +99,7 @@ export class StashAPI {
   // Simple cache for autocomplete search results only (not filtered queries)
   private readonly searchCache: Map<string, { data: unknown; timestamp: number }> = new Map();
   private readonly SEARCH_CACHE_TTL = 5 * 60 * 1000; // 5 minutes
+  private readonly _performerTagsCache = new Map<string, Array<{ id: string; name: string }>>();
   
   // Magic numbers as constants
   private static readonly SEARCH_FETCH_MULTIPLIER = 3; // Fetch 3x limit when searching to improve relevance
@@ -506,6 +507,29 @@ export class StashAPI {
    * Get detailed performer information by ID
    * Used for hover overlay display
    */
+  /** Batch-fetch performer tags for a list of performers, populating tags in-place. Results are cached. */
+  async enrichPerformerTags(performers: Performer[]): Promise<void> {
+    const uncachedIds = [...new Set(
+      performers.filter(p => p.id && !this._performerTagsCache.has(p.id)).map(p => p.id)
+    )];
+    if (uncachedIds.length > 0) {
+      try {
+        const result = await this.gqlClient.query<FindPerformerResponse>({
+          query: queries.FIND_PERFORMER,
+          variables: { ids: uncachedIds },
+        });
+        for (const p of result.data?.findPerformers?.performers ?? []) {
+          this._performerTagsCache.set(p.id, p.tags ?? []);
+        }
+      } catch { /* non-fatal — posts just show without performer tags */ }
+    }
+    for (const p of performers) {
+      if (p.id && !p.tags?.length) {
+        p.tags = this._performerTagsCache.get(p.id) ?? [];
+      }
+    }
+  }
+
   async getPerformerDetails(performerId: string, signal?: AbortSignal): Promise<PerformerExtended | null> {
     if (this.isAborted(signal)) return null;
 
@@ -650,12 +674,14 @@ export class StashAPI {
         if (this.isAborted(signal)) return { markers: [], totalCount: 0 };
         const seen = new Set<string>();
         const markers = [...r1.markers, ...r2.markers].filter(m => !seen.has(m.id) && !!seen.add(m.id));
+        if (filters?.showPerformerTags) await this.enrichPerformerTags(markers.flatMap(m => m.scene?.performers ?? []));
         return { markers, totalCount: Math.max(r1.totalCount, r2.totalCount), sortSeed: filter.sort };
       }
 
       const { markers, totalCount } = await this.executeMarkerQueryWithCount(filter, sceneMarkerFilter, signal);
       if (this.isAborted(signal)) return { markers: [], totalCount: 0 };
 
+      if (filters?.showPerformerTags) await this.enrichPerformerTags(markers.flatMap(m => m.scene?.performers ?? []));
       return { markers, totalCount, sortSeed: filter.sort };
     } catch (error: unknown) {
       return this.handleError('fetchSceneMarkers', error, signal, { markers: [], totalCount: 0 });
@@ -2505,6 +2531,7 @@ export class StashAPI {
       sortSeed?: string;
       imagesInGalleryOnly?: boolean;
       galleryIds?: string[];
+      showPerformerTags?: boolean;
     },
     limit: number = 40,
     offset: number = 0,
@@ -2554,6 +2581,11 @@ export class StashAPI {
 
       const images = result.data?.findImages?.images || [];
       const totalCount = Math.min(result.data?.findImages?.count ?? 0, this._maxContentLimit);
+
+      if (filters?.showPerformerTags) {
+        const imagePerformers = images.flatMap(img => (img.performers ?? []) as Performer[]);
+        await this.enrichPerformerTags(imagePerformers);
+      }
 
       return { images, totalCount, sortSeed };
     } catch (e: unknown) {

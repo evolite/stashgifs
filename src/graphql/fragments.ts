@@ -31,6 +31,10 @@ export const SceneFields = `
         stash_id
         endpoint
       }
+      tags {
+        id
+        name
+      }
     }
     tags {
       id
@@ -209,6 +213,10 @@ export const SlimImageData = `
       birthdate
       stash_ids {
         stash_id
+      }
+      tags {
+        id
+        name
       }
     }
     visual_files {

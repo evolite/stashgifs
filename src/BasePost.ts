@@ -28,6 +28,8 @@ export interface BasePostOptions {
   showProductionAge?: boolean;
   showStudioChips?: boolean;
   showSceneTitle?: boolean;
+  showPerformerTags?: boolean;
+  showSceneTags?: boolean;
   showOCountButton?: boolean;
   showViewCountBadge?: boolean;
   discoveryPanel?: DiscoveryPanelControl;
@@ -126,6 +128,8 @@ export abstract class BasePost {
   protected showProductionAge: boolean = false;
   protected showStudioChips: boolean = true;
   protected showSceneTitle: boolean = false;
+  protected showPerformerTags: boolean = false;
+  protected showSceneTags: boolean = false;
   protected showOCountButton: boolean = true;
   protected showViewCountBadge: boolean = true;
   protected discoveryPanel?: DiscoveryPanelControl;
@@ -175,6 +179,8 @@ export abstract class BasePost {
     this.showProductionAge = options?.showProductionAge === true;
     this.showStudioChips = options?.showStudioChips !== false;
     this.showSceneTitle = options?.showSceneTitle === true;
+    this.showPerformerTags = options?.showPerformerTags === true;
+    this.showSceneTags = options?.showSceneTags === true;
     this.showOCountButton = options?.showOCountButton !== false;
     this.showViewCountBadge = options?.showViewCountBadge !== false;
     this.discoveryPanel = options?.discoveryPanel;
@@ -615,6 +621,16 @@ export abstract class BasePost {
 
   public setShowSceneTitle(show: boolean): void {
     this.showSceneTitle = show;
+    this.refreshHeader();
+  }
+
+  public setShowPerformerTags(show: boolean): void {
+    this.showPerformerTags = show;
+    this.refreshHeader();
+  }
+
+  public setShowSceneTags(show: boolean): void {
+    this.showSceneTags = show;
     this.refreshHeader();
   }
 
@@ -2078,7 +2094,10 @@ export abstract class BasePost {
 
     // Tag chips section (includes studio chip at the start)
     const hasStudio = !!options.studio && this.showStudioChips;
-    const hasTags = !!options.tags?.length;
+    const mergedTags = this.showPerformerTags
+      ? this.mergeWithPerformerTags(options.tags ?? [], performers)
+      : (options.tags ?? []);
+    const hasTags = mergedTags.length > 0;
     const addTagChip = this.createAddTagChip('Add tag to image');
     if (hasStudio || hasTags || addTagChip) {
       const tagsSection = document.createElement('div');
@@ -2087,7 +2106,7 @@ export abstract class BasePost {
         tagsSection.appendChild(this.createStudioChip(options.studio!));
       }
       if (hasTags) {
-        this.appendTagChips(tagsSection, options.tags!, options.favoriteTagName, performers.length > 0);
+        this.appendTagChips(tagsSection, mergedTags, options.favoriteTagName, performers.length > 0);
       }
       if (addTagChip) tagsSection.appendChild(addTagChip);
       this.applyReelModeTagStyles(tagsSection);
@@ -2134,6 +2153,17 @@ export abstract class BasePost {
       const chip = this.createPerformerChip(performer);
       chips.appendChild(chip);
     }
+  }
+
+  private mergeWithPerformerTags(tags: Tag[], performers: Performer[]): Tag[] {
+    const seen = new Set(tags.map(t => t.id));
+    const result = [...tags];
+    for (const p of performers) {
+      for (const t of p.tags ?? []) {
+        if (t?.id && t?.name && !seen.has(t.id)) { seen.add(t.id); result.push(t); }
+      }
+    }
+    return result;
   }
 
   private appendTagChips(

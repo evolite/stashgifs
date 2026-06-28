@@ -48,6 +48,7 @@ export interface Performer {
   favorite?: boolean;
   birthdate?: string;
   stash_ids?: Array<{ stash_id: string; endpoint: string }>;
+  tags?: Tag[];
 }
 
 export interface Tag {
@@ -94,6 +95,7 @@ export interface FilterOptions {
   tagDepth?: number; // Depth for tag hierarchy traversal (-1 = all subtags, 0 = exact match only)
   studioDepth?: number; // Depth for studio hierarchy traversal (-1 = all child studios, 0 = exact match only)
   includeSceneTagsInMarkerFilter?: boolean; // When true, filter markers by scene tags instead of marker tags
+  showPerformerTags?: boolean; // When true, enrich and display performer tags on posts
 }
 
 export interface FeedSettings {
@@ -124,7 +126,8 @@ export interface FeedSettings {
   seenHistorySize?: number; // Max IDs tracked in seen ring buffer (0 = disabled, default 500)
   contentLimit?: number; // Max items per content type to paginate through (default 5000)
   includeSubtags?: boolean; // When true, tag and studio search includes all descendants
-  includeSceneTagsInMarkerFilter?: boolean; // When true, filter markers by parent scene's tags instead of marker's own tags
+  showPerformerTags?: boolean; // Show tags from each performer on their posts, default: false
+  showSceneTags?: boolean; // Show parent scene tags on marker posts AND match scene tags when filtering, default: false
   showStudioChips?: boolean; // Show studio logo + name chips alongside performer chips, default: true
   enableDiscoveryPanel?: boolean; // Show StashDB discovery sidebar panel, default: true
   discoveryPanelSize?: number; // Panel width in px (1–1000), default 260

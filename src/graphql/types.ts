@@ -420,7 +420,9 @@ export interface GQLImage {
     gender?: string;
     favorite?: boolean;
     image_path?: string;
+    birthdate?: string;
     stash_ids?: Array<{ stash_id: string; endpoint: string }>;
+    tags?: Array<{ id: string; name: string }>;
   }>;
   visual_files?: Array<VisualFile>;
 }

@@ -294,11 +294,17 @@ export class VideoPost extends VideoPostBase {
     // Add other tags from marker tags array
     isFirstTag = this.addTagsFromList(this.data.marker.tags, chips, displayedTagIds, hasPerformers, isFirstTag);
     
-    // For shortform content (scenes, not markers), show tags from the scene
-    // For regular markers, only show marker tags (not scene tags)
+    // Scene tags: always for shortform; for regular markers only when showSceneTags is on
     const isShortForm = this.isShortFormContent();
-    if (isShortForm) {
-      this.addTagsFromList(this.data.marker.scene.tags, chips, displayedTagIds, hasPerformers, isFirstTag);
+    if (isShortForm || this.showSceneTags) {
+      isFirstTag = this.addTagsFromList(this.data.marker.scene.tags, chips, displayedTagIds, hasPerformers, isFirstTag);
+    }
+
+    // Performer tags — displayedTagIds already deduplicates across all sources
+    if (this.showPerformerTags) {
+      for (const performer of (this.data.marker.scene.performers ?? [])) {
+        isFirstTag = this.addTagsFromList(performer.tags, chips, displayedTagIds, hasPerformers, isFirstTag);
+      }
     }
   }
 

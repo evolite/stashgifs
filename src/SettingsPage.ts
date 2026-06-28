@@ -779,6 +779,26 @@ export class SettingsPage {
     layoutSection.appendChild(sceneTitleContainer);
     (this as any).sceneTitleToggle = sceneTitleToggle;
 
+    const showSceneTagsContainer = document.createElement('div');
+    showSceneTagsContainer.style.cssText = 'display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;';
+    showSceneTagsContainer.appendChild(buildInfoLabel('Scene Tags', 'Show tags from the parent scene on marker posts.'));
+    const { container: showSceneTagsToggleContainer, input: showSceneTagsToggle } = this.createToggleSwitch(
+      this.settings.showSceneTags === true, () => this.saveSettings()
+    );
+    showSceneTagsContainer.appendChild(showSceneTagsToggleContainer);
+    layoutSection.appendChild(showSceneTagsContainer);
+    (this as any).showSceneTagsToggle = showSceneTagsToggle;
+
+    const showPerformerTagsContainer = document.createElement('div');
+    showPerformerTagsContainer.style.cssText = 'display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;';
+    showPerformerTagsContainer.appendChild(buildInfoLabel('Performer Tags', 'Show tags from each performer on their posts. Duplicates are hidden.'));
+    const { container: showPerformerTagsToggleContainer, input: showPerformerTagsToggle } = this.createToggleSwitch(
+      this.settings.showPerformerTags === true, () => this.saveSettings()
+    );
+    showPerformerTagsContainer.appendChild(showPerformerTagsToggleContainer);
+    layoutSection.appendChild(showPerformerTagsContainer);
+    (this as any).showPerformerTagsToggle = showPerformerTagsToggle;
+
     const appendButtonToggle = (labelText: string, tooltip: string, checked: boolean, refKey: string): void => {
       const container = document.createElement('div');
       container.style.display = 'flex';
@@ -1301,19 +1321,6 @@ export class SettingsPage {
     includeSubtagsContainer.appendChild(includeSubtagsToggleContainer);
     filtersSection.appendChild(includeSubtagsContainer);
 
-    // Match Scene Tags
-    const includeSceneTagsContainer = document.createElement('div');
-    includeSceneTagsContainer.style.display = 'flex';
-    includeSceneTagsContainer.style.justifyContent = 'space-between';
-    includeSceneTagsContainer.style.alignItems = 'center';
-    includeSceneTagsContainer.style.marginBottom = '16px';
-    includeSceneTagsContainer.appendChild(buildInfoLabel('Match Scene Tags', 'When filtering markers by tag, also match markers whose parent scene has that tag. Useful when scene-wide attributes (e.g. performer looks) are tagged at the scene level rather than on individual markers.'));
-    const { container: includeSceneTagsToggleContainer, input: includeSceneTagsInMarkerFilterToggle } = this.createToggleSwitch(
-      this.settings.includeSceneTagsInMarkerFilter ?? false, () => this.saveSettings()
-    );
-    includeSceneTagsContainer.appendChild(includeSceneTagsToggleContainer);
-    filtersSection.appendChild(includeSceneTagsContainer);
-
     // Recency Bias
     const seenHistoryContainer = document.createElement('div');
     seenHistoryContainer.style.cssText = 'display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;';
@@ -1360,7 +1367,6 @@ export class SettingsPage {
     (this as any).landscapeToggle = landscapeToggle;
     (this as any).excludedTagsInput = excludedTagsInput;
     (this as any).includeSubtagsToggle = includeSubtagsToggle;
-    (this as any).includeSceneTagsInMarkerFilterToggle = includeSceneTagsInMarkerFilterToggle;
 
     filtersContent.appendChild(filtersSection);
     behaviorSection.appendChild(reelAutoScrollContainer);
@@ -1713,10 +1719,10 @@ export class SettingsPage {
       'shortFormIncludeToggle', 'reelAutoScrollToggle', 'autoHideSearchBarToggle', 'hdVideoToggle',
       'portraitToggle', 'landscapeToggle',
       'themeBackgroundInput', 'themePrimaryInput', 'themeSecondaryInput', 'themeAccentInput',
-      'showVerifiedCheckmarksToggle', 'showProductionAgeToggle', 'showStudioChipsToggle', 'sceneTitleToggle',
+      'showVerifiedCheckmarksToggle', 'showProductionAgeToggle', 'showStudioChipsToggle', 'sceneTitleToggle', 'showSceneTagsToggle', 'showPerformerTagsToggle',
       'showBookmarkToggle', 'showOCountToggle', 'showViewCountToggle',
       'discoveryPanelToggle', 'excludedTagsInput',
-      'includeSubtagsToggle', 'includeSceneTagsInMarkerFilterToggle', 'seenHistorySizeInput', 'contentLimitInput',
+      'includeSubtagsToggle', 'seenHistorySizeInput', 'contentLimitInput',
     ];
     const inputs: Record<string, HTMLInputElement> = {};
     for (const name of inputNames) {
@@ -1776,6 +1782,8 @@ export class SettingsPage {
       showProductionAge: inputs.showProductionAgeToggle.checked,
       showStudioChips: inputs.showStudioChipsToggle.checked,
       showSceneTitle: inputs.sceneTitleToggle.checked,
+      showSceneTags: inputs.showSceneTagsToggle.checked,
+      showPerformerTags: inputs.showPerformerTagsToggle.checked,
       showBookmarkButton: inputs.showBookmarkToggle.checked,
       showOCountButton: inputs.showOCountToggle.checked,
       showViewCountBadge: inputs.showViewCountToggle.checked,
@@ -1784,7 +1792,6 @@ export class SettingsPage {
       discoverySceneOrder: ((this as any).discoveryOrderSelect as HTMLSelectElement)?.value as 'latest' | 'random' | 'trending' ?? 'latest',
       excludedTagNames,
       includeSubtags: inputs.includeSubtagsToggle.checked,
-      includeSceneTagsInMarkerFilter: inputs.includeSceneTagsInMarkerFilterToggle.checked,
       imagesInGalleryOnly: galleryOnlyToggle?.checked ?? false,
       galleryIds: gallerySelectedIds ? [...gallerySelectedIds] : [],
       seenHistorySize: Math.max(0, Math.min(2000, Number.parseInt(inputs.seenHistorySizeInput.value, 10) || 0)),

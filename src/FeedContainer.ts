@@ -52,7 +52,8 @@ const DEFAULT_SETTINGS: FeedSettings = {
   contentLimit: 5000,
   enableDiscoveryPanel: true,
   hdMode: true,
-  includeSceneTagsInMarkerFilter: false,
+  showPerformerTags: false,
+  showSceneTags: false,
 };
 
 /**
@@ -636,6 +637,14 @@ export class FeedContainer {
       newSettings.showSceneTitle !== undefined && updatedSettings.showSceneTitle !== previousShowSceneTitle,
       p => p.setShowSceneTitle?.(updatedSettings.showSceneTitle === true)
     );
+    this.forEachPost(
+      newSettings.showPerformerTags !== undefined,
+      p => p.setShowPerformerTags?.(updatedSettings.showPerformerTags === true)
+    );
+    this.forEachPost(
+      newSettings.showSceneTags !== undefined,
+      p => p.setShowSceneTags?.(updatedSettings.showSceneTags === true)
+    );
     this.forEachPost(newSettings.reelAutoScroll !== undefined, p => p.setReelAutoScroll(newSettings.reelAutoScroll!));
     this.forEachPost(newSettings.showOCountButton !== undefined, p => p.setShowOCountButton(newSettings.showOCountButton!));
     this.forEachPost(newSettings.showViewCountBadge !== undefined, p => p.setShowViewCountBadge(newSettings.showViewCountBadge!));
@@ -783,7 +792,8 @@ export class FeedContainer {
   }
 
   private applySceneTagSettingToFilters(filters: FilterOptions): void {
-    filters.includeSceneTagsInMarkerFilter = this.settings.includeSceneTagsInMarkerFilter ?? false;
+    filters.includeSceneTagsInMarkerFilter = this.settings.showSceneTags ?? false;
+    filters.showPerformerTags = this.settings.showPerformerTags ?? false;
   }
 
 
@@ -3306,6 +3316,8 @@ export class FeedContainer {
       showProductionAge: this.settings.showProductionAge === true,
       showStudioChips: this.settings.showStudioChips !== false,
       showSceneTitle: this.settings.showSceneTitle === true,
+      showPerformerTags: this.settings.showPerformerTags === true,
+      showSceneTags: this.settings.showSceneTags === true,
       showMarkerTitle: this.settings.searchMarkersByName === true,
       showBookmarkButton: this.settings.showBookmarkButton === true,
       showOCountButton: this.settings.showOCountButton !== false,
@@ -4518,6 +4530,7 @@ export class FeedContainer {
         ...(this.settings.imagesInGalleryOnly
           ? { imagesInGalleryOnly: true, galleryIds: this.settings.galleryIds ?? [] }
           : {}),
+        ...(this.settings.showPerformerTags ? { showPerformerTags: true } : {}),
       };
 
       const { images: graphQLImages, totalCount, sortSeed } = await this.api.findImages(
@@ -4573,6 +4586,7 @@ export class FeedContainer {
         image_path: p.image_path,
         favorite: p.favorite,
         stash_ids: p.stash_ids,
+        tags: p.tags,
       })),
       visualFiles: graphqlImage.visual_files?.map(vf => ({
         path: vf.path,
