@@ -674,18 +674,22 @@ export class StashAPI {
         if (this.isAborted(signal)) return { markers: [], totalCount: 0 };
         const seen = new Set<string>();
         const markers = [...r1.markers, ...r2.markers].filter(m => !seen.has(m.id) && !!seen.add(m.id));
-        if (filters?.showPerformerTags) await this.enrichPerformerTags(markers.flatMap(m => m.scene?.performers ?? []));
+        await this.maybeEnrichPerformerTags(markers, filters);
         return { markers, totalCount: Math.max(r1.totalCount, r2.totalCount), sortSeed: filter.sort };
       }
 
       const { markers, totalCount } = await this.executeMarkerQueryWithCount(filter, sceneMarkerFilter, signal);
       if (this.isAborted(signal)) return { markers: [], totalCount: 0 };
 
-      if (filters?.showPerformerTags) await this.enrichPerformerTags(markers.flatMap(m => m.scene?.performers ?? []));
+      await this.maybeEnrichPerformerTags(markers, filters);
       return { markers, totalCount, sortSeed: filter.sort };
     } catch (error: unknown) {
       return this.handleError('fetchSceneMarkers', error, signal, { markers: [], totalCount: 0 });
     }
+  }
+
+  private async maybeEnrichPerformerTags(markers: SceneMarker[], filters?: FilterOptions): Promise<void> {
+    if (filters?.showPerformerTags) await this.enrichPerformerTags(markers.flatMap(m => m.scene?.performers ?? []));
   }
 
   /**
