@@ -658,22 +658,25 @@ export class GraphQLClient {
              typeof val === 'string' || typeof val === 'number' || typeof val === 'boolean';
     });
 
-    let cacheKey: string;
-    if (isSimpleObject) {
-      // For simple objects, use a fast key generation
+    // Complex objects: skip cache — cache key would only encode top-level key names,
+    // not values, so different objects with the same key set would collide and cause
+    // request deduplication to return stale results (e.g. OR-filter parallel queries).
+    if (!isSimpleObject) {
       try {
-        cacheKey = JSON.stringify(obj);
+        return JSON.stringify(this._sortObjectKeys(obj));
       } catch {
-        const sortedKeys = [...objKeys].sort((a, b) => a.localeCompare(b));
-        cacheKey = `simple:${sortedKeys.join(',')}`;
+        return `[object:${objKeys.length}]`;
       }
-    } else {
-      // For complex objects, use sorted keys
-      const sortedKeys = [...objKeys].sort((a, b) => a.localeCompare(b));
-      cacheKey = `complex:${sortedKeys.join(',')}`;
     }
 
-    // Check cache first
+    let cacheKey: string;
+    try {
+      cacheKey = JSON.stringify(obj);
+    } catch {
+      const sortedKeys = [...objKeys].sort((a, b) => a.localeCompare(b));
+      cacheKey = `simple:${sortedKeys.join(',')}`;
+    }
+
     const cached = this.keyCache.get(cacheKey);
     if (cached !== undefined) {
       return cached;
@@ -682,10 +685,8 @@ export class GraphQLClient {
     try {
       const sorted = this._sortObjectKeys(obj);
       const result = JSON.stringify(sorted);
-      
-      // Cache the result with size limit (LRU eviction)
+
       if (this.keyCache.size >= this.maxKeyCacheSize) {
-        // Remove oldest entry (first in Map)
         const firstKey = this.keyCache.keys().next().value;
         if (firstKey !== undefined) {
           this.keyCache.delete(firstKey);
@@ -694,12 +695,7 @@ export class GraphQLClient {
       this.keyCache.set(cacheKey, result);
       return result;
     } catch (error: unknown) {
-      // Fallback for circular references or other issues
-      // Use a hash-like approach for problematic objects
-      // Error is intentionally ignored - this is a fallback for edge cases
-      if (error instanceof Error) {
-        // Silently handle - this is expected for circular references
-      }
+      if (error instanceof Error) {}
       return `[object:${objKeys.length}]`;
     }
   }
