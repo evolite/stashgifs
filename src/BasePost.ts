@@ -31,6 +31,7 @@ export interface BasePostOptions {
   showPerformerTags?: boolean;
   showSceneTags?: boolean;
   showOCountButton?: boolean;
+  tagDisplayLimit?: number;
   showViewCountBadge?: boolean;
   discoveryPanel?: DiscoveryPanelControl;
   reelAutoScroll?: boolean;
@@ -131,6 +132,7 @@ export abstract class BasePost {
   protected showSceneTags: boolean = false;
   protected showOCountButton: boolean = true;
   protected showViewCountBadge: boolean = true;
+  protected tagDisplayLimit: number = 10;
   protected discoveryPanel?: DiscoveryPanelControl;
   private discoveryCollapseUnsubscribe?: () => void;
   private discoveryJiggleTimerId?: ReturnType<typeof setTimeout>;
@@ -182,6 +184,7 @@ export abstract class BasePost {
     this.showSceneTags = options?.showSceneTags === true;
     this.showOCountButton = options?.showOCountButton !== false;
     this.showViewCountBadge = options?.showViewCountBadge !== false;
+    this.tagDisplayLimit = options?.tagDisplayLimit ?? 10;
     this.discoveryPanel = options?.discoveryPanel;
     this.reelAutoScroll = options?.reelAutoScroll === true;
     this.onReelAdvance = options?.onReelAdvance;
@@ -2088,7 +2091,7 @@ export abstract class BasePost {
       }
       if (hasTags) {
         this.appendTagChips(tagsSection, mergedTags, options.favoriteTagName, performers.length > 0);
-        this.applyTagLimit(tagsSection, 10);
+        this.applyTagLimit(tagsSection, this.tagDisplayLimit);
       }
       if (addTagChip) tagsSection.appendChild(addTagChip);
       this.applyReelModeTagStyles(tagsSection);

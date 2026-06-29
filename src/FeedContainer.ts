@@ -3310,6 +3310,7 @@ export class FeedContainer {
       showSceneTitle: this.settings.showSceneTitle === true,
       showPerformerTags: this.settings.showPerformerTags === true,
       showSceneTags: this.settings.showSceneTags === true,
+      tagDisplayLimit: this.settings.tagDisplayLimit ?? 10,
       showMarkerTitle: this.settings.searchMarkersByName === true,
       showBookmarkButton: this.settings.showBookmarkButton === true,
       showOCountButton: this.settings.showOCountButton !== false,

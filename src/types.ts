@@ -128,6 +128,7 @@ export interface FeedSettings {
   includeSubtags?: boolean; // When true, tag and studio search includes all descendants
   showPerformerTags?: boolean; // Show tags from each performer on their posts, default: false
   showSceneTags?: boolean; // Show parent scene tags on marker posts AND match scene tags when filtering, default: false
+  tagDisplayLimit?: number; // Max tags shown before ... collapse (default 10)
   showStudioChips?: boolean; // Show studio logo + name chips alongside performer chips, default: true
   enableDiscoveryPanel?: boolean; // Show StashDB discovery sidebar panel, default: true
   discoveryPanelSize?: number; // Panel width in px (1–1000), default 260

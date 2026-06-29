@@ -799,6 +799,23 @@ export class SettingsPage {
     layoutSection.appendChild(showPerformerTagsContainer);
     (this as any).showPerformerTagsToggle = showPerformerTagsToggle;
 
+    const tagLimitRow = document.createElement('div');
+    tagLimitRow.style.cssText = 'display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;';
+    tagLimitRow.appendChild(buildInfoLabel('Tag Limit', 'Max number of tags shown per post before collapsing into a • • • button.'));
+    const tagDisplayLimitInput = document.createElement('input');
+    tagDisplayLimitInput.type = 'number';
+    tagDisplayLimitInput.value = String(this.settings.tagDisplayLimit ?? 10);
+    tagDisplayLimitInput.min = '1';
+    tagDisplayLimitInput.max = '100';
+    tagDisplayLimitInput.style.cssText = `width: 64px; padding: 4px 8px; border-radius: ${THEME.radius.button}; border: 1px solid ${THEME.colors.border}; background: ${THEME.colors.surface}; color: ${THEME.colors.textPrimary}; font-size: ${THEME.typography.sizeBody}; text-align: right; box-sizing: border-box;`;
+    tagDisplayLimitInput.addEventListener('input', () => {
+      clearTimeout((tagDisplayLimitInput as any).saveTimeout);
+      (tagDisplayLimitInput as any).saveTimeout = setTimeout(() => { this.saveSettings(); }, 500);
+    });
+    tagLimitRow.appendChild(tagDisplayLimitInput);
+    layoutSection.appendChild(tagLimitRow);
+    (this as any).tagDisplayLimitInput = tagDisplayLimitInput;
+
     const appendButtonToggle = (labelText: string, tooltip: string, checked: boolean, refKey: string): void => {
       const container = document.createElement('div');
       container.style.display = 'flex';
@@ -1722,7 +1739,7 @@ export class SettingsPage {
       'showVerifiedCheckmarksToggle', 'showProductionAgeToggle', 'showStudioChipsToggle', 'sceneTitleToggle', 'showSceneTagsToggle', 'showPerformerTagsToggle',
       'showBookmarkToggle', 'showOCountToggle', 'showViewCountToggle',
       'discoveryPanelToggle', 'excludedTagsInput',
-      'includeSubtagsToggle', 'seenHistorySizeInput', 'contentLimitInput',
+      'includeSubtagsToggle', 'seenHistorySizeInput', 'contentLimitInput', 'tagDisplayLimitInput',
     ];
     const inputs: Record<string, HTMLInputElement> = {};
     for (const name of inputNames) {
@@ -1796,6 +1813,7 @@ export class SettingsPage {
       galleryIds: gallerySelectedIds ? [...gallerySelectedIds] : [],
       seenHistorySize: Math.max(0, Math.min(2000, Number.parseInt(inputs.seenHistorySizeInput.value, 10) || 0)),
       contentLimit: Math.max(100, Math.min(50000, Number.parseInt(inputs.contentLimitInput.value, 10) || 5000)),
+      tagDisplayLimit: Math.max(1, Math.min(100, Number.parseInt(inputs.tagDisplayLimitInput.value, 10) || 10)),
     };
 
     if (this.onSave) {

@@ -305,7 +305,7 @@ export class VideoPost extends VideoPostBase {
       }
     }
 
-    this.applyTagLimit(chips, 10);
+    this.applyTagLimit(chips, this.tagDisplayLimit);
   }
 
 
