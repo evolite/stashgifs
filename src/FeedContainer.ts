@@ -364,7 +364,6 @@ export class FeedContainer {
     this.applyReelRootStyles();
     this.applyReelContainerStyles();
     this.applyReelHeaderStyles();
-    this.applyReelPostStyles();
     this.setupScrollHandler();
     this.setupReelScroller();
     this.resetScrollObserver();
@@ -382,7 +381,6 @@ export class FeedContainer {
   private applyReelRootStyles(): void {
     const root = document.documentElement;
     const body = document.body;
-    root.dataset.reelMode = 'true';
     root.style.overflow = 'hidden';
     if (body.dataset.scrollLock !== 'true') {
       body.style.overflow = 'hidden';
@@ -476,12 +474,6 @@ export class FeedContainer {
       settingsButton.style.background = 'rgba(0, 0, 0, 0.35)';
       settingsButton.style.border = '1px solid rgba(255, 255, 255, 0.2)';
       settingsButton.style.color = THEME.colors.textPrimary;
-    }
-  }
-
-  private applyReelPostStyles(): void {
-    for (const post of this.posts.values()) {
-      post.setReelMode?.(true);
     }
   }
 
@@ -3323,7 +3315,6 @@ export class FeedContainer {
       showOCountButton: this.settings.showOCountButton !== false,
       showViewCountBadge: this.settings.showViewCountBadge !== false,
       ratingSystemConfig: this.ratingSystemConfig,
-      reelMode: true,
       hdModeFromSettings: this.useHDMode,
       discoveryPanel: this.discoveryPanel,
       reelAutoScroll: this.settings.reelAutoScroll === true,

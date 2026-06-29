@@ -24,7 +24,7 @@ export class ImageVideoPost extends VideoPostBase {
     this.onMuteToggle = options?.onMuteToggle;
     this.getGlobalMuteState = options?.getGlobalMuteState;
     this.hdModeFromSettings = options?.hdModeFromSettings === true;
-    this.initImagePostOptions(this.data.image.o_counter, options?.ratingSystemConfig, options?.reelMode);
+    this.initImagePostOptions(this.data.image.o_counter, options?.ratingSystemConfig);
     this.render();
   }
 

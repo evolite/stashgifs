@@ -36,12 +36,11 @@ export class ImagePost extends BasePost {
       showStudioChips?: boolean;
       onLoadFullVideo?: () => void;
       ratingSystemConfig?: { type?: string; starPrecision?: string } | null;
-      reelMode?: boolean;
     }
   ) {
     super(container, options);
     this.data = data;
-    this.initImagePostOptions(this.data.image.o_counter, options?.ratingSystemConfig, options?.reelMode);
+    this.initImagePostOptions(this.data.image.o_counter, options?.ratingSystemConfig);
     this.render();
     this.attachReelAutoAdvanceTimer();
   }
