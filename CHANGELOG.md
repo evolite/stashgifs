@@ -5,6 +5,21 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [7.6.0] - 2026-06-29
+
+### Bug Fixes
+
+- Extract nested ternary in console.error intercept (SonarQube S3358)
+
+### Features
+
+- Extend tag filtering to include scene and performer tags
+
+### Refactoring
+
+- Remove speculative VHS pre-cleanup from destroy()
+- Remove console.error intercept for postMessage noise
+
 ## [7.5.2] - 2026-06-28
 
 ### Bug Fixes
