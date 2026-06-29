@@ -121,7 +121,6 @@ export abstract class BasePost {
   protected isTogglingFavorite: boolean = false;
   protected oCountButton?: HTMLElement;
   protected oCount: number = 0;
-  protected isReelMode: boolean = false;
   protected playerContainer?: HTMLElement;
   protected footer?: HTMLElement;
   protected showVerifiedCheckmarks: boolean = true;
@@ -243,12 +242,10 @@ export abstract class BasePost {
 
   protected initImagePostOptions(
     oCounter: number | undefined | null,
-    ratingSystemConfig?: { type?: string; starPrecision?: string } | null,
-    reelMode?: boolean
+    ratingSystemConfig?: { type?: string; starPrecision?: string } | null
   ): void {
     this.oCount = oCounter || 0;
     this.ratingSystemConfig = ratingSystemConfig;
-    this.isReelMode = reelMode === true;
   }
 
   protected renderImageBasedPost(className: string, postId: string, createPlayerContainer: () => HTMLElement, createFooter: () => HTMLElement): void {
@@ -374,6 +371,7 @@ export abstract class BasePost {
     this.applyReelContainerStyles();
     const isPortrait = this.applyReelPlayerStyles(elements.playerContainer);
     this.applyReelMediaStyles(elements.playerContainer, isPortrait);
+    this.addPlayerGradientOverlay(elements.playerContainer);
 
     const isNarrow = globalThis.innerWidth < 768;
     this.applyReelHeaderStyles(elements.header, isNarrow);
@@ -402,33 +400,23 @@ export abstract class BasePost {
     this.container.style.flexDirection = 'column';
     this.container.style.justifyContent = 'center';
     this.container.style.overflow = 'hidden';
-    this.container.dataset.reelMode = 'true';
-    
-    // Add gradient overlay
-    this.addReelGradientOverlay();
   }
 
-  private addReelGradientOverlay(): void {
-    // Remove existing gradient overlay if any
-    const existingOverlay = this.container.querySelector('.reel-gradient-overlay');
-    if (existingOverlay) {
-      existingOverlay.remove();
-    }
-    
-    
-    // Create gradient overlay
+  private addPlayerGradientOverlay(playerContainer: HTMLElement): void {
+    const existing = playerContainer.querySelector('.reel-player-gradient');
+    if (existing) existing.remove();
+
     const gradient = document.createElement('div');
-    gradient.className = 'reel-gradient-overlay';
+    gradient.className = 'reel-player-gradient';
     gradient.style.position = 'absolute';
     gradient.style.bottom = '0';
     gradient.style.left = '0';
     gradient.style.right = '0';
-    gradient.style.height = '20%';
-    gradient.style.background = 'linear-gradient(to top, rgba(0, 0, 0, 0.4) 0%, transparent 100%)';
+    gradient.style.height = '40%';
+    gradient.style.background = 'linear-gradient(to top, rgba(0, 0, 0, 0.75) 0%, transparent 100%)';
     gradient.style.pointerEvents = 'none';
-    gradient.style.zIndex = '1';
-    
-    this.container.appendChild(gradient);
+    gradient.style.zIndex = '3';
+    playerContainer.appendChild(gradient);
   }
 
   private applyReelPlayerStyles(playerContainer: HTMLElement): boolean {
@@ -474,31 +462,30 @@ export abstract class BasePost {
   }
 
   private applyReelHeaderStyles(header: HTMLElement, isMobile: boolean): void {
-    const bottomOffset = 70;
-    const headerRightOffset = isMobile ? 96 : 120;
-    const headerPadding = isMobile ? '8px 12px' : '10px 14px';
+    const rightPad = isMobile ? 100 : 130;
     const textShadow = '0 2px 8px rgba(0, 0, 0, 0.65)';
 
     header.style.position = 'absolute';
-    header.style.left = '16px';
-    header.style.right = `${headerRightOffset}px`;
-    header.style.bottom = `${bottomOffset}px`;
+    header.style.left = '0';
+    header.style.right = '0';
+    header.style.bottom = '0';
     header.style.top = 'auto';
     header.style.zIndex = '6';
-    header.style.padding = headerPadding;
+    header.style.padding = isMobile ? `8px ${rightPad}px 16px 16px` : `10px ${rightPad}px 16px 16px`;
     header.style.borderRadius = '0';
-    header.style.background = 'transparent';
+    header.style.background = 'linear-gradient(to top, rgba(0, 0, 0, 0.85) 0%, transparent 100%)';
     header.style.backdropFilter = 'none';
     header.style.boxShadow = 'none';
     header.style.pointerEvents = 'auto';
     header.style.fontSize = isMobile ? '' : '15px';
-    header.style.width = 'fit-content';
-    header.style.maxWidth = isMobile ? 'calc(100% - 120px)' : '55%';
+    header.style.width = '100%';
+    header.style.maxWidth = '100%';
     header.style.color = '#ffffff';
     header.style.textShadow = textShadow;
 
     const headerElements = header.querySelectorAll<HTMLElement>('a, span, button, div, p, h1, h2, h3, h4');
     for (const element of headerElements) {
+      if (element.classList.contains('tag-chip__hash') || element.classList.contains('tag-chip__more')) continue;
       element.style.color = '#ffffff';
       element.style.textShadow = textShadow;
     }
@@ -516,7 +503,7 @@ export abstract class BasePost {
   }
 
   private applyReelFooterStyles(footer: HTMLElement, isMobile: boolean): void {
-    const bottomOffset = 70;
+    const bottomOffset = 20;
 
     footer.style.position = 'absolute';
     footer.style.right = '16px';
@@ -585,16 +572,6 @@ export abstract class BasePost {
         }
       }
 
-    }
-  }
-
-  public setReelMode(isReelMode: boolean): void {
-    this.isReelMode = isReelMode;
-    const header = this.container.querySelector<HTMLElement>('.video-post__header');
-    const playerContainer = this.container.querySelector<HTMLElement>('.video-post__player');
-    const footer = this.container.querySelector<HTMLElement>('.video-post__footer');
-    if (header && playerContainer && footer) {
-      this.applyReelModeLayout({ header, playerContainer, footer });
     }
   }
 
@@ -2037,7 +2014,12 @@ export abstract class BasePost {
       handleClick();
     });
     
-    hashtag.appendChild(document.createTextNode(`#${tag.name}`));
+    const hash = document.createElement('span');
+    hash.className = 'tag-chip__hash';
+    hash.textContent = '#';
+    hash.style.color = 'var(--color-accent)';
+    hashtag.appendChild(hash);
+    hashtag.appendChild(document.createTextNode(tag.name));
     return hashtag;
   }
 
@@ -2106,6 +2088,7 @@ export abstract class BasePost {
       }
       if (hasTags) {
         this.appendTagChips(tagsSection, mergedTags, options.favoriteTagName, performers.length > 0);
+        this.applyTagLimit(tagsSection, 10);
       }
       if (addTagChip) tagsSection.appendChild(addTagChip);
       this.applyReelModeTagStyles(tagsSection);
@@ -2183,6 +2166,40 @@ export abstract class BasePost {
       }
       chips.appendChild(chip);
     }
+  }
+
+  protected applyTagLimit(chips: HTMLElement, limit: number): void {
+    const tagChips = Array.from(chips.querySelectorAll<HTMLElement>('.tag-chip:not(.tag-chip--add)'));
+    if (tagChips.length <= limit) return;
+
+    for (let i = limit; i < tagChips.length; i++) {
+      tagChips[i].style.display = 'none';
+    }
+
+    const more = document.createElement('span');
+    more.className = 'tag-chip__more';
+    more.textContent = '• • •';
+    more.style.color = 'var(--color-accent)';
+    more.style.cursor = 'pointer';
+    more.style.fontSize = '18px';
+    more.style.lineHeight = '1.4';
+    more.style.letterSpacing = '2px';
+    more.style.padding = '4px 0';
+    more.style.marginLeft = '8px';
+    more.style.minHeight = '28px';
+    more.style.display = 'inline-flex';
+    more.style.alignItems = 'center';
+    more.setAttribute('title', `Show ${tagChips.length - limit} more tags`);
+    more.setAttribute('role', 'button');
+    more.setAttribute('aria-label', `Show ${tagChips.length - limit} more tags`);
+    more.addEventListener('click', (e) => {
+      e.stopPropagation();
+      for (let i = limit; i < tagChips.length; i++) {
+        tagChips[i].style.display = '';
+      }
+      more.remove();
+    });
+    chips.appendChild(more);
   }
 
   /**
@@ -3312,7 +3329,7 @@ export abstract class BasePost {
    * Re-entrant: always resets the fired guard and re-registers on the current player.
    */
   protected attachReelAutoAdvance(): void {
-    if (!this.isReelMode || !this.reelAutoScroll) return;
+    if (!this.reelAutoScroll) return;
     const player = this.getAutoAdvancePlayer();
     if (!player) return;
     this.autoAdvanceFired = false;
@@ -3353,7 +3370,7 @@ export abstract class BasePost {
    * scrolls away before the timer fires.
    */
   protected attachReelAutoAdvanceTimer(dwellMs: number = 5000): void {
-    if (this.autoAdvanceAttached || !this.isReelMode || !this.reelAutoScroll) return;
+    if (this.autoAdvanceAttached || !this.reelAutoScroll) return;
     this.autoAdvanceAttached = true;
     this.autoAdvanceDwellObserver = new IntersectionObserver((entries) => {
       const entry = entries[0];

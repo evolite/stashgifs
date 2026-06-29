@@ -1492,9 +1492,9 @@
   margin: 6px 0;
 }
 
-/* Reel mode chip styling - remove box/border effects */
-[data-reel-mode="true"] .performer-chip,
-[data-reel-mode="true"] .tag-chip {
+/* Chip styling - remove box/border effects */
+.performer-chip,
+.tag-chip {
   background: transparent !important;
   border: none !important;
   box-shadow: none !important;
@@ -1502,53 +1502,41 @@
   -webkit-backdrop-filter: none !important;
 }
 
-/* Reel mode - hide scrollbars while keeping scroll */
-[data-reel-mode="true"] html,
-[data-reel-mode="true"] body {
+/* Hide scrollbars while keeping scroll */
+html,
+body {
   height: 100%;
   overflow: hidden;
 }
 
-[data-reel-mode="true"] html,
-[data-reel-mode="true"] body,
-[data-reel-mode="true"] .feed-scroll-container,
-[data-reel-mode="true"] * {
+html,
+body,
+.feed-scroll-container,
+* {
   scrollbar-width: none;
   -ms-overflow-style: none;
 }
 
-[data-reel-mode="true"] html::-webkit-scrollbar,
-[data-reel-mode="true"] body::-webkit-scrollbar,
-[data-reel-mode="true"] .feed-scroll-container::-webkit-scrollbar,
-[data-reel-mode="true"] *::-webkit-scrollbar {
+html::-webkit-scrollbar,
+body::-webkit-scrollbar,
+.feed-scroll-container::-webkit-scrollbar,
+*::-webkit-scrollbar {
   width: 0;
   height: 0;
   display: none;
 }
 
-[data-reel-mode="true"] .performer-chip:hover,
-[data-reel-mode="true"] .tag-chip:hover {
+.performer-chip:hover,
+.tag-chip:hover {
   background: transparent !important;
   border-color: transparent !important;
   transform: none !important;
   box-shadow: none !important;
 }
 
-/* Reel mode gradient overlay - 20% from bottom */
-.reel-gradient-overlay {
-  position: absolute;
-  bottom: 0;
-  left: 0;
-  right: 0;
-  height: 20%;
-  background: linear-gradient(to top, rgba(0, 0, 0, 0.4) 0%, transparent 100%);
-  pointer-events: none;
-  z-index: 1;
-}
-
-/* Ensure header and footer are above gradient */
-[data-reel-mode="true"] .video-post__header,
-[data-reel-mode="true"] .video-post__footer {
+/* Ensure header and footer are above player */
+.video-post__header,
+.video-post__footer {
   z-index: 6;
 }
 

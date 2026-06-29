@@ -82,8 +82,6 @@ export class VideoPost extends VideoPostBase {
     this.getGlobalMuteState = options.getGlobalMuteState;
     this.oCount = this.data.marker.scene.o_counter || 0;
     this.ratingSystemConfig = options.ratingSystemConfig;
-    this.isReelMode = options.reelMode === true;
-    
     // Short form content is always HD by default
     if (this.isShortFormContent()) {
       this.isHQMode = true;
@@ -306,6 +304,8 @@ export class VideoPost extends VideoPostBase {
         isFirstTag = this.addTagsFromList(performer.tags, chips, displayedTagIds, hasPerformers, isFirstTag);
       }
     }
+
+    this.applyTagLimit(chips, 10);
   }
 
 

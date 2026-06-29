@@ -16,7 +16,6 @@ export interface BaseVideoPostOptions extends BasePostOptions {
   getGlobalMuteState?: () => boolean;
   onCancelRequests?: () => void;
   ratingSystemConfig?: { type?: string; starPrecision?: string } | null;
-  reelMode?: boolean;
   hdModeFromSettings?: boolean;
 }
 
@@ -369,7 +368,9 @@ export abstract class VideoPostBase extends BasePost {
     const fill = document.createElement('div');
     fill.className = 'vp-progress__fill';
     track.appendChild(fill);
-    playerContainer.appendChild(track);
+
+    const trackParent = this.container.querySelector<HTMLElement>('.video-post__header') ?? playerContainer;
+    trackParent.appendChild(track);
 
     // Update fill from player.
     const update = () => {
