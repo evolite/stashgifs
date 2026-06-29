@@ -658,24 +658,26 @@ export class StashAPI {
       const filter = this.buildFindFilter(filters, savedFilterCriteria, page, limit);
       const sceneMarkerFilter = this.buildSceneMarkerFilter(filters, savedFilterCriteria);
 
-      // OR logic: also match markers whose parent scene has the selected tags.
-      // ponytail: two parallel calls + dedup; both use the same page offset so a marker
+      // OR logic: match markers by marker tags, scene tags, or performer tags.
+      // ponytail: three parallel calls + dedup; all use the same page offset so a marker
       // could appear twice across page boundaries — acceptable for a scroll feed.
-      const useSceneTagsOR = !filters?.savedFilterId
-        && filters?.includeSceneTagsInMarkerFilter
+      const useTagsOR = !filters?.savedFilterId
         && (sceneMarkerFilter.tags?.value?.length ?? 0) > 0;
 
-      if (useSceneTagsOR) {
+      if (useTagsOR) {
         const sceneTagsFilter = this.buildSceneTagsVariant(sceneMarkerFilter);
-        const [r1, r2] = await Promise.all([
+        const performerTagsFilter = this.buildPerformerTagsVariant(sceneMarkerFilter);
+        const [r1, r2, r3] = await Promise.all([
           this.executeMarkerQueryWithCount(filter, sceneMarkerFilter, signal),
           this.executeMarkerQueryWithCount(filter, sceneTagsFilter, signal),
+          this.executeMarkerQueryWithCount(filter, performerTagsFilter, signal),
         ]);
         if (this.isAborted(signal)) return { markers: [], totalCount: 0 };
         const seen = new Set<string>();
-        const markers = [...r1.markers, ...r2.markers].filter(m => !seen.has(m.id) && !!seen.add(m.id));
+        const markers = [...r1.markers, ...r2.markers, ...r3.markers]
+          .filter(m => !seen.has(m.id) && !!seen.add(m.id));
         await this.maybeEnrichPerformerTags(markers, filters);
-        return { markers, totalCount: Math.max(r1.totalCount, r2.totalCount), sortSeed: filter.sort };
+        return { markers, totalCount: Math.max(r1.totalCount, r2.totalCount, r3.totalCount), sortSeed: filter.sort };
       }
 
       const { markers, totalCount } = await this.executeMarkerQueryWithCount(filter, sceneMarkerFilter, signal);
@@ -939,6 +941,20 @@ export class StashAPI {
     const copy: SceneMarkerFilterInput = { ...f };
     if (copy.tags?.value?.length) {
       copy.scene_tags = { value: copy.tags.value, modifier: copy.tags.modifier, depth: copy.tags.depth };
+      copy.tags = copy.tags.excludes?.length
+        ? { value: [], modifier: 'INCLUDES', excludes: copy.tags.excludes }
+        : undefined;
+    }
+    return copy;
+  }
+
+  /** Build a copy of a marker filter that uses scene_filter.performer_tags instead of tags. */
+  private buildPerformerTagsVariant(f: SceneMarkerFilterInput): SceneMarkerFilterInput {
+    const copy: SceneMarkerFilterInput = { ...f };
+    if (copy.tags?.value?.length) {
+      const sceneFilter: SceneFilterInput = { ...(copy.scene_filter ?? {}) };
+      sceneFilter.performer_tags = { value: copy.tags.value, modifier: copy.tags.modifier, depth: copy.tags.depth };
+      copy.scene_filter = sceneFilter;
       copy.tags = copy.tags.excludes?.length
         ? { value: [], modifier: 'INCLUDES', excludes: copy.tags.excludes }
         : undefined;

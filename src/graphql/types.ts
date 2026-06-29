@@ -71,6 +71,11 @@ export interface SceneFilterInput {
     modifier: FilterModifier;
     depth?: number;
   };
+  performer_tags?: {
+    value: string[];
+    modifier: FilterModifier;
+    depth?: number;
+  };
   performers?: {
     value: number[];
     modifier: FilterModifier;
