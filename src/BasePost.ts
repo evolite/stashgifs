@@ -1972,7 +1972,7 @@ export abstract class BasePost {
     hashtag.rel = 'noopener noreferrer';
     hashtag.style.display = 'inline-flex';
     hashtag.style.alignItems = 'center';
-    hashtag.style.padding = '0';
+    hashtag.style.padding = '4px 0';
     hashtag.style.margin = '0';
     hashtag.style.fontSize = '14px';
     hashtag.style.lineHeight = '1.4';
@@ -1980,8 +1980,7 @@ export abstract class BasePost {
     hashtag.style.textDecoration = 'none';
     hashtag.style.transition = 'color 0.2s ease';
     hashtag.style.cursor = 'pointer';
-    hashtag.style.minHeight = '44px';
-    hashtag.style.height = '44px';
+    hashtag.style.minHeight = '28px';
     
     hashtag.style.background = 'transparent';
     hashtag.style.border = 'none';
@@ -2064,7 +2063,7 @@ export abstract class BasePost {
     tagsSection.style.display = 'flex';
     tagsSection.style.flexWrap = 'wrap';
     tagsSection.style.alignItems = 'center';
-    tagsSection.style.gap = '4px';
+    tagsSection.style.gap = '2px';
     tagsSection.style.marginTop = '4px';
     tagsSection.style.opacity = '0.85';
   }
@@ -2206,8 +2205,7 @@ export abstract class BasePost {
       justifyContent: 'center',
       padding: '0',
       margin: '0 0 0 6px',
-      minHeight: '44px',
-      height: '44px',
+      minHeight: '28px',
       minWidth: '20px',
       color: THEME.colors.textMuted,
       background: 'transparent',
