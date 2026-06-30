@@ -141,6 +141,16 @@ export interface FeedSettings {
   whisparrApiKey?: string; // Whisparr API key (X-Api-Key header)
   whisparrRootFolderPath?: string; // Selected Whisparr root folder path
   whisparrQualityProfileId?: number; // Selected Whisparr quality profile id
+  savedSearches?: SavedSearch[]; // User-saved filter chip sets
+}
+
+export interface SavedSearch {
+  id: string;
+  name: string;
+  tags: [number, string][];
+  performers: [number, string][];
+  studios: [number, string][];
+  markerName?: string;
 }
 
 export interface VideoPostData {

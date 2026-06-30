@@ -3,7 +3,7 @@
  * Main application container managing the feed
  */
 
-import { SceneMarker, FilterOptions, FeedSettings, VideoPostData, ImagePostData, ImageVideoPostData, Image } from './types.js';
+import { SceneMarker, FilterOptions, FeedSettings, VideoPostData, ImagePostData, ImageVideoPostData, Image, SavedSearch } from './types.js';
 import { StashAPI, generateRandomSortSeed } from './StashAPI.js';
 import { PluginSettingsManager } from './PluginSettingsManager.js';
 import { VideoPost } from './VideoPost.js';
@@ -132,6 +132,7 @@ export class FeedContainer {
   private scrollObserver?: IntersectionObserver;
   private loadMoreTrigger?: HTMLElement;
   private endCard?: HTMLElement;
+  private saveSearchInputVisible = false;
   private postsContainer!: HTMLElement;
   private headerBar?: HTMLElement;
   private selectedSavedFilter?: { id: string; name: string };
@@ -1442,6 +1443,67 @@ export class FeedContainer {
     container.appendChild(filtersSection);
   }
 
+  private createSavedSearchesSection(
+    container: HTMLElement,
+    updateSearchBarDisplay: () => void
+  ): void {
+    const searches = this.settingsManager.data.settings.savedSearches ?? [];
+    if (searches.length === 0) return;
+
+    const section = document.createElement('div');
+    section.style.display = 'flex';
+    section.style.flexDirection = 'column';
+    section.style.gap = '12px';
+    section.appendChild(this.createSectionLabel('My Searches', true));
+
+    const pillRow = document.createElement('div');
+    pillRow.style.display = 'flex';
+    pillRow.style.flexWrap = 'wrap';
+    pillRow.style.gap = '8px';
+
+    for (const search of searches) {
+      const wrapper = document.createElement('div');
+      wrapper.style.display = 'flex';
+      wrapper.style.alignItems = 'center';
+      wrapper.style.gap = '2px';
+
+      const pill = this.createPillButton(search.name, () => {
+        this.applyCustomSavedSearch(search);
+        updateSearchBarDisplay();
+      });
+
+      const del = document.createElement('button');
+      del.type = 'button';
+      del.textContent = '×';
+      del.setAttribute('aria-label', `Delete saved search "${search.name}"`);
+      Object.assign(del.style, {
+        background: 'transparent',
+        border: 'none',
+        color: 'inherit',
+        opacity: '0.5',
+        cursor: 'pointer',
+        fontSize: '16px',
+        lineHeight: '1',
+        padding: '4px 2px',
+        minWidth: '20px',
+        minHeight: '44px',
+      });
+      del.addEventListener('mouseenter', () => { del.style.opacity = '1'; });
+      del.addEventListener('mouseleave', () => { del.style.opacity = '0.5'; });
+      del.addEventListener('click', (e) => {
+        e.stopPropagation();
+        this.deleteCustomSavedSearch(search.id);
+        wrapper.remove();
+      });
+
+      wrapper.append(pill, del);
+      pillRow.appendChild(wrapper);
+    }
+
+    section.appendChild(pillRow);
+    container.appendChild(section);
+  }
+
   /**
    * Create tags section
    */
@@ -1665,6 +1727,7 @@ export class FeedContainer {
     await this.loadSavedFiltersIfNeeded();
     if (!ensureLatest()) return;
 
+    this.createSavedSearchesSection(container, updateSearchBarDisplay);
     this.createSavedFiltersSection(container, updateSearchBarDisplay, apply);
 
     let loadingSection: HTMLElement | null = null;
@@ -2913,6 +2976,13 @@ export class FeedContainer {
     this.appendPerformerPills();
     this.appendStudioPills();
 
+    if (!this.saveSearchInputVisible) {
+      const saveBtn = this.createActivePill('Save', () => this.showSaveSearchInput(), true);
+      this.activePillsBar.appendChild(saveBtn);
+    } else {
+      this.activePillsBar.appendChild(this.buildSaveSearchInput());
+    }
+
     if (total >= 2) {
       const clearAll = this.createActivePill('Clear all', () => {
         this.selectedTagIds.clear();
@@ -2930,6 +3000,86 @@ export class FeedContainer {
     if (panel && panel.style.display !== 'none') {
       panel.style.setProperty('padding-top', this.getSuggestionsTopOffset(), 'important');
     }
+  }
+
+  private showSaveSearchInput(): void {
+    this.saveSearchInputVisible = true;
+    this.updateActivePills();
+    // Focus the input we just rendered
+    const input = this.activePillsBar?.querySelector<HTMLInputElement>('.feed-save-search-input');
+    input?.focus();
+  }
+
+  private buildSaveSearchInput(): HTMLElement {
+    const wrap = document.createElement('div');
+    Object.assign(wrap.style, {
+      display: 'flex',
+      alignItems: 'center',
+      gap: '4px',
+      flexShrink: '0',
+    });
+
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.placeholder = 'Name this search…';
+    input.className = 'feed-save-search-input';
+    Object.assign(input.style, {
+      height: '28px',
+      padding: '0 8px',
+      borderRadius: '14px',
+      border: `1px solid ${THEME.colors.border}`,
+      background: THEME.colors.backgroundSecondary,
+      color: THEME.colors.textPrimary,
+      fontSize: THEME.typography.sizeMeta,
+      fontFamily: THEME.typography.fontFamily,
+      outline: 'none',
+      width: '140px',
+      minWidth: '0',
+    });
+
+    const confirm = (): void => {
+      const name = input.value.trim();
+      this.saveSearchInputVisible = false;
+      if (name) this.saveCurrentSearch(name);
+      this.updateActivePills();
+    };
+
+    const cancel = (): void => {
+      this.saveSearchInputVisible = false;
+      this.updateActivePills();
+    };
+
+    input.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') { e.preventDefault(); confirm(); }
+      if (e.key === 'Escape') { e.preventDefault(); cancel(); }
+    });
+
+    // blur → cancel only if confirm wasn't already triggered
+    input.addEventListener('blur', () => {
+      if (this.saveSearchInputVisible) cancel();
+    });
+
+    const confirmBtn = document.createElement('button');
+    confirmBtn.type = 'button';
+    confirmBtn.textContent = '✓';
+    confirmBtn.setAttribute('aria-label', 'Save search');
+    // mousedown before blur so the value is captured
+    confirmBtn.addEventListener('mousedown', (e) => { e.preventDefault(); });
+    confirmBtn.addEventListener('click', confirm);
+    Object.assign(confirmBtn.style, {
+      height: '28px',
+      width: '28px',
+      borderRadius: '50%',
+      border: 'none',
+      background: THEME.colors.accentPrimary,
+      color: '#fff',
+      cursor: 'pointer',
+      fontSize: '14px',
+      flexShrink: '0',
+    });
+
+    wrap.append(input, confirmBtn);
+    return wrap;
   }
 
   private getSuggestionsTopOffset(): string {
@@ -5154,6 +5304,40 @@ export class FeedContainer {
   private getPerformersForPost(postId: string) {
     const post = this.posts.get(postId);
     return post?.getPerformers() ?? [];
+  }
+
+  private saveCurrentSearch(name: string): void {
+    const entry: SavedSearch = {
+      id: crypto.randomUUID(),
+      name,
+      tags: [...this.selectedTagIds.entries()],
+      performers: [...this.selectedPerformerIds.entries()],
+      studios: [...this.selectedStudioIds.entries()],
+      markerName: this.selectedMarkerName,
+    };
+    const existing = this.settingsManager.data.settings.savedSearches ?? [];
+    this.settingsManager.save({ settings: { savedSearches: [...existing, entry] } });
+  }
+
+  private applyCustomSavedSearch(search: SavedSearch): void {
+    this.selectedTagIds.clear();
+    this.selectedPerformerIds.clear();
+    this.selectedStudioIds.clear();
+    this.selectedMarkerName = undefined;
+    this.selectedSavedFilter = undefined;
+    for (const [id, name] of search.tags) this.selectedTagIds.set(id, name);
+    for (const [id, name] of search.performers) this.selectedPerformerIds.set(id, name);
+    for (const [id, name] of search.studios) this.selectedStudioIds.set(id, name);
+    this.selectedMarkerName = search.markerName;
+    this.closeSuggestions();
+    this.updateActivePills();
+    this.updateQueryInputDisplay();
+    this.debouncedApplyFilters();
+  }
+
+  private deleteCustomSavedSearch(id: string): void {
+    const existing = this.settingsManager.data.settings.savedSearches ?? [];
+    this.settingsManager.save({ settings: { savedSearches: existing.filter(s => s.id !== id) } });
   }
 
   /**
