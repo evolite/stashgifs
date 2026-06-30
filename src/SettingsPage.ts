@@ -781,7 +781,7 @@ export class SettingsPage {
 
     const showSceneTagsContainer = document.createElement('div');
     showSceneTagsContainer.style.cssText = 'display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;';
-    showSceneTagsContainer.appendChild(buildInfoLabel('Scene Tags', 'Show tags from the parent scene on marker posts.'));
+    showSceneTagsContainer.appendChild(buildInfoLabel('Scene Tags', 'Show tags from the parent scene on marker posts, and match them when filtering the feed.\n\nTip: keep each tag in one place — a tag used on both scenes and performers filters slower and less predictably.'));
     const { container: showSceneTagsToggleContainer, input: showSceneTagsToggle } = this.createToggleSwitch(
       this.settings.showSceneTags === true, () => this.saveSettings()
     );
@@ -791,7 +791,7 @@ export class SettingsPage {
 
     const showPerformerTagsContainer = document.createElement('div');
     showPerformerTagsContainer.style.cssText = 'display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;';
-    showPerformerTagsContainer.appendChild(buildInfoLabel('Performer Tags', 'Show tags from each performer on their posts. Duplicates are hidden.'));
+    showPerformerTagsContainer.appendChild(buildInfoLabel('Performer Tags', 'Show tags from each performer on their posts (duplicates hidden), and match them when filtering the feed.\n\nTip: keep each tag in one place — a tag used on both scenes and performers filters slower and less predictably.'));
     const { container: showPerformerTagsToggleContainer, input: showPerformerTagsToggle } = this.createToggleSwitch(
       this.settings.showPerformerTags === true, () => this.saveSettings()
     );
