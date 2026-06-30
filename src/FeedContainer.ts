@@ -23,6 +23,7 @@ import { SETTINGS_SVG, STASHGIFS_LOGO_SVG } from './icons.js';
 import { DiscoveryPanel } from './DiscoveryPanel.js';
 import { WhisparrClient } from './WhisparrClient.js';
 import { DiscoveryManager } from './DiscoveryManager.js';
+import { buildEndOfFeedCard, END_CARD_POST_ID } from './EndOfFeedCard.js';
 
 // Lazy-load videos only as they enter the viewport — no speculative look-ahead.
 const LAZY_LOAD_ROOT_MARGIN = '0px';
@@ -130,6 +131,7 @@ export class FeedContainer {
   private latestLoadId = 0;
   private scrollObserver?: IntersectionObserver;
   private loadMoreTrigger?: HTMLElement;
+  private endCard?: HTMLElement;
   private postsContainer!: HTMLElement;
   private headerBar?: HTMLElement;
   private selectedSavedFilter?: { id: string; name: string };
@@ -4255,6 +4257,9 @@ export class FeedContainer {
       this.handleLoadError(error, append);
     } finally {
       this.isLoading = false;
+      // Only the winning load reconciles the end card — a superseded load's
+      // hasMore is stale and would flicker it.
+      if (reqId === this.latestLoadId) this.updateEndCard();
     }
   }
 
@@ -5072,6 +5077,7 @@ export class FeedContainer {
     }
     this.posts.clear();
     this.postOrder = [];
+    this.endCard = undefined; // innerHTML reset below detaches it
     if (this.postsContainer) {
       this.postsContainer.innerHTML = '';
     }
@@ -5148,6 +5154,35 @@ export class FeedContainer {
   private getPerformersForPost(postId: string) {
     const post = this.posts.get(postId);
     return post?.getPerformers() ?? [];
+  }
+
+  /**
+   * Reconcile the synthetic end-of-feed card with the current hasMore state:
+   * show it (as a full-viewport snap card just before the load-more trigger)
+   * once there's content but nothing more to load, hide it otherwise.
+   */
+  private updateEndCard(): void {
+    const container = this.postsContainer;
+    if (!container) return;
+    const shouldShow = !this.hasMore && this.postOrder.length > 0;
+    const present = this.endCard?.parentNode === container;
+    if (shouldShow && !present) {
+      this.endCard = buildEndOfFeedCard(() => this.openSearchFromEndCard());
+      if (this.loadMoreTrigger?.parentNode === container) {
+        container.insertBefore(this.endCard, this.loadMoreTrigger);
+      } else {
+        container.appendChild(this.endCard);
+      }
+    } else if (!shouldShow && this.endCard) {
+      this.endCard.remove();
+      this.endCard = undefined;
+    }
+  }
+
+  /** Open the header search UI from the end card's "Search for more?" button. */
+  private openSearchFromEndCard(): void {
+    // Focusing fires the input's focus handler, which opens the suggestions UI.
+    this.headerBar?.querySelector<HTMLInputElement>('.feed-filters__input')?.focus();
   }
 
   private shouldEnableVisibilityDebug(): boolean {
@@ -5438,6 +5473,14 @@ export class FeedContainer {
    * commits to a new index), so we don't repeat it here.
    */
   private handleReelSettle(postId: string, _index: number): void {
+    if (postId === END_CARD_POST_ID) {
+      // No video on the end card — silence whatever was playing, and force the
+      // search bar back in (auto-hide leaves it tucked away after scrolling down)
+      // so the card's arrow has something to point at.
+      this.playback.pauseAll();
+      this.showHeader();
+      return;
+    }
     this.playback.setActive(postId);
     this.discoveryManager?.onPrimaryPostChanged(postId, this.getPerformersForPost(postId));
   }
