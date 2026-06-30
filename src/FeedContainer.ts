@@ -839,6 +839,51 @@ export class FeedContainer {
     return images.filter((image) => !this.shouldExcludeTags(image.tags));
   }
 
+  /** True if every selected tag id is present in the given set (the item's enabled-source union). */
+  private hasAllSelectedTags(unionTagIds: Set<string>): boolean {
+    for (const id of this.selectedTagIds.keys()) {
+      if (!unionTagIds.has(String(id))) return false;
+    }
+    return true;
+  }
+
+  /** Union of a marker's tag ids across the sources currently enabled for matching. Scene tags
+   *  count when showSceneTags is on or the marker is synthetic/short-form (intrinsic there);
+   *  performer tags when showPerformerTags is on. Mirrors the server-side candidate sources. */
+  private markerUnionTagIds(marker: SceneMarker): Set<string> {
+    const ids = new Set<string>();
+    if (marker.primary_tag?.id) ids.add(marker.primary_tag.id);
+    for (const t of marker.tags ?? []) ids.add(t.id);
+    const intrinsicScene = typeof marker.id === 'string'
+      && (marker.id.startsWith('synthetic-') || marker.id.startsWith('shortform-'));
+    if (this.settings.showSceneTags || intrinsicScene) {
+      for (const t of marker.scene?.tags ?? []) ids.add(t.id);
+    }
+    if (this.settings.showPerformerTags) {
+      for (const p of marker.scene?.performers ?? []) for (const t of p.tags ?? []) ids.add(t.id);
+    }
+    return ids;
+  }
+
+  /** Narrow the server candidate superset to markers carrying ALL selected tags across their
+   *  enabled-source union ("all tags, any source"). No-op for <2 tags (server is exact there). */
+  private filterMarkersByRequiredTags(markers: SceneMarker[]): SceneMarker[] {
+    if (this.selectedTagIds.size < 2) return markers;
+    return markers.filter((marker) => this.hasAllSelectedTags(this.markerUnionTagIds(marker)));
+  }
+
+  private filterImagesByRequiredTags(images: Image[]): Image[] {
+    if (this.selectedTagIds.size < 2) return images;
+    return images.filter((image) => {
+      const ids = new Set<string>();
+      for (const t of image.tags ?? []) ids.add(t.id);
+      if (this.settings.showPerformerTags) {
+        for (const p of image.performers ?? []) for (const t of p.tags ?? []) ids.add(t.id);
+      }
+      return this.hasAllSelectedTags(ids);
+    });
+  }
+
   private getSeenCache(): { ids: string[]; set: Set<string> } {
     if (this.seenSetCache) return this.seenSetCache;
     try {
@@ -3543,7 +3588,7 @@ export class FeedContainer {
 
     return {
       ...result,
-      markers: this.filterMarkersByName(this.filterMarkersByExcludedTags(result.markers)),
+      markers: this.filterMarkersByRequiredTags(this.filterMarkersByName(this.filterMarkersByExcludedTags(result.markers))),
     };
   }
 
@@ -3901,7 +3946,7 @@ export class FeedContainer {
     };
     const result = await this.api.fetchSceneMarkers(filters, signal);
     return {
-      markers: this.filterMarkersByName(this.filterMarkersByExcludedTags(result.markers)),
+      markers: this.filterMarkersByRequiredTags(this.filterMarkersByName(this.filterMarkersByExcludedTags(result.markers))),
       totalCount: result.totalCount
     };
   }
@@ -4464,7 +4509,7 @@ export class FeedContainer {
 
     return {
       ...result,
-      markers: this.filterMarkersByName(this.filterMarkersByExcludedTags(result.markers)),
+      markers: this.filterMarkersByRequiredTags(this.filterMarkersByName(this.filterMarkersByExcludedTags(result.markers))),
     };
   }
 
@@ -4539,9 +4584,9 @@ export class FeedContainer {
       }
 
       // Convert GraphQL Image to simplified Image type
-      const images = this.filterImagesByExcludedTags(
+      const images = this.filterImagesByRequiredTags(this.filterImagesByExcludedTags(
         graphQLImages.map((img) => this.convertGraphQLImageToImage(img))
-      );
+      ));
       return { images, totalCount };
     } catch (error) {
       console.error('FeedContainer: Failed to load images', error);
