@@ -100,6 +100,9 @@ export class StashAPI {
   private readonly searchCache: Map<string, { data: unknown; timestamp: number }> = new Map();
   private readonly SEARCH_CACHE_TTL = 5 * 60 * 1000; // 5 minutes
   private readonly _performerTagsCache = new Map<string, Array<{ id: string; name: string }>>();
+  /** Per-tag presence across sources (count > 0), used to route a tag to the filter field that
+   *  can actually match it. Tag→source membership rarely changes, so this is cached for the session. */
+  private readonly _tagSourceCache = new Map<string, { marker: boolean; scene: boolean; performer: boolean; image: boolean }>();
   
   // Magic numbers as constants
   private static readonly SEARCH_FETCH_MULTIPLIER = 3; // Fetch 3x limit when searching to improve relevance
@@ -656,39 +659,10 @@ export class StashAPI {
       }
 
       const filter = this.buildFindFilter(filters, savedFilterCriteria, page, limit);
+      // buildSceneMarkerFilter routes each selected tag to its source field (tags / scene_tags /
+      // scene_filter.performer_tags) and ANDs them — one exact, tight query, no client narrowing
+      // for single-source tags. Multi-source tags are deferred to FeedContainer's union check.
       const sceneMarkerFilter = this.buildSceneMarkerFilter(filters, savedFilterCriteria);
-
-      // OR logic: match markers by marker tags, and additionally by scene tags and/or
-      // performer tags — but only when the corresponding setting is enabled.
-      // ponytail: parallel calls + dedup; all use the same page offset so a marker
-      // could appear twice across page boundaries — acceptable for a scroll feed.
-      const hasPositiveTags = !filters?.savedFilterId
-        && (sceneMarkerFilter.tags?.value?.length ?? 0) > 0;
-      const matchSceneTags = hasPositiveTags && !!filters?.includeSceneTagsInMarkerFilter;
-      const matchPerformerTags = hasPositiveTags && !!filters?.showPerformerTags;
-
-      if (matchSceneTags || matchPerformerTags) {
-        // Cross-source AND ("all tags, any source") can't be expressed server-side, so each source
-        // variant matches ANY of the selected tags (INCLUDES) to produce a candidate SUPERSET;
-        // FeedContainer.filterMarkersByRequiredTags narrows it to the true intersection client-side.
-        // ponytail: broad candidate set when a selected tag is common; upgrade = probe per-tag
-        // counts and require only the rarest tag server-side. Fine at personal-library scale.
-        const base = this.relaxTagsToAnyOf(sceneMarkerFilter);
-        const queries = [this.executeMarkerQueryWithCount(filter, base, signal)];
-        if (matchSceneTags) {
-          queries.push(this.executeMarkerQueryWithCount(filter, this.buildSceneTagsVariant(base), signal));
-        }
-        if (matchPerformerTags) {
-          queries.push(this.executeMarkerQueryWithCount(filter, this.buildPerformerTagsVariant(base), signal));
-        }
-        const results = await Promise.all(queries);
-        if (this.isAborted(signal)) return { markers: [], totalCount: 0 };
-        const seen = new Set<string>();
-        const markers = results.flatMap(r => r.markers)
-          .filter(m => !seen.has(m.id) && !!seen.add(m.id));
-        await this.maybeEnrichPerformerTags(markers, filters);
-        return { markers, totalCount: Math.max(...results.map(r => r.totalCount)), sortSeed: filter.sort };
-      }
 
       const { markers, totalCount } = await this.executeMarkerQueryWithCount(filter, sceneMarkerFilter, signal);
       if (this.isAborted(signal)) return { markers: [], totalCount: 0 };
@@ -932,91 +906,6 @@ export class StashAPI {
     return sceneMarkerFilter;
   }
 
-  /**
-   * Apply tag filters to a scene marker filter
-   */
-  private applyTagsToMarkerFilter(targetFilter: SceneMarkerFilterInput, tagIds: string[], depth: number = 0): void {
-    if (tagIds.length > 0) {
-      targetFilter.tags = {
-        value: tagIds,
-        excludes: [],
-        modifier: 'INCLUDES_ALL',
-        depth,
-      };
-    }
-  }
-
-  /** Copy a marker filter with its positive tag match relaxed from INCLUDES_ALL to INCLUDES
-   *  (match ANY selected tag) — yields a candidate superset for client-side AND narrowing. */
-  private relaxTagsToAnyOf(f: SceneMarkerFilterInput): SceneMarkerFilterInput {
-    if (!f.tags?.value?.length) return f;
-    return { ...f, tags: { ...f.tags, modifier: 'INCLUDES' } };
-  }
-
-  /** Build a copy of a marker filter that uses scene_tags instead of tags for positive matching. */
-  private buildSceneTagsVariant(f: SceneMarkerFilterInput): SceneMarkerFilterInput {
-    const copy: SceneMarkerFilterInput = { ...f };
-    if (copy.tags?.value?.length) {
-      copy.scene_tags = { value: copy.tags.value, modifier: copy.tags.modifier, depth: copy.tags.depth };
-      copy.tags = copy.tags.excludes?.length
-        ? { value: [], modifier: 'INCLUDES', excludes: copy.tags.excludes }
-        : undefined;
-    }
-    return copy;
-  }
-
-  /** Build a copy of a marker filter that uses scene_filter.performer_tags instead of tags. */
-  private buildPerformerTagsVariant(f: SceneMarkerFilterInput): SceneMarkerFilterInput {
-    const copy: SceneMarkerFilterInput = { ...f };
-    if (copy.tags?.value?.length) {
-      const sceneFilter: SceneFilterInput = { ...(copy.scene_filter ?? {}) };
-      sceneFilter.performer_tags = { value: copy.tags.value, modifier: copy.tags.modifier, depth: copy.tags.depth };
-      copy.scene_filter = sceneFilter;
-      copy.tags = copy.tags.excludes?.length
-        ? { value: [], modifier: 'INCLUDES', excludes: copy.tags.excludes }
-        : undefined;
-    }
-    return copy;
-  }
-
-  /**
-   * Broaden a scene filter so a scene also matches when one of its performers carries the
-   * selected tag (scene tags OR performer_tags). No-op unless performer-tag matching is enabled.
-   *
-   * Stash generates broken SQL ("no such table: performer_tags") when performer_tags lives only
-   * inside an OR sub-filter, so we keep performer_tags in the MAIN filter (which sets up the join)
-   * and move the original scene-tag match into the OR branch. Both branches retain the shared
-   * constraints (studios/orientation/has_markers/excludes) via the spread copy.
-   */
-  private addPerformerTagOrBranch(sceneFilter: SceneFilterInput, filters?: FilterOptions): void {
-    if (!filters?.showPerformerTags) return;
-    const tagCrit = sceneFilter.tags as (SceneFilterInput['tags'] & { excludes?: string[] }) | undefined;
-    if (!tagCrit?.value?.length) return;
-    // Both branches match ANY of the selected tags (INCLUDES) — a candidate superset that
-    // FeedContainer.filterMarkersByRequiredTags narrows to the true "all tags, any source" AND.
-    const orBranch: SceneFilterInput = { ...sceneFilter }; // shared constraints + scene-tag match
-    orBranch.tags = { value: tagCrit.value, modifier: 'INCLUDES', depth: tagCrit.depth,
-      ...(tagCrit.excludes?.length ? { excludes: tagCrit.excludes } : {}) } as SceneFilterInput['tags'];
-    sceneFilter.performer_tags = { value: tagCrit.value, modifier: 'INCLUDES', depth: tagCrit.depth };
-    sceneFilter.tags = tagCrit.excludes?.length // keep scene-tag EXCLUDES on the main branch, drop positive match
-      ? { value: [], modifier: 'INCLUDES', excludes: tagCrit.excludes, depth: tagCrit.depth } as SceneFilterInput['tags']
-      : undefined;
-    sceneFilter.OR = orBranch;
-  }
-
-  /**
-   * Apply tag filters to a scene filter
-   */
-  private applyTagsToSceneFilter(targetFilter: SceneFilterInput, tagIds: string[], depth: number = 0): void {
-    if (tagIds.length > 0) {
-      targetFilter.tags = {
-        value: tagIds,
-        modifier: 'INCLUDES_ALL',
-        depth,
-      };
-    }
-  }
-
   private applyExcludedTagsToMarkerFilter(targetFilter: SceneMarkerFilterInput, excludedTagIds: string[]): void {
     const uniqueExcluded = Array.from(new Set(excludedTagIds));
     if (uniqueExcluded.length === 0) {
@@ -1113,6 +1002,74 @@ export class StashAPI {
     targetFilter.scene_filter = sceneFilter;
   }
 
+  /** A tag id that no item can have — used to force an empty result when a tag selection is
+   *  unsatisfiable in the current feed (its only source is disabled). */
+  private static readonly IMPOSSIBLE_TAG = '-1';
+
+  /**
+   * Prime the tag→source cache for the given ids (one findTags query, cached for the session).
+   * Lets the filter builders route each tag to the source field (marker/scene/performer/image)
+   * that can actually match it, turning "all tags, any source" into a single exact server-side AND.
+   */
+  async getTagSources(ids: string[]): Promise<void> {
+    const missing = [...new Set(ids)].filter((id) => id && !this._tagSourceCache.has(id));
+    if (missing.length === 0) return;
+    try {
+      const result = await this.gqlClient.query<{ findTags?: { tags: Array<{ id: string; scene_count?: number; scene_marker_count?: number; performer_count?: number; image_count?: number }> } }>({
+        query: `query TagSources($ids:[ID!]){findTags(ids:$ids){tags{id scene_count scene_marker_count performer_count image_count}}}`,
+        variables: { ids: missing },
+      });
+      for (const t of result.data?.findTags?.tags ?? []) {
+        this._tagSourceCache.set(t.id, {
+          marker: (t.scene_marker_count ?? 0) > 0,
+          scene: (t.scene_count ?? 0) > 0,
+          performer: (t.performer_count ?? 0) > 0,
+          image: (t.image_count ?? 0) > 0,
+        });
+      }
+    } catch { /* leave uncached — uncached tags fall through to the client safety net */ }
+  }
+
+  /**
+   * Route selected tags to per-source INCLUDES_ALL groups and apply them (ANDed) to a marker or
+   * scene filter. A tag with exactly one enabled source it appears in is constrained server-side
+   * (tight, exact); a tag in ≥2 enabled sources (or uncached) is deferred to the client union
+   * check (FeedContainer.filterMarkersByRequiredTags). A tag with no enabled source makes the
+   * whole selection unsatisfiable (forces an empty result).
+   */
+  private applyRoutedTags(
+    targetFilter: SceneMarkerFilterInput | SceneFilterInput,
+    tagIds: string[],
+    depth: number,
+    enabled: { marker: boolean; scene: boolean; performer: boolean },
+    shape: 'marker' | 'scene'
+  ): void {
+    const incAll = (value: string[]) => ({ value, modifier: 'INCLUDES_ALL' as const, depth });
+    const groups = { marker: [] as string[], scene: [] as string[], performer: [] as string[] };
+    for (const id of tagIds) {
+      const src = this._tagSourceCache.get(id);
+      if (!src) continue; // uncached → defer to client safety net
+      const cands = (['marker', 'scene', 'performer'] as const).filter((s) => enabled[s] && src[s]);
+      if (cands.length === 0) { // no enabled source can match this tag → force empty
+        if (shape === 'marker') (targetFilter as SceneMarkerFilterInput).tags = incAll([StashAPI.IMPOSSIBLE_TAG]);
+        else (targetFilter as SceneFilterInput).tags = incAll([StashAPI.IMPOSSIBLE_TAG]);
+        return;
+      }
+      if (cands.length === 1) groups[cands[0]].push(id);
+      // ≥2 enabled sources → multi-source tag, deferred to the client union check
+    }
+    if (shape === 'marker') {
+      const f = targetFilter as SceneMarkerFilterInput;
+      if (groups.marker.length) f.tags = incAll(groups.marker);
+      if (groups.scene.length) f.scene_tags = incAll(groups.scene);
+      if (groups.performer.length) { f.scene_filter = { ...(f.scene_filter ?? {}) }; f.scene_filter.performer_tags = incAll(groups.performer); }
+    } else {
+      const f = targetFilter as SceneFilterInput;
+      if (groups.scene.length) f.tags = incAll(groups.scene);
+      if (groups.performer.length) f.performer_tags = incAll(groups.performer);
+    }
+  }
+
   /**
    * Apply tag and performer filters to a filter object
    */
@@ -1125,11 +1082,10 @@ export class StashAPI {
 
     if (tagIds.length > 0) {
       const tagDepth = filters?.tagDepth ?? 0;
-      if (options.isMarkerFilter) {
-        this.applyTagsToMarkerFilter(targetFilter as SceneMarkerFilterInput, tagIds, tagDepth);
-      } else {
-        this.applyTagsToSceneFilter(targetFilter as SceneFilterInput, tagIds, tagDepth);
-      }
+      const enabled = options.isMarkerFilter
+        ? { marker: true, scene: !!filters?.includeSceneTagsInMarkerFilter, performer: !!filters?.showPerformerTags }
+        : { marker: false, scene: true, performer: !!filters?.showPerformerTags };
+      this.applyRoutedTags(targetFilter, tagIds, tagDepth, enabled, options.isMarkerFilter ? 'marker' : 'scene');
     }
 
     if (excludedTagIds.length > 0) {
@@ -1322,7 +1278,6 @@ export class StashAPI {
     }
     this.applyTagAndPerformerFilters(filters, sceneFilter, { isMarkerFilter: false });
     this.applyOrientationToSceneFilter(sceneFilter, filters);
-    this.addPerformerTagOrBranch(sceneFilter, filters);
 
 
     return Object.keys(sceneFilter).length > 0 ? sceneFilter : null;
@@ -1506,7 +1461,6 @@ export class StashAPI {
 
     this.applyTagAndPerformerFilters(filters, sceneFilter, { isMarkerFilter: false });
     this.applyOrientationToSceneFilter(sceneFilter, filters);
-    this.addPerformerTagOrBranch(sceneFilter, filters);
 
     return Object.keys(sceneFilter).length > 0 ? sceneFilter : null;
   }
@@ -2545,13 +2499,33 @@ export class StashAPI {
       };
     }
 
+    // Route positive tags to the field that can match them (image `tags` / `performer_tags`),
+    // ANDed — exact server-side, mirroring the marker/scene feeds. Multi-source or uncached tags
+    // are deferred to FeedContainer.filterImagesByRequiredTags.
     const excludedTagIds = filters?.excludedTagIds ?? [];
-    if ((filters?.tagIds && filters.tagIds.length > 0) || excludedTagIds.length > 0) {
-      imageFilter.tags = {
-        value: filters?.tagIds ?? [],
-        modifier: 'INCLUDES_ALL',
-      };
-      (imageFilter.tags as { excludes?: string[] }).excludes = excludedTagIds;
+    const imageGroup: string[] = [];
+    const performerGroup: string[] = [];
+    let impossible = false;
+    for (const id of filters?.tagIds ?? []) {
+      const src = this._tagSourceCache.get(id);
+      if (!src) continue; // uncached → client safety net
+      const cands: Array<'image' | 'performer'> = [];
+      if (src.image) cands.push('image');
+      if (filters?.showPerformerTags && src.performer) cands.push('performer');
+      if (cands.length === 0) { impossible = true; break; }
+      if (cands.length === 1) (cands[0] === 'image' ? imageGroup : performerGroup).push(id);
+      // ≥2 enabled sources → deferred to the client union check
+    }
+    if (impossible) {
+      imageFilter.tags = { value: [StashAPI.IMPOSSIBLE_TAG], modifier: 'INCLUDES_ALL' };
+    } else {
+      if (imageGroup.length) imageFilter.tags = { value: imageGroup, modifier: 'INCLUDES_ALL' };
+      if (performerGroup.length) imageFilter.performer_tags = { value: performerGroup, modifier: 'INCLUDES_ALL' };
+    }
+    if (excludedTagIds.length > 0) {
+      const t = imageFilter.tags as { value: string[]; modifier: string; excludes?: string[] } | undefined;
+      if (t) t.excludes = excludedTagIds;
+      else imageFilter.tags = { value: [], modifier: 'INCLUDES_ALL', excludes: excludedTagIds } as ImageFilterInput['tags'];
     }
 
     const imageOrientations = this.resolveOrientationEnumValues(filters);
@@ -2571,25 +2545,6 @@ export class StashAPI {
 
     if (filters?.studioIds && filters.studioIds.length > 0) {
       imageFilter.studios = { value: filters.studioIds, modifier: 'INCLUDES', depth: filters.studioDepth ?? 0 };
-    }
-
-    // Broaden so an image also matches when a performer carries the selected tag, when enabled.
-    // performer_tags stays in the MAIN filter (Stash can't join it from an OR sub-filter); the
-    // original image-tag match moves to the OR branch. Both keep the path regex via the spread.
-    if (filters?.showPerformerTags) {
-      const imgTags = imageFilter.tags as { value?: string[]; modifier: string; excludes?: string[] } | undefined;
-      if (imgTags?.value?.length) {
-        // Both branches match ANY selected tag (INCLUDES); FeedContainer.filterImagesByRequiredTags
-        // narrows to the true "all tags, any source" AND across image tags + performer tags.
-        const orBranch: ImageFilterInput = { ...imageFilter };
-        orBranch.tags = { value: imgTags.value, modifier: 'INCLUDES',
-          ...(imgTags.excludes?.length ? { excludes: imgTags.excludes } : {}) } as ImageFilterInput['tags'];
-        imageFilter.performer_tags = { value: imgTags.value, modifier: 'INCLUDES' };
-        imageFilter.tags = imgTags.excludes?.length
-          ? { value: [], modifier: 'INCLUDES', excludes: imgTags.excludes } as ImageFilterInput['tags']
-          : undefined;
-        imageFilter.OR = orBranch;
-      }
     }
 
     return imageFilter;

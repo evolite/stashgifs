@@ -865,15 +865,16 @@ export class FeedContainer {
     return ids;
   }
 
-  /** Narrow the server candidate superset to markers carrying ALL selected tags across their
-   *  enabled-source union ("all tags, any source"). No-op for <2 tags (server is exact there). */
+  /** Safety net for the rare tag that lives in multiple enabled sources (the server routes only
+   *  single-source tags, ANDed). Keeps markers carrying ALL selected tags across their
+   *  enabled-source union ("all tags, any source"). A no-op when the server was already exact. */
   private filterMarkersByRequiredTags(markers: SceneMarker[]): SceneMarker[] {
-    if (this.selectedTagIds.size < 2) return markers;
+    if (this.selectedTagIds.size === 0) return markers;
     return markers.filter((marker) => this.hasAllSelectedTags(this.markerUnionTagIds(marker)));
   }
 
   private filterImagesByRequiredTags(images: Image[]): Image[] {
-    if (this.selectedTagIds.size < 2) return images;
+    if (this.selectedTagIds.size === 0) return images;
     return images.filter((image) => {
       const ids = new Set<string>();
       for (const t of image.tags ?? []) ids.add(t.id);
@@ -4152,6 +4153,11 @@ export class FeedContainer {
       this.applyExcludedTagsToFilters(currentFilters);
       this.applyOrientationFilterToFilters(currentFilters);
       this.applySceneTagSettingToFilters(currentFilters);
+      // Warm the tag→source cache so the StashAPI filter builders can route each selected tag to the
+      // source field that can match it (one exact server-side AND instead of client narrowing).
+      if (this.selectedTagIds.size > 0) {
+        await this.api.getTagSources([...this.selectedTagIds.keys()].map(String));
+      }
       const { limit, offset, page } = this.calculatePaginationParams(currentFilters, append);
 
       if (this.checkAbortAndCleanup(signal)) {
