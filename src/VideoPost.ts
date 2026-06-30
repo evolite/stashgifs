@@ -158,20 +158,21 @@ export class VideoPost extends VideoPostBase {
   }
 
   private buildTagsSection(): HTMLElement | undefined {
-    // Skip in shuffle mode UNLESS a marker has been created (to show the assigned tag)
     const studio = this.data.marker.scene.studio;
     const hasStudio = !!studio && this.showStudioChips;
-    const canShowTags = !this.useShuffleMode || this.hasCreatedMarker;
-    if (!hasStudio && !canShowTags) return undefined;
-
+    // The "+" add-tag affordance only makes sense for a real (or short-form) marker — you can't
+    // add a tag to a synthetic shuffle marker that has no underlying marker yet. Tag CHIPS,
+    // however, always render (synthetic markers carry their scene's tags).
+    const canAddTag = !this.useShuffleMode || this.hasCreatedMarker;
     const addTagChipTitle = this.isRealMarker() || this.isShortFormContent() ? 'Add tag to marker' : 'Add tag';
-    const addTagChip = canShowTags ? this.createAddTagChip(addTagChipTitle) : undefined;
+    const addTagChip = canAddTag ? this.createAddTagChip(addTagChipTitle) : undefined;
 
     const tagsSection = document.createElement('div');
     tagsSection.className = 'video-post__tags';
     if (hasStudio) tagsSection.appendChild(this.createStudioChip(studio));
-    if (canShowTags) this.addTagChips(tagsSection);
+    this.addTagChips(tagsSection);
     if (addTagChip) tagsSection.appendChild(addTagChip);
+    if (tagsSection.childElementCount === 0) return undefined;
     this.applyReelModeTagStyles(tagsSection);
     return tagsSection;
   }
@@ -292,17 +293,18 @@ export class VideoPost extends VideoPostBase {
     // Add other tags from marker tags array
     isFirstTag = this.addTagsFromList(this.data.marker.tags, chips, displayedTagIds, hasPerformers, isFirstTag);
     
-    // Scene tags: always for shortform; for regular markers only when showSceneTags is on
-    const isShortForm = this.isShortFormContent();
-    if (isShortForm || this.showSceneTags) {
-      isFirstTag = this.addTagsFromList(this.data.marker.scene.tags, chips, displayedTagIds, hasPerformers, isFirstTag);
-    }
-
-    // Performer tags — displayedTagIds already deduplicates across all sources
+    // Performer tags next — displayedTagIds already deduplicates across all sources
     if (this.showPerformerTags) {
       for (const performer of (this.data.marker.scene.performers ?? [])) {
         isFirstTag = this.addTagsFromList(performer.tags, chips, displayedTagIds, hasPerformers, isFirstTag);
       }
+    }
+
+    // Scene tags last: always for shortform/synthetic markers (scene tags are their intrinsic
+    // tags, like a real marker's own tags); for regular markers only when showSceneTags is on.
+    const isShortForm = this.isShortFormContent();
+    if (isShortForm || this.useShuffleMode || this.showSceneTags) {
+      isFirstTag = this.addTagsFromList(this.data.marker.scene.tags, chips, displayedTagIds, hasPerformers, isFirstTag);
     }
 
     this.applyTagLimit(chips, this.tagDisplayLimit);

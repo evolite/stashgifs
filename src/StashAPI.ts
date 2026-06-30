@@ -658,26 +658,30 @@ export class StashAPI {
       const filter = this.buildFindFilter(filters, savedFilterCriteria, page, limit);
       const sceneMarkerFilter = this.buildSceneMarkerFilter(filters, savedFilterCriteria);
 
-      // OR logic: match markers by marker tags, scene tags, or performer tags.
-      // ponytail: three parallel calls + dedup; all use the same page offset so a marker
+      // OR logic: match markers by marker tags, and additionally by scene tags and/or
+      // performer tags — but only when the corresponding setting is enabled.
+      // ponytail: parallel calls + dedup; all use the same page offset so a marker
       // could appear twice across page boundaries — acceptable for a scroll feed.
-      const useTagsOR = !filters?.savedFilterId
+      const hasPositiveTags = !filters?.savedFilterId
         && (sceneMarkerFilter.tags?.value?.length ?? 0) > 0;
+      const matchSceneTags = hasPositiveTags && !!filters?.includeSceneTagsInMarkerFilter;
+      const matchPerformerTags = hasPositiveTags && !!filters?.showPerformerTags;
 
-      if (useTagsOR) {
-        const sceneTagsFilter = this.buildSceneTagsVariant(sceneMarkerFilter);
-        const performerTagsFilter = this.buildPerformerTagsVariant(sceneMarkerFilter);
-        const [r1, r2, r3] = await Promise.all([
-          this.executeMarkerQueryWithCount(filter, sceneMarkerFilter, signal),
-          this.executeMarkerQueryWithCount(filter, sceneTagsFilter, signal),
-          this.executeMarkerQueryWithCount(filter, performerTagsFilter, signal),
-        ]);
+      if (matchSceneTags || matchPerformerTags) {
+        const queries = [this.executeMarkerQueryWithCount(filter, sceneMarkerFilter, signal)];
+        if (matchSceneTags) {
+          queries.push(this.executeMarkerQueryWithCount(filter, this.buildSceneTagsVariant(sceneMarkerFilter), signal));
+        }
+        if (matchPerformerTags) {
+          queries.push(this.executeMarkerQueryWithCount(filter, this.buildPerformerTagsVariant(sceneMarkerFilter), signal));
+        }
+        const results = await Promise.all(queries);
         if (this.isAborted(signal)) return { markers: [], totalCount: 0 };
         const seen = new Set<string>();
-        const markers = [...r1.markers, ...r2.markers, ...r3.markers]
+        const markers = results.flatMap(r => r.markers)
           .filter(m => !seen.has(m.id) && !!seen.add(m.id));
         await this.maybeEnrichPerformerTags(markers, filters);
-        return { markers, totalCount: Math.max(r1.totalCount, r2.totalCount, r3.totalCount), sortSeed: filter.sort };
+        return { markers, totalCount: Math.max(...results.map(r => r.totalCount)), sortSeed: filter.sort };
       }
 
       const { markers, totalCount } = await this.executeMarkerQueryWithCount(filter, sceneMarkerFilter, signal);
@@ -960,6 +964,27 @@ export class StashAPI {
         : undefined;
     }
     return copy;
+  }
+
+  /**
+   * Broaden a scene filter so a scene also matches when one of its performers carries the
+   * selected tag (scene tags OR performer_tags). No-op unless performer-tag matching is enabled.
+   *
+   * Stash generates broken SQL ("no such table: performer_tags") when performer_tags lives only
+   * inside an OR sub-filter, so we keep performer_tags in the MAIN filter (which sets up the join)
+   * and move the original scene-tag match into the OR branch. Both branches retain the shared
+   * constraints (studios/orientation/has_markers/excludes) via the spread copy.
+   */
+  private addPerformerTagOrBranch(sceneFilter: SceneFilterInput, filters?: FilterOptions): void {
+    if (!filters?.showPerformerTags) return;
+    const tagCrit = sceneFilter.tags as (SceneFilterInput['tags'] & { excludes?: string[] }) | undefined;
+    if (!tagCrit?.value?.length) return;
+    const orBranch: SceneFilterInput = { ...sceneFilter }; // shared constraints + original scene-tag match
+    sceneFilter.performer_tags = { value: tagCrit.value, modifier: tagCrit.modifier, depth: tagCrit.depth };
+    sceneFilter.tags = tagCrit.excludes?.length // keep scene-tag EXCLUDES on the main branch, drop positive match
+      ? { value: [], modifier: 'INCLUDES', excludes: tagCrit.excludes, depth: tagCrit.depth } as SceneFilterInput['tags']
+      : undefined;
+    sceneFilter.OR = orBranch;
   }
 
   /**
@@ -1280,8 +1305,9 @@ export class StashAPI {
     }
     this.applyTagAndPerformerFilters(filters, sceneFilter, { isMarkerFilter: false });
     this.applyOrientationToSceneFilter(sceneFilter, filters);
+    this.addPerformerTagOrBranch(sceneFilter, filters);
 
-    
+
     return Object.keys(sceneFilter).length > 0 ? sceneFilter : null;
   }
 
@@ -1323,7 +1349,7 @@ export class StashAPI {
           stream: undefined,
           scene: scene,
           primary_tag: undefined,
-          tags: [],
+          tags: [], // scene tags render via the scene-tag slot (see VideoPost.addTagChips), like short-form
         });
       }
     }
@@ -1463,6 +1489,7 @@ export class StashAPI {
 
     this.applyTagAndPerformerFilters(filters, sceneFilter, { isMarkerFilter: false });
     this.applyOrientationToSceneFilter(sceneFilter, filters);
+    this.addPerformerTagOrBranch(sceneFilter, filters);
 
     return Object.keys(sceneFilter).length > 0 ? sceneFilter : null;
   }
@@ -2484,6 +2511,7 @@ export class StashAPI {
       orientationFilter?: ImageOrientation[];
       imagesInGalleryOnly?: boolean;
       galleryIds?: string[];
+      showPerformerTags?: boolean;
     }
   ): ImageFilterInput {
     const imageFilter: ImageFilterInput = {
@@ -2526,6 +2554,21 @@ export class StashAPI {
 
     if (filters?.studioIds && filters.studioIds.length > 0) {
       imageFilter.studios = { value: filters.studioIds, modifier: 'INCLUDES', depth: filters.studioDepth ?? 0 };
+    }
+
+    // Broaden so an image also matches when a performer carries the selected tag, when enabled.
+    // performer_tags stays in the MAIN filter (Stash can't join it from an OR sub-filter); the
+    // original image-tag match moves to the OR branch. Both keep the path regex via the spread.
+    if (filters?.showPerformerTags) {
+      const imgTags = imageFilter.tags as { value?: string[]; modifier: 'INCLUDES_ALL'; excludes?: string[] } | undefined;
+      if (imgTags?.value?.length) {
+        const orBranch: ImageFilterInput = { ...imageFilter };
+        imageFilter.performer_tags = { value: imgTags.value, modifier: imgTags.modifier };
+        imageFilter.tags = imgTags.excludes?.length
+          ? { value: [], modifier: 'INCLUDES', excludes: imgTags.excludes } as ImageFilterInput['tags']
+          : undefined;
+        imageFilter.OR = orBranch;
+      }
     }
 
     return imageFilter;
