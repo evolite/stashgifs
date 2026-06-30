@@ -2,5 +2,5 @@
  * Version information - auto-generated from package.json
  * This file is updated automatically during the build process
  */
-export const VERSION = '7.8.0';
-export const BUILD_HASH = '8a6b2b1c';
+export const VERSION = '7.8.1';
+export const BUILD_HASH = '8e173e8b';
