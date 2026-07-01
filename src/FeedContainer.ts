@@ -842,10 +842,22 @@ export class FeedContainer {
     return images.filter((image) => !this.shouldExcludeTags(image.tags));
   }
 
-  /** True if every selected tag id is present in the given set (the item's enabled-source union). */
+  /** True if every selected tag id is present in the given set (the item's enabled-source union).
+   *  Under sub-hierarchy a selected parent is also satisfied by any of its descendant tags, since
+   *  the item carries the child, not the parent the user picked. */
   private hasAllSelectedTags(unionTagIds: Set<string>): boolean {
+    const subtags = this.settings.includeSubtags === true;
     for (const id of this.selectedTagIds.keys()) {
-      if (!unionTagIds.has(String(id))) return false;
+      const sid = String(id);
+      if (unionTagIds.has(sid)) continue;
+      if (subtags) {
+        let matched = false;
+        for (const d of this.api.getTagDescendantSet(sid)) {
+          if (unionTagIds.has(d)) { matched = true; break; }
+        }
+        if (matched) continue;
+      }
+      return false;
     }
     return true;
   }
@@ -4308,7 +4320,12 @@ export class FeedContainer {
       // Warm the tag→source cache so the StashAPI filter builders can route each selected tag to the
       // source field that can match it (one exact server-side AND instead of client narrowing).
       if (this.selectedTagIds.size > 0) {
-        await this.api.getTagSources([...this.selectedTagIds.keys()].map(String));
+        const tagIds = [...this.selectedTagIds.keys()].map(String);
+        await this.api.getTagSources(tagIds);
+        // Under sub-hierarchy the server matches descendants, but the client union check below
+        // sees only the child tag an item carries — prime each parent's descendant closure so it
+        // recognises the match instead of dropping every result.
+        if (this.settings.includeSubtags) await this.api.getTagDescendants(tagIds);
       }
       const { limit, offset, page } = this.calculatePaginationParams(currentFilters, append);
 
@@ -4699,6 +4716,7 @@ export class FeedContainer {
         excludedTagIds?: string[];
         studioIds?: string[];
         studioDepth?: number;
+        tagDepth?: number;
       } = {};
 
       if (performerIds.length > 0) {
@@ -4718,6 +4736,7 @@ export class FeedContainer {
       }
 
       imageFilters.studioDepth = this.settings.includeSubtags ? -1 : 0;
+      imageFilters.tagDepth = this.settings.includeSubtags ? -1 : 0;
 
       const imageFiltersWithOrientation = {
         ...imageFilters,

@@ -103,7 +103,12 @@ export class StashAPI {
   /** Per-tag presence across sources (count > 0), used to route a tag to the filter field that
    *  can actually match it. Tag→source membership rarely changes, so this is cached for the session. */
   private readonly _tagSourceCache = new Map<string, { marker: boolean; scene: boolean; performer: boolean; image: boolean }>();
-  
+
+  /** Descendant-id closure (incl. the tag itself) per selected tag, primed by getTagDescendants
+   *  when "Include Sub-hierarchy" is on. Lets the client union check recognise a selected parent
+   *  as satisfied by any descendant tag an item actually carries. Cached for the session. */
+  private readonly _tagDescendantCache = new Map<string, Set<string>>();
+
   // Magic numbers as constants
   private static readonly SEARCH_FETCH_MULTIPLIER = 3; // Fetch 3x limit when searching to improve relevance
   private static readonly MIN_SEARCH_LIMIT = 20; // Minimum results to fetch when not searching
@@ -1031,6 +1036,34 @@ export class StashAPI {
   }
 
   /**
+   * Prime the tag→descendants cache for the given ids (one findTags query each, cached for the
+   * session). Used when "Include Sub-hierarchy" is on: the server matches by depth, but the client
+   * union check must also count a selected parent as satisfied by any descendant tag the item
+   * actually carries — otherwise every server-matched item (which carries a child tag, not the
+   * parent) is wrongly dropped and the feed blanks.
+   */
+  async getTagDescendants(ids: string[]): Promise<void> {
+    const missing = [...new Set(ids)].filter((id) => id && !this._tagDescendantCache.has(id));
+    if (missing.length === 0) return;
+    await Promise.all(missing.map(async (id) => {
+      const set = new Set<string>([id]);
+      try {
+        const result = await this.gqlClient.query<{ findTags?: { tags: Array<{ id: string }> } }>({
+          query: `query TagDescendants($id:ID!){findTags(tag_filter:{parents:{value:[$id],modifier:INCLUDES,depth:-1}},filter:{per_page:-1}){tags{id}}}`,
+          variables: { id },
+        });
+        for (const t of result.data?.findTags?.tags ?? []) set.add(t.id);
+      } catch { /* leave as {id} — falls back to exact match */ }
+      this._tagDescendantCache.set(id, set);
+    }));
+  }
+
+  /** Descendant id set (incl. the tag itself) primed by getTagDescendants; {id} if unprimed. */
+  getTagDescendantSet(id: string): Set<string> {
+    return this._tagDescendantCache.get(id) ?? new Set([id]);
+  }
+
+  /**
    * Route selected tags to per-source INCLUDES_ALL groups and apply them (ANDed) to a marker or
    * scene filter. A tag with exactly one enabled source it appears in is constrained server-side
    * (tight, exact); a tag in ≥2 enabled sources (or uncached) is deferred to the client union
@@ -1049,7 +1082,13 @@ export class StashAPI {
     for (const id of tagIds) {
       const src = this._tagSourceCache.get(id);
       if (!src) continue; // uncached → defer to client safety net
-      const cands = (['marker', 'scene', 'performer'] as const).filter((s) => enabled[s] && src[s]);
+      // A parent-only tag has zero direct counts in every source, so exact routing would mark it
+      // unsatisfiable (IMPOSSIBLE_TAG) and blank the feed. Under sub-hierarchy (depth !== 0) its
+      // content lives in descendants, so widen it to all enabled sources; tags with direct content
+      // still route tightly. The client union check (descendant-aware) confirms membership.
+      const hasDirectSource = src.marker || src.scene || src.performer;
+      const cands = (['marker', 'scene', 'performer'] as const)
+        .filter((s) => enabled[s] && ((depth !== 0 && !hasDirectSource) || src[s]));
       if (cands.length === 0) { // no enabled source can match this tag → force empty
         if (shape === 'marker') (targetFilter as SceneMarkerFilterInput).tags = incAll([StashAPI.IMPOSSIBLE_TAG]);
         else (targetFilter as SceneFilterInput).tags = incAll([StashAPI.IMPOSSIBLE_TAG]);
@@ -2479,6 +2518,7 @@ export class StashAPI {
       excludedTagIds?: string[];
       studioIds?: string[];
       studioDepth?: number;
+      tagDepth?: number;
       orientationFilter?: ImageOrientation[];
       imagesInGalleryOnly?: boolean;
       galleryIds?: string[];
@@ -2503,15 +2543,19 @@ export class StashAPI {
     // ANDed — exact server-side, mirroring the marker/scene feeds. Multi-source or uncached tags
     // are deferred to FeedContainer.filterImagesByRequiredTags.
     const excludedTagIds = filters?.excludedTagIds ?? [];
+    const depth = filters?.tagDepth ?? 0;
     const imageGroup: string[] = [];
     const performerGroup: string[] = [];
     let impossible = false;
     for (const id of filters?.tagIds ?? []) {
       const src = this._tagSourceCache.get(id);
       if (!src) continue; // uncached → client safety net
+      // Parent-only tags have zero direct counts; under sub-hierarchy (depth !== 0) their content
+      // lives in descendants, so widen them to the enabled sources instead of marking impossible.
+      const widen = depth !== 0 && !src.image && !src.performer;
       const cands: Array<'image' | 'performer'> = [];
-      if (src.image) cands.push('image');
-      if (filters?.showPerformerTags && src.performer) cands.push('performer');
+      if (src.image || widen) cands.push('image');
+      if (filters?.showPerformerTags && (src.performer || widen)) cands.push('performer');
       if (cands.length === 0) { impossible = true; break; }
       if (cands.length === 1) (cands[0] === 'image' ? imageGroup : performerGroup).push(id);
       // ≥2 enabled sources → deferred to the client union check
@@ -2519,8 +2563,10 @@ export class StashAPI {
     if (impossible) {
       imageFilter.tags = { value: [StashAPI.IMPOSSIBLE_TAG], modifier: 'INCLUDES_ALL' };
     } else {
-      if (imageGroup.length) imageFilter.tags = { value: imageGroup, modifier: 'INCLUDES_ALL' };
-      if (performerGroup.length) imageFilter.performer_tags = { value: performerGroup, modifier: 'INCLUDES_ALL' };
+      // depth cast: the server accepts it on image tag criteria, but the generated type omits it
+      // (same reason the excludes branch below casts).
+      if (imageGroup.length) imageFilter.tags = { value: imageGroup, modifier: 'INCLUDES_ALL', depth } as ImageFilterInput['tags'];
+      if (performerGroup.length) imageFilter.performer_tags = { value: performerGroup, modifier: 'INCLUDES_ALL', depth } as ImageFilterInput['performer_tags'];
     }
     if (excludedTagIds.length > 0) {
       const t = imageFilter.tags as { value: string[]; modifier: string; excludes?: string[] } | undefined;
@@ -2566,6 +2612,7 @@ export class StashAPI {
       excludedTagIds?: string[];
       studioIds?: string[];
       studioDepth?: number;
+      tagDepth?: number;
       orientationFilter?: ImageOrientation[];
       sortSeed?: string;
       imagesInGalleryOnly?: boolean;
