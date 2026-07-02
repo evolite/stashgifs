@@ -370,14 +370,23 @@ export class SettingsPage {
       },
     ];
 
-    const buildInfoLabel = (labelText: string, tooltipText: string): HTMLElement => {
+    const buildInfoLabel = (labelText: string, tooltipText: string, important = false): HTMLElement => {
       const labelContainer = document.createElement('div');
-      labelContainer.style.cssText = 'display: flex; align-items: center;';
+      labelContainer.style.cssText = 'display: flex; align-items: center; gap: 6px;';
       const label = document.createElement('span');
       label.textContent = labelText;
       label.style.cssText = `color: ${THEME.colors.textSecondary}; font-size: ${THEME.typography.sizeBody}; cursor: help;`;
       labelContainer.appendChild(label);
       this.attachTooltip(label, tooltipText);
+      if (important) {
+        // Visible "read me" badge so it's obvious there's guidance behind the tooltip.
+        const badge = document.createElement('span');
+        badge.textContent = 'ⓘ Read';
+        badge.setAttribute('aria-label', 'Important: read before enabling');
+        badge.style.cssText = `display: inline-flex; align-items: center; gap: 3px; padding: 1px 7px; border-radius: 10px; font-size: 11px; font-weight: 600; color: ${THEME.colors.accentPrimary}; border: 1px solid ${THEME.colors.accentPrimary}; cursor: help; white-space: nowrap;`;
+        labelContainer.appendChild(badge);
+        this.attachTooltip(badge, tooltipText);
+      }
       return labelContainer;
     };
 
@@ -778,26 +787,6 @@ export class SettingsPage {
     sceneTitleContainer.appendChild(sceneTitleToggleContainer);
     layoutSection.appendChild(sceneTitleContainer);
     (this as any).sceneTitleToggle = sceneTitleToggle;
-
-    const showSceneTagsContainer = document.createElement('div');
-    showSceneTagsContainer.style.cssText = 'display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;';
-    showSceneTagsContainer.appendChild(buildInfoLabel('Scene Tags', 'Show tags from the parent scene on marker posts, and match scene tags when filtering the feed.\n\nEach tag is matched from a single source. Priority: marker tags → scene tags → performer tags (for images: image tags → performer tags). So a tag that is both a marker tag and a scene tag is matched as a marker tag; turning this on only adds scene matching for tags that aren\'t already a higher-priority source.'));
-    const { container: showSceneTagsToggleContainer, input: showSceneTagsToggle } = this.createToggleSwitch(
-      this.settings.showSceneTags === true, () => this.saveSettings()
-    );
-    showSceneTagsContainer.appendChild(showSceneTagsToggleContainer);
-    layoutSection.appendChild(showSceneTagsContainer);
-    (this as any).showSceneTagsToggle = showSceneTagsToggle;
-
-    const showPerformerTagsContainer = document.createElement('div');
-    showPerformerTagsContainer.style.cssText = 'display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;';
-    showPerformerTagsContainer.appendChild(buildInfoLabel('Performer Tags', 'Show tags from each performer on their posts (duplicates hidden), and match performer tags when filtering the feed.\n\nEach tag is matched from a single source. Priority: marker tags → scene tags → performer tags (for images: image tags → performer tags). Performer tags are lowest priority, so a tag also used as a marker, scene, or image tag is matched there instead — this adds matching only for tags unique to performers.'));
-    const { container: showPerformerTagsToggleContainer, input: showPerformerTagsToggle } = this.createToggleSwitch(
-      this.settings.showPerformerTags === true, () => this.saveSettings()
-    );
-    showPerformerTagsContainer.appendChild(showPerformerTagsToggleContainer);
-    layoutSection.appendChild(showPerformerTagsContainer);
-    (this as any).showPerformerTagsToggle = showPerformerTagsToggle;
 
     const tagLimitRow = document.createElement('div');
     tagLimitRow.style.cssText = 'display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;';
@@ -1337,6 +1326,28 @@ export class SettingsPage {
     );
     includeSubtagsContainer.appendChild(includeSubtagsToggleContainer);
     filtersSection.appendChild(includeSubtagsContainer);
+
+    // Scene / Image tag matching (also shows the tags on posts)
+    const showSceneTagsContainer = document.createElement('div');
+    showSceneTagsContainer.style.cssText = 'display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;';
+    showSceneTagsContainer.appendChild(buildInfoLabel('Scene / Image Tags', 'Also match a scene\'s tags when filtering, and show them on marker posts.\n\nEach tag matches one source only. Priority: marker → scene → performer (images: image → performer).', true));
+    const { container: showSceneTagsToggleContainer, input: showSceneTagsToggle } = this.createToggleSwitch(
+      this.settings.showSceneTags === true, () => this.saveSettings()
+    );
+    showSceneTagsContainer.appendChild(showSceneTagsToggleContainer);
+    filtersSection.appendChild(showSceneTagsContainer);
+    (this as any).showSceneTagsToggle = showSceneTagsToggle;
+
+    // Performer tag matching (also shows the tags on posts)
+    const showPerformerTagsContainer = document.createElement('div');
+    showPerformerTagsContainer.style.cssText = 'display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;';
+    showPerformerTagsContainer.appendChild(buildInfoLabel('Performer Tags', 'Also match performers\' tags when filtering, and show them on posts.\n\nEach tag matches one source only. Priority: marker → scene → performer. Performer is lowest, so shared tags match elsewhere first.', true));
+    const { container: showPerformerTagsToggleContainer, input: showPerformerTagsToggle } = this.createToggleSwitch(
+      this.settings.showPerformerTags === true, () => this.saveSettings()
+    );
+    showPerformerTagsContainer.appendChild(showPerformerTagsToggleContainer);
+    filtersSection.appendChild(showPerformerTagsContainer);
+    (this as any).showPerformerTagsToggle = showPerformerTagsToggle;
 
     // Recency Bias
     const seenHistoryContainer = document.createElement('div');
