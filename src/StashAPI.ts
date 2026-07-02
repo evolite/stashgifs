@@ -181,6 +181,13 @@ export class StashAPI {
       delete out.scene_performers;
     }
 
+    const normalizedPerformers = this.normalizeTagFieldAsNumbers(out.performers);
+    if (normalizedPerformers) {
+      out.performers = normalizedPerformers;
+    } else {
+      delete out.performers;
+    }
+
     return out as SceneMarkerFilterInput;
   }
 

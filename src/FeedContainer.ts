@@ -3757,6 +3757,13 @@ export class FeedContainer {
       this.appendRetryTimeoutId = undefined;
     }
     
+    // Refresh depth fields so a settings change (e.g. includeSubtags toggle) takes effect
+    // even when currentFilters was built before the setting changed.
+    if (this.currentFilters && !this.currentFilters.savedFilterId) {
+      this.currentFilters.tagDepth = this.settings.includeSubtags ? -1 : 0;
+      this.currentFilters.studioDepth = this.settings.includeSubtags ? -1 : 0;
+    }
+
     // Reload feed with current filters
     await this.loadVideos(this.currentFilters, false, undefined, true);
   }
