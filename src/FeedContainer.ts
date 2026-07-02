@@ -792,113 +792,11 @@ export class FeedContainer {
   }
 
 
-  private shouldExcludeTags(tags?: Array<{ id: string; name: string }>): boolean {
-    if (!tags || tags.length === 0) {
-      return false;
-    }
-
-    if (this.excludedTagIds.length > 0) {
-      const excludedIds = new Set(this.excludedTagIds);
-      if (tags.some((tag) => excludedIds.has(tag.id))) {
-        return true;
-      }
-    }
-
-    if (this.excludedTagNamesNormalized.length > 0) {
-      const excludedNames = new Set(this.excludedTagNamesNormalized);
-      if (tags.some((tag) => excludedNames.has(tag.name.toLowerCase()))) {
-        return true;
-      }
-    }
-
-    return false;
-  }
-
-  private shouldExcludeMarker(marker: SceneMarker): boolean {
-    if (marker.primary_tag && this.shouldExcludeTags([marker.primary_tag])) {
-      return true;
-    }
-
-    if (this.shouldExcludeTags(marker.tags)) {
-      return true;
-    }
-
-    return this.shouldExcludeTags(marker.scene?.tags);
-  }
-
-  private filterMarkersByExcludedTags(markers: SceneMarker[]): SceneMarker[] {
-    if (this.excludedTagIds.length === 0 && this.excludedTagNamesNormalized.length === 0) {
-      return markers;
-    }
-
-    return markers.filter((marker) => !this.shouldExcludeMarker(marker));
-  }
-
-  private filterImagesByExcludedTags(images: Image[]): Image[] {
-    if (this.excludedTagIds.length === 0 && this.excludedTagNamesNormalized.length === 0) {
-      return images;
-    }
-
-    return images.filter((image) => !this.shouldExcludeTags(image.tags));
-  }
-
-  /** True if every selected tag id is present in the given set (the item's enabled-source union).
-   *  Under sub-hierarchy a selected parent is also satisfied by any of its descendant tags, since
-   *  the item carries the child, not the parent the user picked. */
-  private hasAllSelectedTags(unionTagIds: Set<string>): boolean {
-    const subtags = this.settings.includeSubtags === true;
-    for (const id of this.selectedTagIds.keys()) {
-      const sid = String(id);
-      if (unionTagIds.has(sid)) continue;
-      if (subtags) {
-        let matched = false;
-        for (const d of this.api.getTagDescendantSet(sid)) {
-          if (unionTagIds.has(d)) { matched = true; break; }
-        }
-        if (matched) continue;
-      }
-      return false;
-    }
-    return true;
-  }
-
-  /** Union of a marker's tag ids across the sources currently enabled for matching. Scene tags
-   *  count when showSceneTags is on or the marker is synthetic/short-form (intrinsic there);
-   *  performer tags when showPerformerTags is on. Mirrors the server-side candidate sources. */
-  private markerUnionTagIds(marker: SceneMarker): Set<string> {
-    const ids = new Set<string>();
-    if (marker.primary_tag?.id) ids.add(marker.primary_tag.id);
-    for (const t of marker.tags ?? []) ids.add(t.id);
-    const intrinsicScene = typeof marker.id === 'string'
-      && (marker.id.startsWith('synthetic-') || marker.id.startsWith('shortform-'));
-    if (this.settings.showSceneTags || intrinsicScene) {
-      for (const t of marker.scene?.tags ?? []) ids.add(t.id);
-    }
-    if (this.settings.showPerformerTags) {
-      for (const p of marker.scene?.performers ?? []) for (const t of p.tags ?? []) ids.add(t.id);
-    }
-    return ids;
-  }
-
-  /** Safety net for the rare tag that lives in multiple enabled sources (the server routes only
-   *  single-source tags, ANDed). Keeps markers carrying ALL selected tags across their
-   *  enabled-source union ("all tags, any source"). A no-op when the server was already exact. */
-  private filterMarkersByRequiredTags(markers: SceneMarker[]): SceneMarker[] {
-    if (this.selectedTagIds.size === 0) return markers;
-    return markers.filter((marker) => this.hasAllSelectedTags(this.markerUnionTagIds(marker)));
-  }
-
-  private filterImagesByRequiredTags(images: Image[]): Image[] {
-    if (this.selectedTagIds.size === 0) return images;
-    return images.filter((image) => {
-      const ids = new Set<string>();
-      for (const t of image.tags ?? []) ids.add(t.id);
-      if (this.settings.showPerformerTags) {
-        for (const p of image.performers ?? []) for (const t of p.tags ?? []) ids.add(t.id);
-      }
-      return this.hasAllSelectedTags(ids);
-    });
-  }
+  // Tag/exclude filtering is fully server-side (StashAPI.applyRoutedTags / applyExcludedTags /
+  // buildImageFilter route every selected tag to one field and exclude across enabled fields), so
+  // there is no client-side tag or exclude post-filter — that would desync the displayed length
+  // from the server count and break pagination. Marker title search (filterMarkersByName) is the
+  // only remaining client filter, since Stash has no marker-title filter field.
 
   private getSeenCache(): { ids: string[]; set: Set<string> } {
     if (this.seenSetCache) return this.seenSetCache;
@@ -3753,7 +3651,7 @@ export class FeedContainer {
 
     return {
       ...result,
-      markers: this.filterMarkersByRequiredTags(this.filterMarkersByName(this.filterMarkersByExcludedTags(result.markers))),
+      markers: this.filterMarkersByName(result.markers),
     };
   }
 
@@ -4111,7 +4009,7 @@ export class FeedContainer {
     };
     const result = await this.api.fetchSceneMarkers(filters, signal);
     return {
-      markers: this.filterMarkersByRequiredTags(this.filterMarkersByName(this.filterMarkersByExcludedTags(result.markers))),
+      markers: this.filterMarkersByName(result.markers),
       totalCount: result.totalCount
     };
   }
@@ -4317,15 +4215,10 @@ export class FeedContainer {
       this.applyExcludedTagsToFilters(currentFilters);
       this.applyOrientationFilterToFilters(currentFilters);
       this.applySceneTagSettingToFilters(currentFilters);
-      // Warm the tag→source cache so the StashAPI filter builders can route each selected tag to the
-      // source field that can match it (one exact server-side AND instead of client narrowing).
+      // Warm the tag→effective-source cache so the filter builders can route each selected tag to
+      // the single server-side field that can match it (own ∪ descendants resolves parent tags).
       if (this.selectedTagIds.size > 0) {
-        const tagIds = [...this.selectedTagIds.keys()].map(String);
-        await this.api.getTagSources(tagIds);
-        // Under sub-hierarchy the server matches descendants, but the client union check below
-        // sees only the child tag an item carries — prime each parent's descendant closure so it
-        // recognises the match instead of dropping every result.
-        if (this.settings.includeSubtags) await this.api.getTagDescendants(tagIds);
+        await this.api.getTagSources([...this.selectedTagIds.keys()].map(String));
       }
       const { limit, offset, page } = this.calculatePaginationParams(currentFilters, append);
 
@@ -4687,7 +4580,7 @@ export class FeedContainer {
 
     return {
       ...result,
-      markers: this.filterMarkersByRequiredTags(this.filterMarkersByName(this.filterMarkersByExcludedTags(result.markers))),
+      markers: this.filterMarkersByName(result.markers),
     };
   }
 
@@ -4763,10 +4656,9 @@ export class FeedContainer {
         filters.sortSeed = sortSeed;
       }
 
-      // Convert GraphQL Image to simplified Image type
-      const images = this.filterImagesByRequiredTags(this.filterImagesByExcludedTags(
-        graphQLImages.map((img) => this.convertGraphQLImageToImage(img))
-      ));
+      // Convert GraphQL Image to simplified Image type. No client-side tag/exclude filter — the
+      // server query is exact, so the returned page IS the result (keeps pagination correct).
+      const images = graphQLImages.map((img) => this.convertGraphQLImageToImage(img));
       return { images, totalCount };
     } catch (error) {
       console.error('FeedContainer: Failed to load images', error);

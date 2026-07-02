@@ -781,7 +781,7 @@ export class SettingsPage {
 
     const showSceneTagsContainer = document.createElement('div');
     showSceneTagsContainer.style.cssText = 'display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;';
-    showSceneTagsContainer.appendChild(buildInfoLabel('Scene Tags', 'Show tags from the parent scene on marker posts, and match them when filtering the feed.\n\nTip: keep each tag in one place — a tag used on both scenes and performers filters slower and less predictably.'));
+    showSceneTagsContainer.appendChild(buildInfoLabel('Scene Tags', 'Show tags from the parent scene on marker posts, and match scene tags when filtering the feed.\n\nEach tag is matched from a single source. Priority: marker tags → scene tags → performer tags (for images: image tags → performer tags). So a tag that is both a marker tag and a scene tag is matched as a marker tag; turning this on only adds scene matching for tags that aren\'t already a higher-priority source.'));
     const { container: showSceneTagsToggleContainer, input: showSceneTagsToggle } = this.createToggleSwitch(
       this.settings.showSceneTags === true, () => this.saveSettings()
     );
@@ -791,7 +791,7 @@ export class SettingsPage {
 
     const showPerformerTagsContainer = document.createElement('div');
     showPerformerTagsContainer.style.cssText = 'display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;';
-    showPerformerTagsContainer.appendChild(buildInfoLabel('Performer Tags', 'Show tags from each performer on their posts (duplicates hidden), and match them when filtering the feed.\n\nTip: keep each tag in one place — a tag used on both scenes and performers filters slower and less predictably.'));
+    showPerformerTagsContainer.appendChild(buildInfoLabel('Performer Tags', 'Show tags from each performer on their posts (duplicates hidden), and match performer tags when filtering the feed.\n\nEach tag is matched from a single source. Priority: marker tags → scene tags → performer tags (for images: image tags → performer tags). Performer tags are lowest priority, so a tag also used as a marker, scene, or image tag is matched there instead — this adds matching only for tags unique to performers.'));
     const { container: showPerformerTagsToggleContainer, input: showPerformerTagsToggle } = this.createToggleSwitch(
       this.settings.showPerformerTags === true, () => this.saveSettings()
     );
