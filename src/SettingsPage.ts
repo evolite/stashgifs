@@ -1349,6 +1349,21 @@ export class SettingsPage {
     filtersSection.appendChild(showPerformerTagsContainer);
     (this as any).showPerformerTagsToggle = showPerformerTagsToggle;
 
+    // Watch History
+    const { container: trackWatchHistoryContainer, input: trackWatchHistoryToggle } = this.createToggleSwitch(
+      this.settings.trackWatchHistory !== false,
+      () => this.saveSettings()
+    );
+    const trackWatchHistoryRow = document.createElement('div');
+    trackWatchHistoryRow.style.cssText = 'display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;';
+    trackWatchHistoryRow.appendChild(buildInfoLabel(
+      'Watch History',
+      'Report watch progress to Stash (updates play count and resume time).\nDisable to browse without affecting history.'
+    ));
+    trackWatchHistoryRow.appendChild(trackWatchHistoryContainer);
+    filtersSection.appendChild(trackWatchHistoryRow);
+    (this as any).trackWatchHistoryToggle = trackWatchHistoryToggle;
+
     // Recency Bias
     const seenHistoryContainer = document.createElement('div');
     seenHistoryContainer.style.cssText = 'display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;';
@@ -1822,6 +1837,7 @@ export class SettingsPage {
       includeSubtags: inputs.includeSubtagsToggle.checked,
       imagesInGalleryOnly: galleryOnlyToggle?.checked ?? false,
       galleryIds: gallerySelectedIds ? [...gallerySelectedIds] : [],
+      trackWatchHistory: inputs.trackWatchHistoryToggle.checked,
       seenHistorySize: Math.max(0, Math.min(2000, Number.parseInt(inputs.seenHistorySizeInput.value, 10) || 0)),
       contentLimit: Math.max(100, Math.min(50000, Number.parseInt(inputs.contentLimitInput.value, 10) || 5000)),
       tagDisplayLimit: Math.max(1, Math.min(100, Number.parseInt(inputs.tagDisplayLimitInput.value, 10) || 10)),

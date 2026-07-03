@@ -23,6 +23,7 @@ interface VideoPostOptions extends BaseVideoPostOptions {
   bookmarkManager?: BookmarkManager;
   showBookmarkButton?: boolean;
   onMarkerTitleChipClick?: (title: string) => void;
+  trackWatchHistory?: boolean;
 }
 
 export class VideoPost extends VideoPostBase {
@@ -54,6 +55,7 @@ export class VideoPost extends VideoPostBase {
   // Cached DOM elements
 
   private readonly onCancelRequests?: () => void; // Callback to cancel pending requests
+  private readonly trackWatchHistory: boolean = true;
 
   private readonly useShuffleMode: boolean = false;
   private readonly showMarkerTitle: boolean = false;
@@ -78,6 +80,7 @@ export class VideoPost extends VideoPostBase {
     this.onMarkerTitleChipClick = options.onMarkerTitleChipClick;
     this.hdModeFromSettings = options.hdModeFromSettings === true;
     this.onCancelRequests = options.onCancelRequests;
+    this.trackWatchHistory = options.trackWatchHistory !== false;
     this.onMuteToggle = options.onMuteToggle;
     this.getGlobalMuteState = options.getGlobalMuteState;
     this.oCount = this.data.marker.scene.o_counter || 0;
@@ -725,7 +728,7 @@ export class VideoPost extends VideoPostBase {
         }
       }
 
-      if (this.accumulatedWatchSeconds - this.lastActivitySubmitTime >= 30) {
+      if (this.trackWatchHistory && this.accumulatedWatchSeconds - this.lastActivitySubmitTime >= 30) {
         this.lastActivitySubmitTime = this.accumulatedWatchSeconds;
         void this.api!.saveSceneActivity(sceneId, state.currentTime, this.accumulatedWatchSeconds);
       }
@@ -737,7 +740,7 @@ export class VideoPost extends VideoPostBase {
       clearInterval(this.watchTrackingInterval);
       this.watchTrackingInterval = undefined;
     }
-    if (this.api && this.accumulatedWatchSeconds > 0) {
+    if (this.trackWatchHistory && this.api && this.accumulatedWatchSeconds > 0) {
       const sceneId = this.data.marker.scene.id;
       const currentTime = this.player?.getState().currentTime;
       void this.api.saveSceneActivity(sceneId, currentTime, this.accumulatedWatchSeconds);

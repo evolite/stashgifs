@@ -5123,6 +5123,7 @@ export class FeedContainer {
         getGlobalMuteState: () => this.getGlobalMuteState(),
         bookmarkManager: this.bookmarkManager,
         onMarkerTitleChipClick: (title: string) => this.applyMarkerTitleSearch(title),
+        trackWatchHistory: this.settings.trackWatchHistory !== false,
       }
     );
     
