@@ -1765,7 +1765,7 @@ export class SettingsPage {
       'showVerifiedCheckmarksToggle', 'showProductionAgeToggle', 'showStudioChipsToggle', 'sceneTitleToggle', 'showSceneTagsToggle', 'showPerformerTagsToggle',
       'showBookmarkToggle', 'showOCountToggle', 'showViewCountToggle',
       'discoveryPanelToggle', 'excludedTagsInput',
-      'includeSubtagsToggle', 'seenHistorySizeInput', 'contentLimitInput', 'tagDisplayLimitInput',
+      'includeSubtagsToggle', 'trackWatchHistoryToggle', 'seenHistorySizeInput', 'contentLimitInput', 'tagDisplayLimitInput',
     ];
     const inputs: Record<string, HTMLInputElement> = {};
     for (const name of inputNames) {
