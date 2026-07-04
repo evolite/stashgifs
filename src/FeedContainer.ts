@@ -3662,7 +3662,8 @@ export class FeedContainer {
     if (append) {
       this.scheduleAppendRetry();
     } else {
-      this.showError("It's empty");
+      // Fresh load returned nothing — mark done so updateEndCard shows the end card.
+      this.hasMore = false;
     }
     this.hideSkeletonLoaders();
   }
@@ -5267,7 +5268,7 @@ export class FeedContainer {
   private updateEndCard(): void {
     const container = this.postsContainer;
     if (!container) return;
-    const shouldShow = !this.hasMore && this.postOrder.length > 0;
+    const shouldShow = !this.hasMore;
     const present = this.endCard?.parentNode === container;
     if (shouldShow && !present) {
       this.endCard = buildEndOfFeedCard(() => this.openSearchFromEndCard());
