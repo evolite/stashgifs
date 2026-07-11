@@ -470,7 +470,7 @@ export class StashAPI {
    * Returns performers regardless of scene/image counts
    * Includes caching for autocomplete results only
    */
-  async searchPerformers(term: string, limit: number = 10, signal?: AbortSignal): Promise<Array<{ id: string; name: string; image_path?: string }>> {
+  async searchPerformers(term: string, limit: number = 10, signal?: AbortSignal): Promise<Array<{ id: string; name: string; aliases?: string[]; image_path?: string }>> {
     const isEmptyTerm = !term || term.trim() === '';
     const cacheKey = this.buildCacheKey('performers-v2', term, limit);
     const { filter } = this.buildSearchFilter(term, limit);

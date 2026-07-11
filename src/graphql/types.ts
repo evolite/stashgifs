@@ -257,7 +257,7 @@ export interface FindStudiosResponse {
  */
 export interface FindPerformersResponse {
   findPerformers: {
-    performers: Array<{ id: string; name: string; image_path?: string; stash_ids?: Array<{ stash_id: string; endpoint: string }> }>;
+    performers: Array<{ id: string; name: string; aliases?: string[]; image_path?: string; stash_ids?: Array<{ stash_id: string; endpoint: string }> }>;
   };
 }
 

@@ -1780,19 +1780,21 @@ export class FeedContainer {
     suggestions.scrollTop = 0;
   }
 
-  private sortByMatchAccuracy<T extends { name: string }>(items: T[], query: string): T[] {
+  private sortByMatchAccuracy<T extends { name: string; aliases?: string[] }>(items: T[], query: string): T[] {
     if (!query) return items;
     const q = query.toLowerCase();
+    const score = (item: T): number => {
+      const name = item.name.toLowerCase();
+      if (name === q) return 0;
+      if (name.startsWith(q)) return 1;
+      const aliases = item.aliases ?? [];
+      if (aliases.some((a) => a.toLowerCase() === q)) return 2;
+      if (aliases.some((a) => a.toLowerCase().startsWith(q))) return 3;
+      return 4;
+    };
     return [...items].sort((a, b) => {
-      const aName = a.name.toLowerCase();
-      const bName = b.name.toLowerCase();
-      const score = (name: string): number => {
-        if (name === q) return 0;
-        if (name.startsWith(q)) return 1;
-        return 2;
-      };
-      const diff = score(aName) - score(bName);
-      return diff === 0 ? aName.localeCompare(bName) : diff;
+      const diff = score(a) - score(b);
+      return diff === 0 ? a.name.toLowerCase().localeCompare(b.name.toLowerCase()) : diff;
     });
   }
 
