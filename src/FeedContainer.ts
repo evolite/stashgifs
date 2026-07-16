@@ -448,7 +448,13 @@ export class FeedContainer {
     header.style.right = '0';
     header.style.width = '100%';
     header.style.maxWidth = '100%';
-    header.style.zIndex = '900';
+    if (header.dataset.overlayZIndex === undefined) {
+      header.style.zIndex = '900';
+    } else {
+      // overlay is open; header must stay above it — update the stashed value that
+      // setHeaderOverlayState(false) will restore instead of the live z-index
+      header.dataset.overlayZIndex = '900';
+    }
     header.style.background = 'transparent';
     header.style.backdropFilter = '';
     header.style.borderRadius = '0';
