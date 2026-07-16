@@ -124,7 +124,7 @@ export const PerformerFields = `
   fragment PerformerFields on Performer {
     id
     name
-    aliases
+    aliases: alias_list
     image_path
     stash_ids {
       stash_id
