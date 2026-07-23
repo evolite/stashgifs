@@ -18,7 +18,4 @@ Install it via Stash's plugin system using the `index.yml` file. - https://surgi
 
 Includes detailed customization!
 
-## AI Usage Disclaimer
-Large parts of this codebase is Vibe coded
-
 Quality validated using SonarQubes Static Code Analyzer and [fallow](https://docs.fallow.tools/integrations/agent-skills) .
