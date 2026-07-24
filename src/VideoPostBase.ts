@@ -369,8 +369,11 @@ export abstract class VideoPostBase extends BasePost {
     fill.className = 'vp-progress__fill';
     track.appendChild(fill);
 
-    const trackParent = this.container.querySelector<HTMLElement>('.video-post__header') ?? playerContainer;
-    trackParent.appendChild(track);
+    // Anchor to the player container, not the header: applyReelHeaderStyles()
+    // makes the header position:absolute, which would make it the track's
+    // containing block and pin the bar inside the caption area instead of
+    // along the bottom edge of the video.
+    playerContainer.appendChild(track);
 
     // Update fill from player.
     const update = () => {
