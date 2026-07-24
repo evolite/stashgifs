@@ -369,11 +369,13 @@ export abstract class VideoPostBase extends BasePost {
     fill.className = 'vp-progress__fill';
     track.appendChild(fill);
 
-    // Anchor to the player container, not the header: applyReelHeaderStyles()
-    // makes the header position:absolute, which would make it the track's
-    // containing block and pin the bar inside the caption area instead of
-    // along the bottom edge of the video.
-    playerContainer.appendChild(track);
+    // Anchor to the post container (a sibling of header/player/footer), not
+    // inside the player: header has an explicit z-index and its own stacking
+    // context, so a track nested in the player would always paint underneath
+    // the header's caption gradient no matter its own z-index. Appending to
+    // the shared ancestor lets the track's z-index (feed.css) actually compete
+    // with header/footer and win.
+    this.container.appendChild(track);
 
     // Update fill from player.
     const update = () => {
