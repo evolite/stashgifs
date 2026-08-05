@@ -151,9 +151,7 @@ export class VideoPost extends VideoPostBase {
     );
     const performersSection = this.createPerformersContainer(performers.length);
     if (performers.length > 0) {
-      for (const performer of performers) {
-        performersSection.appendChild(this.createPerformerChip(performer));
-      }
+      this.appendPerformerChips(performersSection, performers);
     } else {
       performersSection.appendChild(this.createAddPerformerPlaceholder());
     }

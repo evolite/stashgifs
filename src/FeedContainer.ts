@@ -3427,6 +3427,7 @@ export class FeedContainer {
       showPerformerTags: this.settings.showPerformerTags === true,
       showSceneTags: this.settings.showSceneTags === true,
       tagDisplayLimit: this.settings.tagDisplayLimit ?? 10,
+      performerDisplayLimit: this.settings.performerDisplayLimit ?? 3,
       showMarkerTitle: this.settings.searchMarkersByName === true,
       showBookmarkButton: this.settings.showBookmarkButton === true,
       showOCountButton: this.settings.showOCountButton !== false,

@@ -805,6 +805,23 @@ export class SettingsPage {
     layoutSection.appendChild(tagLimitRow);
     (this as any).tagDisplayLimitInput = tagDisplayLimitInput;
 
+    const performerLimitRow = document.createElement('div');
+    performerLimitRow.style.cssText = 'display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;';
+    performerLimitRow.appendChild(buildInfoLabel('Performer Limit', 'Max number of performers shown with full name before collapsing into a • • • button; expanding shows the rest as portrait-only chips.'));
+    const performerDisplayLimitInput = document.createElement('input');
+    performerDisplayLimitInput.type = 'number';
+    performerDisplayLimitInput.value = String(this.settings.performerDisplayLimit ?? 3);
+    performerDisplayLimitInput.min = '1';
+    performerDisplayLimitInput.max = '100';
+    performerDisplayLimitInput.style.cssText = `width: 64px; padding: 4px 8px; border-radius: ${THEME.radius.button}; border: 1px solid ${THEME.colors.border}; background: ${THEME.colors.surface}; color: ${THEME.colors.textPrimary}; font-size: ${THEME.typography.sizeBody}; text-align: right; box-sizing: border-box;`;
+    performerDisplayLimitInput.addEventListener('input', () => {
+      clearTimeout((performerDisplayLimitInput as any).saveTimeout);
+      (performerDisplayLimitInput as any).saveTimeout = setTimeout(() => { this.saveSettings(); }, 500);
+    });
+    performerLimitRow.appendChild(performerDisplayLimitInput);
+    layoutSection.appendChild(performerLimitRow);
+    (this as any).performerDisplayLimitInput = performerDisplayLimitInput;
+
     const appendButtonToggle = (labelText: string, tooltip: string, checked: boolean, refKey: string): void => {
       const container = document.createElement('div');
       container.style.display = 'flex';
@@ -1766,6 +1783,7 @@ export class SettingsPage {
       'showBookmarkToggle', 'showOCountToggle', 'showViewCountToggle',
       'discoveryPanelToggle', 'excludedTagsInput',
       'includeSubtagsToggle', 'trackWatchHistoryToggle', 'seenHistorySizeInput', 'contentLimitInput', 'tagDisplayLimitInput',
+      'performerDisplayLimitInput',
     ];
     const inputs: Record<string, HTMLInputElement> = {};
     for (const name of inputNames) {
@@ -1841,6 +1859,7 @@ export class SettingsPage {
       seenHistorySize: Math.max(0, Math.min(2000, Number.parseInt(inputs.seenHistorySizeInput.value, 10) || 0)),
       contentLimit: Math.max(100, Math.min(50000, Number.parseInt(inputs.contentLimitInput.value, 10) || 5000)),
       tagDisplayLimit: Math.max(1, Math.min(100, Number.parseInt(inputs.tagDisplayLimitInput.value, 10) || 10)),
+      performerDisplayLimit: Math.max(1, Math.min(100, Number.parseInt(inputs.performerDisplayLimitInput.value, 10) || 3)),
     };
 
     if (this.onSave) {

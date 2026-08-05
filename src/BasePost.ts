@@ -32,6 +32,7 @@ export interface BasePostOptions {
   showSceneTags?: boolean;
   showOCountButton?: boolean;
   tagDisplayLimit?: number;
+  performerDisplayLimit?: number;
   showViewCountBadge?: boolean;
   discoveryPanel?: DiscoveryPanelControl;
   reelAutoScroll?: boolean;
@@ -133,6 +134,7 @@ export abstract class BasePost {
   protected showOCountButton: boolean = true;
   protected showViewCountBadge: boolean = true;
   protected tagDisplayLimit: number = 10;
+  protected performerDisplayLimit: number = 3;
   protected discoveryPanel?: DiscoveryPanelControl;
   private discoveryCollapseUnsubscribe?: () => void;
   private discoveryJiggleTimerId?: ReturnType<typeof setTimeout>;
@@ -185,6 +187,7 @@ export abstract class BasePost {
     this.showOCountButton = options?.showOCountButton !== false;
     this.showViewCountBadge = options?.showViewCountBadge !== false;
     this.tagDisplayLimit = options?.tagDisplayLimit ?? 10;
+    this.performerDisplayLimit = options?.performerDisplayLimit ?? 3;
     this.discoveryPanel = options?.discoveryPanel;
     this.reelAutoScroll = options?.reelAutoScroll === true;
     this.onReelAdvance = options?.onReelAdvance;
@@ -863,7 +866,7 @@ export abstract class BasePost {
   /**
    * Create a performer chip element
    */
-  protected createPerformerChip(performer: { id: string; name: string; image_path?: string; favorite?: boolean; birthdate?: string; stash_ids?: Array<{ stash_id: string }> }): HTMLElement {
+  protected createPerformerChip(performer: { id: string; name: string; image_path?: string; favorite?: boolean; birthdate?: string; stash_ids?: Array<{ stash_id: string }> }, compact: boolean = false): HTMLElement {
     const chip = this.buildPerformerChipBase(performer);
     chip.dataset.performerId = performer.id;
     const handleClick = (event?: Event): void => {
@@ -878,10 +881,16 @@ export abstract class BasePost {
     };
 
     this.bindPerformerChipInteractions(chip, performer, handleClick);
-    chip.appendChild(this.buildPerformerImage(performer));
-    chip.appendChild(document.createTextNode(performer.name));
+    chip.appendChild(this.buildPerformerImage(performer, this.hasPerformerStashId(performer)));
 
-    if (performer.birthdate) {
+    if (compact) {
+      chip.title = performer.name;
+      chip.setAttribute('aria-label', performer.name);
+    } else {
+      chip.appendChild(document.createTextNode(performer.name));
+    }
+
+    if (performer.birthdate && !compact) {
       const productionDate = this.getProductionDate();
       const birthDate = new Date(performer.birthdate);
       const referenceDate = productionDate ? new Date(productionDate) : new Date();
@@ -897,11 +906,6 @@ export abstract class BasePost {
       chip.appendChild(ageSpan);
     }
 
-    if (this.hasPerformerStashId(performer)) {
-      const verifiedBadge = this.buildVerifiedBadge();
-      verifiedBadge.style.display = this.showVerifiedCheckmarks ? 'inline-flex' : 'none';
-      chip.appendChild(verifiedBadge);
-    }
     this.bindPerformerHover(chip, performer);
 
     return chip;
@@ -947,10 +951,14 @@ export abstract class BasePost {
     verifiedBadge.style.display = 'inline-flex';
     verifiedBadge.style.alignItems = 'center';
     verifiedBadge.style.justifyContent = 'center';
-    verifiedBadge.style.width = '18px';
-    verifiedBadge.style.height = '18px';
+    verifiedBadge.style.position = 'absolute';
+    verifiedBadge.style.bottom = '0';
+    verifiedBadge.style.right = '0';
+    verifiedBadge.style.width = '16px';
+    verifiedBadge.style.height = '16px';
+    verifiedBadge.style.borderRadius = '50%';
+    verifiedBadge.style.background = 'rgba(0, 0, 0, 0.75)';
     verifiedBadge.style.flexShrink = '0';
-    verifiedBadge.style.marginLeft = '-4px';
     verifiedBadge.style.color = THEME.colors.accentPrimary;
     return verifiedBadge;
   }
@@ -1064,8 +1072,8 @@ export abstract class BasePost {
     });
   }
 
-  private buildPerformerImage(performer: { name: string; image_path?: string }): HTMLElement {
-    return this.buildChipImageContainer({
+  private buildPerformerImage(performer: { name: string; image_path?: string }, showVerifiedBadge: boolean = false): HTMLElement {
+    const image = this.buildChipImageContainer({
       name: performer.name,
       imagePath: performer.image_path,
       borderRadius: '50%',
@@ -1073,6 +1081,18 @@ export abstract class BasePost {
       objectFit: 'cover',
       objectPosition: 'top center',
     });
+    if (!showVerifiedBadge) return image;
+
+    const wrapper = document.createElement('div');
+    wrapper.style.position = 'relative';
+    wrapper.style.width = '40px';
+    wrapper.style.height = '40px';
+    wrapper.style.flexShrink = '0';
+    wrapper.appendChild(image);
+    const verifiedBadge = this.buildVerifiedBadge();
+    verifiedBadge.style.display = this.showVerifiedCheckmarks ? 'inline-flex' : 'none';
+    wrapper.appendChild(verifiedBadge);
+    return wrapper;
   }
 
   private getPerformerFavoriteState(performer: { id: string; favorite?: boolean }): boolean {
@@ -2133,11 +2153,46 @@ export abstract class BasePost {
     return this.ratingControl.render();
   }
 
-  private appendPerformerChips(chips: HTMLElement, performers: Performer[]): void {
-    for (const performer of performers) {
-      const chip = this.createPerformerChip(performer);
+  protected appendPerformerChips(chips: HTMLElement, performers: Performer[]): void {
+    const limit = this.performerDisplayLimit;
+    const overflow: HTMLElement[] = [];
+    performers.forEach((performer, index) => {
+      const compact = index >= limit;
+      const chip = this.createPerformerChip(performer, compact);
+      if (compact) {
+        chip.style.display = 'none';
+        overflow.push(chip);
+      }
       chips.appendChild(chip);
+    });
+    if (overflow.length > 0) {
+      this.appendPerformerMoreToggle(chips, overflow);
     }
+  }
+
+  private appendPerformerMoreToggle(chips: HTMLElement, overflow: HTMLElement[]): void {
+    const more = document.createElement('span');
+    more.className = 'tag-chip__more';
+    more.textContent = '• • •';
+    more.style.color = 'var(--color-accent)';
+    more.style.cursor = 'pointer';
+    more.style.fontSize = '18px';
+    more.style.lineHeight = '1.4';
+    more.style.letterSpacing = '2px';
+    more.style.padding = '4px 0';
+    more.style.marginLeft = '8px';
+    more.style.minHeight = '28px';
+    more.style.display = 'inline-flex';
+    more.style.alignItems = 'center';
+    more.setAttribute('title', `Show ${overflow.length} more performers`);
+    more.setAttribute('role', 'button');
+    more.setAttribute('aria-label', `Show ${overflow.length} more performers`);
+    more.addEventListener('click', (e) => {
+      e.stopPropagation();
+      for (const chip of overflow) chip.style.display = '';
+      more.remove();
+    });
+    chips.appendChild(more);
   }
 
   private mergeWithPerformerTags(tags: Tag[], performers: Performer[]): Tag[] {
