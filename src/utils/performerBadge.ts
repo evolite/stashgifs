@@ -6,7 +6,7 @@
  */
 import { normalizeMediaUrl } from '../utils.js';
 
-export type PerformerTier = 'bronze' | 'silver' | 'gold' | 'platinum' | 'diamond';
+export type PerformerTier = 'bronze' | 'silver' | 'gold' | 'platinum' | 'diamond' | 'rainbow';
 
 interface TierTokens {
   ring: string;
@@ -21,6 +21,8 @@ const TIER_TOKENS: Record<PerformerTier, TierTokens> = {
   gold: { ring: '#EF9F27', ringWidth: 2, leafA: '#FAC775', leafB: '#EF9F27' },
   platinum: { ring: '#5DCAA5', ringWidth: 2, leafA: '#9FE1CB', leafB: '#5DCAA5' },
   diamond: { ring: '#85B7EB', ringWidth: 2, leafA: '#B5D4F4', leafB: '#85B7EB' },
+  // ring/leafA/leafB unused: rainbow tier draws a segmented ring and per-slot rainbow leaves instead.
+  rainbow: { ring: '#FF5252', ringWidth: 2, leafA: '#FF5252', leafB: '#FF5252' },
 };
 
 // [angleDegrees, rx, ry] — each entry mirrored at +angle and -angle
@@ -30,13 +32,18 @@ const WREATH: Record<PerformerTier, Array<[number, number, number]>> = {
   gold: [[32, 3.5, 6], [52, 3.2, 5.5], [72, 2.9, 5]],
   platinum: [[30, 3.5, 6], [50, 3.2, 5.5], [70, 2.9, 5], [90, 2.6, 4.5]],
   diamond: [[28, 3.5, 6], [48, 3.2, 5.5], [68, 2.9, 5], [88, 2.6, 4.5], [108, 2.3, 4]],
+  rainbow: [[26, 3.5, 6], [46, 3.2, 5.5], [66, 2.9, 5], [86, 2.6, 4.5], [106, 2.3, 4], [126, 2.0, 3.5]],
 };
+
+// Red -> violet. Assigned by position (innermost leaf / first ring segment = red), never by rating.
+const RAINBOW = ['#FF5252', '#FF9800', '#FFEB3B', '#4CAF50', '#2196F3', '#9C27B0'];
 
 const DISC_FILL = '#6b5a52';
 const SVG_NS = 'http://www.w3.org/2000/svg';
 
 // [floor, tier] — first match wins, checked high to low. rating100 <= 0 (or unrated) gets no badge.
 const TIER_THRESHOLDS: Array<[number, PerformerTier]> = [
+  [100, 'rainbow'],
   [96, 'diamond'],
   [80, 'platinum'],
   [65, 'gold'],
@@ -68,19 +75,48 @@ function leafGroup(angle: number, rx: number, ry: number, fill: string): SVGElem
   return g;
 }
 
+/**
+ * A ring that happens to be six colours, built from six stacked circles each drawing two
+ * opposite dash segments — NOT a <linearGradient> (that produces a two-tone smear on a
+ * circle, not a spectrum, and flashes on DOM updates). 12 segments (6 colours x 2) must
+ * abut with no gaps, so seg = circumference / 12 is recomputed from the actual radius
+ * every call — never hardcode another radius's numbers here.
+ */
+function buildRainbowRing(radius: number, strokeWidth: number): SVGElement {
+  const group = svgEl('g', {});
+  const seg = (2 * Math.PI * radius) / 12;
+  const dasharray = `${seg.toFixed(2)} ${(seg * 5).toFixed(2)}`;
+  RAINBOW.forEach((color, i) => {
+    group.appendChild(svgEl('circle', {
+      r: radius,
+      fill: 'none',
+      stroke: color,
+      'stroke-width': strokeWidth,
+      'stroke-dasharray': dasharray,
+      'stroke-dashoffset': (-(seg * i)).toFixed(2),
+    }));
+  });
+  return group;
+}
+
 // Rating medallion: same wreath grammar as the avatar badge, but 10 individual pips
 // (not 5 mirrored pairs) along a tighter arc, one per point of a 0-10 scale, ordered
 // left-to-right so filling reads like a progress meter instead of a symmetric crest.
 const MEDALLION_LEAF_RADIUS = 17;
-const MEDALLION_RING_RADIUS = 13;
+const MEDALLION_RING_RADIUS = 13.5;
 const MEDALLION_UNLIT_FILL = 'rgba(255, 255, 255, 0.16)';
+// Outer -> inner per side, mirrored: index 0-4 = left (-108..-28), 5-9 = right (28..108).
 const MEDALLION_LEAF_SLOTS: Array<[number, number, number]> = [
   [-108, 2.3, 4], [-88, 2.6, 4.5], [-68, 2.9, 5], [-48, 3.2, 5.5], [-28, 3.5, 6],
   [28, 3.5, 6], [48, 3.2, 5.5], [68, 2.9, 5], [88, 2.6, 4.5], [108, 2.3, 4],
 ];
-let medallionInstanceId = 0;
 
-/** Gradient for a perfect (rating100 === 100) score — used for the medallion ring, portrait border, and top rule. */
+/** Distance-from-centre rank (0 = innermost) for a medallion leaf slot, used to mirror rainbow colour by position. */
+function medallionSlotRank(slotIndex: number): number {
+  return slotIndex <= 4 ? 4 - slotIndex : slotIndex - 5;
+}
+
+/** CSS gradient for a perfect (rating100 === 100) score's portrait border / top rule — both flat rectangles, not rings, so a CSS linear-gradient reads fine there (the dasharray rule only applies to circular strokes). */
 export const PERFECT_RATING_GRADIENT = 'linear-gradient(135deg, #FF5252, #FF9800, #FFEB3B, #4CAF50, #2196F3, #9C27B0)';
 
 export function formatRatingValue10(value10: number): string {
@@ -95,7 +131,7 @@ export function ratingWordLabel(value10: number): string {
   return 'Low rated';
 }
 
-/** value10: 0-10 rating. color: solid fill for lit leaves and the ring (ignored, use gradient stroke, when isPerfect). */
+/** value10: 0-10 rating. color: solid fill for lit leaves and the ring — ignored when isPerfect, which draws the segmented rainbow ring and per-slot rainbow leaves instead. */
 export function buildRatingMedallion(value10: number, color: string, isPerfect: boolean): SVGSVGElement {
   const lit = Math.max(0, Math.min(10, Math.round(value10)));
   const svg = svgEl('svg', { width: 60, height: 60, viewBox: '0 0 60 60' }) as SVGSVGElement;
@@ -105,23 +141,17 @@ export function buildRatingMedallion(value10: number, color: string, isPerfect: 
   const group = svgEl('g', { transform: 'translate(30 30)' });
 
   MEDALLION_LEAF_SLOTS.forEach(([angle, rx, ry], i) => {
+    const fill = isPerfect ? RAINBOW[medallionSlotRank(i)] : (i < lit ? color : MEDALLION_UNLIT_FILL);
     const g = svgEl('g', { transform: `rotate(${angle})` });
-    g.appendChild(svgEl('ellipse', { cx: 0, cy: MEDALLION_LEAF_RADIUS, rx, ry, fill: i < lit ? color : MEDALLION_UNLIT_FILL }));
+    g.appendChild(svgEl('ellipse', { cx: 0, cy: MEDALLION_LEAF_RADIUS, rx, ry, fill }));
     group.appendChild(g);
   });
 
+  group.appendChild(svgEl('circle', { r: MEDALLION_RING_RADIUS, fill: DISC_FILL }));
   if (isPerfect) {
-    const gradientId = `rating-medallion-gradient-${medallionInstanceId++}`;
-    const defs = svgEl('defs', {});
-    const gradient = svgEl('linearGradient', { id: gradientId, x1: '0%', y1: '0%', x2: '100%', y2: '100%' });
-    ['#FF5252', '#FF9800', '#FFEB3B', '#4CAF50', '#2196F3', '#9C27B0'].forEach((stopColor, i, arr) => {
-      gradient.appendChild(svgEl('stop', { offset: `${(i / (arr.length - 1)) * 100}%`, 'stop-color': stopColor }));
-    });
-    defs.appendChild(gradient);
-    group.appendChild(defs);
-    group.appendChild(svgEl('circle', { r: MEDALLION_RING_RADIUS, fill: DISC_FILL, stroke: `url(#${gradientId})`, 'stroke-width': 2 }));
+    group.appendChild(buildRainbowRing(MEDALLION_RING_RADIUS, 2));
   } else {
-    group.appendChild(svgEl('circle', { r: MEDALLION_RING_RADIUS, fill: DISC_FILL, stroke: color, 'stroke-width': 2 }));
+    group.appendChild(svgEl('circle', { r: MEDALLION_RING_RADIUS, fill: 'none', stroke: color, 'stroke-width': 2 }));
   }
 
   const label = formatRatingValue10(value10);
@@ -153,15 +183,20 @@ export function buildPerformerTierBadge(options: PerformerTierBadgeOptions): SVG
   svg.setAttribute('role', 'img');
   svg.setAttribute('aria-label', `${options.name}, ${options.tier} tier${options.verified ? ', verified' : ''}`);
 
+  const isRainbow = options.tier === 'rainbow';
   const group = svgEl('g', { transform: 'translate(29 29)' });
 
   WREATH[options.tier].forEach(([angle, rx, ry], i) => {
-    const fill = i % 2 === 0 ? tokens.leafA : tokens.leafB;
+    const fill = isRainbow ? RAINBOW[i % RAINBOW.length] : (i % 2 === 0 ? tokens.leafA : tokens.leafB);
     group.appendChild(leafGroup(angle, rx, ry, fill));
     group.appendChild(leafGroup(-angle, rx, ry, fill));
   });
 
-  group.appendChild(svgEl('circle', { r: 19, fill: 'none', stroke: tokens.ring, 'stroke-width': tokens.ringWidth }));
+  if (isRainbow) {
+    group.appendChild(buildRainbowRing(18, tokens.ringWidth));
+  } else {
+    group.appendChild(svgEl('circle', { r: 19, fill: 'none', stroke: tokens.ring, 'stroke-width': tokens.ringWidth }));
+  }
 
   const imageUrl = options.imagePath ? normalizeMediaUrl(options.imagePath) : undefined;
   if (imageUrl) {
