@@ -694,8 +694,7 @@ export class GraphQLClient {
       }
       this.keyCache.set(cacheKey, result);
       return result;
-    } catch (error: unknown) {
-      if (error instanceof Error) {}
+    } catch {
       return `[object:${objKeys.length}]`;
     }
   }

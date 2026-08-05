@@ -32,7 +32,7 @@ const WREATH: Record<PerformerTier, Array<[number, number, number]>> = {
   gold: [[32, 3.5, 6], [52, 3.2, 5.5], [72, 2.9, 5]],
   platinum: [[30, 3.5, 6], [50, 3.2, 5.5], [70, 2.9, 5], [90, 2.6, 4.5]],
   diamond: [[28, 3.5, 6], [48, 3.2, 5.5], [68, 2.9, 5], [88, 2.6, 4.5], [108, 2.3, 4]],
-  rainbow: [[26, 3.5, 6], [46, 3.2, 5.5], [66, 2.9, 5], [86, 2.6, 4.5], [106, 2.3, 4], [126, 2.0, 3.5]],
+  rainbow: [[26, 3.5, 6], [46, 3.2, 5.5], [66, 2.9, 5], [86, 2.6, 4.5], [106, 2.3, 4], [126, 2, 3.5]],
 };
 
 // Red -> violet. Assigned by position (innermost leaf / first ring segment = red), never by rating.
@@ -128,7 +128,12 @@ export function buildPerformerTierBadge(options: PerformerTierBadgeOptions): SVG
   const group = svgEl('g', { transform: 'translate(29 29)' });
 
   WREATH[options.tier].forEach(([angle, rx, ry], i) => {
-    const fill = isRainbow ? RAINBOW[i % RAINBOW.length] : (i % 2 === 0 ? tokens.leafA : tokens.leafB);
+    let fill: string;
+    if (isRainbow) {
+      fill = RAINBOW[i % RAINBOW.length];
+    } else {
+      fill = i % 2 === 0 ? tokens.leafA : tokens.leafB;
+    }
     group.appendChild(leafGroup(angle, rx, ry, fill));
     group.appendChild(leafGroup(-angle, rx, ry, fill));
   });

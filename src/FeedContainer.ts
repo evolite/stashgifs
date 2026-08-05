@@ -2899,11 +2899,11 @@ export class FeedContainer {
     this.appendPerformerPills();
     this.appendStudioPills();
 
-    if (!this.saveSearchInputVisible) {
+    if (this.saveSearchInputVisible) {
+      this.activePillsBar.appendChild(this.buildSaveSearchInput());
+    } else {
       const saveBtn = this.createActivePill('Save', () => this.showSaveSearchInput(), true);
       this.activePillsBar.appendChild(saveBtn);
-    } else {
-      this.activePillsBar.appendChild(this.buildSaveSearchInput());
     }
 
     if (total >= 2) {
@@ -4607,6 +4607,38 @@ export class FeedContainer {
     };
   }
 
+  private buildImageFilters(filters: FilterOptions): Record<string, unknown> {
+    const { tagIds, performerIds, excludedTagIds, studioIds } = this.api.extractTagAndPerformerFilters(filters);
+
+    const imageFilters: {
+      performerIds?: number[];
+      tagIds?: string[];
+      excludedTagIds?: string[];
+      studioIds?: string[];
+      studioDepth?: number;
+      tagDepth?: number;
+    } = {};
+
+    if (performerIds.length > 0) imageFilters.performerIds = performerIds;
+    if (tagIds.length > 0) imageFilters.tagIds = tagIds;
+    if (excludedTagIds.length > 0) imageFilters.excludedTagIds = excludedTagIds;
+    if (studioIds.length > 0) imageFilters.studioIds = studioIds;
+    imageFilters.studioDepth = this.settings.includeSubtags ? -1 : 0;
+    imageFilters.tagDepth = this.settings.includeSubtags ? -1 : 0;
+
+    return {
+      ...imageFilters,
+      ...(filters.orientationFilter && filters.orientationFilter.length > 0
+        ? { orientationFilter: filters.orientationFilter }
+        : {}),
+      ...(filters.sortSeed ? { sortSeed: filters.sortSeed } : {}),
+      ...(this.settings.imagesInGalleryOnly
+        ? { imagesInGalleryOnly: true, galleryIds: this.settings.galleryIds ?? [] }
+        : {}),
+      ...(this.settings.showPerformerTags ? { showPerformerTags: true } : {}),
+    };
+  }
+
   /**
    * Load images from Stash
    */
@@ -4622,49 +4654,7 @@ export class FeedContainer {
 
     try {
       const fileExtensions = this.settings.enabledFileTypes || ['.jpg', '.png', '.gif', '.mp4', '.m4v', '.webm'];
-      
-      // Use unified filter extraction for consistent filtering
-      const { tagIds, performerIds, excludedTagIds, studioIds } = this.api.extractTagAndPerformerFilters(filters);
-
-      const imageFilters: {
-        performerIds?: number[];
-        tagIds?: string[];
-        excludedTagIds?: string[];
-        studioIds?: string[];
-        studioDepth?: number;
-        tagDepth?: number;
-      } = {};
-
-      if (performerIds.length > 0) {
-        imageFilters.performerIds = performerIds;
-      }
-
-      if (tagIds.length > 0) {
-        imageFilters.tagIds = tagIds;
-      }
-
-      if (excludedTagIds.length > 0) {
-        imageFilters.excludedTagIds = excludedTagIds;
-      }
-
-      if (studioIds.length > 0) {
-        imageFilters.studioIds = studioIds;
-      }
-
-      imageFilters.studioDepth = this.settings.includeSubtags ? -1 : 0;
-      imageFilters.tagDepth = this.settings.includeSubtags ? -1 : 0;
-
-      const imageFiltersWithOrientation = {
-        ...imageFilters,
-        ...(filters.orientationFilter && filters.orientationFilter.length > 0
-          ? { orientationFilter: filters.orientationFilter }
-          : {}),
-        ...(filters.sortSeed ? { sortSeed: filters.sortSeed } : {}),
-        ...(this.settings.imagesInGalleryOnly
-          ? { imagesInGalleryOnly: true, galleryIds: this.settings.galleryIds ?? [] }
-          : {}),
-        ...(this.settings.showPerformerTags ? { showPerformerTags: true } : {}),
-      };
+      const imageFiltersWithOrientation = this.buildImageFilters(filters);
 
       const { images: graphQLImages, totalCount, sortSeed } = await this.api.findImages(
         fileExtensions,

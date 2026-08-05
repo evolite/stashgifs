@@ -90,6 +90,19 @@ export function generateRandomSortSeed(): string {
   return `random_${randomSeed}`;
 }
 
+type ImageFilterOptions = {
+  performerIds?: number[];
+  tagIds?: string[];
+  excludedTagIds?: string[];
+  studioIds?: string[];
+  studioDepth?: number;
+  tagDepth?: number;
+  orientationFilter?: ImageOrientation[];
+  imagesInGalleryOnly?: boolean;
+  galleryIds?: string[];
+  showPerformerTags?: boolean;
+};
+
 export class StashAPI {
   private readonly baseUrl: string;
   private readonly apiKey?: string;
@@ -937,7 +950,7 @@ export class StashAPI {
       if (enabled.marker) f.tags = StashAPI.addExcludes(f.tags, uniqueExcluded, depth);
       if (enabled.scene) f.scene_tags = StashAPI.addExcludes(f.scene_tags, uniqueExcluded, depth);
       if (enabled.performer) {
-        f.scene_filter = { ...(f.scene_filter ?? {}) };
+        f.scene_filter ??= {};
         f.scene_filter.performer_tags = StashAPI.addExcludes(f.scene_filter.performer_tags, uniqueExcluded, depth);
       }
     } else {
@@ -1049,6 +1062,41 @@ export class StashAPI {
    * be in no enabled source forces an empty result. A tag effectively in multiple enabled sources
    * is matched in the highest-priority one (Stash can't OR across sources).
    */
+  /** Groups tagIds by effective source; returns undefined if a tag resolves to no enabled source (unsatisfiable). */
+  private groupTagsBySource(
+    tagIds: string[],
+    enabledList: Array<'marker' | 'scene' | 'performer'>
+  ): { marker: string[]; scene: string[]; performer: string[] } | undefined {
+    const primary = enabledList[0];
+    const groups = { marker: [] as string[], scene: [] as string[], performer: [] as string[] };
+    for (const id of tagIds) {
+      const src = this._tagSourceCache.get(id);
+      // uncached → primary enabled source (best-effort, still server-side)
+      const target = src ? enabledList.find((s) => src[s]) : primary;
+      if (src && !target) return undefined; // resolved and in no enabled source → unsatisfiable, force empty
+      if (target) groups[target].push(id);
+    }
+    return groups;
+  }
+
+  private assignRoutedTagGroups(
+    targetFilter: SceneMarkerFilterInput | SceneFilterInput,
+    groups: { marker: string[]; scene: string[]; performer: string[] },
+    shape: 'marker' | 'scene',
+    incAll: (value: string[]) => { value: string[]; modifier: 'INCLUDES_ALL'; depth: number }
+  ): void {
+    if (shape === 'marker') {
+      const f = targetFilter as SceneMarkerFilterInput;
+      if (groups.marker.length) f.tags = incAll(groups.marker);
+      if (groups.scene.length) f.scene_tags = incAll(groups.scene);
+      if (groups.performer.length) { f.scene_filter ??= {}; f.scene_filter.performer_tags = incAll(groups.performer); }
+    } else {
+      const f = targetFilter as SceneFilterInput;
+      if (groups.scene.length) f.tags = incAll(groups.scene);
+      if (groups.performer.length) f.performer_tags = incAll(groups.performer);
+    }
+  }
+
   private applyRoutedTags(
     targetFilter: SceneMarkerFilterInput | SceneFilterInput,
     tagIds: string[],
@@ -1059,29 +1107,14 @@ export class StashAPI {
     const incAll = (value: string[]) => ({ value, modifier: 'INCLUDES_ALL' as const, depth });
     const priority = (shape === 'marker' ? ['marker', 'scene', 'performer'] : ['scene', 'performer']) as Array<'marker' | 'scene' | 'performer'>;
     const enabledList = priority.filter((s) => enabled[s]);
-    const primary = enabledList[0];
-    const groups = { marker: [] as string[], scene: [] as string[], performer: [] as string[] };
-    for (const id of tagIds) {
-      const src = this._tagSourceCache.get(id);
-      // uncached → primary enabled source (best-effort, still server-side)
-      const target = src ? enabledList.find((s) => src[s]) : primary;
-      if (src && !target) { // resolved and in no enabled source → unsatisfiable, force empty
-        if (shape === 'marker') (targetFilter as SceneMarkerFilterInput).tags = incAll([StashAPI.IMPOSSIBLE_TAG]);
-        else (targetFilter as SceneFilterInput).tags = incAll([StashAPI.IMPOSSIBLE_TAG]);
-        return;
-      }
-      if (target) groups[target].push(id);
+
+    const groups = this.groupTagsBySource(tagIds, enabledList);
+    if (!groups) {
+      if (shape === 'marker') (targetFilter as SceneMarkerFilterInput).tags = incAll([StashAPI.IMPOSSIBLE_TAG]);
+      else (targetFilter as SceneFilterInput).tags = incAll([StashAPI.IMPOSSIBLE_TAG]);
+      return;
     }
-    if (shape === 'marker') {
-      const f = targetFilter as SceneMarkerFilterInput;
-      if (groups.marker.length) f.tags = incAll(groups.marker);
-      if (groups.scene.length) f.scene_tags = incAll(groups.scene);
-      if (groups.performer.length) { f.scene_filter = { ...(f.scene_filter ?? {}) }; f.scene_filter.performer_tags = incAll(groups.performer); }
-    } else {
-      const f = targetFilter as SceneFilterInput;
-      if (groups.scene.length) f.tags = incAll(groups.scene);
-      if (groups.performer.length) f.performer_tags = incAll(groups.performer);
-    }
+    this.assignRoutedTagGroups(targetFilter, groups, shape, incAll);
   }
 
   /**
@@ -2482,41 +2515,14 @@ export class StashAPI {
     return String.raw`(?i)\.(${extensions.join('|')})$`;
   }
 
-  private buildImageFilter(
-    regexPattern: string,
-    filters?: {
-      performerIds?: number[];
-      tagIds?: string[];
-      excludedTagIds?: string[];
-      studioIds?: string[];
-      studioDepth?: number;
-      tagDepth?: number;
-      orientationFilter?: ImageOrientation[];
-      imagesInGalleryOnly?: boolean;
-      galleryIds?: string[];
-      showPerformerTags?: boolean;
-    }
-  ): ImageFilterInput {
-    const imageFilter: ImageFilterInput = {
-      path: {
-        value: regexPattern,
-        modifier: 'MATCHES_REGEX',
-      },
-    };
-
-    if (filters?.performerIds && filters.performerIds.length > 0) {
-      imageFilter.performers = {
-        value: filters.performerIds,
-        modifier: 'INCLUDES_ALL',
-      };
-    }
-
-    // Route each positive tag to exactly ONE server-side field (image `tags` > `performer_tags`)
-    // so filtering is fully server-side and pagination stays correct. A tag's effective source
-    // (own ∪ descendants) resolves parent-only tags; uncached tags fall back to image tags.
-    // A tag effectively in both image and performer is matched as an image tag (highest priority).
-    const excludedTagIds = filters?.excludedTagIds ?? [];
-    const depth = filters?.tagDepth ?? 0;
+  /**
+   * Route each positive tag to exactly ONE server-side field (image `tags` > `performer_tags`)
+   * so filtering is fully server-side and pagination stays correct. A tag's effective source
+   * (own ∪ descendants) resolves parent-only tags; uncached tags fall back to image tags.
+   * A tag effectively in both image and performer is matched as an image tag (highest priority).
+   * Applies excludes too. Returns true if the selection is unsatisfiable (forces an empty result).
+   */
+  private applyImageTagFilters(imageFilter: ImageFilterInput, filters: ImageFilterOptions | undefined, depth: number): boolean {
     const performerEnabled = !!filters?.showPerformerTags;
     const imageGroup: string[] = [];
     const performerGroup: string[] = [];
@@ -2525,7 +2531,7 @@ export class StashAPI {
       if (src && !src.image && !(performerEnabled && src.performer)) {
         // resolved and in no enabled source → unsatisfiable, force empty
         imageFilter.tags = { value: [StashAPI.IMPOSSIBLE_TAG], modifier: 'INCLUDES_ALL' };
-        return imageFilter;
+        return true;
       }
       if (src && !src.image && performerEnabled && src.performer) performerGroup.push(id);
       else imageGroup.push(id); // image source, or uncached fallback
@@ -2533,6 +2539,8 @@ export class StashAPI {
     // depth cast: the server accepts depth on image tag criteria, but the generated type omits it.
     if (imageGroup.length) imageFilter.tags = { value: imageGroup, modifier: 'INCLUDES_ALL', depth } as ImageFilterInput['tags'];
     if (performerGroup.length) imageFilter.performer_tags = { value: performerGroup, modifier: 'INCLUDES_ALL', depth } as ImageFilterInput['performer_tags'];
+
+    const excludedTagIds = filters?.excludedTagIds ?? [];
     if (excludedTagIds.length > 0) {
       const uniqueExcluded = Array.from(new Set(excludedTagIds));
       type ExFld = { value?: string[]; modifier?: 'INCLUDES' | 'INCLUDES_ALL' | 'EXCLUDES'; depth?: number; excludes?: string[] };
@@ -2541,7 +2549,10 @@ export class StashAPI {
         imageFilter.performer_tags = StashAPI.addExcludes(imageFilter.performer_tags as ExFld | undefined, uniqueExcluded, depth) as ImageFilterInput['performer_tags'];
       }
     }
+    return false;
+  }
 
+  private applyImageMiscFilters(imageFilter: ImageFilterInput, filters: ImageFilterOptions | undefined): void {
     const imageOrientations = this.resolveOrientationEnumValues(filters);
     if (imageOrientations.length > 0) {
       imageFilter.orientation = {
@@ -2560,7 +2571,29 @@ export class StashAPI {
     if (filters?.studioIds && filters.studioIds.length > 0) {
       imageFilter.studios = { value: filters.studioIds, modifier: 'INCLUDES', depth: filters.studioDepth ?? 0 };
     }
+  }
 
+  private buildImageFilter(regexPattern: string, filters?: ImageFilterOptions): ImageFilterInput {
+    const imageFilter: ImageFilterInput = {
+      path: {
+        value: regexPattern,
+        modifier: 'MATCHES_REGEX',
+      },
+    };
+
+    if (filters?.performerIds && filters.performerIds.length > 0) {
+      imageFilter.performers = {
+        value: filters.performerIds,
+        modifier: 'INCLUDES_ALL',
+      };
+    }
+
+    const depth = filters?.tagDepth ?? 0;
+    if (this.applyImageTagFilters(imageFilter, filters, depth)) {
+      return imageFilter;
+    }
+
+    this.applyImageMiscFilters(imageFilter, filters);
     return imageFilter;
   }
 

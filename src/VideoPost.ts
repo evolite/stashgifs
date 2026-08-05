@@ -305,7 +305,7 @@ export class VideoPost extends VideoPostBase {
     // tags, like a real marker's own tags); for regular markers only when showSceneTags is on.
     const isShortForm = this.isShortFormContent();
     if (isShortForm || this.useShuffleMode || this.showSceneTags) {
-      isFirstTag = this.addTagsFromList(this.data.marker.scene.tags, chips, displayedTagIds, hasPerformers, isFirstTag);
+      this.addTagsFromList(this.data.marker.scene.tags, chips, displayedTagIds, hasPerformers, isFirstTag);
     }
 
     this.applyTagLimit(chips, this.tagDisplayLimit);

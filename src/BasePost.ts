@@ -1357,11 +1357,15 @@ export abstract class BasePost {
   /**
    * Create a styled image section container for overlays
    */
-  private createOverlayImageSection(
-    width: string, height: string, fallbackFontSize: string,
-    imagePath: string | undefined, name: string, logContext: string,
-    objectFit: string = 'cover', objectPosition: string = 'center center'
-  ): HTMLElement {
+  private createOverlayImageSection(options: {
+    width: string; height: string; fallbackFontSize: string;
+    imagePath: string | undefined; name: string; logContext: string;
+    objectFit?: string; objectPosition?: string;
+  }): HTMLElement {
+    const {
+      width, height, fallbackFontSize, imagePath, name, logContext,
+      objectFit = 'cover', objectPosition = 'center center'
+    } = options;
     const imageSection = document.createElement('div');
     imageSection.style.width = width;
     imageSection.style.height = height;
@@ -1408,11 +1412,11 @@ export abstract class BasePost {
 
   /** ratingInfo: computed once by the caller (createPerformerOverlay also needs it for the top rule) and passed in rather than recomputed here. */
   private createPerformerOverlayImageSection(performerData: PerformerExtended, ratingInfo: PerformerRatingInfo | undefined): HTMLElement {
-    const imageSection = this.createOverlayImageSection(
-      '160px', '240px', '64px',
-      performerData.image_path, performerData.name, 'performer',
-      'cover', 'center top'
-    );
+    const imageSection = this.createOverlayImageSection({
+      width: '160px', height: '240px', fallbackFontSize: '64px',
+      imagePath: performerData.image_path, name: performerData.name, logContext: 'performer',
+      objectFit: 'cover', objectPosition: 'center top'
+    });
     imageSection.style.position = 'relative';
 
     // Add country flag overlay in bottom right corner
@@ -1838,10 +1842,10 @@ export abstract class BasePost {
    * Create image section for tag overlay (compact square image on left)
    */
   private createTagOverlayImageSection(tagData: { id: string; name: string; image_path?: string }): HTMLElement {
-    return this.createOverlayImageSection(
-      '64px', '64px', '32px',
-      tagData.image_path, tagData.name, 'tag'
-    );
+    return this.createOverlayImageSection({
+      width: '64px', height: '64px', fallbackFontSize: '32px',
+      imagePath: tagData.image_path, name: tagData.name, logContext: 'tag'
+    });
   }
 
   /**
@@ -1928,10 +1932,10 @@ export abstract class BasePost {
       onClickBackground: () => this.studioOverlayMgr.hide(true),
     });
 
-    const imageSection = this.createOverlayImageSection(
-      '80px', '80px', '36px',
-      studioData.image_path, studioData.name, 'studio', 'contain'
-    );
+    const imageSection = this.createOverlayImageSection({
+      width: '80px', height: '80px', fallbackFontSize: '36px',
+      imagePath: studioData.image_path, name: studioData.name, logContext: 'studio', objectFit: 'contain'
+    });
     imageSection.style.borderRadius = '4px';
     overlay.appendChild(imageSection);
 
