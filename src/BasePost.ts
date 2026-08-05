@@ -1431,52 +1431,50 @@ export abstract class BasePost {
       }
     }
 
-    if (this.showPerformerEmbellishment) {
-      const ratingInfo = this.getPerformerRatingInfo(performerData);
-      if (ratingInfo) {
-        // Diagonal corner sash with the score, colored to the performer's rank — relies on
-        // imageSection's own overflow:hidden to crop it flush with the portrait's edges.
-        // Rotation pivots around the div's own center (default transform-origin), so for
-        // the band to clip symmetrically across the corner, that center must sit on the
-        // corner's 45deg bisector: left + width/2 === top + height/2. Keep top/left/width/
-        // height in that relationship if this is ever retuned — picking them independently
-        // (as before) reintroduces the off-center look.
-        const sashWidth = 140;
-        const sashHeight = 14;
-        const sashPivotOffset = 17; // distance from the corner, along the bisector, to the band's center
-        const sash = document.createElement('div');
-        sash.textContent = formatRatingValue10(ratingInfo.value10);
-        sash.style.position = 'absolute';
-        sash.style.top = `${sashPivotOffset - sashHeight / 2}px`;
-        sash.style.left = `${sashPivotOffset - sashWidth / 2}px`;
-        sash.style.width = `${sashWidth}px`;
-        sash.style.height = `${sashHeight}px`;
-        sash.style.transform = 'rotate(-45deg)';
-        sash.style.display = 'flex';
-        sash.style.alignItems = 'center';
-        sash.style.justifyContent = 'center';
-        sash.style.fontSize = '11px';
-        sash.style.fontWeight = '700';
-        sash.style.letterSpacing = '0.5px';
-        sash.style.lineHeight = '1';
-        sash.style.color = '#fff';
-        sash.style.background = ratingInfo.isPerfect ? PERFECT_RATING_GRADIENT : ratingInfo.color;
-        sash.style.boxShadow = '0 1px 4px rgba(0, 0, 0, 0.35)';
-        sash.style.pointerEvents = 'none';
-        imageSection.appendChild(sash);
+    // Rating sash/border are always shown when the performer has a rating — unaffected by
+    // the "Performer Tier Badges" setting, which only gates the avatar chip wreath badge.
+    const ratingInfo = this.getPerformerRatingInfo(performerData);
+    if (!ratingInfo) return imageSection;
 
-        const borderWrapper = document.createElement('div');
-        borderWrapper.style.padding = '2px';
-        borderWrapper.style.borderRadius = '10px';
-        borderWrapper.style.background = ratingInfo.isPerfect ? PERFECT_RATING_GRADIENT : ratingInfo.color;
-        borderWrapper.style.flexShrink = '0';
-        imageSection.style.borderRadius = '8px';
-        borderWrapper.appendChild(imageSection);
-        return borderWrapper;
-      }
-    }
+    // Diagonal corner sash with the score, colored to the performer's rank — relies on
+    // imageSection's own overflow:hidden to crop it flush with the portrait's edges.
+    // Rotation pivots around the div's own center (default transform-origin), so for
+    // the band to clip symmetrically across the corner, that center must sit on the
+    // corner's 45deg bisector: left + width/2 === top + height/2. Keep top/left/width/
+    // height in that relationship if this is ever retuned — picking them independently
+    // (as before) reintroduces the off-center look.
+    const sashWidth = 140;
+    const sashHeight = 14;
+    const sashPivotOffset = 17; // distance from the corner, along the bisector, to the band's center
+    const sash = document.createElement('div');
+    sash.textContent = formatRatingValue10(ratingInfo.value10);
+    sash.style.position = 'absolute';
+    sash.style.top = `${sashPivotOffset - sashHeight / 2}px`;
+    sash.style.left = `${sashPivotOffset - sashWidth / 2}px`;
+    sash.style.width = `${sashWidth}px`;
+    sash.style.height = `${sashHeight}px`;
+    sash.style.transform = 'rotate(-45deg)';
+    sash.style.display = 'flex';
+    sash.style.alignItems = 'center';
+    sash.style.justifyContent = 'center';
+    sash.style.fontSize = '11px';
+    sash.style.fontWeight = '700';
+    sash.style.letterSpacing = '0.5px';
+    sash.style.lineHeight = '1';
+    sash.style.color = '#fff';
+    sash.style.background = ratingInfo.isPerfect ? PERFECT_RATING_GRADIENT : ratingInfo.color;
+    sash.style.boxShadow = '0 1px 4px rgba(0, 0, 0, 0.35)';
+    sash.style.pointerEvents = 'none';
+    imageSection.appendChild(sash);
 
-    return imageSection;
+    const borderWrapper = document.createElement('div');
+    borderWrapper.style.padding = '2px';
+    borderWrapper.style.borderRadius = '10px';
+    borderWrapper.style.background = ratingInfo.isPerfect ? PERFECT_RATING_GRADIENT : ratingInfo.color;
+    borderWrapper.style.flexShrink = '0';
+    imageSection.style.borderRadius = '8px';
+    borderWrapper.appendChild(imageSection);
+    return borderWrapper;
   }
 
   /**
@@ -1628,21 +1626,6 @@ export abstract class BasePost {
   }
 
   /**
-   * Add rating metadata
-   */
-  private addRatingMetadata(
-    metadata: Array<{ label: string; value: string | undefined; isIcon?: boolean }>,
-    performerData: PerformerExtended
-  ): void {
-    if (performerData.rating100 !== undefined && performerData.rating100 !== null) {
-      const maxScale = this.ratingSystemConfig?.type === 'stars' ? 5 : 10;
-      const value = (performerData.rating100 / 100) * maxScale;
-      const rating = this.ratingSystemConfig?.starPrecision === 'half' ? value.toFixed(1) : Math.round(value).toString();
-      metadata.push({ label: 'Rating', value: `${rating}/${maxScale}` });
-    }
-  }
-
-  /**
    * Build metadata array for performer overlay
    */
   private buildPerformerMetadata(performerData: PerformerExtended): Array<{ label: string; value: string | undefined; isIcon?: boolean }> {
@@ -1650,12 +1633,10 @@ export abstract class BasePost {
 
     this.addBasicInfoMetadata(metadata, performerData, this.getProductionDate());
     this.addPhysicalAttributesMetadata(metadata, performerData);
-    this.addRatingMetadata(metadata, performerData);
 
     return metadata;
   }
 
-  /** Rating medallion + word label, replacing the plain "Rating: x/10" row when embellishment is on. Heavier weight than the metadata list so the score reads as the reason people hover, not just another attribute. */
   /**
    * Create metadata section for performer overlay
    */
@@ -1776,19 +1757,17 @@ export abstract class BasePost {
       onClickBackground: () => this.performerOverlayMgr.hide(true),
     }, { maxHeight: '80vh', overflowY: 'auto' });
 
-    if (this.showPerformerEmbellishment) {
-      const ratingInfo = this.getPerformerRatingInfo(performerData);
-      if (ratingInfo) {
-        const topRule = document.createElement('div');
-        topRule.style.position = 'absolute';
-        topRule.style.top = '0';
-        topRule.style.left = '0';
-        topRule.style.right = '0';
-        topRule.style.height = '2px';
-        topRule.style.borderRadius = `${THEME.radius.card} ${THEME.radius.card} 0 0`;
-        topRule.style.background = ratingInfo.isPerfect ? PERFECT_RATING_GRADIENT : ratingInfo.color;
-        overlay.appendChild(topRule);
-      }
+    const ratingInfo = this.getPerformerRatingInfo(performerData);
+    if (ratingInfo) {
+      const topRule = document.createElement('div');
+      topRule.style.position = 'absolute';
+      topRule.style.top = '0';
+      topRule.style.left = '0';
+      topRule.style.right = '0';
+      topRule.style.height = '2px';
+      topRule.style.borderRadius = `${THEME.radius.card} ${THEME.radius.card} 0 0`;
+      topRule.style.background = ratingInfo.isPerfect ? PERFECT_RATING_GRADIENT : ratingInfo.color;
+      overlay.appendChild(topRule);
     }
 
     overlay.appendChild(this.createPerformerOverlayImageSection(performerData));
