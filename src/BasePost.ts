@@ -1443,11 +1443,14 @@ export abstract class BasePost {
         sash.style.left = '-36px';
         sash.style.width = '140px';
         sash.style.transform = 'rotate(-45deg)';
-        sash.style.textAlign = 'center';
+        sash.style.display = 'flex';
+        sash.style.alignItems = 'center';
+        sash.style.justifyContent = 'center';
         sash.style.padding = '1px 0';
         sash.style.fontSize = '11px';
         sash.style.fontWeight = '700';
         sash.style.letterSpacing = '0.5px';
+        sash.style.lineHeight = '1';
         sash.style.color = '#fff';
         sash.style.background = ratingInfo.isPerfect ? PERFECT_RATING_GRADIENT : ratingInfo.color;
         sash.style.boxShadow = '0 1px 4px rgba(0, 0, 0, 0.35)';
