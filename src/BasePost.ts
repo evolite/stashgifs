@@ -1642,27 +1642,15 @@ export abstract class BasePost {
     row.style.justifyContent = 'space-between';
     row.style.gap = '8px';
 
-    const textGroup = document.createElement('div');
-    textGroup.style.display = 'flex';
-    textGroup.style.flexDirection = 'column';
-    textGroup.style.gap = '2px';
-
     const wordLabel = document.createElement('span');
     wordLabel.textContent = ratingWordLabel(ratingInfo.value10);
     wordLabel.style.fontSize = '15px';
     wordLabel.style.fontWeight = '700';
     wordLabel.style.color = ratingInfo.color;
-    textGroup.appendChild(wordLabel);
+    row.appendChild(wordLabel);
 
-    const valueLabel = document.createElement('span');
-    valueLabel.textContent = `${formatRatingValue10(ratingInfo.value10)}/10`;
-    valueLabel.style.fontSize = '13px';
-    valueLabel.style.color = THEME.colors.textMuted;
-    textGroup.appendChild(valueLabel);
-
-    row.appendChild(textGroup);
-
-    // Same badge SVG as the avatar chip — no bespoke medallion for the overlay.
+    // Same badge SVG as the avatar chip, but the score replaces the photo in the center
+    // (the photo's already shown large above) — no bespoke medallion for the overlay.
     const badgeWrap = document.createElement('div');
     badgeWrap.style.width = '58px';
     badgeWrap.style.height = '58px';
@@ -1671,8 +1659,8 @@ export abstract class BasePost {
       performerId: performerData.id,
       name: performerData.name,
       tier,
-      imagePath: performerData.image_path,
       initial: performerData.name.charAt(0).toUpperCase(),
+      centerLabel: formatRatingValue10(ratingInfo.value10),
       verified: this.showVerifiedCheckmarks && this.hasPerformerStashId(performerData),
       knockoutColor: THEME.colors.backgroundPrimary,
     }));
