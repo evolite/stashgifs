@@ -1436,17 +1436,25 @@ export abstract class BasePost {
       if (ratingInfo) {
         // Diagonal corner sash with the score, colored to the performer's rank — relies on
         // imageSection's own overflow:hidden to crop it flush with the portrait's edges.
+        // Rotation pivots around the div's own center (default transform-origin), so for
+        // the band to clip symmetrically across the corner, that center must sit on the
+        // corner's 45deg bisector: left + width/2 === top + height/2. Keep top/left/width/
+        // height in that relationship if this is ever retuned — picking them independently
+        // (as before) reintroduces the off-center look.
+        const sashWidth = 140;
+        const sashHeight = 14;
+        const sashPivotOffset = 17; // distance from the corner, along the bisector, to the band's center
         const sash = document.createElement('div');
         sash.textContent = formatRatingValue10(ratingInfo.value10);
         sash.style.position = 'absolute';
-        sash.style.top = '9px';
-        sash.style.left = '-36px';
-        sash.style.width = '140px';
+        sash.style.top = `${sashPivotOffset - sashHeight / 2}px`;
+        sash.style.left = `${sashPivotOffset - sashWidth / 2}px`;
+        sash.style.width = `${sashWidth}px`;
+        sash.style.height = `${sashHeight}px`;
         sash.style.transform = 'rotate(-45deg)';
         sash.style.display = 'flex';
         sash.style.alignItems = 'center';
         sash.style.justifyContent = 'center';
-        sash.style.padding = '1px 0';
         sash.style.fontSize = '11px';
         sash.style.fontWeight = '700';
         sash.style.letterSpacing = '0.5px';
