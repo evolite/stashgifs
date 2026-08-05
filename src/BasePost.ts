@@ -12,7 +12,7 @@ import { DISCOVERY_ICON_SVG, type DiscoveryPanelControl } from './DiscoveryPanel
 import { getStashBaseUrl } from './utils/baseUrl.js';
 import { setupTouchHandlers, preventClickAfterTouch } from './utils/touchHandlers.js';
 import { adjustImageDialogPosition, toggleImageFavorite } from './utils/imagePostUtils.js';
-import { buildPerformerTierBadge, buildRatingMedallion, performerTierFromRating100, ratingWordLabel, tierRingStyle, PERFECT_RATING_GRADIENT, type PerformerTier } from './utils/performerBadge.js';
+import { buildPerformerTierBadge, formatRatingValue10, performerTierFromRating100, ratingWordLabel, tierRingStyle, PERFECT_RATING_GRADIENT, type PerformerTier } from './utils/performerBadge.js';
 import { OverlayManager } from './utils/OverlayManager.js';
 import { PerformerExtended, StudioExtended } from './graphql/types.js';
 import { Performer, Tag, VideoPostData, ImageBasedPostData, Image } from './types.js';
@@ -1630,6 +1630,8 @@ export abstract class BasePost {
     if (!this.showPerformerEmbellishment) return null;
     const ratingInfo = this.getPerformerRatingInfo(performerData);
     if (!ratingInfo) return null;
+    const tier = performerTierFromRating100(performerData.rating100);
+    if (!tier) return null;
 
     const wrapper = document.createElement('div');
     wrapper.style.marginBottom = '10px';
@@ -1640,14 +1642,42 @@ export abstract class BasePost {
     row.style.justifyContent = 'space-between';
     row.style.gap = '8px';
 
+    const textGroup = document.createElement('div');
+    textGroup.style.display = 'flex';
+    textGroup.style.flexDirection = 'column';
+    textGroup.style.gap = '2px';
+
     const wordLabel = document.createElement('span');
     wordLabel.textContent = ratingWordLabel(ratingInfo.value10);
     wordLabel.style.fontSize = '15px';
     wordLabel.style.fontWeight = '700';
     wordLabel.style.color = ratingInfo.color;
-    row.appendChild(wordLabel);
+    textGroup.appendChild(wordLabel);
 
-    row.appendChild(buildRatingMedallion(ratingInfo.value10, ratingInfo.color, ratingInfo.isPerfect));
+    const valueLabel = document.createElement('span');
+    valueLabel.textContent = `${formatRatingValue10(ratingInfo.value10)}/10`;
+    valueLabel.style.fontSize = '13px';
+    valueLabel.style.color = THEME.colors.textMuted;
+    textGroup.appendChild(valueLabel);
+
+    row.appendChild(textGroup);
+
+    // Same badge SVG as the avatar chip — no bespoke medallion for the overlay.
+    const badgeWrap = document.createElement('div');
+    badgeWrap.style.width = '58px';
+    badgeWrap.style.height = '58px';
+    badgeWrap.style.flexShrink = '0';
+    badgeWrap.appendChild(buildPerformerTierBadge({
+      performerId: performerData.id,
+      name: performerData.name,
+      tier,
+      imagePath: performerData.image_path,
+      initial: performerData.name.charAt(0).toUpperCase(),
+      verified: this.showVerifiedCheckmarks && this.hasPerformerStashId(performerData),
+      knockoutColor: THEME.colors.backgroundPrimary,
+    }));
+    row.appendChild(badgeWrap);
+
     wrapper.appendChild(row);
 
     const divider = document.createElement('div');
