@@ -25,8 +25,8 @@ const TIER_TOKENS: Record<PerformerTier, TierTokens> = {
 
 // [angleDegrees, rx, ry] — each entry mirrored at +angle and -angle
 const WREATH: Record<PerformerTier, Array<[number, number, number]>> = {
-  bronze: [],
-  silver: [],
+  bronze: [[36, 3.5, 6]],
+  silver: [[34, 3.5, 6], [54, 3.2, 5.5]],
   gold: [[32, 3.5, 6], [52, 3.2, 5.5], [72, 2.9, 5]],
   platinum: [[30, 3.5, 6], [50, 3.2, 5.5], [70, 2.9, 5], [90, 2.6, 4.5]],
   diamond: [[28, 3.5, 6], [48, 3.2, 5.5], [68, 2.9, 5], [88, 2.6, 4.5], [108, 2.3, 4]],
