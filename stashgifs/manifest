@@ -2,8 +2,8 @@ id: stashgifs
 name: StashGifs
 metadata:
   description: Social Media style browsing experience
-version: 7.12.1
-date: "2026-08-05 12:56:39"
+version: 7.12.2
+date: "2026-08-05 13:04:22"
 requires: []
 source_repository: https://surging9143.codeberg.page/index.yml
 files:
