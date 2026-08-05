@@ -35,11 +35,19 @@ const WREATH: Record<PerformerTier, Array<[number, number, number]>> = {
 const DISC_FILL = '#6b5a52';
 const SVG_NS = 'http://www.w3.org/2000/svg';
 
-/** rating100 (0-100) -> tier, mapped off the same 5-star scale Stash shows. undefined = unrated, no badge. */
+// [floor, tier] — first match wins, checked high to low. rating100 <= 0 (or unrated) gets no badge.
+const TIER_THRESHOLDS: Array<[number, PerformerTier]> = [
+  [96, 'diamond'],
+  [80, 'platinum'],
+  [65, 'gold'],
+  [50, 'silver'],
+  [1, 'bronze'],
+];
+
+/** rating100 (0-100) -> tier. undefined = unrated, no badge. */
 export function performerTierFromRating100(rating100: number | undefined | null): PerformerTier | undefined {
   if (!rating100) return undefined;
-  const stars = Math.min(5, Math.max(1, Math.round(rating100 / 20)));
-  return (['bronze', 'silver', 'gold', 'platinum', 'diamond'] as const)[stars - 1];
+  return TIER_THRESHOLDS.find(([floor]) => rating100 >= floor)?.[1];
 }
 
 function svgEl(tag: string, attrs: Record<string, string | number>): SVGElement {
