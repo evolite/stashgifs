@@ -106,14 +106,6 @@ export function formatRatingValue10(value10: number): string {
   return Number.isInteger(value10) ? String(value10) : value10.toFixed(1);
 }
 
-export function ratingWordLabel(value10: number): string {
-  if (value10 >= 10) return 'Perfect';
-  if (value10 >= 8) return 'Highly rated';
-  if (value10 >= 6) return 'Well rated';
-  if (value10 >= 4) return 'Decent';
-  return 'Low rated';
-}
-
 export interface PerformerTierBadgeOptions {
   performerId: string;
   name: string;
@@ -123,8 +115,6 @@ export interface PerformerTierBadgeOptions {
   verified: boolean;
   /** Knockout stroke color for the verified check — must match whatever surface the badge sits on. */
   knockoutColor: string;
-  /** When set, replaces the avatar photo/initial in the center with this text (e.g. a rating score) — same disc, same font treatment. */
-  centerLabel?: string;
 }
 
 /** Draw order: leaves -> ring -> disc/image -> initials -> check. */
@@ -149,7 +139,7 @@ export function buildPerformerTierBadge(options: PerformerTierBadgeOptions): SVG
     group.appendChild(svgEl('circle', { r: 19, fill: 'none', stroke: tokens.ring, 'stroke-width': tokens.ringWidth }));
   }
 
-  const imageUrl = !options.centerLabel && options.imagePath ? normalizeMediaUrl(options.imagePath) : undefined;
+  const imageUrl = options.imagePath ? normalizeMediaUrl(options.imagePath) : undefined;
   if (imageUrl) {
     const clipId = `av-tier-${options.performerId}`;
     const defs = svgEl('defs', {});
@@ -163,12 +153,9 @@ export function buildPerformerTierBadge(options: PerformerTierBadgeOptions): SVG
     image.setAttribute('href', imageUrl);
     group.appendChild(image);
   } else {
-    const label = options.centerLabel ?? options.initial;
     group.appendChild(svgEl('circle', { r: 18, fill: DISC_FILL }));
-    const text = svgEl('text', {
-      x: 0, y: 6, 'text-anchor': 'middle', 'font-size': label.length > 2 ? 13 : 16, 'font-weight': 600, fill: '#fff',
-    });
-    text.textContent = label;
+    const text = svgEl('text', { x: 0, y: 6, 'text-anchor': 'middle', 'font-size': 16, 'font-weight': 600, fill: '#fff' });
+    text.textContent = options.initial;
     group.appendChild(text);
   }
 

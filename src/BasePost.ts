@@ -12,7 +12,7 @@ import { DISCOVERY_ICON_SVG, type DiscoveryPanelControl } from './DiscoveryPanel
 import { getStashBaseUrl } from './utils/baseUrl.js';
 import { setupTouchHandlers, preventClickAfterTouch } from './utils/touchHandlers.js';
 import { adjustImageDialogPosition, toggleImageFavorite } from './utils/imagePostUtils.js';
-import { buildPerformerTierBadge, formatRatingValue10, performerTierFromRating100, ratingWordLabel, tierRingStyle, PERFECT_RATING_GRADIENT, type PerformerTier } from './utils/performerBadge.js';
+import { buildPerformerTierBadge, formatRatingValue10, performerTierFromRating100, tierRingStyle, PERFECT_RATING_GRADIENT, type PerformerTier } from './utils/performerBadge.js';
 import { OverlayManager } from './utils/OverlayManager.js';
 import { PerformerExtended, StudioExtended } from './graphql/types.js';
 import { Performer, Tag, VideoPostData, ImageBasedPostData, Image } from './types.js';
@@ -1433,6 +1433,26 @@ export abstract class BasePost {
     if (this.showPerformerEmbellishment) {
       const ratingInfo = this.getPerformerRatingInfo(performerData);
       if (ratingInfo) {
+        // Diagonal corner sash with the score, colored to the performer's rank — relies on
+        // imageSection's own overflow:hidden to crop it flush with the portrait's edges.
+        const sash = document.createElement('div');
+        sash.textContent = formatRatingValue10(ratingInfo.value10);
+        sash.style.position = 'absolute';
+        sash.style.top = '20px';
+        sash.style.left = '-52px';
+        sash.style.width = '200px';
+        sash.style.transform = 'rotate(-45deg)';
+        sash.style.textAlign = 'center';
+        sash.style.padding = '4px 0';
+        sash.style.fontSize = '14px';
+        sash.style.fontWeight = '700';
+        sash.style.letterSpacing = '0.5px';
+        sash.style.color = '#fff';
+        sash.style.background = ratingInfo.isPerfect ? PERFECT_RATING_GRADIENT : ratingInfo.color;
+        sash.style.boxShadow = '0 2px 6px rgba(0, 0, 0, 0.35)';
+        sash.style.pointerEvents = 'none';
+        imageSection.appendChild(sash);
+
         const borderWrapper = document.createElement('div');
         borderWrapper.style.padding = '2px';
         borderWrapper.style.borderRadius = '10px';
@@ -1618,72 +1638,12 @@ export abstract class BasePost {
 
     this.addBasicInfoMetadata(metadata, performerData, this.getProductionDate());
     this.addPhysicalAttributesMetadata(metadata, performerData);
-    if (!this.showPerformerEmbellishment) {
-      this.addRatingMetadata(metadata, performerData);
-    }
+    this.addRatingMetadata(metadata, performerData);
 
     return metadata;
   }
 
   /** Rating medallion + word label, replacing the plain "Rating: x/10" row when embellishment is on. Heavier weight than the metadata list so the score reads as the reason people hover, not just another attribute. */
-  private createPerformerOverlayRatingRow(performerData: PerformerExtended): HTMLElement | null {
-    if (!this.showPerformerEmbellishment) return null;
-    const ratingInfo = this.getPerformerRatingInfo(performerData);
-    if (!ratingInfo) return null;
-    const tier = performerTierFromRating100(performerData.rating100);
-    if (!tier) return null;
-
-    const wrapper = document.createElement('div');
-    wrapper.style.marginBottom = '10px';
-
-    const row = document.createElement('div');
-    row.style.display = 'flex';
-    row.style.alignItems = 'center';
-    row.style.justifyContent = 'space-between';
-    row.style.gap = '8px';
-
-    const wordLabel = document.createElement('span');
-    wordLabel.textContent = ratingWordLabel(ratingInfo.value10);
-    wordLabel.style.fontSize = '15px';
-    wordLabel.style.fontWeight = '700';
-    if (ratingInfo.isPerfect) {
-      wordLabel.style.backgroundImage = PERFECT_RATING_GRADIENT;
-      wordLabel.style.backgroundClip = 'text';
-      wordLabel.style.webkitBackgroundClip = 'text';
-      wordLabel.style.color = 'transparent';
-    } else {
-      wordLabel.style.color = ratingInfo.color;
-    }
-    row.appendChild(wordLabel);
-
-    // Same badge SVG as the avatar chip, but the score replaces the photo in the center
-    // (the photo's already shown large above) — no bespoke medallion for the overlay.
-    const badgeWrap = document.createElement('div');
-    badgeWrap.style.width = '58px';
-    badgeWrap.style.height = '58px';
-    badgeWrap.style.flexShrink = '0';
-    badgeWrap.appendChild(buildPerformerTierBadge({
-      performerId: performerData.id,
-      name: performerData.name,
-      tier,
-      initial: performerData.name.charAt(0).toUpperCase(),
-      centerLabel: formatRatingValue10(ratingInfo.value10),
-      verified: this.showVerifiedCheckmarks && this.hasPerformerStashId(performerData),
-      knockoutColor: THEME.colors.backgroundPrimary,
-    }));
-    row.appendChild(badgeWrap);
-
-    wrapper.appendChild(row);
-
-    const divider = document.createElement('div');
-    divider.style.height = '1px';
-    divider.style.background = THEME.colors.border;
-    divider.style.marginTop = '10px';
-    wrapper.appendChild(divider);
-
-    return wrapper;
-  }
-
   /**
    * Create metadata section for performer overlay
    */
@@ -1823,11 +1783,6 @@ export abstract class BasePost {
 
     const contentSection = this.createOverlayContentSection();
     contentSection.appendChild(this.createPerformerOverlayNameRow(performerData, onRemove));
-
-    const ratingRow = this.createPerformerOverlayRatingRow(performerData);
-    if (ratingRow) {
-      contentSection.appendChild(ratingRow);
-    }
 
     const metadata = this.buildPerformerMetadata(performerData);
     const metadataSection = this.createPerformerOverlayMetadata(metadata);
