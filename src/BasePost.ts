@@ -1459,7 +1459,6 @@ export abstract class BasePost {
     sash.style.justifyContent = 'center';
     sash.style.fontSize = '11px';
     sash.style.fontWeight = '700';
-    sash.style.letterSpacing = '0.5px';
     sash.style.lineHeight = '1';
     sash.style.color = '#fff';
     sash.style.background = ratingInfo.isPerfect ? PERFECT_RATING_GRADIENT : ratingInfo.color;
