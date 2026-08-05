@@ -1354,7 +1354,7 @@ export abstract class BasePost {
   private createOverlayImageSection(
     width: string, height: string, fallbackFontSize: string,
     imagePath: string | undefined, name: string, logContext: string,
-    objectFit: string = 'cover'
+    objectFit: string = 'cover', objectPosition: string = 'center center'
   ): HTMLElement {
     const imageSection = document.createElement('div');
     imageSection.style.width = width;
@@ -1378,7 +1378,7 @@ export abstract class BasePost {
         img.style.width = '100%';
         img.style.height = '100%';
         img.style.objectFit = objectFit as 'cover' | 'contain';
-        img.style.objectPosition = 'center center';
+        img.style.objectPosition = objectPosition;
         imageSection.appendChild(img);
         return imageSection;
       }
@@ -1402,7 +1402,8 @@ export abstract class BasePost {
   private createPerformerOverlayImageSection(performerData: PerformerExtended): HTMLElement {
     const imageSection = this.createOverlayImageSection(
       '160px', '240px', '64px',
-      performerData.image_path, performerData.name, 'performer'
+      performerData.image_path, performerData.name, 'performer',
+      'cover', 'center top'
     );
     imageSection.style.position = 'relative';
 
@@ -1438,18 +1439,18 @@ export abstract class BasePost {
         const sash = document.createElement('div');
         sash.textContent = formatRatingValue10(ratingInfo.value10);
         sash.style.position = 'absolute';
-        sash.style.top = '20px';
-        sash.style.left = '-52px';
-        sash.style.width = '200px';
+        sash.style.top = '9px';
+        sash.style.left = '-36px';
+        sash.style.width = '140px';
         sash.style.transform = 'rotate(-45deg)';
         sash.style.textAlign = 'center';
-        sash.style.padding = '4px 0';
-        sash.style.fontSize = '14px';
+        sash.style.padding = '1px 0';
+        sash.style.fontSize = '11px';
         sash.style.fontWeight = '700';
         sash.style.letterSpacing = '0.5px';
         sash.style.color = '#fff';
         sash.style.background = ratingInfo.isPerfect ? PERFECT_RATING_GRADIENT : ratingInfo.color;
-        sash.style.boxShadow = '0 2px 6px rgba(0, 0, 0, 0.35)';
+        sash.style.boxShadow = '0 1px 4px rgba(0, 0, 0, 0.35)';
         sash.style.pointerEvents = 'none';
         imageSection.appendChild(sash);
 
