@@ -27,6 +27,7 @@ export const SceneFields = `
       favorite
       image_path
       birthdate
+      rating100
       stash_ids {
         stash_id
         endpoint
@@ -126,6 +127,7 @@ export const PerformerFields = `
     name
     aliases: alias_list
     image_path
+    rating100
     stash_ids {
       stash_id
       endpoint

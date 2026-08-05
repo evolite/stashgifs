@@ -45,6 +45,7 @@ const DEFAULT_SETTINGS: FeedSettings = {
   showVerifiedCheckmarks: true,
   showProductionAge: false,
   showStudioChips: true,
+  showPerformerEmbellishment: false,
   showSceneTitle: false,
   excludedTagNames: ['VR'],
   imagesInGalleryOnly: false,
@@ -633,6 +634,10 @@ export class FeedContainer {
     this.forEachPost(
       newSettings.showStudioChips !== undefined,
       p => p.setShowStudioChips?.(updatedSettings.showStudioChips !== false)
+    );
+    this.forEachPost(
+      newSettings.showPerformerEmbellishment !== undefined,
+      p => p.setShowPerformerEmbellishment?.(updatedSettings.showPerformerEmbellishment === true)
     );
     this.forEachPost(
       newSettings.showSceneTitle !== undefined && updatedSettings.showSceneTitle !== previousShowSceneTitle,
@@ -3423,6 +3428,7 @@ export class FeedContainer {
       showVerifiedCheckmarks: this.settings.showVerifiedCheckmarks !== false,
       showProductionAge: this.settings.showProductionAge === true,
       showStudioChips: this.settings.showStudioChips !== false,
+      showPerformerEmbellishment: this.settings.showPerformerEmbellishment === true,
       showSceneTitle: this.settings.showSceneTitle === true,
       showPerformerTags: this.settings.showPerformerTags === true,
       showSceneTags: this.settings.showSceneTags === true,
@@ -5996,12 +6002,13 @@ export class FeedContainer {
     const previousShowVerified = this.settings.showVerifiedCheckmarks;
     const previousShowProductionAge = this.settings.showProductionAge;
     const previousShowStudioChips = this.settings.showStudioChips;
+    const previousShowPerformerEmbellishment = this.settings.showPerformerEmbellishment;
     const previousShowSceneTitle = this.settings.showSceneTitle;
     const previousOrientation = this.normalizeOrientationFilter(this.settings.orientationFilter ?? []);
     this.settings = { ...this.settings, ...newSettings };
 
     this.refreshAutoplayAfterLayout();
-    this.applyPostDisplaySettings(newSettings, previousShowVerified, previousShowProductionAge, previousShowStudioChips, previousShowSceneTitle);
+    this.applyPostDisplaySettings(newSettings, previousShowVerified, previousShowProductionAge, previousShowStudioChips, previousShowPerformerEmbellishment, previousShowSceneTitle);
     this.reloadFeedIfFiltersChanged(newSettings, previousExcludedTags, previousOrientation);
   }
 
@@ -6010,6 +6017,7 @@ export class FeedContainer {
     previousShowVerified: boolean | undefined,
     previousShowProductionAge: boolean | undefined,
     previousShowStudioChips: boolean | undefined,
+    previousShowPerformerEmbellishment: boolean | undefined,
     previousShowSceneTitle: boolean | undefined
   ): void {
     this.applyPostDisplayToggle(
@@ -6031,6 +6039,13 @@ export class FeedContainer {
       previousShowStudioChips,
       this.settings.showStudioChips,
       (post, on) => post.setShowStudioChips?.(on),
+      false,
+    );
+    this.applyPostDisplayToggle(
+      newSettings.showPerformerEmbellishment,
+      previousShowPerformerEmbellishment,
+      this.settings.showPerformerEmbellishment,
+      (post, on) => post.setShowPerformerEmbellishment?.(on),
       false,
     );
     this.applyPostDisplayToggle(

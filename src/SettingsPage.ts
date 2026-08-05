@@ -767,6 +767,27 @@ export class SettingsPage {
     layoutSection.appendChild(studioChipsContainer);
     (this as any).showStudioChipsToggle = studioChipsToggle;
 
+    const performerEmbellishmentContainer = document.createElement('div');
+    performerEmbellishmentContainer.style.display = 'flex';
+    performerEmbellishmentContainer.style.justifyContent = 'space-between';
+    performerEmbellishmentContainer.style.alignItems = 'center';
+    performerEmbellishmentContainer.style.marginBottom = '16px';
+
+    performerEmbellishmentContainer.appendChild(
+      buildInfoLabel(
+        'Performer Tier Badges',
+        'Shows a laurel-wreath tier badge on performer avatars, based on their rating.'
+      )
+    );
+
+    const { container: performerEmbellishmentToggleContainer, input: performerEmbellishmentToggle } = this.createToggleSwitch(
+      this.settings.showPerformerEmbellishment === true,
+      () => this.saveSettings()
+    );
+    performerEmbellishmentContainer.appendChild(performerEmbellishmentToggleContainer);
+    layoutSection.appendChild(performerEmbellishmentContainer);
+    (this as any).showPerformerEmbellishmentToggle = performerEmbellishmentToggle;
+
     const sceneTitleContainer = document.createElement('div');
     sceneTitleContainer.style.display = 'flex';
     sceneTitleContainer.style.justifyContent = 'space-between';
@@ -1779,7 +1800,7 @@ export class SettingsPage {
       'shortFormIncludeToggle', 'reelAutoScrollToggle', 'autoHideSearchBarToggle', 'hdVideoToggle',
       'portraitToggle', 'landscapeToggle',
       'themeBackgroundInput', 'themePrimaryInput', 'themeSecondaryInput', 'themeAccentInput',
-      'showVerifiedCheckmarksToggle', 'showProductionAgeToggle', 'showStudioChipsToggle', 'sceneTitleToggle', 'showSceneTagsToggle', 'showPerformerTagsToggle',
+      'showVerifiedCheckmarksToggle', 'showProductionAgeToggle', 'showStudioChipsToggle', 'showPerformerEmbellishmentToggle', 'sceneTitleToggle', 'showSceneTagsToggle', 'showPerformerTagsToggle',
       'showBookmarkToggle', 'showOCountToggle', 'showViewCountToggle',
       'discoveryPanelToggle', 'excludedTagsInput',
       'includeSubtagsToggle', 'trackWatchHistoryToggle', 'seenHistorySizeInput', 'contentLimitInput', 'tagDisplayLimitInput',
@@ -1842,6 +1863,7 @@ export class SettingsPage {
       showVerifiedCheckmarks: inputs.showVerifiedCheckmarksToggle.checked,
       showProductionAge: inputs.showProductionAgeToggle.checked,
       showStudioChips: inputs.showStudioChipsToggle.checked,
+      showPerformerEmbellishment: inputs.showPerformerEmbellishmentToggle.checked,
       showSceneTitle: inputs.sceneTitleToggle.checked,
       showSceneTags: inputs.showSceneTagsToggle.checked,
       showPerformerTags: inputs.showPerformerTagsToggle.checked,

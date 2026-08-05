@@ -12,6 +12,7 @@ import { DISCOVERY_ICON_SVG, type DiscoveryPanelControl } from './DiscoveryPanel
 import { getStashBaseUrl } from './utils/baseUrl.js';
 import { setupTouchHandlers, preventClickAfterTouch } from './utils/touchHandlers.js';
 import { adjustImageDialogPosition, toggleImageFavorite } from './utils/imagePostUtils.js';
+import { buildPerformerTierBadge, performerTierFromRating100, type PerformerTier } from './utils/performerBadge.js';
 import { OverlayManager } from './utils/OverlayManager.js';
 import { PerformerExtended, StudioExtended } from './graphql/types.js';
 import { Performer, Tag, VideoPostData, ImageBasedPostData, Image } from './types.js';
@@ -27,6 +28,7 @@ export interface BasePostOptions {
   showVerifiedCheckmarks?: boolean;
   showProductionAge?: boolean;
   showStudioChips?: boolean;
+  showPerformerEmbellishment?: boolean;
   showSceneTitle?: boolean;
   showPerformerTags?: boolean;
   showSceneTags?: boolean;
@@ -128,6 +130,7 @@ export abstract class BasePost {
   protected showVerifiedCheckmarks: boolean = true;
   protected showProductionAge: boolean = false;
   protected showStudioChips: boolean = true;
+  protected showPerformerEmbellishment: boolean = false;
   protected showSceneTitle: boolean = false;
   protected showPerformerTags: boolean = false;
   protected showSceneTags: boolean = false;
@@ -181,6 +184,7 @@ export abstract class BasePost {
     this.showVerifiedCheckmarks = options?.showVerifiedCheckmarks !== false;
     this.showProductionAge = options?.showProductionAge === true;
     this.showStudioChips = options?.showStudioChips !== false;
+    this.showPerformerEmbellishment = options?.showPerformerEmbellishment === true;
     this.showSceneTitle = options?.showSceneTitle === true;
     this.showPerformerTags = options?.showPerformerTags === true;
     this.showSceneTags = options?.showSceneTags === true;
@@ -602,6 +606,11 @@ export abstract class BasePost {
     this.refreshHeader();
   }
 
+  public setShowPerformerEmbellishment(show: boolean): void {
+    this.showPerformerEmbellishment = show;
+    this.refreshHeader();
+  }
+
   public setShowSceneTitle(show: boolean): void {
     this.showSceneTitle = show;
     this.refreshHeader();
@@ -866,7 +875,7 @@ export abstract class BasePost {
   /**
    * Create a performer chip element
    */
-  protected createPerformerChip(performer: { id: string; name: string; image_path?: string; favorite?: boolean; birthdate?: string; stash_ids?: Array<{ stash_id: string }> }, compact: boolean = false): HTMLElement {
+  protected createPerformerChip(performer: { id: string; name: string; image_path?: string; favorite?: boolean; birthdate?: string; stash_ids?: Array<{ stash_id: string }>; rating100?: number }, compact: boolean = false): HTMLElement {
     const chip = this.buildPerformerChipBase(performer);
     chip.dataset.performerId = performer.id;
     const handleClick = (event?: Event): void => {
@@ -1072,7 +1081,12 @@ export abstract class BasePost {
     });
   }
 
-  private buildPerformerImage(performer: { name: string; image_path?: string }, showVerifiedBadge: boolean = false): HTMLElement {
+  private buildPerformerImage(performer: { id?: string; name: string; image_path?: string; rating100?: number }, showVerifiedBadge: boolean = false): HTMLElement {
+    if (this.showPerformerEmbellishment) {
+      const tier = performerTierFromRating100(performer.rating100);
+      if (tier) return this.buildPerformerTierAvatar(performer, tier, showVerifiedBadge);
+    }
+
     const image = this.buildChipImageContainer({
       name: performer.name,
       imagePath: performer.image_path,
@@ -1092,6 +1106,31 @@ export abstract class BasePost {
     const verifiedBadge = this.buildVerifiedBadge();
     verifiedBadge.style.display = this.showVerifiedCheckmarks ? 'inline-flex' : 'none';
     wrapper.appendChild(verifiedBadge);
+    return wrapper;
+  }
+
+  /** 58px box: 40px face + 9px/side laurel overhang into the chip's flex gap — do not shrink to 40px, diamond's widest leaf sits 26px from center. */
+  private buildPerformerTierAvatar(
+    performer: { id?: string; name: string; image_path?: string },
+    tier: PerformerTier,
+    verified: boolean
+  ): HTMLElement {
+    const wrapper = document.createElement('div');
+    wrapper.style.width = '58px';
+    wrapper.style.height = '58px';
+    wrapper.style.flexShrink = '0';
+    wrapper.style.display = 'flex';
+    wrapper.style.alignItems = 'center';
+    wrapper.style.justifyContent = 'center';
+    wrapper.appendChild(buildPerformerTierBadge({
+      performerId: performer.id ?? performer.name,
+      name: performer.name,
+      tier,
+      imagePath: performer.image_path,
+      initial: performer.name.charAt(0).toUpperCase(),
+      verified: verified && this.showVerifiedCheckmarks,
+      knockoutColor: THEME.colors.backgroundPrimary,
+    }));
     return wrapper;
   }
 
@@ -1606,52 +1645,6 @@ export abstract class BasePost {
   }
 
   /**
-   * Create tags section for performer overlay
-   */
-  private createPerformerOverlayTags(performerData: PerformerExtended): HTMLElement | null {
-    if (!performerData.tags || performerData.tags.length === 0) {
-      return null;
-    }
-
-    const tagsSection = document.createElement('div');
-    tagsSection.style.marginBottom = '8px';
-    tagsSection.style.fontSize = THEME.typography.sizeControl;
-
-    const tagsLabel = document.createElement('div');
-    tagsLabel.textContent = 'Tags:';
-    tagsLabel.style.color = THEME.colors.textMuted;
-    tagsLabel.style.marginBottom = '4px';
-    tagsSection.appendChild(tagsLabel);
-
-    const tagsList = document.createElement('div');
-    tagsList.style.display = 'flex';
-    tagsList.style.flexWrap = 'wrap';
-    tagsList.style.gap = '4px';
-
-    for (const tag of performerData.tags.slice(0, 10)) {
-      const tagChip = document.createElement('span');
-      tagChip.textContent = tag.name;
-      tagChip.style.backgroundColor = THEME.colors.backgroundSecondary;
-      tagChip.style.padding = '2px 8px';
-      tagChip.style.borderRadius = THEME.radius.tag;
-      tagChip.style.fontSize = THEME.typography.sizeMeta;
-      tagChip.style.color = THEME.colors.textPrimary;
-      tagsList.appendChild(tagChip);
-    }
-
-    if (performerData.tags.length > 10) {
-      const moreChip = document.createElement('span');
-      moreChip.textContent = `+${performerData.tags.length - 10} more`;
-      moreChip.style.color = THEME.colors.textMuted;
-      moreChip.style.fontSize = '12px';
-      tagsList.appendChild(moreChip);
-    }
-
-    tagsSection.appendChild(tagsList);
-    return tagsSection;
-  }
-
-  /**
    * Create a styled remove button for overlay cards (performer or tag).
    */
   private createOverlayRemoveButton(
@@ -1734,11 +1727,6 @@ export abstract class BasePost {
     const metadataSection = this.createPerformerOverlayMetadata(metadata);
     if (metadataSection) {
       contentSection.appendChild(metadataSection);
-    }
-
-    const tagsSection = this.createPerformerOverlayTags(performerData);
-    if (tagsSection) {
-      contentSection.appendChild(tagsSection);
     }
 
     overlay.appendChild(contentSection);
@@ -2453,6 +2441,10 @@ export abstract class BasePost {
     state.onSubmit = options.onSubmit;
     if (state.input) {
       state.input.value = '';
+    }
+    if (state.createButton) {
+      state.createButton.textContent = 'Add';
+      state.createButton.style.opacity = '1';
     }
 
     this.updateAddTagDialogState(state);

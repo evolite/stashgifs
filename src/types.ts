@@ -49,6 +49,7 @@ export interface Performer {
   birthdate?: string;
   stash_ids?: Array<{ stash_id: string; endpoint: string }>;
   tags?: Tag[];
+  rating100?: number;
 }
 
 export interface Tag {
@@ -132,6 +133,7 @@ export interface FeedSettings {
   tagDisplayLimit?: number; // Max tags shown before ... collapse (default 10)
   performerDisplayLimit?: number; // Max performers shown with full name before collapsing into a • • • button that expands to portrait-only chips (default 3)
   showStudioChips?: boolean; // Show studio logo + name chips alongside performer chips, default: true
+  showPerformerEmbellishment?: boolean; // Show laurel-wreath tier badge (from performer rating) on avatars, default: false
   enableDiscoveryPanel?: boolean; // Show StashDB discovery sidebar panel, default: true
   discoveryPanelSize?: number; // Panel width in px (1–1000), default 260
   discoverySceneOrder?: 'latest' | 'random' | 'trending'; // Scene selection: latest (default), random, or trending
