@@ -46,6 +46,12 @@ interface HoverHandlers {
   mouseleave: () => void;
 }
 
+interface PerformerRatingInfo {
+  value10: number;
+  /** Already resolved to the rainbow gradient for a perfect score — every consumer just assigns this straight to `background`. */
+  background: string;
+}
+
 interface AddTagDialogState {
   dialog?: HTMLElement;
   input?: HTMLInputElement;
@@ -1390,16 +1396,18 @@ export abstract class BasePost {
     return imageSection;
   }
 
-  /** rating100 -> the shared color/value/perfect-flag used by the medallion, portrait border, and top rule. undefined when unrated. */
-  private getPerformerRatingInfo(performerData: PerformerExtended): { value10: number; color: string; isPerfect: boolean } | undefined {
+  /** rating100 -> the shared value/color used by the sash, portrait border, and top rule. undefined when unrated. */
+  private getPerformerRatingInfo(performerData: PerformerExtended): PerformerRatingInfo | undefined {
     const rating100 = performerData.rating100;
     if (rating100 === undefined || rating100 === null || rating100 <= 0) return undefined;
-    const tier = performerTierFromRating100(rating100);
-    const color = tier ? tierRingStyle(tier).color : THEME.colors.accentPrimary;
-    return { value10: rating100 / 10, color, isPerfect: rating100 >= 100 };
+    // rating100 >= 1 here, and TIER_THRESHOLDS' lowest floor is 1, so this always resolves.
+    const tier = performerTierFromRating100(rating100)!;
+    const background = rating100 >= 100 ? PERFECT_RATING_GRADIENT : tierRingStyle(tier).color;
+    return { value10: rating100 / 10, background };
   }
 
-  private createPerformerOverlayImageSection(performerData: PerformerExtended): HTMLElement {
+  /** ratingInfo: computed once by the caller (createPerformerOverlay also needs it for the top rule) and passed in rather than recomputed here. */
+  private createPerformerOverlayImageSection(performerData: PerformerExtended, ratingInfo: PerformerRatingInfo | undefined): HTMLElement {
     const imageSection = this.createOverlayImageSection(
       '160px', '240px', '64px',
       performerData.image_path, performerData.name, 'performer',
@@ -1433,7 +1441,6 @@ export abstract class BasePost {
 
     // Rating sash/border are always shown when the performer has a rating — unaffected by
     // the "Performer Tier Badges" setting, which only gates the avatar chip wreath badge.
-    const ratingInfo = this.getPerformerRatingInfo(performerData);
     if (!ratingInfo) return imageSection;
 
     // Diagonal corner sash with the score, colored to the performer's rank — relies on
@@ -1461,7 +1468,7 @@ export abstract class BasePost {
     sash.style.fontWeight = '700';
     sash.style.lineHeight = '1';
     sash.style.color = '#fff';
-    sash.style.background = ratingInfo.isPerfect ? PERFECT_RATING_GRADIENT : ratingInfo.color;
+    sash.style.background = ratingInfo.background;
     sash.style.boxShadow = '0 1px 4px rgba(0, 0, 0, 0.35)';
     sash.style.pointerEvents = 'none';
     imageSection.appendChild(sash);
@@ -1469,7 +1476,7 @@ export abstract class BasePost {
     const borderWrapper = document.createElement('div');
     borderWrapper.style.padding = '2px';
     borderWrapper.style.borderRadius = '10px';
-    borderWrapper.style.background = ratingInfo.isPerfect ? PERFECT_RATING_GRADIENT : ratingInfo.color;
+    borderWrapper.style.background = ratingInfo.background;
     borderWrapper.style.flexShrink = '0';
     imageSection.style.borderRadius = '8px';
     borderWrapper.appendChild(imageSection);
@@ -1765,11 +1772,11 @@ export abstract class BasePost {
       topRule.style.right = '0';
       topRule.style.height = '2px';
       topRule.style.borderRadius = `${THEME.radius.card} ${THEME.radius.card} 0 0`;
-      topRule.style.background = ratingInfo.isPerfect ? PERFECT_RATING_GRADIENT : ratingInfo.color;
+      topRule.style.background = ratingInfo.background;
       overlay.appendChild(topRule);
     }
 
-    overlay.appendChild(this.createPerformerOverlayImageSection(performerData));
+    overlay.appendChild(this.createPerformerOverlayImageSection(performerData, ratingInfo));
 
     const contentSection = this.createOverlayContentSection();
     contentSection.appendChild(this.createPerformerOverlayNameRow(performerData, onRemove));
