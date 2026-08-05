@@ -214,6 +214,7 @@ export const SlimImageData = `
       favorite
       image_path
       birthdate
+      rating100
       stash_ids {
         stash_id
       }
