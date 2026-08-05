@@ -1646,7 +1646,14 @@ export abstract class BasePost {
     wordLabel.textContent = ratingWordLabel(ratingInfo.value10);
     wordLabel.style.fontSize = '15px';
     wordLabel.style.fontWeight = '700';
-    wordLabel.style.color = ratingInfo.color;
+    if (ratingInfo.isPerfect) {
+      wordLabel.style.backgroundImage = PERFECT_RATING_GRADIENT;
+      wordLabel.style.backgroundClip = 'text';
+      wordLabel.style.webkitBackgroundClip = 'text';
+      wordLabel.style.color = 'transparent';
+    } else {
+      wordLabel.style.color = ratingInfo.color;
+    }
     row.appendChild(wordLabel);
 
     // Same badge SVG as the avatar chip, but the score replaces the photo in the center
