@@ -12,7 +12,7 @@ import { DISCOVERY_ICON_SVG, type DiscoveryPanelControl } from './DiscoveryPanel
 import { getStashBaseUrl } from './utils/baseUrl.js';
 import { setupTouchHandlers, preventClickAfterTouch } from './utils/touchHandlers.js';
 import { adjustImageDialogPosition, toggleImageFavorite } from './utils/imagePostUtils.js';
-import { buildPerformerTierBadge, performerTierFromRating100, type PerformerTier } from './utils/performerBadge.js';
+import { buildPerformerTierBadge, buildTierWreathAccent, performerTierFromRating100, tierRingStyle, type PerformerTier } from './utils/performerBadge.js';
 import { OverlayManager } from './utils/OverlayManager.js';
 import { PerformerExtended, StudioExtended } from './graphql/types.js';
 import { Performer, Tag, VideoPostData, ImageBasedPostData, Image } from './types.js';
@@ -1396,6 +1396,23 @@ export abstract class BasePost {
       performerData.image_path, performerData.name, 'performer'
     );
     imageSection.style.position = 'relative';
+
+    if (this.showPerformerEmbellishment) {
+      const tier = performerTierFromRating100(performerData.rating100);
+      if (tier) {
+        const ring = tierRingStyle(tier);
+        imageSection.style.outline = `${ring.width + 1}px solid ${ring.color}`;
+        imageSection.style.outlineOffset = '2px';
+
+        const wreathAccent = document.createElement('div');
+        wreathAccent.style.position = 'absolute';
+        wreathAccent.style.bottom = '-8px';
+        wreathAccent.style.left = '-8px';
+        wreathAccent.style.pointerEvents = 'none';
+        wreathAccent.appendChild(buildTierWreathAccent(tier));
+        imageSection.appendChild(wreathAccent);
+      }
+    }
 
     // Add country flag overlay in bottom right corner
     if (performerData.country) {

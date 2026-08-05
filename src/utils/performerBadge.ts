@@ -50,6 +50,12 @@ export function performerTierFromRating100(rating100: number | undefined | null)
   return TIER_THRESHOLDS.find(([floor]) => rating100 >= floor)?.[1];
 }
 
+/** Ring color/width for a tier — for framing a performer image elsewhere (e.g. the hover overlay portrait). */
+export function tierRingStyle(tier: PerformerTier): { color: string; width: number } {
+  const tokens = TIER_TOKENS[tier];
+  return { color: tokens.ring, width: tokens.ringWidth };
+}
+
 function svgEl(tag: string, attrs: Record<string, string | number>): SVGElement {
   const el = document.createElementNS(SVG_NS, tag);
   for (const [key, value] of Object.entries(attrs)) el.setAttribute(key, String(value));
@@ -60,6 +66,21 @@ function leafGroup(angle: number, rx: number, ry: number, fill: string): SVGElem
   const g = svgEl('g', { transform: `rotate(${angle})` });
   g.appendChild(svgEl('ellipse', { cx: 0, cy: 22.5, rx, ry, fill }));
   return g;
+}
+
+/** Leaves + ring only, no disc/image — a decorative corner seal for framing a performer image elsewhere. */
+export function buildTierWreathAccent(tier: PerformerTier): SVGSVGElement {
+  const tokens = TIER_TOKENS[tier];
+  const svg = svgEl('svg', { width: 40, height: 40, viewBox: '0 0 58 58' }) as SVGSVGElement;
+  const group = svgEl('g', { transform: 'translate(29 29)' });
+  WREATH[tier].forEach(([angle, rx, ry], i) => {
+    const fill = i % 2 === 0 ? tokens.leafA : tokens.leafB;
+    group.appendChild(leafGroup(angle, rx, ry, fill));
+    group.appendChild(leafGroup(-angle, rx, ry, fill));
+  });
+  group.appendChild(svgEl('circle', { r: 19, fill: 'none', stroke: tokens.ring, 'stroke-width': tokens.ringWidth }));
+  svg.appendChild(group);
+  return svg;
 }
 
 export interface PerformerTierBadgeOptions {
