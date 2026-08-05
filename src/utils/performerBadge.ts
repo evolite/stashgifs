@@ -73,7 +73,7 @@ export interface PerformerTierBadgeOptions {
   knockoutColor: string;
 }
 
-/** Draw order: leaves -> ring -> disc/image -> inner ring -> initials -> check. */
+/** Draw order: leaves -> ring -> disc/image -> initials -> check. */
 export function buildPerformerTierBadge(options: PerformerTierBadgeOptions): SVGSVGElement {
   const tokens = TIER_TOKENS[options.tier];
   const svg = svgEl('svg', { width: 58, height: 58, viewBox: '0 0 58 58' }) as SVGSVGElement;
@@ -108,10 +108,6 @@ export function buildPerformerTierBadge(options: PerformerTierBadgeOptions): SVG
     const text = svgEl('text', { x: 0, y: 6, 'text-anchor': 'middle', 'font-size': 16, 'font-weight': 600, fill: '#fff' });
     text.textContent = options.initial;
     group.appendChild(text);
-  }
-
-  if (options.tier === 'platinum' || options.tier === 'diamond') {
-    group.appendChild(svgEl('circle', { r: 15, fill: 'none', stroke: tokens.ring, 'stroke-width': 1 }));
   }
 
   if (options.verified) {
