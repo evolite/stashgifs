@@ -1580,8 +1580,10 @@ export abstract class BasePost {
     performerData: PerformerExtended
   ): void {
     if (performerData.rating100 !== undefined && performerData.rating100 !== null) {
-      const rating = (performerData.rating100 / 20).toFixed(1);
-      metadata.push({ label: 'Rating', value: `${rating}/5` });
+      const maxScale = this.ratingSystemConfig?.type === 'stars' ? 5 : 10;
+      const value = (performerData.rating100 / 100) * maxScale;
+      const rating = this.ratingSystemConfig?.starPrecision === 'half' ? value.toFixed(1) : Math.round(value).toString();
+      metadata.push({ label: 'Rating', value: `${rating}/${maxScale}` });
     }
   }
 
