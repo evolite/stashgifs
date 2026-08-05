@@ -4718,6 +4718,7 @@ export class FeedContainer {
         image_path: p.image_path,
         favorite: p.favorite,
         birthdate: p.birthdate,
+        rating100: p.rating100,
         stash_ids: p.stash_ids,
         tags: p.tags,
       })),

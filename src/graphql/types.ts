@@ -426,6 +426,7 @@ export interface GQLImage {
     favorite?: boolean;
     image_path?: string;
     birthdate?: string;
+    rating100?: number;
     stash_ids?: Array<{ stash_id: string; endpoint: string }>;
     tags?: Array<{ id: string; name: string }>;
   }>;
