@@ -12,7 +12,7 @@ import { DISCOVERY_ICON_SVG, type DiscoveryPanelControl } from './DiscoveryPanel
 import { getStashBaseUrl } from './utils/baseUrl.js';
 import { setupTouchHandlers, preventClickAfterTouch } from './utils/touchHandlers.js';
 import { adjustImageDialogPosition, toggleImageFavorite } from './utils/imagePostUtils.js';
-import { buildPerformerTierBadge, buildTierWreathAccent, performerTierFromRating100, tierRingStyle, type PerformerTier } from './utils/performerBadge.js';
+import { buildPerformerTierBadge, buildRatingMedallion, performerTierFromRating100, ratingWordLabel, tierRingStyle, PERFECT_RATING_GRADIENT, type PerformerTier } from './utils/performerBadge.js';
 import { OverlayManager } from './utils/OverlayManager.js';
 import { PerformerExtended, StudioExtended } from './graphql/types.js';
 import { Performer, Tag, VideoPostData, ImageBasedPostData, Image } from './types.js';
@@ -1390,29 +1390,21 @@ export abstract class BasePost {
     return imageSection;
   }
 
+  /** rating100 -> the shared color/value/perfect-flag used by the medallion, portrait border, and top rule. undefined when unrated. */
+  private getPerformerRatingInfo(performerData: PerformerExtended): { value10: number; color: string; isPerfect: boolean } | undefined {
+    const rating100 = performerData.rating100;
+    if (rating100 === undefined || rating100 === null || rating100 <= 0) return undefined;
+    const tier = performerTierFromRating100(rating100);
+    const color = tier ? tierRingStyle(tier).color : THEME.colors.accentPrimary;
+    return { value10: rating100 / 10, color, isPerfect: rating100 >= 100 };
+  }
+
   private createPerformerOverlayImageSection(performerData: PerformerExtended): HTMLElement {
     const imageSection = this.createOverlayImageSection(
       '160px', '240px', '64px',
       performerData.image_path, performerData.name, 'performer'
     );
     imageSection.style.position = 'relative';
-
-    if (this.showPerformerEmbellishment) {
-      const tier = performerTierFromRating100(performerData.rating100);
-      if (tier) {
-        const ring = tierRingStyle(tier);
-        imageSection.style.outline = `${ring.width + 1}px solid ${ring.color}`;
-        imageSection.style.outlineOffset = '2px';
-
-        const wreathAccent = document.createElement('div');
-        wreathAccent.style.position = 'absolute';
-        wreathAccent.style.bottom = '-8px';
-        wreathAccent.style.left = '-8px';
-        wreathAccent.style.pointerEvents = 'none';
-        wreathAccent.appendChild(buildTierWreathAccent(tier));
-        imageSection.appendChild(wreathAccent);
-      }
-    }
 
     // Add country flag overlay in bottom right corner
     if (performerData.country) {
@@ -1435,6 +1427,20 @@ export abstract class BasePost {
         flagElement.style.backdropFilter = 'blur(4px)';
         flagElement.style.boxShadow = '0 2px 8px rgba(0, 0, 0, 0.3)';
         imageSection.appendChild(flagElement);
+      }
+    }
+
+    if (this.showPerformerEmbellishment) {
+      const ratingInfo = this.getPerformerRatingInfo(performerData);
+      if (ratingInfo) {
+        const borderWrapper = document.createElement('div');
+        borderWrapper.style.padding = '2px';
+        borderWrapper.style.borderRadius = '10px';
+        borderWrapper.style.background = ratingInfo.isPerfect ? PERFECT_RATING_GRADIENT : ratingInfo.color;
+        borderWrapper.style.flexShrink = '0';
+        imageSection.style.borderRadius = '8px';
+        borderWrapper.appendChild(imageSection);
+        return borderWrapper;
       }
     }
 
@@ -1612,9 +1618,45 @@ export abstract class BasePost {
 
     this.addBasicInfoMetadata(metadata, performerData, this.getProductionDate());
     this.addPhysicalAttributesMetadata(metadata, performerData);
-    this.addRatingMetadata(metadata, performerData);
+    if (!this.showPerformerEmbellishment) {
+      this.addRatingMetadata(metadata, performerData);
+    }
 
     return metadata;
+  }
+
+  /** Rating medallion + word label, replacing the plain "Rating: x/10" row when embellishment is on. Heavier weight than the metadata list so the score reads as the reason people hover, not just another attribute. */
+  private createPerformerOverlayRatingRow(performerData: PerformerExtended): HTMLElement | null {
+    if (!this.showPerformerEmbellishment) return null;
+    const ratingInfo = this.getPerformerRatingInfo(performerData);
+    if (!ratingInfo) return null;
+
+    const wrapper = document.createElement('div');
+    wrapper.style.marginBottom = '10px';
+
+    const row = document.createElement('div');
+    row.style.display = 'flex';
+    row.style.alignItems = 'center';
+    row.style.justifyContent = 'space-between';
+    row.style.gap = '8px';
+
+    const wordLabel = document.createElement('span');
+    wordLabel.textContent = ratingWordLabel(ratingInfo.value10);
+    wordLabel.style.fontSize = '15px';
+    wordLabel.style.fontWeight = '700';
+    wordLabel.style.color = ratingInfo.color;
+    row.appendChild(wordLabel);
+
+    row.appendChild(buildRatingMedallion(ratingInfo.value10, ratingInfo.color, ratingInfo.isPerfect));
+    wrapper.appendChild(row);
+
+    const divider = document.createElement('div');
+    divider.style.height = '1px';
+    divider.style.background = THEME.colors.border;
+    divider.style.marginTop = '10px';
+    wrapper.appendChild(divider);
+
+    return wrapper;
   }
 
   /**
@@ -1737,10 +1779,30 @@ export abstract class BasePost {
       onClickBackground: () => this.performerOverlayMgr.hide(true),
     }, { maxHeight: '80vh', overflowY: 'auto' });
 
+    if (this.showPerformerEmbellishment) {
+      const ratingInfo = this.getPerformerRatingInfo(performerData);
+      if (ratingInfo) {
+        const topRule = document.createElement('div');
+        topRule.style.position = 'absolute';
+        topRule.style.top = '0';
+        topRule.style.left = '0';
+        topRule.style.right = '0';
+        topRule.style.height = '2px';
+        topRule.style.borderRadius = `${THEME.radius.card} ${THEME.radius.card} 0 0`;
+        topRule.style.background = ratingInfo.isPerfect ? PERFECT_RATING_GRADIENT : ratingInfo.color;
+        overlay.appendChild(topRule);
+      }
+    }
+
     overlay.appendChild(this.createPerformerOverlayImageSection(performerData));
 
     const contentSection = this.createOverlayContentSection();
     contentSection.appendChild(this.createPerformerOverlayNameRow(performerData, onRemove));
+
+    const ratingRow = this.createPerformerOverlayRatingRow(performerData);
+    if (ratingRow) {
+      contentSection.appendChild(ratingRow);
+    }
 
     const metadata = this.buildPerformerMetadata(performerData);
     const metadataSection = this.createPerformerOverlayMetadata(metadata);

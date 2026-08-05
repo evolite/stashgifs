@@ -68,17 +68,69 @@ function leafGroup(angle: number, rx: number, ry: number, fill: string): SVGElem
   return g;
 }
 
-/** Leaves + ring only, no disc/image — a decorative corner seal for framing a performer image elsewhere. */
-export function buildTierWreathAccent(tier: PerformerTier): SVGSVGElement {
-  const tokens = TIER_TOKENS[tier];
-  const svg = svgEl('svg', { width: 40, height: 40, viewBox: '0 0 58 58' }) as SVGSVGElement;
-  const group = svgEl('g', { transform: 'translate(29 29)' });
-  WREATH[tier].forEach(([angle, rx, ry], i) => {
-    const fill = i % 2 === 0 ? tokens.leafA : tokens.leafB;
-    group.appendChild(leafGroup(angle, rx, ry, fill));
-    group.appendChild(leafGroup(-angle, rx, ry, fill));
+// Rating medallion: same wreath grammar as the avatar badge, but 10 individual pips
+// (not 5 mirrored pairs) along a tighter arc, one per point of a 0-10 scale, ordered
+// left-to-right so filling reads like a progress meter instead of a symmetric crest.
+const MEDALLION_LEAF_RADIUS = 17;
+const MEDALLION_RING_RADIUS = 13;
+const MEDALLION_UNLIT_FILL = 'rgba(255, 255, 255, 0.16)';
+const MEDALLION_LEAF_SLOTS: Array<[number, number, number]> = [
+  [-108, 2.3, 4], [-88, 2.6, 4.5], [-68, 2.9, 5], [-48, 3.2, 5.5], [-28, 3.5, 6],
+  [28, 3.5, 6], [48, 3.2, 5.5], [68, 2.9, 5], [88, 2.6, 4.5], [108, 2.3, 4],
+];
+let medallionInstanceId = 0;
+
+/** Gradient for a perfect (rating100 === 100) score — used for the medallion ring, portrait border, and top rule. */
+export const PERFECT_RATING_GRADIENT = 'linear-gradient(135deg, #FF5252, #FF9800, #FFEB3B, #4CAF50, #2196F3, #9C27B0)';
+
+export function formatRatingValue10(value10: number): string {
+  return Number.isInteger(value10) ? String(value10) : value10.toFixed(1);
+}
+
+export function ratingWordLabel(value10: number): string {
+  if (value10 >= 10) return 'Perfect';
+  if (value10 >= 8) return 'Highly rated';
+  if (value10 >= 6) return 'Well rated';
+  if (value10 >= 4) return 'Decent';
+  return 'Low rated';
+}
+
+/** value10: 0-10 rating. color: solid fill for lit leaves and the ring (ignored, use gradient stroke, when isPerfect). */
+export function buildRatingMedallion(value10: number, color: string, isPerfect: boolean): SVGSVGElement {
+  const lit = Math.max(0, Math.min(10, Math.round(value10)));
+  const svg = svgEl('svg', { width: 60, height: 60, viewBox: '0 0 60 60' }) as SVGSVGElement;
+  svg.setAttribute('role', 'img');
+  svg.setAttribute('aria-label', `Rating ${formatRatingValue10(value10)} out of 10`);
+
+  const group = svgEl('g', { transform: 'translate(30 30)' });
+
+  MEDALLION_LEAF_SLOTS.forEach(([angle, rx, ry], i) => {
+    const g = svgEl('g', { transform: `rotate(${angle})` });
+    g.appendChild(svgEl('ellipse', { cx: 0, cy: MEDALLION_LEAF_RADIUS, rx, ry, fill: i < lit ? color : MEDALLION_UNLIT_FILL }));
+    group.appendChild(g);
   });
-  group.appendChild(svgEl('circle', { r: 19, fill: 'none', stroke: tokens.ring, 'stroke-width': tokens.ringWidth }));
+
+  if (isPerfect) {
+    const gradientId = `rating-medallion-gradient-${medallionInstanceId++}`;
+    const defs = svgEl('defs', {});
+    const gradient = svgEl('linearGradient', { id: gradientId, x1: '0%', y1: '0%', x2: '100%', y2: '100%' });
+    ['#FF5252', '#FF9800', '#FFEB3B', '#4CAF50', '#2196F3', '#9C27B0'].forEach((stopColor, i, arr) => {
+      gradient.appendChild(svgEl('stop', { offset: `${(i / (arr.length - 1)) * 100}%`, 'stop-color': stopColor }));
+    });
+    defs.appendChild(gradient);
+    group.appendChild(defs);
+    group.appendChild(svgEl('circle', { r: MEDALLION_RING_RADIUS, fill: DISC_FILL, stroke: `url(#${gradientId})`, 'stroke-width': 2 }));
+  } else {
+    group.appendChild(svgEl('circle', { r: MEDALLION_RING_RADIUS, fill: DISC_FILL, stroke: color, 'stroke-width': 2 }));
+  }
+
+  const label = formatRatingValue10(value10);
+  const text = svgEl('text', {
+    x: 0, y: 5, 'text-anchor': 'middle', 'font-size': label.length > 2 ? 13 : 16, 'font-weight': 700, fill: '#fff',
+  });
+  text.textContent = label;
+  group.appendChild(text);
+
   svg.appendChild(group);
   return svg;
 }
