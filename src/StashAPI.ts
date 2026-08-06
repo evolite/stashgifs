@@ -1921,60 +1921,49 @@ export class StashAPI {
     }
   }
 
-  /**
-   * Update tags for an image
-   */
-  async updateImageTags(imageId: string, tagIds: string[], signal?: AbortSignal): Promise<void> {
+  private async updateImageField(
+    imageId: string,
+    field: 'tag_ids' | 'performer_ids',
+    ids: string[],
+    signal: AbortSignal | undefined,
+    logContext: string
+  ): Promise<void> {
     if (this.isAborted(signal)) return;
-    
+
     try {
       await this.gqlClient.mutate<ImageUpdateResponse>({
         mutation: mutations.IMAGE_UPDATE,
         variables: {
           input: {
             id: imageId,
-            tag_ids: tagIds,
+            [field]: ids,
           },
         },
         signal,
       });
-      
+
       if (this.isAborted(signal)) return;
     } catch (error) {
       if (isAbortError(error) || this.isAborted(signal)) {
         return;
       }
-      this.logError('updateImageTags', error);
+      this.logError(logContext, error);
       throw error;
     }
+  }
+
+  /**
+   * Update tags for an image
+   */
+  async updateImageTags(imageId: string, tagIds: string[], signal?: AbortSignal): Promise<void> {
+    return this.updateImageField(imageId, 'tag_ids', tagIds, signal, 'updateImageTags');
   }
 
   /**
    * Update performers for an image
    */
   async updateImagePerformers(imageId: string, performerIds: string[], signal?: AbortSignal): Promise<void> {
-    if (this.isAborted(signal)) return;
-
-    try {
-      await this.gqlClient.mutate<ImageUpdateResponse>({
-        mutation: mutations.IMAGE_UPDATE,
-        variables: {
-          input: {
-            id: imageId,
-            performer_ids: performerIds,
-          },
-        },
-        signal,
-      });
-
-      if (this.isAborted(signal)) return;
-    } catch (error) {
-      if (isAbortError(error) || this.isAborted(signal)) {
-        return;
-      }
-      this.logError('updateImagePerformers', error);
-      throw error;
-    }
+    return this.updateImageField(imageId, 'performer_ids', performerIds, signal, 'updateImagePerformers');
   }
 
   /**
