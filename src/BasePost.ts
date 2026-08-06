@@ -2220,7 +2220,8 @@ export abstract class BasePost {
     }
   }
 
-  private appendPerformerMoreToggle(chips: HTMLElement, overflow: HTMLElement[]): void {
+  /** Shared "• • •" overflow toggle pill used by both the performer-chip and tag-chip overflow rows. */
+  private createMoreToggle(label: string, onClick: (more: HTMLElement) => void): HTMLElement {
     const more = document.createElement('span');
     more.className = 'tag-chip__more';
     more.textContent = '• • •';
@@ -2234,11 +2235,18 @@ export abstract class BasePost {
     more.style.minHeight = '28px';
     more.style.display = 'inline-flex';
     more.style.alignItems = 'center';
-    more.setAttribute('title', `Show ${overflow.length} more performers`);
+    more.setAttribute('title', label);
     more.setAttribute('role', 'button');
-    more.setAttribute('aria-label', `Show ${overflow.length} more performers`);
+    more.setAttribute('aria-label', label);
     more.addEventListener('click', (e) => {
       e.stopPropagation();
+      onClick(more);
+    });
+    return more;
+  }
+
+  private appendPerformerMoreToggle(chips: HTMLElement, overflow: HTMLElement[]): void {
+    const more = this.createMoreToggle(`Show ${overflow.length} more performers`, () => {
       for (const chip of overflow) chip.style.display = '';
       more.remove();
     });
@@ -2284,24 +2292,7 @@ export abstract class BasePost {
       tagChips[i].style.display = 'none';
     }
 
-    const more = document.createElement('span');
-    more.className = 'tag-chip__more';
-    more.textContent = '• • •';
-    more.style.color = 'var(--color-accent)';
-    more.style.cursor = 'pointer';
-    more.style.fontSize = '18px';
-    more.style.lineHeight = '1.4';
-    more.style.letterSpacing = '2px';
-    more.style.padding = '4px 0';
-    more.style.marginLeft = '8px';
-    more.style.minHeight = '28px';
-    more.style.display = 'inline-flex';
-    more.style.alignItems = 'center';
-    more.setAttribute('title', `Show ${tagChips.length - limit} more tags`);
-    more.setAttribute('role', 'button');
-    more.setAttribute('aria-label', `Show ${tagChips.length - limit} more tags`);
-    more.addEventListener('click', (e) => {
-      e.stopPropagation();
+    const more = this.createMoreToggle(`Show ${tagChips.length - limit} more tags`, () => {
       for (let i = limit; i < tagChips.length; i++) {
         tagChips[i].style.display = '';
       }
