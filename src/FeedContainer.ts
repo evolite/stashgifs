@@ -3658,8 +3658,15 @@ export class FeedContainer {
       limit,
       offset,
     }, signal);
-    
-    // Update sortSeed in filters if returned
+
+    return this.finalizeMarkersResult(result, currentFilters);
+  }
+
+  /** Shared tail for marker-fetching loaders: persist a regenerated sortSeed back onto the filters, then apply the client-side name filter. */
+  private finalizeMarkersResult<T extends { sortSeed?: string; markers: SceneMarker[] }>(
+    result: T,
+    currentFilters: FilterOptions
+  ): T & { markers: SceneMarker[] } {
     if (result.sortSeed && currentFilters) {
       currentFilters.sortSeed = result.sortSeed;
     }
@@ -4595,16 +4602,8 @@ export class FeedContainer {
       offset,
       signal
     );
-    
-    // Update sortSeed in filters if returned
-    if (result.sortSeed && currentFilters) {
-      currentFilters.sortSeed = result.sortSeed;
-    }
 
-    return {
-      ...result,
-      markers: this.filterMarkersByName(result.markers),
-    };
+    return this.finalizeMarkersResult(result, currentFilters);
   }
 
   private buildImageFilters(filters: FilterOptions): Record<string, unknown> {
