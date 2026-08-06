@@ -1281,22 +1281,27 @@ export class StashAPI {
   /**
    * Calculate random page for shuffle mode
    */
-  private async calculateRandomScenePage(filters: FilterOptions | undefined, limit: number, signal?: AbortSignal): Promise<{ page: number; totalCount: number }> {
+  /** Runs the GET_SCENE_COUNT query (per_page:1, page:1 — count only, no rows) shared by shuffle-mode and short-form page math. */
+  private async fetchSceneCount(sceneFilter: SceneFilterInput | null, signal?: AbortSignal): Promise<number> {
     const countFilter: FindFilterInput = { per_page: 1, page: 1 };
+    const countResult = await this.gqlClient.query<FindScenesResponse>({
+      query: queries.GET_SCENE_COUNT,
+      variables: { filter: countFilter, ...(sceneFilter && { scene_filter: sceneFilter }) },
+      signal,
+    });
+    return countResult.data?.findScenes?.count || 0;
+  }
+
+  private async calculateRandomScenePage(filters: FilterOptions | undefined, limit: number, signal?: AbortSignal): Promise<{ page: number; totalCount: number }> {
     const sceneFilter = this.buildShuffleSceneFilter(filters);
 
     try {
       if (this.isAborted(signal)) return { page: 1, totalCount: 0 };
 
-      const countResult = await this.gqlClient.query<FindScenesResponse>({
-        query: queries.GET_SCENE_COUNT,
-        variables: { filter: countFilter, ...(sceneFilter && { scene_filter: sceneFilter }) },
-        signal,
-      });
+      const totalCount = await this.fetchSceneCount(sceneFilter, signal);
 
       if (this.isAborted(signal)) return { page: 1, totalCount: 0 };
 
-      const totalCount = countResult.data?.findScenes?.count || 0;
       if (totalCount > 0) {
         const totalPages = Math.ceil(totalCount / limit);
         return { page: Math.floor(Math.random() * totalPages) + 1, totalCount };
@@ -1459,16 +1464,11 @@ export class StashAPI {
     let maxPage = StashAPI.MAX_PAGE_FALLBACK;
     let totalCount = 0;
     try {
-      const countFilter: FindFilterInput = { per_page: 1, page: 1 };
-      const countResult = await this.gqlClient.query<FindScenesResponse>({
-        query: queries.GET_SCENE_COUNT,
-        variables: { filter: countFilter, ...(sceneFilter && { scene_filter: sceneFilter }) },
-        signal,
-      });
-      
+      const rawCount = await this.fetchSceneCount(sceneFilter, signal);
+
       if (this.isAborted(signal)) return { maxPage: 0, totalCount: 0 };
-      
-      totalCount = Math.min(countResult.data?.findScenes?.count || 0, this._maxContentLimit);
+
+      totalCount = Math.min(rawCount, this._maxContentLimit);
       
       if (totalCount > 0) {
         maxPage = Math.max(1, Math.ceil(totalCount / scenesPerPage));
