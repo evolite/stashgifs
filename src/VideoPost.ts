@@ -165,7 +165,7 @@ export class VideoPost extends VideoPostBase {
     // add a tag to a synthetic shuffle marker that has no underlying marker yet. Tag CHIPS,
     // however, always render (synthetic markers carry their scene's tags).
     const canAddTag = !this.useShuffleMode || this.hasCreatedMarker;
-    const addTagChipTitle = this.isRealMarker() || this.isShortFormContent() ? 'Add tag to marker' : 'Add tag';
+    const addTagChipTitle = this.isRealMarker() || this.isWholeSceneSyntheticContent() ? 'Add tag to marker' : 'Add tag';
     const addTagChip = canAddTag ? this.createAddTagChip(addTagChipTitle) : undefined;
 
     const tagsSection = document.createElement('div');
@@ -263,7 +263,7 @@ export class VideoPost extends VideoPostBase {
    * Add tag chips to the chips container
    */
   private addTagChips(chips: HTMLElement): void {
-    if (this.showMarkerTitle && !this.isShortFormContent() && this.data.marker.title) {
+    if (this.showMarkerTitle && !this.isWholeSceneSyntheticContent() && this.data.marker.title) {
       const title = document.createElement('span');
       title.textContent = this.data.marker.title;
       title.style.fontSize = '14px';
@@ -301,10 +301,10 @@ export class VideoPost extends VideoPostBase {
       }
     }
 
-    // Scene tags last: always for shortform/synthetic markers (scene tags are their intrinsic
-    // tags, like a real marker's own tags); for regular markers only when showSceneTags is on.
-    const isShortForm = this.isShortFormContent();
-    if (isShortForm || this.useShuffleMode || this.showSceneTags) {
+    // Scene tags last: always for shortform/scene-preview/synthetic markers (scene tags are
+    // their intrinsic tags, like a real marker's own tags); for regular markers only when
+    // showSceneTags is on.
+    if (this.isWholeSceneSyntheticContent() || this.useShuffleMode || this.showSceneTags) {
       this.addTagsFromList(this.data.marker.scene.tags, chips, displayedTagIds, hasPerformers, isFirstTag);
     }
 
@@ -318,6 +318,22 @@ export class VideoPost extends VideoPostBase {
    */
   private isShortFormContent(): boolean {
     return typeof this.data.marker.id === 'string' && this.data.marker.id.startsWith('shortform-');
+  }
+
+  /**
+   * Check if this is a scene-preview content marker (whole-scene synthetic post backed
+   * by the scene's generated hover-preview clip, never upgraded to the full scene)
+   */
+  private isScenePreviewContent(): boolean {
+    return typeof this.data.marker.id === 'string' && this.data.marker.id.startsWith('scenepreview-');
+  }
+
+  /**
+   * Whole-scene synthetic post (short-form or scene-preview) — tags/title/favorite state
+   * live on the scene, not on a (nonexistent) real marker.
+   */
+  private isWholeSceneSyntheticContent(): boolean {
+    return this.isShortFormContent() || this.isScenePreviewContent();
   }
 
   /**
@@ -377,7 +393,8 @@ export class VideoPost extends VideoPostBase {
     const ratingControl = this.createRatingSection();
     buttonGroup.appendChild(ratingControl);
 
-    if (this.api && !this.hdModeFromSettings) {
+    // Scene previews stay preview-only — there's no full-scene upgrade to offer.
+    if (this.api && !this.hdModeFromSettings && !this.isScenePreviewContent()) {
       const hqBtn = this.createHQButton();
       buttonGroup.appendChild(hqBtn);
     }
@@ -567,11 +584,11 @@ export class VideoPost extends VideoPostBase {
    * Update local tags after favorite toggle
    */
   protected async updateLocalTagsAfterFavoriteToggle(newFavoriteState: boolean): Promise<void> {
-    const isShortForm = this.isShortFormContent();
+    const isWholeSceneSynthetic = this.isWholeSceneSyntheticContent();
     const favoriteTagId = await this.favoritesManager?.getFavoriteTagId() ?? null;
     const tagId = favoriteTagId ?? undefined;
-    
-    if (isShortForm) {
+
+    if (isWholeSceneSynthetic) {
       this.updateSceneTagsAfterFavoriteToggle(newFavoriteState, tagId);
     } else {
       this.updateMarkerTagsAfterFavoriteToggle(newFavoriteState, tagId);
@@ -680,6 +697,8 @@ export class VideoPost extends VideoPostBase {
   }
 
   protected async performHQUpgrade(): Promise<void> {
+    // Scene previews never upgrade to the full scene — stay preview-only.
+    if (this.isScenePreviewContent()) return;
     await this.upgradeToSceneVideo();
   }
 
@@ -914,10 +933,10 @@ export class VideoPost extends VideoPostBase {
    * Get favorite tag source for VideoPost
    */
   protected getFavoriteTagSource(): Array<{ name: string }> | undefined {
-    const isShortForm = this.isShortFormContent();
-    
-    if (isShortForm) {
-      // For shortform content, check scene tags
+    const isWholeSceneSynthetic = this.isWholeSceneSyntheticContent();
+
+    if (isWholeSceneSynthetic) {
+      // For shortform/scene-preview content, check scene tags
       return this.data.marker.scene?.tags;
     } else {
       // For regular markers, check marker tags
@@ -1698,7 +1717,7 @@ export class VideoPost extends VideoPostBase {
       return false;
     }
 
-    if (this.isShortFormContent()) {
+    if (this.isWholeSceneSyntheticContent()) {
       return this.removeTagFromScene(api, tagId, tagName);
     }
 
@@ -1838,10 +1857,10 @@ export class VideoPost extends VideoPostBase {
     if (!this.api || !this.selectedTagId || !this.selectedTagName) return;
     if (!this.markerDialogCreateButton) return;
 
-    const isShortForm = this.isShortFormContent();
+    const isWholeSceneSynthetic = this.isWholeSceneSyntheticContent();
 
-    // For shortform content, add tag to scene
-    if (isShortForm) {
+    // For shortform/scene-preview content, add tag to scene
+    if (isWholeSceneSynthetic) {
       if (!this.data.marker.scene?.id) {
         showToast('Scene ID not available.');
         return;

@@ -898,7 +898,8 @@ export class SettingsPage {
       'Markers — Scene marker clips from your Stash library.\n' +
       'Random — Full scenes played from a random position. Tag filters and search do not apply.\n' +
       'Short-Form — Full scenes shorter than a set length (default 120 seconds).\n' +
-      'Images — Images and image-video files (GIFs, MP4s, etc.).'
+      'Images — Images and image-video files (GIFs, MP4s, etc.).\n' +
+      'Scene Previews — Short hover-preview clips generated for each scene.'
     );
     contentTypesTitleRow.appendChild(contentTypesTitle);
     contentTypesSection.appendChild(contentTypesTitleRow);
@@ -996,6 +997,20 @@ export class SettingsPage {
     randomWrapper.appendChild(randomRow);
     randomWrapper.appendChild(randomMarkersRow);
     contentTypesSection.appendChild(randomWrapper);
+
+    // Scene Previews toggle
+    const { container: includeScenePreviewsToggleContainer, input: includeScenePreviewsToggle } = this.createToggleSwitch(
+      this.settings.includeScenePreviews === true,
+      () => this.saveSettings()
+    );
+    const scenePreviewsRow = document.createElement('div');
+    scenePreviewsRow.style.display = 'flex';
+    scenePreviewsRow.style.justifyContent = 'space-between';
+    scenePreviewsRow.style.alignItems = 'center';
+    scenePreviewsRow.style.marginTop = '12px';
+    scenePreviewsRow.appendChild(buildInfoLabel('Scene Previews', 'Short hover-preview clips generated for each scene.'));
+    scenePreviewsRow.appendChild(includeScenePreviewsToggleContainer);
+    contentTypesSection.appendChild(scenePreviewsRow);
 
     const behaviorSection = document.createElement('div');
     behaviorSection.style.cssText = `margin-bottom: 24px; border: 1px solid ${THEME.colors.border}; border-radius: ${THEME.radius.card}; padding: 16px;`;
@@ -1535,6 +1550,7 @@ export class SettingsPage {
     (this as any).includeImagesToggle = includeImagesToggle;
     (this as any).searchMarkersByNameToggle = searchMarkersByNameToggle;
     (this as any).shortFormIncludeToggle = shortFormIncludeToggle;
+    (this as any).includeScenePreviewsToggle = includeScenePreviewsToggle;
 
     this.container.appendChild(modal);
 
@@ -1797,7 +1813,7 @@ export class SettingsPage {
   private collectFormInputs(): Record<string, HTMLInputElement> | undefined {
     const inputNames = [
       'fileTypesInput', 'maxDurationInput', 'includeMarkersToggle', 'includeRandomToggle', 'randomIncludeScenesWithMarkersToggle', 'includeImagesToggle', 'searchMarkersByNameToggle',
-      'shortFormIncludeToggle', 'reelAutoScrollToggle', 'autoHideSearchBarToggle', 'hdVideoToggle',
+      'shortFormIncludeToggle', 'includeScenePreviewsToggle', 'reelAutoScrollToggle', 'autoHideSearchBarToggle', 'hdVideoToggle',
       'portraitToggle', 'landscapeToggle',
       'themeBackgroundInput', 'themePrimaryInput', 'themeSecondaryInput', 'themeAccentInput',
       'showVerifiedCheckmarksToggle', 'showProductionAgeToggle', 'showStudioChipsToggle', 'showPerformerEmbellishmentToggle', 'sceneTitleToggle', 'showSceneTagsToggle', 'showPerformerTagsToggle',
@@ -1853,6 +1869,7 @@ export class SettingsPage {
       enabledFileTypes: extensions.length > 0 ? extensions : ['.jpg', '.png', '.gif', '.mp4', '.m4v', '.webm'],
       includeShortForm: inputs.shortFormIncludeToggle.checked,
       shortFormMaxDuration: validMaxDuration,
+      includeScenePreviews: inputs.includeScenePreviewsToggle.checked,
       reelAutoScroll: inputs.reelAutoScrollToggle.checked,
       autoHideSearchBar: inputs.autoHideSearchBarToggle.checked,
       orientationFilter: this.parseOrientationFilter(inputs.portraitToggle.checked, inputs.landscapeToggle.checked),

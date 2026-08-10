@@ -37,6 +37,7 @@ const DEFAULT_SETTINGS: FeedSettings = {
   imagesOnly: false,
   includeShortForm: true, // Include short-form content
   shortFormMaxDuration: 120, // Maximum duration in seconds for short-form content
+  includeScenePreviews: false, // Include scene hover-preview clips
   autoHideSearchBar: true,
   themeBackground: THEME_DEFAULTS.backgroundPrimary,
   themePrimary: THEME_DEFAULTS.surface,
@@ -111,6 +112,8 @@ export class FeedContainer {
   private markersLoadedCount: number = 0; // Track how many markers we've loaded
   private shortFormLoadedCount: number = 0; // Track how many short-form items we've loaded
   private shortFormUnfilteredOffset: number = 0; // Track offset in UNFILTERED scene list for short-form pagination
+  private scenePreviewLoadedCount: number = 0; // Track how many scene-preview items we've loaded
+  private scenePreviewUnfilteredOffset: number = 0; // Track offset in UNFILTERED scene list for scene-preview pagination
   private markerPageSize: number = 0; // Track the page size used for markers (for consistent pagination)
   private imagePageSize: number = 0; // Track the page size used for images (for consistent pagination)
   private isLoading: boolean = false;
@@ -684,6 +687,7 @@ export class FeedContainer {
       changed('imagesOnly') ||
       changed('includeShortForm') ||
       changed('shortFormMaxDuration') ||
+      changed('includeScenePreviews') ||
       changed('imagesInGalleryOnly') ||
       galleryIdsChanged ||
       changed('contentLimit') ||
@@ -3799,10 +3803,11 @@ export class FeedContainer {
     shouldLoadImages: boolean;
     shouldLoadShortForm: boolean;
     shouldLoadRandom: boolean;
+    shouldLoadScenePreviews: boolean;
   } {
     // Use provided filters or fall back to currentFilters
     const activeFilters = filters || this.currentFilters || {};
-    
+
     // When using saved filters (marker-specific) or a marker-name search, only
     // load markers — other content types ignore the query and would pollute results.
     const isUsingSavedFilter = !!(activeFilters.savedFilterId);
@@ -3813,21 +3818,24 @@ export class FeedContainer {
         shouldLoadMarkers: true,
         shouldLoadImages: false,
         shouldLoadShortForm: false,
-        shouldLoadRandom: false
+        shouldLoadRandom: false,
+        shouldLoadScenePreviews: false
       };
     }
-    
+
     const shortFormEnabledForCurrentMode = this.shouldLoadShortFormContent();
     const shouldLoadShortForm = shortFormEnabledForCurrentMode;
     const shouldLoadMarkers = this.settings.includeMarkersInFeed !== false;
     const shouldLoadImages = this.shouldLoadImages();
     const shouldLoadRandom = this.settings.includeRandomInFeed === true;
+    const shouldLoadScenePreviews = this.settings.includeScenePreviews === true;
 
     return {
       shouldLoadMarkers,
       shouldLoadImages,
       shouldLoadShortForm,
-      shouldLoadRandom
+      shouldLoadRandom,
+      shouldLoadScenePreviews
     };
   }
 
@@ -3893,6 +3901,7 @@ export class FeedContainer {
       shouldLoadImages: boolean;
       shouldLoadShortForm: boolean;
       shouldLoadRandom: boolean;
+      shouldLoadScenePreviews: boolean;
     };
     append: boolean;
   }): Promise<{
@@ -3900,26 +3909,29 @@ export class FeedContainer {
     images: Image[];
     shortFormMarkers: SceneMarker[];
     randomMarkers: SceneMarker[];
+    scenePreviewMarkers: SceneMarker[];
     markerCount: number;
     imageCount: number;
     shortFormCount: number;
     randomCount: number;
+    scenePreviewCount: number;
   }> {
     const { currentFilters, limits, signal, loadingFlags, append } = options;
     const { limit, markerLimit, shortFormLimit } = limits;
-    const { shouldLoadMarkers, shouldLoadImages, shouldLoadShortForm, shouldLoadRandom } = loadingFlags;
+    const { shouldLoadMarkers, shouldLoadImages, shouldLoadShortForm, shouldLoadRandom, shouldLoadScenePreviews } = loadingFlags;
 
     this.ensureSortSeed(currentFilters);
 
     const { markerPageSize, imagePageSize } = this.calculatePaginationForContent(append, markerLimit, limit);
-    const { markerOffset, imageOffset, shortFormOffset } = this.getLoadOffsets(append);
+    const { markerOffset, imageOffset, shortFormOffset, scenePreviewOffset } = this.getLoadOffsets(append);
 
     const fetchStart = performance.now();
-    const [markersResult, imagesResult, shortFormResult, randomResult] = await Promise.all([
+    const [markersResult, imagesResult, shortFormResult, randomResult, scenePreviewResult] = await Promise.all([
       this.fetchMarkersIfNeeded({ currentFilters, markerPageSize, markerOffset, signal, shouldLoadMarkers }),
       this.fetchImagesIfNeeded({ currentFilters, imagePageSize, imageOffset, signal, shouldLoadImages }),
       this.fetchShortFormIfNeeded({ currentFilters, shortFormLimit, shortFormOffset, signal, shouldLoadShortForm }),
-      this.fetchRandomIfNeeded({ currentFilters, limit, signal, shouldLoadRandom })
+      this.fetchRandomIfNeeded({ currentFilters, limit, signal, shouldLoadRandom }),
+      this.fetchScenePreviewsIfNeeded({ currentFilters, scenePreviewLimit: limit, scenePreviewOffset, signal, shouldLoadScenePreviews })
     ]);
     const fetchDuration = performance.now() - fetchStart;
 
@@ -3937,16 +3949,19 @@ export class FeedContainer {
     });
 
     this.updateShortFormOffsetIfNeeded(shouldLoadShortForm, append, shortFormResult);
+    this.updateScenePreviewOffsetIfNeeded(shouldLoadScenePreviews, append, scenePreviewResult);
 
     return {
       markers: markersResult.markers,
       images: imagesResult.images,
       shortFormMarkers: shortFormResult.markers,
       randomMarkers: randomResult.markers,
+      scenePreviewMarkers: scenePreviewResult.markers,
       markerCount: markersResult.totalCount,
       imageCount: imagesResult.totalCount,
       shortFormCount: shortFormResult.totalCount,
       randomCount: randomResult.totalCount,
+      scenePreviewCount: scenePreviewResult.totalCount,
     };
   }
 
@@ -3960,11 +3975,13 @@ export class FeedContainer {
     markerOffset: number;
     imageOffset: number;
     shortFormOffset: number;
+    scenePreviewOffset: number;
   } {
     return {
       markerOffset: append ? this.markersLoadedCount : 0,
       imageOffset: append ? this.imagesLoadedCount : 0,
-      shortFormOffset: append ? this.shortFormUnfilteredOffset : 0
+      shortFormOffset: append ? this.shortFormUnfilteredOffset : 0,
+      scenePreviewOffset: append ? this.scenePreviewUnfilteredOffset : 0
     };
   }
 
@@ -4055,6 +4072,67 @@ export class FeedContainer {
     this.updateShortFormUnfilteredOffset(append, shortFormResult);
   }
 
+  private async fetchScenePreviewsIfNeeded(options: {
+    currentFilters: FilterOptions;
+    scenePreviewLimit: number;
+    scenePreviewOffset: number;
+    signal: AbortSignal | undefined;
+    shouldLoadScenePreviews: boolean;
+  }): Promise<{ markers: SceneMarker[]; totalCount: number; unfilteredOffsetConsumed?: number }> {
+    const { currentFilters, scenePreviewLimit, scenePreviewOffset, signal, shouldLoadScenePreviews } = options;
+    if (!shouldLoadScenePreviews) {
+      return { markers: [], totalCount: 0, unfilteredOffsetConsumed: 0 };
+    }
+    return this.fetchScenePreviewVideosForLoad(currentFilters, scenePreviewLimit, scenePreviewOffset, signal);
+  }
+
+  /**
+   * Fetch scene-preview videos for loading
+   */
+  private async fetchScenePreviewVideosForLoad(
+    currentFilters: FilterOptions,
+    limit: number,
+    offset: number,
+    signal?: AbortSignal
+  ): Promise<{ markers: SceneMarker[]; totalCount: number; unfilteredOffsetConsumed: number }> {
+    if (!this.api) {
+      return { markers: [], totalCount: 0, unfilteredOffsetConsumed: 0 };
+    }
+
+    const result = await this.api.fetchScenePreviews(currentFilters, limit, offset, signal);
+    return this.finalizeMarkersResult(result, currentFilters);
+  }
+
+  private updateScenePreviewOffsetIfNeeded(
+    shouldLoadScenePreviews: boolean,
+    append: boolean,
+    scenePreviewResult: { unfilteredOffsetConsumed?: number }
+  ): void {
+    if (!shouldLoadScenePreviews) {
+      return;
+    }
+    this.updateScenePreviewUnfilteredOffset(append, scenePreviewResult);
+  }
+
+  private updateScenePreviewUnfilteredOffset(
+    append: boolean,
+    scenePreviewResult: { unfilteredOffsetConsumed?: number }
+  ): void {
+    const unfilteredOffsetConsumed = scenePreviewResult.unfilteredOffsetConsumed;
+    if (typeof unfilteredOffsetConsumed !== 'number') {
+      return;
+    }
+
+    const scenesPerPage = 24;
+    if (append) {
+      const page = Math.floor(this.scenePreviewUnfilteredOffset / scenesPerPage) + 1;
+      this.scenePreviewUnfilteredOffset = (page - 1) * scenesPerPage + unfilteredOffsetConsumed;
+      return;
+    }
+
+    this.scenePreviewUnfilteredOffset = unfilteredOffsetConsumed;
+  }
+
   private logFetchedContentResults(options: {
     shouldLoadMarkers: boolean;
     shouldLoadShortForm: boolean;
@@ -4118,6 +4196,7 @@ export class FeedContainer {
     content: {
       markers: SceneMarker[];
       shortFormMarkers: SceneMarker[];
+      scenePreviewMarkers: SceneMarker[];
       images: Image[];
     };
     counts: {
@@ -4134,11 +4213,11 @@ export class FeedContainer {
     realShortFormCount?: number;
   }): Promise<Array<{ type: 'marker' | 'image'; data: SceneMarker | Image; date?: string }>> {
     const { content, counts, currentFilters, offset, append, shouldLoadMarkers, shouldLoadRandom, realMarkersCount, realShortFormCount } = options;
-    const { markers, shortFormMarkers, images } = content;
+    const { markers, shortFormMarkers, scenePreviewMarkers, images } = content;
     const { markerCount, shortFormCount, imageCount } = counts;
 
-    // Merge regular markers, short-form markers, and images, then filter seen items
-    const mergedContent = this.filterSeenContent(this.mergeMarkersShortFormAndImages(markers, shortFormMarkers, images), append);
+    // Merge regular markers, short-form markers, scene previews, and images, then filter seen items
+    const mergedContent = this.filterSeenContent(this.mergeMarkersShortFormAndImages(markers, shortFormMarkers, images, scenePreviewMarkers), append);
 
     const expectedLimit = currentFilters.limit || FeedContainer.CONTENT_LOAD_LIMIT;
 
@@ -4151,15 +4230,17 @@ export class FeedContainer {
     if (append) {
       this.markersLoadedCount += trackableMarkers;
       this.shortFormLoadedCount += trackableShortForm;
+      this.scenePreviewLoadedCount += scenePreviewMarkers.length;
       this.imagesLoadedCount += images.length;
     } else {
       // Reset counts when starting fresh
       this.markersLoadedCount = trackableMarkers;
       this.shortFormLoadedCount = trackableShortForm;
+      this.scenePreviewLoadedCount = scenePreviewMarkers.length;
       this.imagesLoadedCount = images.length;
     }
-    
-    const allMarkers = [...markers, ...shortFormMarkers];
+
+    const allMarkers = [...markers, ...shortFormMarkers, ...scenePreviewMarkers];
     this.processLoadedContent({
       content: {
         markers: allMarkers,
@@ -4173,7 +4254,7 @@ export class FeedContainer {
       pagination: {
         offset,
         expectedLimit,
-        totalContentLength: markers.length + shortFormMarkers.length + images.length
+        totalContentLength: markers.length + shortFormMarkers.length + scenePreviewMarkers.length + images.length
       },
       shouldLoadMarkers,
       shouldLoadRandom,
@@ -4256,7 +4337,7 @@ export class FeedContainer {
         return;
       }
 
-      const { shouldLoadMarkers, shouldLoadImages, shouldLoadShortForm, shouldLoadRandom } = this.determineContentLoadingFlags(currentFilters);
+      const { shouldLoadMarkers, shouldLoadImages, shouldLoadShortForm, shouldLoadRandom, shouldLoadScenePreviews } = this.determineContentLoadingFlags(currentFilters);
 
       // Calculate limits (simple split when both markers and shortform are enabled)
       const limits = this.calculateContentLimits(limit, shouldLoadMarkers, shouldLoadShortForm);
@@ -4271,10 +4352,12 @@ export class FeedContainer {
         images,
         shortFormMarkers,
         randomMarkers,
+        scenePreviewMarkers,
         markerCount,
         imageCount,
         shortFormCount,
         randomCount,
+        scenePreviewCount,
       } = await this.fetchAllContent({
         currentFilters,
         limits: {
@@ -4288,7 +4371,8 @@ export class FeedContainer {
           shouldLoadMarkers,
           shouldLoadImages,
           shouldLoadShortForm,
-          shouldLoadRandom
+          shouldLoadRandom,
+          shouldLoadScenePreviews
         },
         append
       });
@@ -4305,11 +4389,12 @@ export class FeedContainer {
         content: {
           markers: allMarkersForContent,
           shortFormMarkers: [],
+          scenePreviewMarkers,
           images
         },
         counts: {
           markerCount: markerCount + randomCount,
-          shortFormCount,
+          shortFormCount: shortFormCount + scenePreviewCount,
           imageCount
         },
         // Track only real markers/shortform for pagination offsets — random synthetic
@@ -4323,7 +4408,7 @@ export class FeedContainer {
         shouldLoadRandom
       });
 
-      const totalUnfiltered = markers.length + shortFormMarkers.length + randomMarkers.length + images.length;
+      const totalUnfiltered = markers.length + shortFormMarkers.length + randomMarkers.length + scenePreviewMarkers.length + images.length;
       if (totalUnfiltered > 0 && mergedContent.length === 0 && append && this.seenSkipCount < 10) {
         this.currentPage = page;
         this.seenSkipCount++;
@@ -4336,8 +4421,8 @@ export class FeedContainer {
 
       await this.renderAndFinalizeContent(
         mergedContent,
-        allMarkersForContent,
-        shouldLoadMarkers || shouldLoadRandom,
+        [...allMarkersForContent, ...scenePreviewMarkers],
+        shouldLoadMarkers || shouldLoadRandom || shouldLoadScenePreviews,
         currentFilters,
         append,
         signal,
@@ -4735,43 +4820,43 @@ export class FeedContainer {
   private getSingleContentTypeResult(
     markers: SceneMarker[],
     shortFormMarkers: SceneMarker[],
-    images: Image[]
+    images: Image[],
+    scenePreviewMarkers: SceneMarker[]
   ): Array<{ type: 'marker' | 'image'; data: SceneMarker | Image; date?: string }> | null {
+    const videoMarkers = [...markers, ...shortFormMarkers, ...scenePreviewMarkers];
+
     // If only images
-    if (markers.length === 0 && shortFormMarkers.length === 0) {
+    if (videoMarkers.length === 0) {
       return this.createImageContentArray(images);
     }
 
-    // If only regular markers
-    if (images.length === 0 && shortFormMarkers.length === 0) {
-      return this.createMarkerContentArray(markers);
-    }
-
-    // If only short-form markers
-    if (markers.length === 0 && images.length === 0) {
-      return this.createMarkerContentArray(shortFormMarkers);
+    // If only video-shaped content (markers/shortform/scene previews, no images)
+    if (images.length === 0) {
+      return this.createMarkerContentArray(videoMarkers);
     }
 
     return null;
   }
 
   /**
-   * Merge regular markers, short-form markers, and images in a unified, proportional mix
-   * Interleaves all three types together evenly throughout the feed
+   * Merge regular markers, short-form markers, images, and scene previews in a unified mix.
+   * Interleaves markers/shortform and images as before; scene previews get their own
+   * lower-frequency slot in the cycle.
    */
   private mergeMarkersShortFormAndImages(
     markers: SceneMarker[],
     shortFormMarkers: SceneMarker[],
-    images: Image[]
+    images: Image[],
+    scenePreviewMarkers: SceneMarker[] = []
   ): Array<{ type: 'marker' | 'image'; data: SceneMarker | Image; date?: string }> {
     // If only one type, return it in original order
-    const singleTypeResult = this.getSingleContentTypeResult(markers, shortFormMarkers, images);
+    const singleTypeResult = this.getSingleContentTypeResult(markers, shortFormMarkers, images, scenePreviewMarkers);
     if (singleTypeResult !== null) {
       return singleTypeResult;
     }
 
-    // Multiple types present - mix all three together proportionally
-    return this.unifiedMixContent(markers, shortFormMarkers, images);
+    // Multiple types present - mix all together proportionally
+    return this.unifiedMixContent(markers, shortFormMarkers, images, scenePreviewMarkers);
   }
 
   /**
@@ -4800,43 +4885,49 @@ export class FeedContainer {
    * Calculate proportions for content types
    */
   /**
-   * Simple interleaving algorithm that mixes markers, shortform, and images
-   * Shows 3-5 video items (markers/shortform), then 1-2 images, repeat
-   * Prevents more than 3 consecutive items of the same type
+   * Simple interleaving algorithm that mixes markers, shortform, images, and scene previews.
+   * Shows 3-5 video items (markers/shortform), then up to 1 scene-preview clip (its own
+   * lower-frequency slot), then 1-2 images, repeat. Prevents more than 3 consecutive
+   * items of the same type for videos/images.
    */
   private unifiedMixContent(
     markers: SceneMarker[],
     shortFormMarkers: SceneMarker[],
-    images: Image[]
+    images: Image[],
+    scenePreviewMarkers: SceneMarker[] = []
   ): Array<{ type: 'marker' | 'image'; data: SceneMarker | Image; date?: string }> {
     const content: Array<{ type: 'marker' | 'image'; data: SceneMarker | Image; date?: string }> = [];
-    
+
     // Combine markers and shortform into single video array for simpler logic
     const allVideos = [...markers.map(m => ({ type: 'marker' as const, data: m })), ...shortFormMarkers.map(m => ({ type: 'marker' as const, data: m }))];
-    
+
     const state = {
       videoIdx: 0,
       imageIdx: 0,
+      scenePreviewIdx: 0,
       consecutiveCount: 0,
       lastType: null as ContentType | null,
       maxConsecutive: 3,
     };
-    
-    while (state.videoIdx < allVideos.length || state.imageIdx < images.length) {
-      // Determine chunk sizes: 3-5 videos, then 1-2 images
+
+    while (state.videoIdx < allVideos.length || state.imageIdx < images.length || state.scenePreviewIdx < scenePreviewMarkers.length) {
+      // Determine chunk sizes: 3-5 videos, then up to 1 scene preview, then 1-2 images
       const videoChunkSize = 3 + Math.floor(Math.random() * 3); // 3-5
       const imageChunkSize = 1 + Math.floor(Math.random() * 2); // 1-2
-      
+
       // Add video chunk
       this.addVideoChunk(content, allVideos, videoChunkSize, state);
-      
+
+      // Add scene-preview chunk (own, lower-frequency slot)
+      this.addScenePreviewChunk(content, scenePreviewMarkers, 1, state);
+
       // Add image chunk
       this.addImageChunk(content, images, imageChunkSize, state);
-      
+
       // If we've run out of one type, add remaining of the other
       this.addRemainingItems(content, allVideos, images, state);
     }
-    
+
     return content;
   }
 
@@ -4901,7 +4992,31 @@ export class FeedContainer {
   }
 
   /**
-   * Add remaining items when one type has been exhausted
+   * Add a chunk of scene-preview items to the content array (its own, lower-frequency slot)
+   */
+  private addScenePreviewChunk(
+    content: Array<{ type: 'marker' | 'image'; data: SceneMarker | Image; date?: string }>,
+    scenePreviewMarkers: SceneMarker[],
+    chunkSize: number,
+    state: { scenePreviewIdx: number }
+  ): void {
+    for (let i = 0; i < chunkSize && state.scenePreviewIdx < scenePreviewMarkers.length; i++) {
+      const marker = scenePreviewMarkers[state.scenePreviewIdx++];
+      if (!marker) continue;
+
+      content.push({
+        type: 'marker',
+        data: marker,
+        date: marker.scene.date,
+      });
+    }
+  }
+
+  /**
+   * Add remaining video/image items once the other has been exhausted. Scene previews are
+   * drained separately, at most one per cycle, by addScenePreviewChunk — the loop in
+   * unifiedMixContent keeps running (even after videos/images are empty) until they're gone,
+   * which preserves their own lower-frequency pacing instead of dumping them all at once.
    */
   private addRemainingItems(
     content: Array<{ type: 'marker' | 'image'; data: SceneMarker | Image; date?: string }>,
@@ -5108,14 +5223,15 @@ export class FeedContainer {
     safeVideoUrl: string,
     startTime: number | undefined
   ): VideoPost {
-    // Shortform plays the whole scene (seconds=0, no end); other synthetic markers
-    // default to a 20-second clip from their random start position.
+    // Shortform and scene previews play the whole scene (seconds=0, no end); other
+    // synthetic markers default to a 20-second clip from their random start position.
     const isShortForm = typeof marker.id === 'string' && marker.id.startsWith('shortform-');
+    const isScenePreview = typeof marker.id === 'string' && marker.id.startsWith('scenepreview-');
     const postData: VideoPostData = {
       marker,
       videoUrl: safeVideoUrl,
       startTime: startTime,
-      endTime: isShortForm ? marker.end_seconds : (marker.end_seconds ?? (marker.seconds + 20)),
+      endTime: (isShortForm || isScenePreview) ? marker.end_seconds : (marker.end_seconds ?? (marker.seconds + 20)),
     };
 
     const post = new VideoPost(
@@ -5135,8 +5251,9 @@ export class FeedContainer {
     
     post.initialize();
 
-    // Short form content is always HD by default, even when feed-level HD mode is off
-    if (isShortForm || this.useHDMode) {
+    // Short form content is always HD by default, even when feed-level HD mode is off.
+    // Scene previews stay preview-only — they never upgrade to the full scene.
+    if ((isShortForm || this.useHDMode) && !isScenePreview) {
       post.setHQMode(true);
     }
     

@@ -1549,6 +1549,93 @@ export class StashAPI {
   }
 
   /**
+   * Build scene filter for scene-preview content
+   */
+  private buildScenePreviewFilter(filters?: FilterOptions): SceneFilterInput | null {
+    const sceneFilter: SceneFilterInput = {};
+    this.applyTagAndPerformerFilters(filters, sceneFilter, { isMarkerFilter: false });
+    this.applyOrientationToSceneFilter(sceneFilter, filters);
+    return Object.keys(sceneFilter).length > 0 ? sceneFilter : null;
+  }
+
+  /**
+   * Create synthetic markers for scene-preview content, sourced from each scene's
+   * generated hover-preview clip. Play from start to end (seconds: 0, no end_seconds).
+   * Scenes without a generated preview are dropped.
+   */
+  private createScenePreviewMarkers(scenes: Scene[]): SceneMarker[] {
+    const nonce = Math.random().toString(36).slice(2, 7);
+    return scenes
+      .filter((scene) => !!scene.paths?.preview)
+      .map((scene, i) => ({
+        id: `scenepreview-${scene.id}-${nonce}-${i}`,
+        title: scene.title || 'Untitled',
+        seconds: 0,
+        end_seconds: undefined,
+        stream: scene.paths?.preview,
+        scene,
+        primary_tag: undefined,
+        tags: [],
+      }));
+  }
+
+  /**
+   * Fetch scene-preview clips (each scene's generated hover-preview mp4)
+   * @param filters Filter options
+   * @param limit Maximum number of scenes to return
+   * @param offset Offset for pagination
+   * @param signal Abort signal
+   * @returns Array of synthetic scene markers for scene-preview content
+   */
+  async fetchScenePreviews(
+    filters?: FilterOptions,
+    limit: number = 20,
+    offset: number = 0,
+    signal?: AbortSignal
+  ): Promise<{ markers: SceneMarker[]; totalCount: number; unfilteredOffsetConsumed: number; sortSeed: string }> {
+    if (this.isAborted(signal)) return { markers: [], totalCount: 0, unfilteredOffsetConsumed: 0, sortSeed: generateRandomSortSeed() };
+
+    try {
+      const scenesPerPage = StashAPI.SHORT_FORM_SCENES_PER_PAGE;
+
+      const sceneFilter = this.buildScenePreviewFilter(filters);
+
+      const { maxPage, totalCount } = await this.getMaxPageForShortForm(sceneFilter, scenesPerPage, signal);
+      if (maxPage === 0) {
+        return { markers: [], totalCount: 0, unfilteredOffsetConsumed: 0, sortSeed: generateRandomSortSeed() };
+      }
+
+      const page = Math.floor(offset / scenesPerPage) + 1;
+      const actualPage = Math.min(page, maxPage);
+      const offsetInPage = offset % scenesPerPage;
+
+      const sortSeed = filters?.sortSeed || generateRandomSortSeed();
+
+      const filter: FindFilterInput = {
+        per_page: scenesPerPage,
+        page: actualPage,
+        sort: sortSeed,
+      };
+
+      const scenes = await this.fetchScenesQuery(filter, sceneFilter, signal);
+      if (this.isAborted(signal)) return { markers: [], totalCount: 0, unfilteredOffsetConsumed: 0, sortSeed: generateRandomSortSeed() };
+
+      // Drop scenes without a generated preview (client-side backup filter)
+      const previewableScenes = scenes.filter((scene) => !!scene.paths?.preview);
+
+      const limitedScenes = previewableScenes.slice(offsetInPage, offsetInPage + limit);
+
+      const markers = this.createScenePreviewMarkers(limitedScenes);
+
+      const unfilteredOffsetConsumed = offsetInPage + limitedScenes.length;
+
+      return { markers, totalCount, unfilteredOffsetConsumed, sortSeed };
+    } catch (error: unknown) {
+      return this.handleError('fetchScenePreviews', error, signal, { markers: [], totalCount: 0, unfilteredOffsetConsumed: 0, sortSeed: generateRandomSortSeed() });
+    }
+  }
+
+  /**
    * Get video URL for a scene marker
    */
   getMarkerVideoUrl(marker: SceneMarker): string | undefined {

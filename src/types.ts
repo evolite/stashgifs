@@ -113,6 +113,7 @@ export interface FeedSettings {
   orientationFilter?: ('landscape' | 'portrait' | 'square')[]; // Filter content by orientation
   includeShortForm?: boolean; // Include short-form content (videos < shortFormMaxDuration), default: true
   shortFormMaxDuration?: number; // Maximum duration in seconds for short-form content, default: 120
+  includeScenePreviews?: boolean; // Include scene hover-preview clips, default: false
   reelAutoScroll?: boolean; // Auto-advance to next post when video loops
   autoHideSearchBar?: boolean; // Hide search bar on scroll-down, default: true
   themeBackground?: string; // Background color for app + search overlay
