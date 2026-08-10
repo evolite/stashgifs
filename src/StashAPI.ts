@@ -1564,7 +1564,9 @@ export class StashAPI {
    * Scenes without a generated preview are dropped.
    */
   private createScenePreviewMarkers(scenes: Scene[]): SceneMarker[] {
-    const nonce = Math.random().toString(36).slice(2, 7);
+    // Uses crypto.getRandomValues (not Math.random) purely to keep SonarQube's insecure-PRNG
+    // rule quiet — this nonce only disambiguates DOM/marker IDs, no security property needed.
+    const nonce = crypto.getRandomValues(new Uint32Array(1))[0].toString(36).slice(0, 5);
     return scenes
       .filter((scene) => !!scene.paths?.preview)
       .map((scene, i) => ({
