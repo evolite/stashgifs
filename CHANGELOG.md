@@ -5,6 +5,36 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [7.14.0] - 2026-08-10
+
+### Bug Fixes
+
+- Put the score inside the overlay's tier badge, not the photo again
+- Render the "Perfect" word label in the rainbow gradient too
+- Shrink the score sash and anchor portrait crop to the top
+- Center the score text in the sash
+- Derive sash position from its own pivot instead of eyeballed offsets
+- Drop letter-spacing on the sash to fix single-digit centering
+- Resolve sonarqube code smell issues
+- Use crypto.getRandomValues for scene-preview marker nonce
+
+### Features
+
+- Redesign performer hover overlay rating with medallion + color ramp
+- Add rainbow tier for perfect 10/10 and fix rainbow rendering
+- Replace the overlay rating row with a diagonal score sash
+- Make hover card rating effects always-on, drop redundant text row
+- Add scene previews as a feed content type
+
+### Refactoring
+
+- Reuse the avatar chip's tier badge SVG in the hover overlay
+- Dedupe performer rating-color resolution
+- Dedupe the tag/performer overflow toggle pill
+- Dedupe image tag/performer update mutations
+- Dedupe scene-count query in shuffle/short-form page math
+- Dedupe marker-result finalization in FeedContainer loaders
+
 ## [7.13.1] - 2026-08-05
 
 ### Features
