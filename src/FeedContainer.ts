@@ -5177,7 +5177,8 @@ export class FeedContainer {
    * Get video URL for post based on HD mode
    */
   private getVideoUrlForPost(marker: SceneMarker): string | undefined {
-    const selectedUrl = this.useHDMode
+    const isScenePreview = typeof marker.id === 'string' && marker.id.startsWith('scenepreview-');
+    const selectedUrl = (this.useHDMode && !isScenePreview)
       ? this.api.getVideoUrl(marker.scene)
       : this.api.getMarkerVideoUrl(marker);
     
