@@ -5350,16 +5350,22 @@ export class FeedContainer {
   }
 
   private saveCurrentSearch(name: string): void {
+    const existing = this.settingsManager.data.settings.savedSearches ?? [];
+    const matchIndex = existing.findIndex((s) => s.name.trim().toLowerCase() === name.trim().toLowerCase());
+
     const entry: SavedSearch = {
-      id: crypto.randomUUID(),
+      id: matchIndex >= 0 ? existing[matchIndex]!.id : crypto.randomUUID(),
       name,
       tags: [...this.selectedTagIds.entries()],
       performers: [...this.selectedPerformerIds.entries()],
       studios: [...this.selectedStudioIds.entries()],
       markerName: this.selectedMarkerName,
     };
-    const existing = this.settingsManager.data.settings.savedSearches ?? [];
-    this.settingsManager.save({ settings: { savedSearches: [...existing, entry] } });
+
+    const savedSearches = matchIndex >= 0
+      ? existing.map((s, i) => (i === matchIndex ? entry : s))
+      : [...existing, entry];
+    this.settingsManager.save({ settings: { savedSearches } });
   }
 
   private applyCustomSavedSearch(search: SavedSearch): void {
