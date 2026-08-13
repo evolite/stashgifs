@@ -3,7 +3,7 @@
  * This will interface with the Stash GraphQL API
  */
 
-import { Scene, SceneMarker, FilterOptions, VideoSource, Performer } from './types.js';
+import { Scene, SceneMarker, FilterOptions, VideoSource, Performer, DateRangeFilter } from './types.js';
 import { normalizeMediaUrl, stripApiKey } from './utils.js';
 import { getStashBaseUrl } from './utils/baseUrl.js';
 import * as queries from './graphql/queries.js';
@@ -98,6 +98,7 @@ type ImageFilterOptions = {
   studioDepth?: number;
   tagDepth?: number;
   orientationFilter?: ImageOrientation[];
+  dateRangeFilter?: DateRangeFilter;
   imagesInGalleryOnly?: boolean;
   galleryIds?: string[];
   showPerformerTags?: boolean;
@@ -911,7 +912,9 @@ export class StashAPI {
     }
 
     this.applyOrientationToMarkerFilter(sceneMarkerFilter, filters);
-    
+    const createdAt = this.resolveCreatedAtCriterion(filters?.dateRangeFilter);
+    if (createdAt) sceneMarkerFilter.created_at = createdAt;
+
     return sceneMarkerFilter;
   }
 
@@ -970,6 +973,20 @@ export class StashAPI {
         modifier: 'INCLUDES_ALL'
       };
     }
+  }
+
+  private static readonly DATE_RANGE_DAYS: Record<DateRangeFilter, number> = {
+    week: 7,
+    month: 30,
+    year: 365,
+  };
+
+  private resolveCreatedAtCriterion(
+    dateRangeFilter?: DateRangeFilter
+  ): { value: string; modifier: 'GREATER_THAN' } | undefined {
+    if (!dateRangeFilter) return undefined;
+    const days = StashAPI.DATE_RANGE_DAYS[dateRangeFilter];
+    return { value: new Date(Date.now() - days * 86_400_000).toISOString(), modifier: 'GREATER_THAN' };
   }
 
   private resolveOrientationEnumValues(filters?: FilterOptions): string[] {
@@ -1505,6 +1522,8 @@ export class StashAPI {
 
     this.applyTagAndPerformerFilters(filters, sceneFilter, { isMarkerFilter: false });
     this.applyOrientationToSceneFilter(sceneFilter, filters);
+    const createdAt = this.resolveCreatedAtCriterion(filters?.dateRangeFilter);
+    if (createdAt) sceneFilter.created_at = createdAt;
 
     return Object.keys(sceneFilter).length > 0 ? sceneFilter : null;
   }
@@ -1555,6 +1574,8 @@ export class StashAPI {
     const sceneFilter: SceneFilterInput = {};
     this.applyTagAndPerformerFilters(filters, sceneFilter, { isMarkerFilter: false });
     this.applyOrientationToSceneFilter(sceneFilter, filters);
+    const createdAt = this.resolveCreatedAtCriterion(filters?.dateRangeFilter);
+    if (createdAt) sceneFilter.created_at = createdAt;
     return Object.keys(sceneFilter).length > 0 ? sceneFilter : null;
   }
 
@@ -2649,6 +2670,9 @@ export class StashAPI {
     if (filters?.studioIds && filters.studioIds.length > 0) {
       imageFilter.studios = { value: filters.studioIds, modifier: 'INCLUDES', depth: filters.studioDepth ?? 0 };
     }
+
+    const createdAt = this.resolveCreatedAtCriterion(filters?.dateRangeFilter);
+    if (createdAt) imageFilter.created_at = createdAt;
   }
 
   private buildImageFilter(regexPattern: string, filters?: ImageFilterOptions): ImageFilterInput {

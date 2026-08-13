@@ -77,6 +77,8 @@ interface ScenePaths {
   vtt?: string;
 }
 
+export type DateRangeFilter = 'week' | 'month' | 'year';
+
 export interface FilterOptions {
   studios?: string[];
   performers?: string[];
@@ -91,6 +93,7 @@ export interface FilterOptions {
   shuffleMode?: boolean; // When true, use shuffle mode (query scenes directly)
   includeScenesWithoutMarkers?: boolean; // When true in shuffle mode, include scenes with 0 markers
   orientationFilter?: ('landscape' | 'portrait' | 'square')[]; // Filter content by orientation
+  dateRangeFilter?: DateRangeFilter; // Restrict to content created within a rolling window
   sortSeed?: string; // Sort seed for consistent pagination (reused across pages)
   excludedTagIds?: string[]; // Tags to exclude (resolved IDs)
   tagDepth?: number; // Depth for tag hierarchy traversal (-1 = all subtags, 0 = exact match only)

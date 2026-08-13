@@ -30,10 +30,17 @@ export interface FindFilterInput {
   direction?: 'ASC' | 'DESC';
 }
 
+export interface TimestampCriterionInput {
+  value: string;
+  value2?: string;
+  modifier: 'EQUALS' | 'NOT_EQUALS' | 'GREATER_THAN' | 'LESS_THAN' | 'BETWEEN' | 'NOT_BETWEEN';
+}
+
 /**
  * SceneMarkerFilterType - Filter for scene markers
  */
 export interface SceneMarkerFilterInput {
+  created_at?: TimestampCriterionInput;
   tags?: {
     value: string[];
     modifier: FilterModifier;
@@ -62,6 +69,7 @@ export interface SceneMarkerFilterInput {
  * SceneFilterType - Filter for scenes
  */
 export interface SceneFilterInput {
+  created_at?: TimestampCriterionInput;
   has_markers?: string; // 'true' | 'false'
   orientation?: {
     value: string | string[];
@@ -122,6 +130,7 @@ interface PerformerFilterInput {
  * ImageFilterType - Filter for images
  */
 export interface ImageFilterInput {
+  created_at?: TimestampCriterionInput;
   path?: {
     value: string;
     modifier: 'MATCHES_REGEX' | 'NOT_MATCHES_REGEX' | 'EQUALS' | 'NOT_EQUALS' | 'INCLUDES' | 'EXCLUDES';

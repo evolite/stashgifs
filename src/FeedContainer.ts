@@ -3,7 +3,7 @@
  * Main application container managing the feed
  */
 
-import { SceneMarker, FilterOptions, FeedSettings, VideoPostData, ImagePostData, ImageVideoPostData, Image, SavedSearch } from './types.js';
+import { SceneMarker, FilterOptions, FeedSettings, VideoPostData, ImagePostData, ImageVideoPostData, Image, SavedSearch, DateRangeFilter } from './types.js';
 import { StashAPI, generateRandomSortSeed } from './StashAPI.js';
 import { PluginSettingsManager } from './PluginSettingsManager.js';
 import { VideoPost } from './VideoPost.js';
@@ -122,6 +122,7 @@ export class FeedContainer {
   private readonly selectedPerformerIds: Map<number, string> = new Map();
   private readonly selectedStudioIds: Map<number, string> = new Map();
   private selectedMarkerName?: string; // Active "search markers by name" filter (exact title)
+  private selectedDateRange?: DateRangeFilter; // Active "created within" filter (week/month/year)
   private readonly debouncedApplyFilters!: () => void;
   private activePillsBar?: HTMLElement;
   private hasMore: boolean = true;
@@ -1368,6 +1369,53 @@ export class FeedContainer {
     container.appendChild(filtersSection);
   }
 
+  // Generic words that surface all three date-range options; each option's own word
+  // ("week"/"month"/"year") also surfaces just itself, so typing "week" works without "created".
+  private static readonly DATE_RANGE_KEYWORDS = ['created', 'new', 'recent', 'recently'];
+  private static readonly DATE_RANGE_OPTIONS: Array<{ label: string; value: DateRangeFilter; word: string }> = [
+    { label: 'This Week', value: 'week', word: 'week' },
+    { label: 'This Month', value: 'month', word: 'month' },
+    { label: 'This Year', value: 'year', word: 'year' },
+  ];
+
+  private matchingDateRangeOptions(trimmedText: string): Array<{ label: string; value: DateRangeFilter }> {
+    const q = trimmedText.toLowerCase();
+    if (!q) return [];
+    const genericMatch = FeedContainer.DATE_RANGE_KEYWORDS.some((k) => k.startsWith(q));
+    return FeedContainer.DATE_RANGE_OPTIONS.filter((opt) => genericMatch || opt.word.startsWith(q));
+  }
+
+  /**
+   * Create "created within" date-range section, shown only when the typed search text
+   * matches a date keyword (e.g. "created", "recent", "week") — kept out of the default
+   * dropdown so it doesn't add permanent clutter.
+   */
+  private createMatchingDateRangeSection(
+    container: HTMLElement,
+    trimmedText: string,
+    updateSearchBarDisplay: () => void
+  ): void {
+    const matches = this.matchingDateRangeOptions(trimmedText);
+    if (matches.length === 0) return;
+
+    const dateSection = document.createElement('div');
+    dateSection.style.display = 'flex';
+    dateSection.style.flexDirection = 'column';
+    dateSection.style.gap = '8px';
+    dateSection.appendChild(this.createSectionLabel('Created'));
+
+    for (const option of matches) {
+      dateSection.appendChild(this.createListButton(`Created ${option.label}`, () => {
+        this.selectedDateRange = option.value;
+        this.closeSuggestions();
+        updateSearchBarDisplay();
+        this.debouncedApplyFilters();
+      }));
+    }
+
+    container.appendChild(dateSection);
+  }
+
   private createSavedSearchesSection(
     container: HTMLElement,
     updateSearchBarDisplay: () => void
@@ -1747,6 +1795,8 @@ export class FeedContainer {
       }
       container.appendChild(savedSection);
     }
+
+    this.createMatchingDateRangeSection(container, trimmedText, updateSearchBarDisplay);
 
     let tagItems: Array<{ id: string; name: string }> = [];
     let performerItems: Array<{ id: string; name: string; image_path?: string }> = [];
@@ -2745,6 +2795,7 @@ export class FeedContainer {
       offset: 0,
       tagDepth: this.settings.includeSubtags ? -1 : 0,
       studioDepth: this.settings.includeSubtags ? -1 : 0,
+      dateRangeFilter: this.selectedDateRange,
     };
     this.currentFilters = newFilters;
     await this.loadVideos(newFilters, false, loadSignal);
@@ -2809,6 +2860,7 @@ export class FeedContainer {
       offset: 0,
       tagDepth: this.settings.includeSubtags ? -1 : 0,
       studioDepth: this.settings.includeSubtags ? -1 : 0,
+      dateRangeFilter: this.selectedDateRange,
     };
     this.currentFilters = newFilters;
     this.loadVideos(newFilters, false).catch((e) => console.error('Apply filters failed', e));
@@ -2833,6 +2885,24 @@ export class FeedContainer {
       this.updateQueryInputDisplay();
       this.debouncedApplyFilters();
     }));
+  }
+
+  private static readonly DATE_RANGE_LABELS: Record<DateRangeFilter, string> = {
+    week: 'This Week',
+    month: 'This Month',
+    year: 'This Year',
+  };
+
+  private appendDateRangePill(): void {
+    if (!this.selectedDateRange) return;
+    this.activePillsBar!.appendChild(this.createActivePill(
+      `📅 ${FeedContainer.DATE_RANGE_LABELS[this.selectedDateRange]}`,
+      () => {
+        this.selectedDateRange = undefined;
+        this.updateActivePills();
+        this.debouncedApplyFilters();
+      }
+    ));
   }
 
   private appendTagPills(): void {
@@ -2891,7 +2961,7 @@ export class FeedContainer {
     }
 
     const total = this.selectedTagIds.size + this.selectedPerformerIds.size + this.selectedStudioIds.size
-      + (this.selectedMarkerName ? 1 : 0);
+      + (this.selectedMarkerName ? 1 : 0) + (this.selectedDateRange ? 1 : 0);
     if (total === 0) {
       this.activePillsBar.style.display = 'none';
       return;
@@ -2899,6 +2969,7 @@ export class FeedContainer {
 
     this.activePillsBar.style.display = 'flex';
     this.appendMarkerNamePill();
+    this.appendDateRangePill();
     this.appendTagPills();
     this.appendPerformerPills();
     this.appendStudioPills();
@@ -4715,6 +4786,7 @@ export class FeedContainer {
       ...(filters.orientationFilter && filters.orientationFilter.length > 0
         ? { orientationFilter: filters.orientationFilter }
         : {}),
+      ...(filters.dateRangeFilter ? { dateRangeFilter: filters.dateRangeFilter } : {}),
       ...(filters.sortSeed ? { sortSeed: filters.sortSeed } : {}),
       ...(this.settings.imagesInGalleryOnly
         ? { imagesInGalleryOnly: true, galleryIds: this.settings.galleryIds ?? [] }

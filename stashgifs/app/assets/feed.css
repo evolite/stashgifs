@@ -1250,6 +1250,12 @@
   background: var(--opacity-12);
 }
 
+.feed-pill-button--selected {
+  background: var(--color-accent, rgba(255,255,255,0.12));
+  border-color: var(--color-accent, rgba(255,255,255,0.12));
+  opacity: 0.9;
+}
+
 .feed-list-button {
   width: 100%;
   display: flex;
