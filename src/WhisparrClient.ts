@@ -12,6 +12,8 @@
  * pattern used in DiscoveryManager for StashBox fetches.
  */
 
+import { stripSlashes } from './utils/baseUrl.js';
+
 interface WhisparrRootFolder {
   id: number;
   path: string;
@@ -64,7 +66,7 @@ export class WhisparrClient {
   private queueCache?: { fetchedAt: number; promise: Promise<WhisparrQueueItem[]> };
 
   constructor(config: WhisparrClientConfig) {
-    this.baseUrl = config.baseUrl.replace(/\/+$/, '');
+    this.baseUrl = stripSlashes(config.baseUrl, { trailing: true });
     this.apiKey = config.apiKey;
     this.rootFolderPath = config.rootFolderPath;
     this.qualityProfileId = config.qualityProfileId;

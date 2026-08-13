@@ -3,7 +3,7 @@
  */
 
 import { Image } from './types.js';
-import { getStashBaseUrl } from './utils/baseUrl.js';
+import { getStashBaseUrl, stripSlashes } from './utils/baseUrl.js';
 
 export const THEME_DEFAULTS = {
   backgroundPrimary: '#1F2A33',
@@ -727,7 +727,7 @@ export function buildFullUrl(path: string, baseUrl: string): string {
   if (/^(https?:|data:|blob:)/i.test(path)) return path;
   // Concatenate (not `new URL`) so a base path prefix like /stash is preserved for
   // root-relative paths — `new URL('/image/1', 'https://host/stash')` drops it.
-  return baseUrl.replace(/\/+$/, '') + (path.startsWith('/') ? path : `/${path}`);
+  return stripSlashes(baseUrl, { trailing: true }) + (path.startsWith('/') ? path : `/${path}`);
 }
 
 /**

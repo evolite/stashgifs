@@ -9,6 +9,14 @@
  * Returns an absolute URL with no trailing slash, e.g. `https://host/stash` or
  * `https://host`.
  */
+export function stripSlashes(s: string, { leading = false, trailing = false } = {}): string {
+  let start = 0;
+  let end = s.length;
+  if (leading) while (start < end && s[start] === '/') start++;
+  if (trailing) while (end > start && s[end - 1] === '/') end--;
+  return s.slice(start, end);
+}
+
 export function getStashBaseUrl(): string {
   // Embedded-in-Stash context (if ever present): trust the host-provided base.
   const w = globalThis as typeof globalThis & {
@@ -18,8 +26,8 @@ export function getStashBaseUrl(): string {
   const api = w.PluginApi?.baseURL ?? w.stash?.baseURL;
   if (api) {
     return /^https?:\/\//i.test(api)
-      ? api.replace(/\/+$/, '')
-      : globalThis.location.origin + '/' + api.replaceAll(/^\/+|\/+$/g, '');
+      ? stripSlashes(api, { trailing: true })
+      : globalThis.location.origin + '/' + stripSlashes(api, { leading: true, trailing: true });
   }
 
   // Standalone app: recover the prefix from our own path (…/plugin/stashgifs/…).

@@ -38,8 +38,8 @@ export class RatingControl {
   private readonly createRatingStarIcon: RatingControlOptions['createRatingStarIcon'];
   private readonly getRating100: RatingControlOptions['getRating100'];
   private readonly onUpdateRating100: RatingControlOptions['onUpdateRating100'];
-  private readonly onSaveRating10?: RatingControlOptions['onSaveRating10'];
-  private readonly onToast?: RatingControlOptions['onToast'];
+  private readonly onSaveRating10: RatingControlOptions['onSaveRating10'];
+  private readonly onToast: RatingControlOptions['onToast'];
 
   private ratingWrapper?: HTMLElement;
   private ratingDisplayButton?: HTMLButtonElement;
