@@ -873,6 +873,12 @@ export class SettingsPage {
       this.settings.showViewCountBadge !== false,
       'showViewCountToggle',
     );
+    appendButtonToggle(
+      'Show Rating Button',
+      'Show the star rating control in the post button group.',
+      this.settings.showRatingButton !== false,
+      'showRatingToggle',
+    );
 
     // ── Content Types Section ──────────────────────────────────────────────
     const contentTypesSection = document.createElement('div');
@@ -994,8 +1000,28 @@ export class SettingsPage {
     randomMarkersRow.appendChild(randomIncludeScenesWithMarkersContainer);
     (this as any).randomIncludeScenesWithMarkersToggle = randomIncludeScenesWithMarkersToggle;
 
+    const randomSnippetDurationRow = document.createElement('div');
+    randomSnippetDurationRow.style.cssText = `margin-top: 6px; padding: 6px 8px 6px 12px; background: ${THEME.colors.backgroundSecondary}; border-radius: ${THEME.radius.card}; display: flex; justify-content: space-between; align-items: center;`;
+    const randomSnippetDurationLabel = document.createElement('span');
+    randomSnippetDurationLabel.textContent = 'Snippet duration (seconds)';
+    randomSnippetDurationLabel.style.cssText = `color: ${THEME.colors.textSecondary}; font-size: ${THEME.typography.sizeBody};`;
+    randomSnippetDurationRow.appendChild(randomSnippetDurationLabel);
+    const randomSnippetDurationInput = document.createElement('input');
+    randomSnippetDurationInput.type = 'number';
+    randomSnippetDurationInput.value = String(this.settings.randomSnippetDuration || 20);
+    randomSnippetDurationInput.min = '1';
+    randomSnippetDurationInput.max = '600';
+    randomSnippetDurationInput.style.cssText = `width: 72px; padding: 4px 8px; border-radius: ${THEME.radius.button}; border: 1px solid ${THEME.colors.border}; background: ${THEME.colors.surface}; color: ${THEME.colors.textPrimary}; font-size: ${THEME.typography.sizeBody}; text-align: right; box-sizing: border-box;`;
+    randomSnippetDurationInput.addEventListener('input', () => {
+      clearTimeout((randomSnippetDurationInput as any).saveTimeout);
+      (randomSnippetDurationInput as any).saveTimeout = setTimeout(() => { this.saveSettings(); }, 500);
+    });
+    randomSnippetDurationRow.appendChild(randomSnippetDurationInput);
+    (this as any).randomSnippetDurationInput = randomSnippetDurationInput;
+
     randomWrapper.appendChild(randomRow);
     randomWrapper.appendChild(randomMarkersRow);
+    randomWrapper.appendChild(randomSnippetDurationRow);
     contentTypesSection.appendChild(randomWrapper);
 
     // Scene Previews toggle
@@ -1812,12 +1838,12 @@ export class SettingsPage {
 
   private collectFormInputs(): Record<string, HTMLInputElement> | undefined {
     const inputNames = [
-      'fileTypesInput', 'maxDurationInput', 'includeMarkersToggle', 'includeRandomToggle', 'randomIncludeScenesWithMarkersToggle', 'includeImagesToggle', 'searchMarkersByNameToggle',
+      'fileTypesInput', 'maxDurationInput', 'includeMarkersToggle', 'includeRandomToggle', 'randomIncludeScenesWithMarkersToggle', 'randomSnippetDurationInput', 'includeImagesToggle', 'searchMarkersByNameToggle',
       'shortFormIncludeToggle', 'includeScenePreviewsToggle', 'reelAutoScrollToggle', 'autoHideSearchBarToggle', 'hdVideoToggle',
       'portraitToggle', 'landscapeToggle',
       'themeBackgroundInput', 'themePrimaryInput', 'themeSecondaryInput', 'themeAccentInput',
       'showVerifiedCheckmarksToggle', 'showProductionAgeToggle', 'showStudioChipsToggle', 'showPerformerEmbellishmentToggle', 'sceneTitleToggle', 'showSceneTagsToggle', 'showPerformerTagsToggle',
-      'showBookmarkToggle', 'showOCountToggle', 'showViewCountToggle',
+      'showBookmarkToggle', 'showOCountToggle', 'showRatingToggle', 'showViewCountToggle',
       'discoveryPanelToggle', 'excludedTagsInput',
       'includeSubtagsToggle', 'trackWatchHistoryToggle', 'seenHistorySizeInput', 'contentLimitInput', 'tagDisplayLimitInput',
       'performerDisplayLimitInput',
@@ -1851,6 +1877,9 @@ export class SettingsPage {
     const maxDuration = Number.parseInt(inputs.maxDurationInput.value, 10);
     const validMaxDuration = !Number.isNaN(maxDuration) && maxDuration > 0 ? maxDuration : 120;
 
+    const randomSnippetDuration = Number.parseInt(inputs.randomSnippetDurationInput.value, 10);
+    const validRandomSnippetDuration = !Number.isNaN(randomSnippetDuration) && randomSnippetDuration > 0 ? randomSnippetDuration : 20;
+
     const excludedTagNames = inputs.excludedTagsInput.value
       .split(',')
       .map((name) => name.trim())
@@ -1864,6 +1893,7 @@ export class SettingsPage {
       includeMarkersInFeed: inputs.includeMarkersToggle.checked,
       includeRandomInFeed: inputs.includeRandomToggle.checked,
       randomIncludeScenesWithMarkers: inputs.randomIncludeScenesWithMarkersToggle.checked,
+      randomSnippetDuration: validRandomSnippetDuration,
       includeImagesInFeed: inputs.includeImagesToggle.checked,
       searchMarkersByName: inputs.searchMarkersByNameToggle.checked,
       enabledFileTypes: extensions.length > 0 ? extensions : ['.jpg', '.png', '.gif', '.mp4', '.m4v', '.webm'],
@@ -1886,6 +1916,7 @@ export class SettingsPage {
       showPerformerTags: inputs.showPerformerTagsToggle.checked,
       showBookmarkButton: inputs.showBookmarkToggle.checked,
       showOCountButton: inputs.showOCountToggle.checked,
+      showRatingButton: inputs.showRatingToggle.checked,
       showViewCountBadge: inputs.showViewCountToggle.checked,
       enableDiscoveryPanel: inputs.discoveryPanelToggle.checked,
       discoveryPanelSize: Number(((this as any).discoverySizeSlider as HTMLInputElement)?.value ?? 260),

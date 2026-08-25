@@ -390,8 +390,10 @@ export class VideoPost extends VideoPostBase {
       buttonGroup.appendChild(oCountBtn);
     }
 
-    const ratingControl = this.createRatingSection();
-    buttonGroup.appendChild(ratingControl);
+    if (this.showRatingButton) {
+      const ratingControl = this.createRatingSection();
+      buttonGroup.appendChild(ratingControl);
+    }
 
     // Scene previews stay preview-only — there's no full-scene upgrade to offer.
     if (this.api && !this.hdModeFromSettings && !this.isScenePreviewContent()) {

@@ -116,6 +116,7 @@ export interface FeedSettings {
   orientationFilter?: ('landscape' | 'portrait' | 'square')[]; // Filter content by orientation
   includeShortForm?: boolean; // Include short-form content (videos < shortFormMaxDuration), default: true
   shortFormMaxDuration?: number; // Maximum duration in seconds for short-form content, default: 120
+  randomSnippetDuration?: number; // Seconds of a random scene played before it's treated as ended, default: 20
   includeScenePreviews?: boolean; // Include scene hover-preview clips, default: false
   reelAutoScroll?: boolean; // Auto-advance to next post when video loops
   autoHideSearchBar?: boolean; // Hide search bar on scroll-down, default: true
@@ -143,6 +144,7 @@ export interface FeedSettings {
   discoverySceneOrder?: 'latest' | 'random' | 'trending'; // Scene selection: latest (default), random, or trending
   showSceneTitle?: boolean; // Show scene/image title above performers in each post, default: false
   showOCountButton?: boolean; // Show O-count button in button group, default: true
+  showRatingButton?: boolean; // Show rating control in button group, default: true
   showViewCountBadge?: boolean; // Show view-count badge in button group, default: true
   showBookmarkButton?: boolean; // Show bookmark button in button group, default: false
   whisparrBaseUrl?: string; // Whisparr base URL, e.g. http://localhost:6969

@@ -33,6 +33,7 @@ export interface BasePostOptions {
   showPerformerTags?: boolean;
   showSceneTags?: boolean;
   showOCountButton?: boolean;
+  showRatingButton?: boolean;
   tagDisplayLimit?: number;
   performerDisplayLimit?: number;
   showViewCountBadge?: boolean;
@@ -141,6 +142,7 @@ export abstract class BasePost {
   protected showPerformerTags: boolean = false;
   protected showSceneTags: boolean = false;
   protected showOCountButton: boolean = true;
+  protected showRatingButton: boolean = true;
   protected showViewCountBadge: boolean = true;
   protected tagDisplayLimit: number = 10;
   protected performerDisplayLimit: number = 3;
@@ -195,6 +197,7 @@ export abstract class BasePost {
     this.showPerformerTags = options?.showPerformerTags === true;
     this.showSceneTags = options?.showSceneTags === true;
     this.showOCountButton = options?.showOCountButton !== false;
+    this.showRatingButton = options?.showRatingButton !== false;
     this.showViewCountBadge = options?.showViewCountBadge !== false;
     this.tagDisplayLimit = options?.tagDisplayLimit ?? 10;
     this.performerDisplayLimit = options?.performerDisplayLimit ?? 3;
@@ -637,6 +640,12 @@ export abstract class BasePost {
     if (this.oCountButton) this.oCountButton.style.display = show ? '' : 'none';
   }
 
+  public setShowRatingButton(show: boolean): void {
+    this.showRatingButton = show;
+    const rating = this.container.querySelector<HTMLElement>('.rating-control');
+    if (rating) rating.style.display = show ? '' : 'none';
+  }
+
   public setShowViewCountBadge(show: boolean): void {
     this.showViewCountBadge = show;
     const badge = this.container.querySelector<HTMLElement>('.icon-btn--views');
@@ -746,8 +755,10 @@ export abstract class BasePost {
       const viewCount = this.getAndIncrementLocalViewCount(imageId);
       buttonGroup.appendChild(this.createViewCountBadge(viewCount));
     }
-    const ratingControl = this.createRatingSection();
-    buttonGroup.appendChild(ratingControl);
+    if (this.showRatingButton) {
+      const ratingControl = this.createRatingSection();
+      buttonGroup.appendChild(ratingControl);
+    }
   }
 
   /** Trailing footer buttons shared by image-type posts: discovery + open-in-Stash. */

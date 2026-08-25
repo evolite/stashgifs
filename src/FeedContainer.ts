@@ -657,6 +657,7 @@ export class FeedContainer {
     );
     this.forEachPost(newSettings.reelAutoScroll !== undefined, p => p.setReelAutoScroll(newSettings.reelAutoScroll!));
     this.forEachPost(newSettings.showOCountButton !== undefined, p => p.setShowOCountButton(newSettings.showOCountButton!));
+    this.forEachPost(newSettings.showRatingButton !== undefined, p => p.setShowRatingButton(newSettings.showRatingButton!));
     this.forEachPost(newSettings.showViewCountBadge !== undefined, p => p.setShowViewCountBadge(newSettings.showViewCountBadge!));
     this.forEachPost(
       newSettings.showBookmarkButton !== undefined,
@@ -3512,6 +3513,7 @@ export class FeedContainer {
       showMarkerTitle: this.settings.searchMarkersByName === true,
       showBookmarkButton: this.settings.showBookmarkButton === true,
       showOCountButton: this.settings.showOCountButton !== false,
+      showRatingButton: this.settings.showRatingButton !== false,
       showViewCountBadge: this.settings.showViewCountBadge !== false,
       ratingSystemConfig: this.ratingSystemConfig,
       hdModeFromSettings: this.useHDMode,
@@ -5297,14 +5299,14 @@ export class FeedContainer {
     startTime: number | undefined
   ): VideoPost {
     // Shortform and scene previews play the whole scene (seconds=0, no end); other
-    // synthetic markers default to a 20-second clip from their random start position.
+    // synthetic markers default to a randomSnippetDuration-second clip from their random start position.
     const isShortForm = typeof marker.id === 'string' && marker.id.startsWith('shortform-');
     const isScenePreview = typeof marker.id === 'string' && marker.id.startsWith('scenepreview-');
     const postData: VideoPostData = {
       marker,
       videoUrl: safeVideoUrl,
       startTime: startTime,
-      endTime: (isShortForm || isScenePreview) ? marker.end_seconds : (marker.end_seconds ?? (marker.seconds + 20)),
+      endTime: (isShortForm || isScenePreview) ? marker.end_seconds : (marker.end_seconds ?? (marker.seconds + (this.settings.randomSnippetDuration ?? 20))),
     };
 
     const post = new VideoPost(
