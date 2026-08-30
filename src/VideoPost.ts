@@ -990,6 +990,12 @@ export class VideoPost extends VideoPostBase {
       const finalStartTime = (this.isHQMode || !hasPrerenderedClip)
         ? (startTime ?? this.data.startTime ?? this.data.marker.seconds)
         : undefined;
+      // The pre-rendered preview clip has its own 0-based timeline (~20s), so an
+      // absolute scene-timeline end_seconds would break progress/seek — let the
+      // player fall back to the real video.duration. HQ/full-scene keeps the bound.
+      const finalEndTime = (this.isHQMode || !hasPrerenderedClip)
+        ? (endTime ?? this.data.endTime ?? this.data.marker.end_seconds)
+        : undefined;
 
       // Respect global mute state when creating player
       // Marker previews can have audio, so respect global mute state
@@ -1006,7 +1012,7 @@ export class VideoPost extends VideoPostBase {
       this.player = this.createVideoPlayer(playerContainer, normalizedVideoUrl, {
         muted: shouldBeMuted,
         startTime: finalStartTime,
-        endTime: endTime ?? this.data.endTime ?? this.data.marker.end_seconds,
+        endTime: finalEndTime,
         sources,
       });
 
