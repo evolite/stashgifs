@@ -16,7 +16,8 @@ const capStreamUrl = (url, resolutionEnum) => {
   const [path, query = ''] = base.split('?');
   const params = query.split('&').filter((p) => p && !p.startsWith('resolution='));
   params.push(`resolution=${resolutionEnum}`);
-  return `${path}?${params.join('&')}${hash ? `#${hash}` : ''}`;
+  const fragment = hash ? `#${hash}` : '';
+  return `${path}?${params.join('&')}${fragment}`;
 };
 
 assert.equal(resolutionEnum(1080), 'FULL_HD');

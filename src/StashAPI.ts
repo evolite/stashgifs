@@ -1744,7 +1744,8 @@ export class StashAPI {
       .split('&')
       .filter((p) => p && !p.startsWith('resolution='));
     params.push(`resolution=${resolutionEnum}`);
-    return `${path}?${params.join('&')}${hash ? `#${hash}` : ''}`;
+    const fragment = hash ? `#${hash}` : '';
+    return `${path}?${params.join('&')}${fragment}`;
   }
 
   private pickTranscodedStream(scene: Scene): string | undefined {
