@@ -30,7 +30,7 @@ interface ReelScrollerOptions {
 
 const ANIMATION_MS = 360;
 /** Swallow the inertial tail of trackpad/wheel gestures after one card fires. */
-const WHEEL_COOLDOWN_MS = 120;
+const WHEEL_COOLDOWN_MS = 180;
 /** Ignore micro wheel deltas (e.g. horizontal trackpad noise). */
 const WHEEL_MIN_DELTA = 4;
 /** Fraction of viewport height a swipe must cover to advance (if slow). */
@@ -271,8 +271,16 @@ export class ReelScroller {
     // Let nested scrollable UI (e.g. a search-suggestions dropdown) scroll natively.
     if (this.isOverNestedScrollable(e.target)) return;
     e.preventDefault(); // We own scrolling; never let the container free-scroll.
-    if (this.isAnimating || performance.now() < this.wheelCooldownUntil) return;
     if (Math.abs(e.deltaY) < WHEEL_MIN_DELTA) return;
+    const now = performance.now();
+    // A wheel event while still animating or cooling down is the inertial tail of
+    // the same trackpad flick — swallow it AND push the cooldown out, so momentum
+    // can't sneak a second advance once the window elapses. A real second gesture
+    // needs a genuine gap in wheel events.
+    if (this.isAnimating || now < this.wheelCooldownUntil) {
+      this.wheelCooldownUntil = now + WHEEL_COOLDOWN_MS;
+      return;
+    }
     if (e.deltaY > 0) {
       this.next();
     } else {
