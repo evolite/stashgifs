@@ -2019,6 +2019,15 @@ export class FeedContainer {
     queryInput.type = 'text';
     queryInput.placeholder = '';
     queryInput.className = 'feed-filters__input';
+    // A bare, unnamed lone text input trips Chrome's "this is a username field"
+    // heuristic and it offers saved-password autofill. Name it, label it and opt
+    // out of autofill so it reads as the search box it is.
+    queryInput.name = 'stashgifs-feed-search';
+    queryInput.setAttribute('autocomplete', 'off');
+    queryInput.setAttribute('autocapitalize', 'none');
+    queryInput.setAttribute('autocorrect', 'off');
+    queryInput.spellcheck = false;
+    queryInput.setAttribute('aria-label', 'Search performers, tags and filters');
     return queryInput;
   }
 
@@ -3024,6 +3033,10 @@ export class FeedContainer {
     input.type = 'text';
     input.placeholder = 'Name this search…';
     input.className = 'feed-save-search-input';
+    // Same anti-credential-autofill treatment as the main search input.
+    input.name = 'stashgifs-save-search-name';
+    input.setAttribute('autocomplete', 'off');
+    input.setAttribute('aria-label', 'Name this search');
     Object.assign(input.style, {
       height: '28px',
       padding: '0 8px',
