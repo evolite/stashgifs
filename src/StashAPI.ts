@@ -663,8 +663,6 @@ export class StashAPI {
 
   /**
    * Fetch scene markers from Stash
-   * Note: Stash's SceneMarkerFilterType only supports filtering by primary_tag, not by tags array.
-   * For non-primary tags, we fetch markers and filter client-side.
    */
   async fetchSceneMarkers(filters?: FilterOptions, signal?: AbortSignal): Promise<{ markers: SceneMarker[]; totalCount: number; sortSeed?: string }> {
     if (this.isAborted(signal)) return { markers: [], totalCount: 0 };
