@@ -187,6 +187,7 @@ export class FeedContainer {
     const loadedSettings = settings && Object.keys(settings).length > 0 ? settings : this.loadSettingsFromStorage();
     this.settings = { ...DEFAULT_SETTINGS, ...loadedSettings };
     this.api.maxContentLimit = this.settings.contentLimit ?? 5000;
+    this.api.maxResolution = this.settings.maxResolution ?? 0;
     // Initialize properties that will be set in methods
     this.scrollContainer = null!; // Will be set in initializeContainers
     this.playback = null!; // Will be set in initializeManagers
@@ -506,6 +507,7 @@ export class FeedContainer {
     const updatedSettings = { ...this.settings, ...newSettings };
     this.settings = updatedSettings;
     this.api.maxContentLimit = updatedSettings.contentLimit ?? 5000;
+    this.api.maxResolution = updatedSettings.maxResolution ?? 0;
     this.saveSettingsToStorage(updatedSettings);
     this.applyThemeSettings(updatedSettings);
 

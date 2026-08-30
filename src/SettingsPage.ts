@@ -1047,6 +1047,26 @@ export class SettingsPage {
     hdVideoContainer.style.marginBottom = '16px';
     behaviorSection.appendChild(hdVideoContainer);
 
+    const maxResolutionContainer = document.createElement('div');
+    maxResolutionContainer.style.cssText = 'display: flex; justify-content: space-between; align-items: center;';
+    maxResolutionContainer.appendChild(buildInfoLabel(
+      'Maximum Resolution',
+      'Caps HD playback: scenes taller than this are streamed from Stash at the capped resolution (transcoded) instead of full 2K/4K/6K. Reduces buffering on high-res scenes. Does not affect preview clips.'
+    ));
+    const maxResolutionSelect = document.createElement('select');
+    maxResolutionSelect.style.cssText = `padding: 6px 10px; border-radius: ${THEME.radius.button}; border: 1px solid ${THEME.colors.border}; background: ${THEME.colors.surface}; color: ${THEME.colors.textPrimary}; font-size: ${THEME.typography.sizeBody}; cursor: pointer;`;
+    for (const [val, label] of [['0', 'Off'], ['2160', '2160p (4K)'], ['1080', '1080p'], ['720', '720p'], ['480', '480p'], ['240', '240p']] as const) {
+      const opt = document.createElement('option');
+      opt.value = val;
+      opt.textContent = label;
+      if (String(this.settings.maxResolution ?? 0) === val) opt.selected = true;
+      maxResolutionSelect.appendChild(opt);
+    }
+    maxResolutionSelect.addEventListener('change', () => this.saveSettings());
+    maxResolutionContainer.appendChild(maxResolutionSelect);
+    behaviorSection.appendChild(maxResolutionContainer);
+    (this as any).maxResolutionSelect = maxResolutionSelect;
+
     layoutContent.appendChild(behaviorSection);
     layoutContent.appendChild(contentTypesSection);
     contentTabContent.appendChild(layoutSection);
@@ -1890,6 +1910,7 @@ export class SettingsPage {
 
     const newSettings: Partial<FeedSettings> = {
       hdMode: inputs.hdVideoToggle.checked,
+      maxResolution: Number(((this as any).maxResolutionSelect as HTMLSelectElement)?.value) || 0,
       includeMarkersInFeed: inputs.includeMarkersToggle.checked,
       includeRandomInFeed: inputs.includeRandomToggle.checked,
       randomIncludeScenesWithMarkers: inputs.randomIncludeScenesWithMarkersToggle.checked,

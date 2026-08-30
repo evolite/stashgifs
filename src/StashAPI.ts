@@ -133,6 +133,14 @@ export class StashAPI {
     this._maxContentLimit = value > 0 ? value : StashAPI.DEFAULT_CONTENT_LIMIT;
   }
 
+  /** Playback resolution cap in px (scene height). 0 = off. Scenes taller than this
+   *  are forced through Stash's transcoded stream at the capped resolution. */
+  private _maxResolution = 0;
+
+  set maxResolution(px: number) {
+    this._maxResolution = Number.isFinite(px) && px > 0 ? px : 0;
+  }
+
   constructor(baseUrl?: string, apiKey?: string) {
     // Get from globalThis if available (Stash plugin context)
     const windowWithStash = globalThis as typeof globalThis & {
@@ -1685,19 +1693,66 @@ export class StashAPI {
    * Tries multiple sources in order: sceneStreams, stream path, file path
    */
   getVideoUrl(scene: Scene): string | undefined {
-    // Try scene streams first
-    const streamUrl = this.tryGetUrlFromStreams(scene);
-    if (streamUrl) return streamUrl;
-    
+    const cap = this.resolutionCapFor(scene);
+
+    // A capped scene must NOT use the direct stream (it ignores ?resolution=);
+    // go straight to the transcoded stream path so the cap takes effect.
+    if (!cap) {
+      const streamUrl = this.tryGetUrlFromStreams(scene);
+      if (streamUrl) return streamUrl;
+    }
+
     // Try stream path
-    const streamPathUrl = this.tryGetUrlFromPath(scene.paths?.stream);
+    const streamPathUrl = this.tryGetUrlFromPath(scene.paths?.stream, cap);
     if (streamPathUrl) return streamPathUrl;
-    
+
+    if (cap) {
+      // Last-ditch: a non-direct transcode entry from sceneStreams.
+      const transcoded = this.pickTranscodedStream(scene);
+      if (transcoded) return this.buildAndValidateUrl(StashAPI.capStreamUrl(transcoded, cap));
+    }
+
     // Try file path as last resort
     const filePathUrl = this.tryGetUrlFromFiles(scene.files);
     if (filePathUrl) return filePathUrl;
-    
+
     return undefined;
+  }
+
+  /** Stash transcode-resolution enum for the current cap, or undefined when the
+   *  scene is within the cap (or the cap is off). */
+  private resolutionCapFor(scene: Scene): string | undefined {
+    if (this._maxResolution <= 0) return undefined;
+    const file = scene.files?.[0];
+    const height = file?.height ?? file?.width ?? 0;
+    if (height <= this._maxResolution) return undefined;
+    return StashAPI.resolutionEnum(this._maxResolution);
+  }
+
+  /** Map a cap in px to the nearest Stash transcode-size enum at or below it. */
+  static resolutionEnum(px: number): string {
+    if (px <= 240) return 'LOW';
+    if (px <= 480) return 'STANDARD';
+    if (px <= 720) return 'STANDARD_HD';
+    if (px <= 1080) return 'FULL_HD';
+    return 'FOUR_K';
+  }
+
+  /** Set/replace the `resolution` query param on a Stash stream URL. */
+  static capStreamUrl(url: string, resolutionEnum: string): string {
+    const [base, hash] = url.split('#');
+    const [path, query = ''] = base.split('?');
+    const params = query
+      .split('&')
+      .filter((p) => p && !p.startsWith('resolution='));
+    params.push(`resolution=${resolutionEnum}`);
+    return `${path}?${params.join('&')}${hash ? `#${hash}` : ''}`;
+  }
+
+  private pickTranscodedStream(scene: Scene): string | undefined {
+    const streams = scene.sceneStreams ?? [];
+    const nonDirect = streams.find((s) => !(s.label ?? '').toLowerCase().includes('direct'));
+    return nonDirect?.url?.trim() || undefined;
   }
 
   private tryGetUrlFromStreams(scene: Scene): string | undefined {
@@ -1720,8 +1775,10 @@ export class StashAPI {
   getSceneSources(scene: Scene): VideoSource[] {
     const out: VideoSource[] = [];
     const seen = new Set<string>();
+    const cap = this.resolutionCapFor(scene);
     const push = (rawUrl: string | undefined, type?: string): void => {
-      const built = this.buildStreamUrl(rawUrl);
+      const capped = rawUrl && cap ? StashAPI.capStreamUrl(rawUrl, cap) : rawUrl;
+      const built = this.buildStreamUrl(capped);
       if (built && !seen.has(built)) {
         seen.add(built);
         out.push(type ? { src: built, type } : { src: built });
@@ -1740,14 +1797,15 @@ export class StashAPI {
     const dash = streams.filter(isDash);
     const rest = streams.filter((s) => !isDirect(s) && !isHls(s) && !isDash(s));
 
-    const directPlayable = this.isDirectPlayable(scene);
+    // A capped scene skips the direct stream entirely — it can't be resolution-limited.
+    const directPlayable = !cap && this.isDirectPlayable(scene);
     if (directPlayable) {
       for (const s of direct) push(s.url, s.mime_type || 'video/mp4');
     }
     for (const s of hls) push(s.url, s.mime_type || 'application/x-mpegURL');
     for (const s of rest) push(s.url, s.mime_type || 'video/mp4');
     for (const s of dash) push(s.url, s.mime_type || 'application/dash+xml');
-    if (!directPlayable) {
+    if (!directPlayable && !cap) {
       for (const s of direct) push(s.url, s.mime_type || 'video/mp4');
     }
 
@@ -1795,10 +1853,11 @@ export class StashAPI {
     return normalizeMediaUrl(this.buildUrl(trimmed)) ?? undefined;
   }
 
-  private tryGetUrlFromPath(path?: string | null): string | undefined {
+  private tryGetUrlFromPath(path?: string | null, resolutionEnum?: string): string | undefined {
     const trimmedPath = path?.trim();
     if (!trimmedPath) return undefined;
-    return this.buildAndValidateUrl(trimmedPath);
+    const capped = resolutionEnum ? StashAPI.capStreamUrl(trimmedPath, resolutionEnum) : trimmedPath;
+    return this.buildAndValidateUrl(capped);
   }
 
   private tryGetUrlFromFiles(files?: Array<{ path?: string | null }>): string | undefined {

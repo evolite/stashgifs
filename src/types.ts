@@ -104,6 +104,7 @@ export interface FilterOptions {
 
 export interface FeedSettings {
   hdMode?: boolean; // Whether to load full HD scene videos instead of preview clips
+  maxResolution?: number; // Cap playback height in px for scenes above it (0/undefined = off, e.g. 1080)
   cardMaxWidth: number; // pixels
   aspectRatio: 'preserve' | '16:9' | '9:16' | '1:1';
   enabledFileTypes?: string[]; // File extensions to include (e.g., ['.gif', '.webm']), default: ['.gif']
