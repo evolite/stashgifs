@@ -78,6 +78,7 @@ interface ScenePaths {
 }
 
 export type DateRangeFilter = 'week' | 'month' | 'year';
+export type SavedFilterMode = 'SCENE_MARKERS' | 'IMAGES';
 
 export interface FilterOptions {
   studios?: string[];
@@ -89,7 +90,8 @@ export interface FilterOptions {
   query?: string;
   limit?: number;
   offset?: number;
-  savedFilterId?: string; // Saved filter id from Stash (scene markers)
+  savedFilterId?: string; // Saved filter id from Stash
+  savedFilterMode?: SavedFilterMode; // Mode of savedFilterId (defaults to SCENE_MARKERS)
   shuffleMode?: boolean; // When true, use shuffle mode (query scenes directly)
   includeScenesWithoutMarkers?: boolean; // When true in shuffle mode, include scenes with 0 markers
   orientationFilter?: ('landscape' | 'portrait' | 'square')[]; // Filter content by orientation

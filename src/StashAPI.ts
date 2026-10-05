@@ -3,7 +3,7 @@
  * This will interface with the Stash GraphQL API
  */
 
-import { Scene, SceneMarker, FilterOptions, VideoSource, Performer, DateRangeFilter } from './types.js';
+import { Scene, SceneMarker, FilterOptions, VideoSource, Performer, DateRangeFilter, SavedFilterMode } from './types.js';
 import { normalizeMediaUrl, stripApiKey } from './utils.js';
 import { getStashBaseUrl } from './utils/baseUrl.js';
 import * as queries from './graphql/queries.js';
@@ -28,7 +28,7 @@ import {
   FindImagesResponse,
   FindGalleriesResponse,
   Gallery,
-  GetSavedMarkerFiltersResponse,
+  GetSavedFiltersResponse,
   GetSavedFilterResponse,
   CheckTagsHaveMarkersResponse,
   FindSceneMarkerTagsResponse,
@@ -102,6 +102,8 @@ type ImageFilterOptions = {
   imagesInGalleryOnly?: boolean;
   galleryIds?: string[];
   showPerformerTags?: boolean;
+  savedFilterId?: string; // IMAGES-mode saved filter; replaces tag/performer/studio selection
+  sortSeed?: string;
 };
 
 export class StashAPI {
@@ -175,42 +177,27 @@ export class StashAPI {
   }
 
   /**
-   * Normalize a scene_marker_filter coming from a saved filter
-   * Ensures fields like tags/scene_tags have numeric ID arrays
+   * Normalize an object_filter coming from a saved filter (scene markers or images)
+   * Ensures ID-list criteria have plain ID arrays; drops criteria that can't be normalized
    */
-  private normalizeMarkerFilter(input: unknown): SceneMarkerFilterInput {
-    if (!input || typeof input !== 'object') return {};
+  private normalizeSavedObjectFilter<T = SceneMarkerFilterInput>(input: unknown): T {
+    if (!input || typeof input !== 'object') return {} as T;
     const out: Record<string, unknown> = { ...(input as Record<string, unknown>) };
 
-    const normalizedTags = this.normalizeTagFieldAsStrings(out.tags);
-    if (normalizedTags) {
-      out.tags = normalizedTags;
-    } else {
-      delete out.tags;
+    for (const key of ['tags', 'scene_tags', 'performer_tags', 'studios', 'galleries']) {
+      if (!(key in out)) continue;
+      const normalized = this.normalizeTagFieldAsStrings(out[key]);
+      if (normalized) out[key] = normalized;
+      else delete out[key];
+    }
+    for (const key of ['scene_performers', 'performers']) {
+      if (!(key in out)) continue;
+      const normalized = this.normalizeTagFieldAsNumbers(out[key]);
+      if (normalized) out[key] = normalized;
+      else delete out[key];
     }
 
-    const normalizedSceneTags = this.normalizeTagFieldAsStrings(out.scene_tags);
-    if (normalizedSceneTags) {
-      out.scene_tags = normalizedSceneTags;
-    } else {
-      delete out.scene_tags;
-    }
-
-    const normalizedScenePerformers = this.normalizeTagFieldAsNumbers(out.scene_performers);
-    if (normalizedScenePerformers) {
-      out.scene_performers = normalizedScenePerformers;
-    } else {
-      delete out.scene_performers;
-    }
-
-    const normalizedPerformers = this.normalizeTagFieldAsNumbers(out.performers);
-    if (normalizedPerformers) {
-      out.performers = normalizedPerformers;
-    } else {
-      delete out.performers;
-    }
-
-    return out as SceneMarkerFilterInput;
+    return out as T;
   }
 
   /**
@@ -622,21 +609,23 @@ export class StashAPI {
 
 
   /**
-   * Fetch saved marker filters from Stash
+   * Fetch saved filters the feed can apply (scene markers and images) from Stash
    */
-  async fetchSavedMarkerFilters(signal?: AbortSignal): Promise<Array<{ id: string; name: string }>> {
+  async fetchSavedFilters(signal?: AbortSignal): Promise<Array<{ id: string; name: string; mode: SavedFilterMode }>> {
     if (this.isAborted(signal)) return [];
     
     try {
-      const result = await this.gqlClient.query<GetSavedMarkerFiltersResponse>({
-        query: queries.GET_SAVED_MARKER_FILTERS,
+      const result = await this.gqlClient.query<GetSavedFiltersResponse>({
+        query: queries.GET_SAVED_FILTERS,
         signal,
       });
       
       if (this.isAborted(signal)) return [];
-      return result.data?.findSavedFilters || [];
+      return (result.data?.findSavedFilters || []).filter(
+        (f): f is { id: string; name: string; mode: SavedFilterMode } => f.mode === 'SCENE_MARKERS' || f.mode === 'IMAGES'
+      );
     } catch (error: unknown) {
-      return this.handleError('fetchSavedMarkerFilters', error, signal, []);
+      return this.handleError('fetchSavedFilters', error, signal, []);
     }
   }
 
@@ -709,7 +698,7 @@ export class StashAPI {
   /**
    * Get saved filter criteria if a saved filter ID is provided
    */
-  private async getSavedFilterCriteria(filters?: FilterOptions, signal?: AbortSignal): Promise<GetSavedFilterResponse['findSavedFilter']> {
+  private async getSavedFilterCriteria(filters?: { savedFilterId?: string }, signal?: AbortSignal): Promise<GetSavedFilterResponse['findSavedFilter']> {
     if (!filters?.savedFilterId) return null;
     return await this.getSavedFilter(filters.savedFilterId, signal);
   }
@@ -811,7 +800,7 @@ export class StashAPI {
    * Build count scene filter for random page calculation
    */
   private buildCountSceneFilter(filters: FilterOptions | undefined, savedFilterCriteria: GetSavedFilterResponse['findSavedFilter']): SceneMarkerFilterInput {
-    const countSceneFilter = this.normalizeMarkerFilter(savedFilterCriteria?.object_filter || {});
+    const countSceneFilter = this.normalizeSavedObjectFilter(savedFilterCriteria?.object_filter || {});
 
     // Mirror the main marker query's routing so the random-page count matches what the feed shows.
     if (!filters?.savedFilterId) {
@@ -911,7 +900,7 @@ export class StashAPI {
   ): SceneMarkerFilterInput {
     const sceneMarkerFilterRaw: SceneMarkerFilterInput | Record<string, unknown> = 
       savedFilterCriteria?.object_filter ? { ...savedFilterCriteria.object_filter } : {};
-    const sceneMarkerFilter = this.normalizeMarkerFilter(sceneMarkerFilterRaw);
+    const sceneMarkerFilter = this.normalizeSavedObjectFilter(sceneMarkerFilterRaw);
     
     if (!filters?.savedFilterId) {
       this.applyTagAndPerformerFilters(filters, sceneMarkerFilter, { isMarkerFilter: true });
@@ -2733,13 +2722,25 @@ export class StashAPI {
     if (createdAt) imageFilter.created_at = createdAt;
   }
 
-  private buildImageFilter(regexPattern: string, filters?: ImageFilterOptions): ImageFilterInput {
+  private buildImageFilter(
+    regexPattern: string,
+    filters?: ImageFilterOptions,
+    savedFilterCriteria?: GetSavedFilterResponse['findSavedFilter']
+  ): ImageFilterInput {
+    // ponytail: our path regex overrides any path criterion in the saved filter — the feed can
+    // only render the enabled file types anyway.
     const imageFilter: ImageFilterInput = {
+      ...this.normalizeSavedObjectFilter<ImageFilterInput>(savedFilterCriteria?.object_filter),
       path: {
         value: regexPattern,
         modifier: 'MATCHES_REGEX',
       },
     };
+
+    if (filters?.savedFilterId) {
+      this.applyImageMiscFilters(imageFilter, filters);
+      return imageFilter;
+    }
 
     if (filters?.performerIds && filters.performerIds.length > 0) {
       imageFilter.performers = {
@@ -2767,19 +2768,7 @@ export class StashAPI {
    */
   async findImages(
     fileExtensions: string[],
-    filters?: {
-      performerIds?: number[];
-      tagIds?: string[];
-      excludedTagIds?: string[];
-      studioIds?: string[];
-      studioDepth?: number;
-      tagDepth?: number;
-      orientationFilter?: ImageOrientation[];
-      sortSeed?: string;
-      imagesInGalleryOnly?: boolean;
-      galleryIds?: string[];
-      showPerformerTags?: boolean;
-    },
+    filters?: ImageFilterOptions,
     limit: number = 40,
     offset: number = 0,
     signal?: AbortSignal
@@ -2799,12 +2788,15 @@ export class StashAPI {
 
     // Build regex pattern from file extensions
     const regexPattern = this.buildPathRegex(fileExtensions);
-    const imageFilter = this.buildImageFilter(regexPattern, filters);
+    const savedFilterCriteria = await this.getSavedFilterCriteria(filters, signal);
+    if (this.isAborted(signal)) return { images: [], totalCount: 0, sortSeed: generateRandomSortSeed() };
+    const imageFilter = this.buildImageFilter(regexPattern, filters, savedFilterCriteria);
 
     // Reuse existing sort seed for pagination, or generate new one for first page
     const sortSeed = filters?.sortSeed || generateRandomSortSeed();
     
     const findFilter: FindFilterInput = {
+      ...this.mergeSavedFilterAndQuery({}, undefined, savedFilterCriteria),
       per_page: limit,
       page: Math.floor(offset / limit) + 1,
       sort: sortSeed,

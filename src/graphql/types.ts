@@ -334,10 +334,10 @@ export interface FindSceneResponse {
 }
 
 /**
- * GetSavedMarkerFilters response
+ * GetSavedFilters response
  */
-export interface GetSavedMarkerFiltersResponse {
-  findSavedFilters: Array<{ id: string; name: string }>;
+export interface GetSavedFiltersResponse {
+  findSavedFilters: Array<{ id: string; name: string; mode: string }>;
 }
 
 /**

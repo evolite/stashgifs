@@ -25,6 +25,9 @@ export const HQ_SVG_FILLED = `<svg viewBox="${ICON_VIEWBOX}" width="24" height="
 // External link icon (action size)
 export const EXTERNAL_LINK_SVG = `<svg viewBox="${ICON_VIEWBOX}" width="24" height="24" class="${ICON_SVG_CLASS}" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" preserveAspectRatio="xMidYMid meet"><g transform="translate(12, 12) scale(0.82) translate(-12, -12)"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><polyline points="15 3 21 3 21 9"></polyline><line x1="10" y1="14" x2="21" y2="3"></line></g></svg>`;
 
+// Image icon (action size)
+export const IMAGE_SVG = `<svg viewBox="${ICON_VIEWBOX}" width="24" height="24" class="${ICON_SVG_CLASS}" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" preserveAspectRatio="xMidYMid meet"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/></svg>`;
+
 // Marker icon (action size)
 export const MARKER_SVG = `<svg viewBox="${ICON_VIEWBOX}" width="24" height="24" class="${ICON_SVG_CLASS}" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" preserveAspectRatio="xMidYMid meet"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>`;
 

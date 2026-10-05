@@ -1246,6 +1246,18 @@
   transition: background 0.2s ease;
 }
 
+.feed-pill-button .icon-svg {
+  width: 14px;
+  height: 14px;
+  margin-right: 6px;
+  flex-shrink: 0;
+}
+
+.feed-list-button__leading .icon-svg {
+  width: 18px;
+  height: 18px;
+}
+
 .feed-pill-button:hover {
   background: var(--opacity-12);
 }

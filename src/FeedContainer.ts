@@ -3,7 +3,9 @@
  * Main application container managing the feed
  */
 
-import { SceneMarker, FilterOptions, FeedSettings, VideoPostData, ImagePostData, ImageVideoPostData, Image, SavedSearch, DateRangeFilter } from './types.js';
+import { SceneMarker, FilterOptions, FeedSettings, VideoPostData, ImagePostData, ImageVideoPostData, Image, SavedSearch, DateRangeFilter, SavedFilterMode } from './types.js';
+
+type SavedFilter = { id: string; name: string; mode: SavedFilterMode };
 import { StashAPI, generateRandomSortSeed } from './StashAPI.js';
 import { PluginSettingsManager } from './PluginSettingsManager.js';
 import { VideoPost } from './VideoPost.js';
@@ -19,7 +21,7 @@ import { SettingsPage } from './SettingsPage.js';
 import { debounce, normalizeMediaUrl, detectDeviceCapabilities, DeviceCapabilities, isStandaloneNavigator, isMobileDevice, detectVideoFromVisualFiles, isMp4File, getImageUrlForDisplay, THEME, THEME_DEFAULTS, normalizeHexColor, toRgba, buildFullUrl, applyThemeColors } from './utils.js';
 import { GQLImage } from './graphql/types.js';
 import { getStashBaseUrl } from './utils/baseUrl.js';
-import { SETTINGS_SVG, STASHGIFS_LOGO_SVG } from './icons.js';
+import { SETTINGS_SVG, STASHGIFS_LOGO_SVG, IMAGE_SVG, MARKER_SVG, HEART_SVG_OUTLINE } from './icons.js';
 import { DiscoveryPanel } from './DiscoveryPanel.js';
 import { WhisparrClient } from './WhisparrClient.js';
 import { DiscoveryManager } from './DiscoveryManager.js';
@@ -140,7 +142,7 @@ export class FeedContainer {
   private saveSearchInputVisible = false;
   private postsContainer!: HTMLElement;
   private headerBar?: HTMLElement;
-  private selectedSavedFilter?: { id: string; name: string };
+  private selectedSavedFilter?: SavedFilter;
   private preloadedTags: Array<{ id: string; name: string }> = [];
   private preloadedPerformers: Array<{ id: string; name: string; image_path?: string }> = [];
   private isPreloading: boolean = false;
@@ -155,8 +157,8 @@ export class FeedContainer {
   private suggestionsClickOutsideHandler?: (event: Event) => void;
   private suggestionsTouchOutsideHandler?: (event: Event) => void;
   private placeholderAnimationInterval?: ReturnType<typeof setInterval>; // For scrolling placeholder animation
-  private savedFiltersCache: Array<{ id: string; name: string }> = [];
-  private savedFiltersLoaded: boolean = false;
+  private savedFiltersCache: SavedFilter[] = [];
+  private savedFiltersPromise?: Promise<void>;
   private activeSearchAbortController?: AbortController;
   private activeLoadVideosAbortController?: AbortController;
   private skeletonLoaders: HTMLElement[] = [];
@@ -1177,11 +1179,12 @@ export class FeedContainer {
     });
   }
 
-  private createPillButton(label: string, onSelect: () => void | Promise<void>): HTMLElement {
+  private createPillButton(label: string, onSelect: () => void | Promise<void>, iconSvg?: string): HTMLElement {
     const button = document.createElement('button');
     button.type = 'button';
     button.className = 'feed-pill-button';
-    button.textContent = label;
+    if (iconSvg) button.innerHTML = iconSvg; // trusted markup from icons.ts
+    button.append(label);
     this.attachSuggestionClickHandler(button, onSelect);
     return button;
   }
@@ -1192,13 +1195,13 @@ export class FeedContainer {
   private createListButton(
     label: string,
     onSelect: () => void | Promise<void>,
-    options: { subtitle?: string; leadingText?: string; leadingImage?: string; imageObjectFit?: string } = {}
+    options: { subtitle?: string; leadingText?: string; leadingIcon?: string; leadingImage?: string; imageObjectFit?: string } = {}
   ): HTMLElement {
     const button = document.createElement('button');
     button.type = 'button';
     button.className = 'feed-list-button';
 
-    if (options.leadingText || options.leadingImage) {
+    if (options.leadingText || options.leadingIcon || options.leadingImage) {
       const leading = document.createElement('div');
       leading.className = 'feed-list-button__leading';
 
@@ -1215,6 +1218,8 @@ export class FeedContainer {
         } else {
           console.warn('FeedContainer: Invalid leading image URL', { url: options.leadingImage, label });
         }
+      } else if (options.leadingIcon) {
+        leading.innerHTML = options.leadingIcon; // trusted markup from icons.ts
       } else if (options.leadingText) {
         leading.textContent = options.leadingText;
       }
@@ -1310,17 +1315,17 @@ export class FeedContainer {
   }
 
   private applySavedFilter(
-    filter: { id: string; name: string },
+    filter: SavedFilter,
     updateSearchBarDisplay: () => void,
     withScroll: boolean
   ): void {
-    this.selectedSavedFilter = { id: filter.id, name: filter.name };
+    this.selectedSavedFilter = filter;
     this.selectedTagIds.clear();
     this.selectedPerformerIds.clear();
     this.selectedMarkerName = undefined;
     this.closeSuggestions();
     updateSearchBarDisplay();
-    this.currentFilters = { savedFilterId: filter.id, limit: FeedContainer.CONTENT_LOAD_LIMIT, offset: 0 };
+    this.currentFilters = { savedFilterId: filter.id, savedFilterMode: filter.mode, limit: FeedContainer.CONTENT_LOAD_LIMIT, offset: 0 };
     if (withScroll) this.scrollToTop();
     this.loadVideos(this.currentFilters, false).catch((e) => console.error('Apply saved filter failed', e));
   }
@@ -1337,7 +1342,7 @@ export class FeedContainer {
     filtersSection.style.display = 'flex';
     filtersSection.style.flexDirection = 'column';
     filtersSection.style.gap = '12px';
-    filtersSection.appendChild(this.createSectionLabel('Saved Marker Filters', true));
+    filtersSection.appendChild(this.createSectionLabel('Saved Filters', true));
 
     const pillRow = document.createElement('div');
     pillRow.style.display = 'flex';
@@ -1362,10 +1367,14 @@ export class FeedContainer {
       this.closeSuggestions();
       updateSearchBarDisplay();
       this.debouncedApplyFilters();
-    }));
+    }, HEART_SVG_OUTLINE));
 
-    for (const filter of this.savedFiltersCache) {
-      pillRow.appendChild(this.createPillButton(filter.name, () => this.applySavedFilter(filter, updateSearchBarDisplay, true)));
+    for (const filter of this.getApplicableSavedFilters()) {
+      pillRow.appendChild(this.createPillButton(
+        filter.name,
+        () => this.applySavedFilter(filter, updateSearchBarDisplay, true),
+        filter.mode === 'IMAGES' ? IMAGE_SVG : MARKER_SVG
+      ));
     }
 
     filtersSection.appendChild(pillRow);
@@ -1781,7 +1790,7 @@ export class FeedContainer {
 
     await this.loadSavedFiltersIfNeeded();
 
-    const matchingSavedFilters = this.savedFiltersCache
+    const matchingSavedFilters = this.getApplicableSavedFilters()
       .filter((filter) => filter.name.toLowerCase().includes(trimmedText.toLowerCase()))
       .slice(0, 6);
 
@@ -1790,9 +1799,13 @@ export class FeedContainer {
       savedSection.style.display = 'flex';
       savedSection.style.flexDirection = 'column';
       savedSection.style.gap = '8px';
-      savedSection.appendChild(this.createSectionLabel('Matching Saved Marker Filters'));
+      savedSection.appendChild(this.createSectionLabel('Matching Saved Filters'));
       for (const filter of matchingSavedFilters) {
-        const btn = this.createListButton(filter.name, () => this.applySavedFilter(filter, updateSearchBarDisplay, false));
+        const btn = this.createListButton(
+          filter.name,
+          () => this.applySavedFilter(filter, updateSearchBarDisplay, false),
+          { leadingIcon: filter.mode === 'IMAGES' ? IMAGE_SVG : MARKER_SVG }
+        );
         btn.dataset.savedFilter = 'true';
         savedSection.appendChild(btn);
       }
@@ -2803,6 +2816,7 @@ export class FeedContainer {
       tags: filterValues.tags,
       performers: filterValues.performers,
       savedFilterId: this.selectedSavedFilter?.id || undefined,
+      savedFilterMode: this.selectedSavedFilter?.mode,
       limit: FeedContainer.CONTENT_LOAD_LIMIT,
       offset: 0,
       tagDepth: this.settings.includeSubtags ? -1 : 0,
@@ -2868,6 +2882,7 @@ export class FeedContainer {
       performers: filterValues.performers,
       studios: filterValues.studios,
       savedFilterId: this.selectedSavedFilter?.id || undefined,
+      savedFilterMode: this.selectedSavedFilter?.mode,
       limit: FeedContainer.CONTENT_LOAD_LIMIT,
       offset: 0,
       tagDepth: this.settings.includeSubtags ? -1 : 0,
@@ -3204,7 +3219,8 @@ export class FeedContainer {
       // Fetch tags and performers in parallel (reduced from 40 to 20 for faster loading)
       const [tags, performers] = await Promise.all([
         this.api.searchMarkerTags('', 20),
-        this.api.searchPerformers('', 20)
+        this.api.searchPerformers('', 20),
+        this.loadSavedFiltersIfNeeded()
       ]);
 
       // Store in cache
@@ -3896,8 +3912,17 @@ export class FeedContainer {
     // Use provided filters or fall back to currentFilters
     const activeFilters = filters || this.currentFilters || {};
 
-    // When using saved filters (marker-specific) or a marker-name search, only
-    // load markers — other content types ignore the query and would pollute results.
+    // A saved filter only applies to its own content type (markers or images); a marker-name
+    // search only to markers — other content types ignore them and would pollute results.
+    if (activeFilters.savedFilterId && activeFilters.savedFilterMode === 'IMAGES') {
+      return {
+        shouldLoadMarkers: false,
+        shouldLoadImages: true,
+        shouldLoadShortForm: false,
+        shouldLoadRandom: false,
+        shouldLoadScenePreviews: false
+      };
+    }
     const isUsingSavedFilter = !!(activeFilters.savedFilterId);
     const isMarkerNameSearch = !!this.selectedMarkerName;
 
@@ -4800,6 +4825,7 @@ export class FeedContainer {
 
     return {
       ...imageFilters,
+      ...(filters.savedFilterId && filters.savedFilterMode === 'IMAGES' ? { savedFilterId: filters.savedFilterId } : {}),
       ...(filters.orientationFilter && filters.orientationFilter.length > 0
         ? { orientationFilter: filters.orientationFilter }
         : {}),
@@ -6163,19 +6189,21 @@ export class FeedContainer {
     return this.skeletonLoaders.length;
   }
 
+  /** Saved filters whose content type the feed can currently show (image ones need images enabled). */
+  private getApplicableSavedFilters(): SavedFilter[] {
+    const imagesOn = this.shouldLoadImages();
+    return this.savedFiltersCache.filter((f) => f.mode !== 'IMAGES' || imagesOn);
+  }
+
   /**
-   * Load saved filters if not already loaded
+   * Load saved filters once; concurrent callers share the in-flight request
    */
-  private async loadSavedFiltersIfNeeded(): Promise<void> {
-    if (this.savedFiltersLoaded) return;
-    this.savedFiltersLoaded = true;
-    try {
-      const items = await this.api.fetchSavedMarkerFilters();
-      this.savedFiltersCache = items.map((f) => ({ id: f.id, name: f.name }));
-    } catch (e) {
-      console.error('Failed to load saved marker filters', e);
-      this.savedFiltersCache = [];
-    }
+  private loadSavedFiltersIfNeeded(): Promise<void> {
+    this.savedFiltersPromise ??= this.api.fetchSavedFilters().then(
+      (items) => { this.savedFiltersCache = items; },
+      (e) => { console.error('Failed to load saved filters', e); this.savedFiltersCache = []; }
+    );
+    return this.savedFiltersPromise;
   }
 
   /**

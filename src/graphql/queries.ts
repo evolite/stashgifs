@@ -242,13 +242,14 @@ export const FIND_SCENE_MINIMAL = `
 `;
 
 /**
- * Get saved marker filters
+ * Get saved filters (all modes; callers keep the ones they support)
  */
-export const GET_SAVED_MARKER_FILTERS = `
-  query GetSavedMarkerFilters {
-    findSavedFilters(mode: SCENE_MARKERS) {
+export const GET_SAVED_FILTERS = `
+  query GetSavedFilters {
+    findSavedFilters {
       id
       name
+      mode
     }
   }
 `;
