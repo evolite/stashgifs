@@ -1560,41 +1560,56 @@ body::-webkit-scrollbar,
 
 
 
-/* What's new dialog (shown once after an update) */
+/* What's new card (shown once after an update): light, floating, non-blocking */
 .whats-new {
   position: fixed;
-  inset: 0;
+  right: 16px;
+  bottom: 16px;
   z-index: 10000;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 16px;
-  background: rgba(0, 0, 0, 0.6);
-}
-.whats-new__card {
-  width: 100%;
-  max-width: 420px;
-  max-height: 80vh;
+  width: calc(100% - 32px);
+  max-width: 340px;
+  max-height: 60vh;
   display: flex;
   flex-direction: column;
-  gap: 12px;
-  padding: 20px;
-  border-radius: 16px;
+  gap: 10px;
+  padding: 14px 16px 16px;
+  border-radius: 20px;
   background: var(--color-bg-overlay);
   color: var(--color-text-primary, #E6EEF4);
+  border: 1px solid color-mix(in srgb, var(--color-accent) 35%, transparent);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
+  backdrop-filter: blur(12px);
+  animation: whats-new-in 0.35s ease-out;
 }
-.whats-new__title { margin: 0; font-size: 1.25rem; }
-.whats-new__body { overflow-y: auto; }
-.whats-new__version { margin: 12px 0 0; font-size: 1rem; color: var(--color-accent); }
-.whats-new__section { margin: 12px 0 4px; font-size: 0.8rem; text-transform: uppercase; color: var(--color-text-muted, #8A99A6); }
-.whats-new__list { margin: 0; padding-left: 20px; }
+@keyframes whats-new-in {
+  from { opacity: 0; transform: translateY(12px); }
+  to { opacity: 1; transform: none; }
+}
+.whats-new__header { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; }
+.whats-new__title { font-size: 1.05rem; font-weight: 700; }
+.whats-new__subtitle { font-size: 0.8rem; color: var(--color-accent); margin-top: 2px; }
+.whats-new__x {
+  border: 0;
+  background: transparent;
+  color: var(--color-text-muted, #8A99A6);
+  font-size: 1.4rem;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0 2px;
+}
+.whats-new__body { overflow-y: auto; font-size: 0.875rem; }
+.whats-new__version { margin: 8px 0 0; font-size: 0.8rem; font-weight: 600; color: var(--color-accent); }
+.whats-new__section { margin: 8px 0 4px; font-size: 0.8rem; font-weight: 600; color: var(--color-text-secondary, #B4C0C9); }
+.whats-new__list { margin: 0; padding-left: 18px; }
+.whats-new__list li { margin: 2px 0; }
 .whats-new__close {
-  align-self: flex-end;
-  padding: 8px 20px;
+  align-self: stretch;
+  padding: 8px 16px;
   border: 0;
   border-radius: 999px;
   background: var(--color-accent);
   color: #fff;
   font: inherit;
+  font-weight: 600;
   cursor: pointer;
 }

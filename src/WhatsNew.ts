@@ -7,6 +7,14 @@ import { VERSION } from './version.js';
 
 const LAST_SEEN_KEY = 'stashgifs-last-seen-version';
 
+const SECTION_LABELS: Record<string, string> = {
+  Features: '\u2728 New',
+  'Bug Fixes': '\uD83D\uDEE0\uFE0F Improved',
+  Performance: '\u26A1 Faster',
+  Refactoring: '\uD83E\uDDF9 Under the hood',
+  Documentation: '\uD83D\uDCD6 Docs',
+};
+
 function parseVersion(v: string): number[] {
   return v.split('.').map((n) => Number.parseInt(n, 10) || 0);
 }
@@ -50,17 +58,26 @@ export function maybeShowWhatsNew(): void {
     return;
   }
 
-  const overlay = el('div', 'whats-new');
-  overlay.setAttribute('role', 'dialog');
-  overlay.setAttribute('aria-modal', 'true');
-  const card = el('div', 'whats-new__card');
-  card.appendChild(el('h2', 'whats-new__title', `What's new in v${VERSION}`));
+  const card = el('div', 'whats-new');
+  card.setAttribute('role', 'dialog');
+  card.setAttribute('aria-label', "What's new");
+
+  const header = el('div', 'whats-new__header');
+  const heading = el('div', 'whats-new__heading');
+  heading.appendChild(el('div', 'whats-new__title', "What's new \u2728"));
+  heading.appendChild(el('div', 'whats-new__subtitle', `You're now on v${VERSION}`));
+  header.appendChild(heading);
+  const x = el('button', 'whats-new__x', '\u00D7');
+  (x as HTMLButtonElement).type = 'button';
+  x.setAttribute('aria-label', 'Close');
+  header.appendChild(x);
+  card.appendChild(header);
 
   const body = el('div', 'whats-new__body');
   for (const entry of entries) {
-    if (entries.length > 1) body.appendChild(el('h3', 'whats-new__version', `v${entry.version}`));
+    if (entries.length > 1) body.appendChild(el('div', 'whats-new__version', `v${entry.version}`));
     for (const section of entry.sections) {
-      body.appendChild(el('h4', 'whats-new__section', section.title));
+      body.appendChild(el('div', 'whats-new__section', SECTION_LABELS[section.title] ?? section.title));
       const list = el('ul', 'whats-new__list');
       for (const item of section.items) list.appendChild(el('li', '', item));
       body.appendChild(list);
@@ -70,17 +87,16 @@ export function maybeShowWhatsNew(): void {
 
   const close = (): void => {
     document.removeEventListener('keydown', onKey);
-    overlay.remove();
+    card.remove();
     remember();
   };
   const onKey = (e: KeyboardEvent): void => { if (e.key === 'Escape') close(); };
 
-  const button = el('button', 'whats-new__close', 'Got it');
+  const button = el('button', 'whats-new__close', 'Nice, thanks!');
   (button as HTMLButtonElement).type = 'button';
   button.addEventListener('click', close);
+  x.addEventListener('click', close);
   card.appendChild(button);
-  overlay.appendChild(card);
-  overlay.addEventListener('click', (e) => { if (e.target === overlay) close(); });
   document.addEventListener('keydown', onKey);
-  document.body.appendChild(overlay);
+  document.body.appendChild(card);
 }
