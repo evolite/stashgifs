@@ -141,6 +141,23 @@ export class RatingControl {
     this.updateRatingStarButtons();
   }
 
+  /**
+   * Rate from a keyboard digit (0-9) or clear. 5-star systems take 1-5; 10-point systems take 1-9 and 0 = 10.
+   * Returns a message to toast, or null when the key does not apply to this scale (or a save is in flight).
+   */
+  rateByHotkey(key: number | 'clear'): string | null {
+    if (this.isSavingRating) return null;
+    const maxStars = this.getMaxStars();
+    if (key === 'clear') {
+      void this.onRatingStarSelect(0);
+      return 'Rating cleared';
+    }
+    const value = key === 0 ? RATING_MAX_STARS : key;
+    if (value > maxStars) return null;
+    void this.onRatingStarSelect(value);
+    return `Rated ${value}/${maxStars}`;
+  }
+
   private getMaxStars(): number {
     return this.ratingSystemConfig?.type === 'stars' ? 5 : RATING_MAX_STARS;
   }

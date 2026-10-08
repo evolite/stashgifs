@@ -11,6 +11,8 @@
  * `getCards` callback, so dynamically appended posts (infinite scroll) just work.
  */
 
+import { isTypingTarget } from './utils.js';
+
 interface ReelScrollerOptions {
   /** The element that actually scrolls (overflow-y:auto, fixed viewport height). */
   scrollContainer: HTMLElement;
@@ -289,7 +291,7 @@ export class ReelScroller {
   }
 
   private handleKeyDown(e: KeyboardEvent): void {
-    if (this.isTypingTarget(e.target)) return;
+    if (isTypingTarget(e.target)) return;
     switch (e.key) {
       case 'ArrowDown':
       case 'PageDown':
@@ -323,12 +325,6 @@ export class ReelScroller {
       node = node.parentElement;
     }
     return false;
-  }
-
-  private isTypingTarget(target: EventTarget | null): boolean {
-    if (!(target instanceof HTMLElement)) return false;
-    const tag = target.tagName;
-    return tag === 'INPUT' || tag === 'TEXTAREA' || target.isContentEditable;
   }
 
   private handleTouchStart(e: TouchEvent): void {

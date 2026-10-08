@@ -879,6 +879,12 @@ export class SettingsPage {
       this.settings.showRatingButton !== false,
       'showRatingToggle',
     );
+    appendButtonToggle(
+      'Rating Hotkeys',
+      'Press 1-5 (or 1-9 and 0 for 10 on a 10-point scale) to rate the current post; Backspace clears the rating.',
+      this.settings.enableRatingHotkeys !== false,
+      'ratingHotkeysToggle',
+    );
 
     // ── Content Types Section ──────────────────────────────────────────────
     const contentTypesSection = document.createElement('div');
@@ -1863,7 +1869,7 @@ export class SettingsPage {
       'portraitToggle', 'landscapeToggle',
       'themeBackgroundInput', 'themePrimaryInput', 'themeSecondaryInput', 'themeAccentInput',
       'showVerifiedCheckmarksToggle', 'showProductionAgeToggle', 'showStudioChipsToggle', 'showPerformerEmbellishmentToggle', 'sceneTitleToggle', 'showSceneTagsToggle', 'showPerformerTagsToggle',
-      'showBookmarkToggle', 'showOCountToggle', 'showRatingToggle', 'showViewCountToggle',
+      'showBookmarkToggle', 'showOCountToggle', 'showRatingToggle', 'ratingHotkeysToggle', 'showViewCountToggle',
       'discoveryPanelToggle', 'excludedTagsInput',
       'includeSubtagsToggle', 'trackWatchHistoryToggle', 'seenHistorySizeInput', 'contentLimitInput', 'tagDisplayLimitInput',
       'performerDisplayLimitInput',
@@ -1938,6 +1944,7 @@ export class SettingsPage {
       showBookmarkButton: inputs.showBookmarkToggle.checked,
       showOCountButton: inputs.showOCountToggle.checked,
       showRatingButton: inputs.showRatingToggle.checked,
+      enableRatingHotkeys: inputs.ratingHotkeysToggle.checked,
       showViewCountBadge: inputs.showViewCountToggle.checked,
       enableDiscoveryPanel: inputs.discoveryPanelToggle.checked,
       discoveryPanelSize: Number(((this as any).discoverySizeSlider as HTMLInputElement)?.value ?? 260),

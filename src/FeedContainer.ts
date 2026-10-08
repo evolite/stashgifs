@@ -18,7 +18,7 @@ import { ReelScroller } from './ReelScroller.js';
 import { FavoritesManager } from './FavoritesManager.js';
 import { BookmarkManager } from './BookmarkManager.js';
 import { SettingsPage } from './SettingsPage.js';
-import { debounce, normalizeMediaUrl, detectDeviceCapabilities, DeviceCapabilities, isStandaloneNavigator, isMobileDevice, detectVideoFromVisualFiles, isMp4File, getImageUrlForDisplay, THEME, THEME_DEFAULTS, normalizeHexColor, toRgba, buildFullUrl, applyThemeColors } from './utils.js';
+import { debounce, isTypingTarget, showToast, normalizeMediaUrl, detectDeviceCapabilities, DeviceCapabilities, isStandaloneNavigator, isMobileDevice, detectVideoFromVisualFiles, isMp4File, getImageUrlForDisplay, THEME, THEME_DEFAULTS, normalizeHexColor, toRgba, buildFullUrl, applyThemeColors } from './utils.js';
 import { GQLImage } from './graphql/types.js';
 import { getStashBaseUrl } from './utils/baseUrl.js';
 import { SETTINGS_SVG, STASHGIFS_LOGO_SVG, IMAGE_SVG, MARKER_SVG, HEART_SVG_OUTLINE } from './icons.js';
@@ -227,6 +227,7 @@ export class FeedContainer {
     // Unlock autoplay on mobile after first user interaction
     this.unlockMobileAutoplay();
     this.setupAutoplayUnlockHandlers();
+    document.addEventListener('keydown', this.onRatingHotkey);
 
     // Defer suggestion preload until after initial videos load to avoid competing for bandwidth
     // Will be triggered lazily when user opens filter dropdown or after initial load completes
@@ -5852,7 +5853,22 @@ export class FeedContainer {
     this.reelScroller = undefined;
   }
 
+  /** Digit keys rate the current card (0 = 10), Backspace/Delete clears. */
+  private readonly onRatingHotkey = (event: KeyboardEvent): void => {
+    if (this.settings.enableRatingHotkeys === false) return;
+    if (event.defaultPrevented || event.repeat || event.ctrlKey || event.metaKey || event.altKey) return;
+    if (isTypingTarget(event.target)) return;
+    let key: number | 'clear';
+    if (/^\d$/.test(event.key)) key = Number(event.key);
+    else if (event.key === 'Backspace' || event.key === 'Delete') key = 'clear';
+    else return;
+    const postId = this.reelScroller?.getCurrentPostId() ?? this.getTopMostCardPostId();
+    const message = postId ? this.posts.get(postId)?.rateByHotkey(key) : null;
+    if (message) showToast(message);
+  };
+
   private teardownListeners(): void {
+    document.removeEventListener('keydown', this.onRatingHotkey);
     this.removeMobileAutoplayUnlockListeners();
     this.removeAutoplayUnlockHandlers();
 

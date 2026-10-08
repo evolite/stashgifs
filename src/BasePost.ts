@@ -2194,6 +2194,11 @@ export abstract class BasePost {
     );
   }
 
+  /** Keyboard rating entry point; null when this post has no rating control or the key does not apply. */
+  rateByHotkey(key: number | 'clear'): string | null {
+    return this.ratingControl?.rateByHotkey(key) ?? null;
+  }
+
   protected buildRatingSection(
     subjectLabel: 'image' | 'scene',
     getRating100: () => number | null | undefined,

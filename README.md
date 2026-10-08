@@ -14,6 +14,7 @@ Install it via Stash's plugin system using the `index.yml` file. - https://surgi
 - **Configurable** - Select the content yyou want, including random scene positons, markers, images and short form videos. aswell as options such as auto-scroll.
 - **Filtering** - Narrow down content by performers, tags, or use your saved Stash filters to find exactly what you're looking for.
 - **Interactions** - Favorite content with a tap, add tags to content, rate scenes and images. Each post links back to the content in Stash.
+- **Rating hotkeys** - Press `1`-`5` (or `1`-`9` and `0` for 10 on a 10-point scale) to rate the current post, `Backspace` to clear. Can be turned off in settings.
 - **Mobile-friendly** - Touch-optimized interface that works on phones and tablets.
 
 Includes detailed customization!

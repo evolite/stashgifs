@@ -148,6 +148,7 @@ export interface FeedSettings {
   showSceneTitle?: boolean; // Show scene/image title above performers in each post, default: false
   showOCountButton?: boolean; // Show O-count button in button group, default: true
   showRatingButton?: boolean; // Show rating control in button group, default: true
+  enableRatingHotkeys?: boolean; // Digit keys rate the current post (0 = 10), Backspace clears, default: true
   showViewCountBadge?: boolean; // Show view-count badge in button group, default: true
   showBookmarkButton?: boolean; // Show bookmark button in button group, default: false
   whisparrBaseUrl?: string; // Whisparr base URL, e.g. http://localhost:6969

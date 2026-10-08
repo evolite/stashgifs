@@ -210,6 +210,13 @@ export function getAspectRatioClass(aspectRatio: number): string {
  */
 // Removed unused generateId helper
 
+/** True when keyboard input is going to a text field, so global hotkeys must stay out of the way. */
+export function isTypingTarget(target: EventTarget | null): boolean {
+  if (!(target instanceof HTMLElement)) return false;
+  const tag = target.tagName;
+  return tag === 'INPUT' || tag === 'TEXTAREA' || target.isContentEditable;
+}
+
 /**
  * Show a toast notification
  */
