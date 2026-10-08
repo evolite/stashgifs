@@ -5,11 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [7.19.1] - 2026-10-08
+## [7.20.0] - 2026-10-08
 
-### Bug Fixes
+### Features
 
-- Move pnpm overrides to pnpm-workspace.yaml so latest pnpm honours them
+- Rate the current post with digit hotkeys
+- Make the what's new dialog a lighter, friendlier floating card
+- Centre the what's new card and list the previous five releases
+- Streamline the what's new card layout and drop emojis
 
 ## [7.19.0] - 2026-10-08
 
@@ -594,24 +597,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Refactoring
 
 - Extract chip helpers to eliminate BasePost duplication
-
-## [6.1.4] - 2026-05-18
-
-### Bug Fixes
-
-- Install git-cliff to user bin and register it on PATH
-
-## [6.1.3] - 2026-05-18
-
-### Bug Fixes
-
-- Call git-cliff directly instead of as git subcommand
-
-## [6.1.2] - 2026-05-18
-
-### Bug Fixes
-
-- Resolve git-cliff 404 by fetching versioned download URL
 
 ## [6.1.1] - 2026-05-18
 
