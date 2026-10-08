@@ -6,6 +6,7 @@ import { FeedContainer } from './FeedContainer.js';
 import { StashAPI } from './StashAPI.js';
 import { PluginSettingsManager } from './PluginSettingsManager.js';
 import { FeedSettings } from './types.js';
+import { maybeShowWhatsNew } from './WhatsNew.js';
 import { toRgba, normalizeHexColor, applyThemeColors } from './utils.js';
 
 /**
@@ -169,6 +170,7 @@ function init(): void {
     });
 
     (globalThis.window as WindowWithStashgifs).stashgifsFeed = feed;
+    maybeShowWhatsNew();
   } catch (error: unknown) {
     console.error('Stashgifs Feed UI: Fatal error during initialization:', error);
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';

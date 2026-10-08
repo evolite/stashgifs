@@ -42,3 +42,36 @@ export const BUILD_HASH = '${buildHash}';
 
 fs.writeFileSync(versionTsPath, versionTsContent);
 console.log(`Version file updated with: ${pkg.version} (hash: ${buildHash})`);
+
+// Bundle CHANGELOG.md (written by git-cliff, same text as the release notes) for the "What's new" dialog.
+const changelogPath = path.join(__dirname, '..', 'CHANGELOG.md');
+const changelogTsPath = path.join(__dirname, '..', 'src', 'changelog.ts');
+const entries = [];
+let section;
+const lines = fs.existsSync(changelogPath) ? fs.readFileSync(changelogPath, 'utf8').split('\n') : [];
+for (const line of lines) {
+  const release = /^## \[(\d+\.\d+\.\d+)\](?: - (\S+))?/.exec(line);
+  if (release) {
+    entries.push({ version: release[1], date: release[2] ?? '', sections: [] });
+    section = undefined;
+  } else if (entries.length > 0 && line.startsWith('### ')) {
+    section = { title: line.slice(4).trim(), items: [] };
+    entries[entries.length - 1].sections.push(section);
+  } else if (section && line.startsWith('- ')) {
+    section.items.push(line.slice(2).trim());
+  }
+}
+fs.writeFileSync(
+  changelogTsPath,
+  `/**
+ * Release notes - auto-generated from CHANGELOG.md during the build process
+ */
+export interface ChangelogEntry {
+  version: string;
+  date: string;
+  sections: Array<{ title: string; items: string[] }>;
+}
+export const CHANGELOG: ChangelogEntry[] = ${JSON.stringify(entries, null, 2)};
+`
+);
+console.log(`Changelog file updated with ${entries.length} releases`);

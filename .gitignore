@@ -39,3 +39,4 @@ stashapp_arch.md
 .claude/
 .opencode/
 .fallow/
+src/changelog.ts

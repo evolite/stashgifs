@@ -1559,3 +1559,42 @@ body::-webkit-scrollbar,
 }
 
 
+
+/* What's new dialog (shown once after an update) */
+.whats-new {
+  position: fixed;
+  inset: 0;
+  z-index: 10000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  background: rgba(0, 0, 0, 0.6);
+}
+.whats-new__card {
+  width: 100%;
+  max-width: 420px;
+  max-height: 80vh;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 20px;
+  border-radius: 16px;
+  background: var(--color-bg-overlay);
+  color: var(--color-text-primary, #E6EEF4);
+}
+.whats-new__title { margin: 0; font-size: 1.25rem; }
+.whats-new__body { overflow-y: auto; }
+.whats-new__version { margin: 12px 0 0; font-size: 1rem; color: var(--color-accent); }
+.whats-new__section { margin: 12px 0 4px; font-size: 0.8rem; text-transform: uppercase; color: var(--color-text-muted, #8A99A6); }
+.whats-new__list { margin: 0; padding-left: 20px; }
+.whats-new__close {
+  align-self: flex-end;
+  padding: 8px 20px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--color-accent);
+  color: #fff;
+  font: inherit;
+  cursor: pointer;
+}
