@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [7.20.1] - 2026-10-08
+
+### Bug Fixes
+
+- Stop recency bias hiding saved filter results and cross-type seen id collisions
+- Convert saved filter criteria to API input shapes so saved image filters stop failing
+
+### Refactoring
+
+- Split saved filter criterion conversion to satisfy sonar complexity limit
+
 ## [7.20.0] - 2026-10-08
 
 ### Features
