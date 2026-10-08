@@ -9,11 +9,11 @@ const LAST_SEEN_KEY = 'stashgifs-last-seen-version';
 const EARLIER_COUNT = 5;
 
 const SECTION_LABELS: Record<string, string> = {
-  Features: '\u2728 New',
-  'Bug Fixes': '\uD83D\uDEE0\uFE0F Improved',
-  Performance: '\u26A1 Faster',
-  Refactoring: '\uD83E\uDDF9 Under the hood',
-  Documentation: '\uD83D\uDCD6 Docs',
+  Features: 'New',
+  'Bug Fixes': 'Improved',
+  Performance: 'Faster',
+  Refactoring: 'Under the hood',
+  Documentation: 'Docs',
 };
 
 function parseVersion(v: string): number[] {
@@ -65,8 +65,8 @@ export function maybeShowWhatsNew(): void {
 
   const header = el('div', 'whats-new__header');
   const heading = el('div', 'whats-new__heading');
-  heading.appendChild(el('div', 'whats-new__title', "What's new \u2728"));
-  heading.appendChild(el('div', 'whats-new__subtitle', `You're now on v${VERSION}`));
+  heading.appendChild(el('div', 'whats-new__title', "What's new"));
+  heading.appendChild(el('span', 'whats-new__badge', `v${VERSION}`));
   header.appendChild(heading);
   const x = el('button', 'whats-new__x', '\u00D7');
   (x as HTMLButtonElement).type = 'button';
@@ -75,22 +75,27 @@ export function maybeShowWhatsNew(): void {
   card.appendChild(header);
 
   const body = el('div', 'whats-new__body');
-  const renderEntry = (entry: ChangelogEntry): void => {
-    body.appendChild(el('div', 'whats-new__version', `v${entry.version}`));
+  const renderEntry = (entry: ChangelogEntry, isEarlier = false): void => {
+    const block = el('section', isEarlier ? 'whats-new__entry whats-new__entry--earlier' : 'whats-new__entry');
+    const head = el('div', 'whats-new__entry-head');
+    head.appendChild(el('span', 'whats-new__version', `v${entry.version}`));
+    if (entry.date) head.appendChild(el('span', 'whats-new__date', entry.date));
+    block.appendChild(head);
     for (const section of entry.sections) {
-      body.appendChild(el('div', 'whats-new__section', SECTION_LABELS[section.title] ?? section.title));
+      block.appendChild(el('div', 'whats-new__section', SECTION_LABELS[section.title] ?? section.title));
       const list = el('ul', 'whats-new__list');
       for (const item of section.items) list.appendChild(el('li', '', item));
-      body.appendChild(list);
+      block.appendChild(list);
     }
+    body.appendChild(block);
   };
-  entries.forEach(renderEntry);
+  for (const entry of entries) renderEntry(entry);
 
   // Context for what came before: the last few releases the user already had (CHANGELOG is newest first).
   const earlier = CHANGELOG.filter((e) => compareVersions(e.version, lastSeen) <= 0).slice(0, EARLIER_COUNT);
   if (earlier.length > 0) {
     body.appendChild(el('div', 'whats-new__divider', 'Earlier releases'));
-    earlier.forEach(renderEntry);
+    for (const entry of earlier) renderEntry(entry, true);
   }
   card.appendChild(body);
 
@@ -101,7 +106,7 @@ export function maybeShowWhatsNew(): void {
   };
   const onKey = (e: KeyboardEvent): void => { if (e.key === 'Escape') close(); };
 
-  const button = el('button', 'whats-new__close', 'Nice, thanks!');
+  const button = el('button', 'whats-new__close', 'Got it');
   (button as HTMLButtonElement).type = 'button';
   button.addEventListener('click', close);
   x.addEventListener('click', close);
