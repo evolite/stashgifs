@@ -6201,7 +6201,7 @@ export class FeedContainer {
   private loadSavedFiltersIfNeeded(): Promise<void> {
     this.savedFiltersPromise ??= this.api.fetchSavedFilters().then(
       (items) => { this.savedFiltersCache = items; },
-      (e) => { console.error('Failed to load saved filters', e); this.savedFiltersCache = []; }
+      (e) => { console.error('Failed to load saved filters', e); this.savedFiltersCache = []; this.savedFiltersPromise = undefined; }
     );
     return this.savedFiltersPromise;
   }

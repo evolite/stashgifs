@@ -2727,20 +2727,22 @@ export class StashAPI {
     filters?: ImageFilterOptions,
     savedFilterCriteria?: GetSavedFilterResponse['findSavedFilter']
   ): ImageFilterInput {
-    // ponytail: our path regex overrides any path criterion in the saved filter — the feed can
-    // only render the enabled file types anyway.
+    if (filters?.savedFilterId) {
+      // The saved filter is authoritative: the feed's own constraints (file-type regex, orientation,
+      // date range...) are ANDed in alongside it instead of overwriting its criteria.
+      const saved = this.normalizeSavedObjectFilter<ImageFilterInput>(savedFilterCriteria?.object_filter);
+      const extra: ImageFilterInput = { path: { value: regexPattern, modifier: 'MATCHES_REGEX' } };
+      this.applyImageMiscFilters(extra, filters);
+      if (saved.AND) extra.AND = saved.AND;
+      return { ...saved, AND: extra };
+    }
+
     const imageFilter: ImageFilterInput = {
-      ...this.normalizeSavedObjectFilter<ImageFilterInput>(savedFilterCriteria?.object_filter),
       path: {
         value: regexPattern,
         modifier: 'MATCHES_REGEX',
       },
     };
-
-    if (filters?.savedFilterId) {
-      this.applyImageMiscFilters(imageFilter, filters);
-      return imageFilter;
-    }
 
     if (filters?.performerIds && filters.performerIds.length > 0) {
       imageFilter.performers = {
