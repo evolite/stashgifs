@@ -185,6 +185,20 @@ export class StashAPI {
 
   private static readonly TEXT_CRITERIA = new Set(['title', 'details', 'path', 'url', 'code', 'photographer', 'checksum', 'name']);
 
+  /** Range-style saved criterion ({value, value2} object) -> flat input. Undefined when it has no usable value. */
+  private flattenSavedRange(key: string, modifier: string | undefined, range: { value?: unknown; value2?: unknown }): unknown {
+    const isNullCheck = modifier === 'IS_NULL' || modifier === 'NOT_NULL';
+    const hasValue = range.value !== null && range.value !== undefined;
+    if (!hasValue && !isNullCheck) return undefined;
+    const fallback = StashAPI.TEXT_CRITERIA.has(key) ? '' : 0;
+    const hasValue2 = range.value2 !== null && range.value2 !== undefined;
+    return {
+      ...(modifier ? { modifier } : {}),
+      value: hasValue ? range.value : fallback,
+      ...(hasValue2 ? { value2: range.value2 } : {}),
+    };
+  }
+
   /**
    * Convert one non-ID criterion from Stash's saved-filter shape to the GraphQL input shape.
    * Saved filters store ranges as {modifier, value: {value, value2}} and booleans as strings, which the API
@@ -192,32 +206,20 @@ export class StashAPI {
    */
   private normalizeSavedCriterion(key: string, raw: unknown): unknown {
     if (raw === null || raw === undefined) return undefined;
-    if (typeof raw === 'string' && (raw === 'true' || raw === 'false')) return raw === 'true';
+    if (raw === 'true' || raw === 'false') return raw === 'true';
     if (typeof raw !== 'object' || Array.isArray(raw)) return raw;
 
     const crit = raw as { modifier?: string; value?: unknown };
     if (!('modifier' in crit) && !('value' in crit)) return raw;
-    const modifier = crit.modifier;
-    let value = crit.value;
 
+    const { modifier, value } = crit;
     if (value && typeof value === 'object' && !Array.isArray(value)) {
-      const range = value as { value?: unknown; value2?: unknown };
-      if (!('value' in range)) return undefined; // unknown nested shape
-      value = range.value;
-      const value2 = range.value2;
-      const isNullCheck = modifier === 'IS_NULL' || modifier === 'NOT_NULL';
-      if ((value === null || value === undefined) && !isNullCheck) return undefined;
-      return {
-        ...(modifier ? { modifier } : {}),
-        value: value ?? (StashAPI.TEXT_CRITERIA.has(key) ? '' : 0),
-        ...(value2 !== null && value2 !== undefined ? { value2 } : {}),
-      };
+      return 'value' in value ? this.flattenSavedRange(key, modifier, value) : undefined;
     }
-
-    if (key === 'resolution' && typeof value === 'string') {
-      value = StashAPI.RESOLUTION_ENUMS[value.toLowerCase()] ?? value;
-    }
-    return { ...(modifier ? { modifier } : {}), value };
+    const resolved = key === 'resolution' && typeof value === 'string'
+      ? (StashAPI.RESOLUTION_ENUMS[value.toLowerCase()] ?? value)
+      : value;
+    return { ...(modifier ? { modifier } : {}), value: resolved };
   }
 
   /**
