@@ -32,7 +32,7 @@ commit_parsers = [
   { message = "^feat", group = "Features" },
   { message = "^fix", group = "Bug Fixes" },
   { message = "^perf", group = "Performance" },
-  { message = "^refactor", group = "Refactoring" },
+  { message = "^refactor", skip = true },
   { message = "^docs", group = "Documentation" },
   { message = "^style", skip = true },
   { message = "^test", skip = true },
