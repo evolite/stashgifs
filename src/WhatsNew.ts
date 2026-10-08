@@ -2,10 +2,11 @@
  * "What's new" dialog: shown once after the plugin updates to a newer version.
  */
 
-import { CHANGELOG } from './changelog.js';
+import { CHANGELOG, type ChangelogEntry } from './changelog.js';
 import { VERSION } from './version.js';
 
 const LAST_SEEN_KEY = 'stashgifs-last-seen-version';
+const EARLIER_COUNT = 5;
 
 const SECTION_LABELS: Record<string, string> = {
   Features: '\u2728 New',
@@ -74,14 +75,22 @@ export function maybeShowWhatsNew(): void {
   card.appendChild(header);
 
   const body = el('div', 'whats-new__body');
-  for (const entry of entries) {
-    if (entries.length > 1) body.appendChild(el('div', 'whats-new__version', `v${entry.version}`));
+  const renderEntry = (entry: ChangelogEntry): void => {
+    body.appendChild(el('div', 'whats-new__version', `v${entry.version}`));
     for (const section of entry.sections) {
       body.appendChild(el('div', 'whats-new__section', SECTION_LABELS[section.title] ?? section.title));
       const list = el('ul', 'whats-new__list');
       for (const item of section.items) list.appendChild(el('li', '', item));
       body.appendChild(list);
     }
+  };
+  entries.forEach(renderEntry);
+
+  // Context for what came before: the last few releases the user already had (CHANGELOG is newest first).
+  const earlier = CHANGELOG.filter((e) => compareVersions(e.version, lastSeen) <= 0).slice(0, EARLIER_COUNT);
+  if (earlier.length > 0) {
+    body.appendChild(el('div', 'whats-new__divider', 'Earlier releases'));
+    earlier.forEach(renderEntry);
   }
   card.appendChild(body);
 

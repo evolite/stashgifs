@@ -1563,12 +1563,13 @@ body::-webkit-scrollbar,
 /* What's new card (shown once after an update): light, floating, non-blocking */
 .whats-new {
   position: fixed;
-  right: 16px;
-  bottom: 16px;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
   z-index: 10000;
   width: calc(100% - 32px);
-  max-width: 340px;
-  max-height: 60vh;
+  max-width: 380px;
+  max-height: 70vh;
   display: flex;
   flex-direction: column;
   gap: 10px;
@@ -1582,8 +1583,8 @@ body::-webkit-scrollbar,
   animation: whats-new-in 0.35s ease-out;
 }
 @keyframes whats-new-in {
-  from { opacity: 0; transform: translateY(12px); }
-  to { opacity: 1; transform: none; }
+  from { opacity: 0; transform: translate(-50%, calc(-50% + 12px)); }
+  to { opacity: 1; transform: translate(-50%, -50%); }
 }
 .whats-new__header { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; }
 .whats-new__title { font-size: 1.05rem; font-weight: 700; }
@@ -1600,6 +1601,15 @@ body::-webkit-scrollbar,
 .whats-new__body { overflow-y: auto; font-size: 0.875rem; }
 .whats-new__version { margin: 8px 0 0; font-size: 0.8rem; font-weight: 600; color: var(--color-accent); }
 .whats-new__section { margin: 8px 0 4px; font-size: 0.8rem; font-weight: 600; color: var(--color-text-secondary, #B4C0C9); }
+.whats-new__divider {
+  margin: 14px 0 0;
+  padding-top: 10px;
+  border-top: 1px solid var(--color-separator, rgba(255, 255, 255, 0.12));
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--color-text-muted, #8A99A6);
+}
 .whats-new__list { margin: 0; padding-left: 18px; }
 .whats-new__list li { margin: 2px 0; }
 .whats-new__close {
