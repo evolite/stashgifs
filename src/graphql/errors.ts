@@ -86,8 +86,10 @@ export function createGraphQLError(
 
   // Check for network errors
   if (!response?.ok) {
+    // Stash explains 4xx responses in the JSON body; keep that text, it is the only clue to what was rejected.
+    const detail = data?.errors?.length ? `: ${data.errors.map(e => e.message).join(', ')}` : '';
     return new GraphQLNetworkError(
-      `GraphQL request failed: ${response?.status || 'unknown'} ${response?.statusText || ''}`,
+      `GraphQL request failed: ${response?.status || 'unknown'} ${response?.statusText || ''}${detail}`,
       originalError
     );
   }

@@ -176,27 +176,80 @@ export class StashAPI {
     this.gqlClient.destroy();
   }
 
+  /** Stash UI resolution labels -> ResolutionEnum (saved filters store the label). */
+  private static readonly RESOLUTION_ENUMS: Record<string, string> = {
+    '144p': 'VERY_LOW', '240p': 'LOW', '360p': 'R360P', '480p': 'STANDARD', '540p': 'WEB_HD',
+    '720p': 'STANDARD_HD', '1080p': 'FULL_HD', '1440p': 'QUAD_HD', '4k': 'FOUR_K', '5k': 'FIVE_K',
+    '6k': 'SIX_K', '7k': 'SEVEN_K', '8k': 'EIGHT_K', '8k+': 'HUGE',
+  };
+
+  private static readonly TEXT_CRITERIA = new Set(['title', 'details', 'path', 'url', 'code', 'photographer', 'checksum', 'name']);
+
+  /**
+   * Convert one non-ID criterion from Stash's saved-filter shape to the GraphQL input shape.
+   * Saved filters store ranges as {modifier, value: {value, value2}} and booleans as strings, which the API
+   * rejects wholesale. Returns undefined for anything we cannot convert (the criterion is then dropped).
+   */
+  private normalizeSavedCriterion(key: string, raw: unknown): unknown {
+    if (raw === null || raw === undefined) return undefined;
+    if (typeof raw === 'string' && (raw === 'true' || raw === 'false')) return raw === 'true';
+    if (typeof raw !== 'object' || Array.isArray(raw)) return raw;
+
+    const crit = raw as { modifier?: string; value?: unknown };
+    if (!('modifier' in crit) && !('value' in crit)) return raw;
+    const modifier = crit.modifier;
+    let value = crit.value;
+
+    if (value && typeof value === 'object' && !Array.isArray(value)) {
+      const range = value as { value?: unknown; value2?: unknown };
+      if (!('value' in range)) return undefined; // unknown nested shape
+      value = range.value;
+      const value2 = range.value2;
+      const isNullCheck = modifier === 'IS_NULL' || modifier === 'NOT_NULL';
+      if ((value === null || value === undefined) && !isNullCheck) return undefined;
+      return {
+        ...(modifier ? { modifier } : {}),
+        value: value ?? (StashAPI.TEXT_CRITERIA.has(key) ? '' : 0),
+        ...(value2 !== null && value2 !== undefined ? { value2 } : {}),
+      };
+    }
+
+    if (key === 'resolution' && typeof value === 'string') {
+      value = StashAPI.RESOLUTION_ENUMS[value.toLowerCase()] ?? value;
+    }
+    return { ...(modifier ? { modifier } : {}), value };
+  }
+
   /**
    * Normalize an object_filter coming from a saved filter (scene markers or images)
-   * Ensures ID-list criteria have plain ID arrays; drops criteria that can't be normalized
+   * Stash stores criteria in its UI shape; this converts them to GraphQL input shapes (ID lists, ranges,
+   * booleans, resolution) and drops criteria that can't be converted rather than sending a query Stash rejects.
    */
   private normalizeSavedObjectFilter<T = SceneMarkerFilterInput>(input: unknown): T {
     if (!input || typeof input !== 'object') return {} as T;
     const out: Record<string, unknown> = { ...(input as Record<string, unknown>) };
+    const idStrings = new Set(['tags', 'scene_tags', 'performer_tags', 'studios', 'galleries']);
+    const idNumbers = new Set(['scene_performers', 'performers']);
+    const dropped: string[] = [];
 
-    for (const key of ['tags', 'scene_tags', 'performer_tags', 'studios', 'galleries']) {
-      if (!(key in out)) continue;
-      const normalized = this.normalizeTagFieldAsStrings(out[key]);
-      if (normalized) out[key] = normalized;
-      else delete out[key];
-    }
-    for (const key of ['scene_performers', 'performers']) {
-      if (!(key in out)) continue;
-      const normalized = this.normalizeTagFieldAsNumbers(out[key]);
-      if (normalized) out[key] = normalized;
-      else delete out[key];
+    for (const key of Object.keys(out)) {
+      const value = out[key];
+      let normalized: unknown;
+      if (idStrings.has(key)) normalized = this.normalizeTagFieldAsStrings(value);
+      else if (idNumbers.has(key)) normalized = this.normalizeTagFieldAsNumbers(value);
+      else if (key === 'AND' || key === 'OR' || key === 'NOT' || key.endsWith('_filter')) {
+        normalized = value && typeof value === 'object' ? this.normalizeSavedObjectFilter<Record<string, unknown>>(value) : undefined;
+      } else normalized = this.normalizeSavedCriterion(key, value);
+
+      if (normalized === undefined) {
+        delete out[key];
+        dropped.push(key);
+      } else {
+        out[key] = normalized;
+      }
     }
 
+    if (dropped.length > 0) console.warn('[StashAPI] Saved filter criteria ignored (unsupported format):', dropped.join(', '));
     return out as T;
   }
 
