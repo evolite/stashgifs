@@ -1474,7 +1474,7 @@ export class SettingsPage {
     seenHistoryContainer.style.cssText = 'display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;';
     seenHistoryContainer.appendChild(buildInfoLabel(
       'Recency Bias',
-      'Tracks up to this many recently seen items and hides them from the feed.\nSet to 0 to disable. Default: 500.'
+      'Tracks up to this many recently seen items and hides them from the feed.\nNot applied when a saved filter is selected.\nSet to 0 to disable. Default: 500.'
     ));
     const seenHistorySizeInput = document.createElement('input');
     seenHistorySizeInput.type = 'number';

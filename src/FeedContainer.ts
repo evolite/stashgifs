@@ -824,7 +824,8 @@ export class FeedContainer {
     if (this.seenSetCache) return this.seenSetCache;
     try {
       const raw = localStorage.getItem(FeedContainer.SEEN_IDS_KEY);
-      const ids: string[] = raw ? JSON.parse(raw) as string[] : [];
+      // Keys are "<type>:<id>"; bare legacy ids could match an unrelated item of another type.
+      const ids: string[] = raw ? (JSON.parse(raw) as string[]).filter((k) => k.includes(':')) : [];
       this.seenSetCache = { ids, set: new Set(ids) };
     } catch {
       this.seenSetCache = { ids: [], set: new Set() };
@@ -847,7 +848,13 @@ export class FeedContainer {
     }
   }
 
-  private markItemSeen(id: string): void {
+  /** Marker, scene and image ids are separate sequences, so seen keys carry the content type. */
+  private static seenKey(type: 'marker' | 'image', id: string): string {
+    return `${type}:${id}`;
+  }
+
+  private markItemSeen(type: 'marker' | 'image', itemId: string): void {
+    const id = FeedContainer.seenKey(type, itemId);
     const maxSeen = this.settings.seenHistorySize ?? 500;
     if (maxSeen === 0) return;
     const cache = this.getSeenCache();
@@ -884,13 +891,15 @@ export class FeedContainer {
 
   private filterSeenContent(
     content: Array<{ type: 'marker' | 'image'; data: SceneMarker | Image; date?: string }>,
-    append: boolean
+    append: boolean,
+    savedFilterActive: boolean
   ): Array<{ type: 'marker' | 'image'; data: SceneMarker | Image; date?: string }> {
     const maxSeen = this.settings.seenHistorySize ?? 500;
-    if (maxSeen === 0) return content;
+    // A saved filter is a curated pool the user explicitly picked: never thin it out by history.
+    if (maxSeen === 0 || savedFilterActive) return content;
     const seen = this.getSeenSet();
     if (seen.size === 0) return content;
-    const unseen = content.filter(item => !seen.has((item.data as { id: string }).id));
+    const unseen = content.filter(item => !seen.has(FeedContainer.seenKey(item.type, (item.data as { id: string }).id)));
     // Scroll: strict — never show seen content
     // Initial load: fall back to showing all if pool exhausted
     return (!append && unseen.length === 0) ? content : unseen;
@@ -3429,7 +3438,7 @@ export class FeedContainer {
       ? await this.processMarkerForRender(item.data as SceneMarker, fragment, signal)
       : await this.processImageForRender(item.data as Image, fragment, signal);
     if (result.postContainer) {
-      this.markItemSeen((item.data as { id: string }).id);
+      this.markItemSeen(item.type, itemId);
     }
     return result;
   }
@@ -4331,7 +4340,7 @@ export class FeedContainer {
     const { markerCount, shortFormCount, imageCount } = counts;
 
     // Merge regular markers, short-form markers, scene previews, and images, then filter seen items
-    const mergedContent = this.filterSeenContent(this.mergeMarkersShortFormAndImages(markers, shortFormMarkers, images, scenePreviewMarkers), append);
+    const mergedContent = this.filterSeenContent(this.mergeMarkersShortFormAndImages(markers, shortFormMarkers, images, scenePreviewMarkers), append, !!currentFilters.savedFilterId);
 
     const expectedLimit = currentFilters.limit || FeedContainer.CONTENT_LOAD_LIMIT;
 
