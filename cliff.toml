@@ -27,6 +27,8 @@ conventional_commits = true
 filter_unconventional = true
 split_commits = false
 commit_parsers = [
+  # Infra scopes never belong in user-facing notes, whatever the type prefix (e.g. "fix(ci): ...")
+  { message = "^[a-z]+\\((ci|build|deps|release)\\)", skip = true },
   { message = "^feat", group = "Features" },
   { message = "^fix", group = "Bug Fixes" },
   { message = "^perf", group = "Performance" },
