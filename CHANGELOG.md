@@ -5,6 +5,24 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [7.19.1] - 2026-10-08
+
+### Bug Fixes
+
+- Move pnpm overrides to pnpm-workspace.yaml so latest pnpm honours them
+
+## [7.19.0] - 2026-10-08
+
+### Features
+
+- Show a what's new dialog once after updating to a newer version
+
+## [7.18.1] - 2026-10-08
+
+### Bug Fixes
+
+- Apply saved image filters as authoritative instead of overriding their criteria
+
 ## [7.18.0] - 2026-10-05
 
 ### Features
