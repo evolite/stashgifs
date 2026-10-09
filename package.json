@@ -12,7 +12,7 @@
     "type-check": "tsc --noEmit"
   },
   "devDependencies": {
-    "typescript": "^6.0.3",
+    "typescript": "^7.0.2",
     "video.js": "^8.24.1",
     "videojs-offset": "^2.1.3"
   }
