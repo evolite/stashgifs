@@ -32,13 +32,15 @@ function addButton() {
   button.id = BUTTON_ID;
   button.dataset.rbEventKey = pluginPath;
   button.className = 'col-4 col-sm-3 col-md-2 col-lg-auto nav-link';
-  button.innerHTML = `
-    <a href="${pluginPath}" class="minimal p-4 p-xl-2 d-flex d-xl-inline-block flex-column justify-content-between align-items-center btn btn-primary" target="_blank">
-      ${HEART_ICON_SVG}
-      <span>GIFs</span>
-    </a>
-  `;
+  // href set via property, not innerHTML: pluginPath comes from the DOM (script src),
+  // so interpolating it into HTML would be an XSS sink (CodeQL js/xss-through-dom).
+  const link = document.createElement('a');
+  link.href = pluginPath;
+  link.className = 'minimal p-4 p-xl-2 d-flex d-xl-inline-block flex-column justify-content-between align-items-center btn btn-primary';
+  link.target = '_blank';
+  link.innerHTML = `${HEART_ICON_SVG}<span>GIFs</span>`;
 
+  button.appendChild(link);
   container.appendChild(button);
 }
 
