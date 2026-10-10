@@ -1,6 +1,6 @@
 name: StashGifs
 description: Social Media style browsing experience
-url: https://codeberg.org/surging9143/stashgifs
+url: https://github.com/evolite/stashgifs
 version: 7.20.1
 ui:
   assets:

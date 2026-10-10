@@ -1,13 +1,18 @@
+name: Release
+
 on:
   push:
     tags:
       - 'v*.*.*'
 
+permissions:
+  contents: write
+
 jobs:
   release:
-    runs-on: orange-runner
+    runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           fetch-depth: 0
           ref: master
@@ -64,8 +69,8 @@ jobs:
 
       - name: Commit version bump
         run: |
-          git config user.email "ci@codeberg.org"
-          git config user.name "CI"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git config user.name "github-actions[bot]"
           git add -f stashgifs/manifest stashgifs/stashgifs.yml package.json src/version.ts CHANGELOG.md
           git diff --staged --quiet || git commit -m "chore(release): bump version to ${{ steps.ver.outputs.version }}"
           git push origin HEAD:master
@@ -84,37 +89,13 @@ jobs:
         id: sha
         run: echo "hash=$(sha256sum stashgifs.zip | cut -d' ' -f1)" >> $GITHUB_OUTPUT
 
-      - name: Delete existing release
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          ID=$(curl -sL \
-            -H "Authorization: token ${{ secrets.CODEBERG_TOKEN }}" \
-            "https://codeberg.org/api/v1/repos/surging9143/stashgifs/releases/tags/${GITHUB_REF_NAME}" \
-            | python3 -c "import sys,json; r=json.load(sys.stdin); print(r.get('id',''))" 2>/dev/null || true)
-          if [ -n "$ID" ]; then
-            curl -sL -X DELETE \
-              -H "Authorization: token ${{ secrets.CODEBERG_TOKEN }}" \
-              "https://codeberg.org/api/v1/repos/surging9143/stashgifs/releases/$ID"
-          fi
-
-      - name: Create release
-        id: release
-        run: |
-          export RELEASE_NOTES=$(git-cliff --tag "${{ github.ref_name }}" --latest --strip all)
-          SHA=$(git rev-parse HEAD)
-          RESP=$(curl -sL -X POST \
-            -H "Authorization: token ${{ secrets.CODEBERG_TOKEN }}" \
-            -H "Content-Type: application/json" \
-            "https://codeberg.org/api/v1/repos/surging9143/stashgifs/releases" \
-            -d "$(node -e "process.stdout.write(JSON.stringify({tag_name:'${{ github.ref_name }}',name:'${{ github.ref_name }}',body:process.env.RELEASE_NOTES,target_commitish:'$SHA',draft:false,prerelease:false,make_latest:'true'}))" )")
-          echo "id=$(echo "$RESP" | python3 -c "import sys,json; print(json.load(sys.stdin)['id'])")" >> $GITHUB_OUTPUT
-
-      - name: Upload zip asset
-        run: |
-          curl -sL -X POST \
-            -H "Authorization: token ${{ secrets.CODEBERG_TOKEN }}" \
-            -H "Content-Type: application/octet-stream" \
-            "https://codeberg.org/api/v1/repos/surging9143/stashgifs/releases/${{ steps.release.outputs.id }}/assets?name=stashgifs.zip" \
-            --data-binary "@stashgifs.zip"
+          NOTES=$(git-cliff --tag "$GITHUB_REF_NAME" --latest --strip all)
+          gh release delete "$GITHUB_REF_NAME" --yes 2>/dev/null || true
+          gh release create "$GITHUB_REF_NAME" stashgifs.zip --title "$GITHUB_REF_NAME" --notes "$NOTES"
 
       - name: Update pages index
         env:
@@ -123,12 +104,12 @@ jobs:
           TAG: ${{ github.ref_name }}
           CODEBERG_TOKEN: ${{ secrets.CODEBERG_TOKEN }}
         run: |
-          git config --global user.email "ci@codeberg.org"
-          git config --global user.name "CI"
+          git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git config --global user.name "github-actions[bot]"
           git clone "https://surging9143:${CODEBERG_TOKEN}@codeberg.org/surging9143/pages.git" /tmp/pages
           export DATE=$(date +"%Y-%m-%d %H:%M:%S")
-          export URL="https://codeberg.org/surging9143/stashgifs/releases/download/${TAG}/stashgifs.zip"
-          python3 .forgejo/update_pages.py
+          export URL="https://github.com/evolite/stashgifs/releases/download/${TAG}/stashgifs.zip"
+          python3 .github/update_pages.py
           cd /tmp/pages
           git add index.yml
           git diff --staged --quiet || git commit -m "Update stashgifs to v${VERSION}"
