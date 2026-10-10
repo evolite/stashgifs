@@ -41,7 +41,7 @@ export const FOOTER_PROMPTS: string[] = [
 /** Feedback/support links — same destinations as the Settings footer. */
 const FEEDBACK_LINKS: ReadonlyArray<readonly [string, string]> = [
   ['💬 Discourse', 'https://discourse.stashapp.cc/t/stashgifs-social-media-style-browsing-experience'],
-  ['💻 Codeberg', 'https://codeberg.org/surging9143/stashgifs'],
+  ['💻 GitHub', 'https://github.com/evolite/stashgifs'],
   ['☕ Coffee', 'https://buymeacoffee.com/evolite'],
 ];
 

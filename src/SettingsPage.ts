@@ -1579,7 +1579,7 @@ export class SettingsPage {
       )
     );
     feedbackLinks.appendChild(
-      createFooterLink('💻 Codeberg', 'https://codeberg.org/surging9143/stashgifs')
+      createFooterLink('💻 GitHub', 'https://github.com/evolite/stashgifs')
     );
     versionFooter.appendChild(feedbackLinks);
 
