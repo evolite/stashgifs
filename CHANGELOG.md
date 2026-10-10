@@ -12,10 +12,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Stop recency bias hiding saved filter results and cross-type seen id collisions
 - Convert saved filter criteria to API input shapes so saved image filters stop failing
 
-### Refactoring
-
-- Split saved filter criterion conversion to satisfy sonar complexity limit
-
 ## [7.20.0] - 2026-10-08
 
 ### Features
@@ -48,10 +44,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Bug Fixes
 
 - Avoid nested template literal in capStreamUrl
-
-### Documentation
-
-- Remove stale comment about client-side marker tag filtering
 
 ## [7.17.0] - 2026-08-30
 
@@ -114,15 +106,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Make hover card rating effects always-on, drop redundant text row
 - Add scene previews as a feed content type
 
-### Refactoring
-
-- Reuse the avatar chip's tier badge SVG in the hover overlay
-- Dedupe performer rating-color resolution
-- Dedupe the tag/performer overflow toggle pill
-- Dedupe image tag/performer update mutations
-- Dedupe scene-count query in shuffle/short-form page math
-- Dedupe marker-result finalization in FeedContainer loaders
-
 ## [7.13.1] - 2026-08-05
 
 ### Features
@@ -184,10 +167,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Anchor video progress bar to player container instead of header
 
-### Documentation
-
-- Tidy README
-
 ## [7.10.6] - 2026-07-16
 
 ### Bug Fixes
@@ -245,12 +224,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Show an end-of-feed card with search hint and feedback links
 - Save and restore filter chip sets as named saved searches
 
-## [7.8.4] - 2026-06-30
-
-### Documentation
-
-- Note tag-matching and single-source tagging tip in tag settings tooltips
-
 ## [7.8.3] - 2026-06-30
 
 ### Bug Fixes
@@ -281,10 +254,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Accent tag hash, collapse overflow tags, reel footer gradient
 
-### Refactoring
-
-- Remove isReelMode flag, treat reel layout as unconditional
-
 ## [7.6.1] - 2026-06-29
 
 ### Bug Fixes
@@ -302,21 +271,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Extend tag filtering to include scene and performer tags
 
-### Refactoring
-
-- Remove speculative VHS pre-cleanup from destroy()
-- Remove console.error intercept for postMessage noise
-
 ## [7.5.2] - 2026-06-28
 
 ### Bug Fixes
 
 - Suppress VHS worker postMessage port error and abort in-flight segment fetches before dispose
 - Add birthdate to image performer mapping and suppress Apollo port errors
-
-### Refactoring
-
-- Extract maybeEnrichPerformerTags to reduce cognitive complexity in fetchSceneMarkers
 
 ## [7.5.1] - 2026-06-28
 
@@ -333,10 +293,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Features
 
 - Filter markers by scene tags when searching by tag
-
-### Refactoring
-
-- Fix SonarQube issues in FeedContainer and SettingsPage
 
 ## [7.4.0] - 2026-06-27
 
@@ -364,20 +320,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Redesign settings into 3 tabs (Feed / Appearance / Discovery)
 - Move Filters to its own settings tab
 - Group HD Video and behavior toggles in a Behavior box on Feed tab
-
-### Performance
-
-- Skip feed reload when settings haven't actually changed
-
-### Refactoring
-
-- Remove dead settings and consolidate short-form toggle
-- Remove redundant Filters box and title inside Filters tab
-- Restore Filters box without redundant title
-- Inline label+input layout for Excluded Tags, Recency Bias, Content Limit
-- Inline label+input layout for File types sub-row
-- Inline label+input layout for all Whisparr settings
-- Tooltips on label hover instead of (i) buttons; file types without dots
 
 ## [7.1.7] - 2026-06-21
 
@@ -449,24 +391,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Replace NativeVideoPlayer with video.js engine for codec/HLS support
 - Add draggable accent progress bar to video posts
 
-### Performance
-
-- Load videos only when visible and stop re-downloading on scroll
-- Remove posters and prefetching, simplify marker-clip loading
-- Cut ~200ms of artificial stalls from HD upgrade path
-- Preload the next reel card for instant playback
-
-### Refactoring
-
-- Collapse play orchestration to single reconcile() function
-- Replace JS card-snapping with native CSS scroll-snap
-- Replace VisibilityManager/AudioManager with reel-only architecture
-- Apply dead-code cleanup from post-reel-only review
-- Simplify playback layer and harden reel video stability
-- Extract shared clip-window computation in VideoJsPlayer
-- Eliminate remaining code duplication across the project
-- Clear SonarQube violations from recent changes
-
 ## [6.7.1] - 2026-05-31
 
 ### Bug Fixes
@@ -477,11 +401,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Resolve 8 state/memory/cleanup issues from second Opus review
 - Resolve memory leaks, race conditions, and stale state from Opus audit
 - Replace negated condition with early-break in performer cache eviction
-
-### Refactoring
-
-- Address Opus code review findings in FeedContainer
-- Address Opus LOW findings in FeedContainer
 
 ## [6.7.0] - 2026-05-30
 
@@ -500,10 +419,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Hide discovery panel and button on mobile
 - Add auto-hide search bar setting, default enabled
 
-### Refactoring
-
-- Unify discovery panel look with feed
-
 ## [6.6.0] - 2026-05-28
 
 ### Bug Fixes
@@ -516,10 +431,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Add reel auto-scroll with per-loop advance
 - Auto-advance image posts after 5s dwell in reel autoscroll
-
-### Refactoring
-
-- Resolve SonarQube findings
 
 ## [6.5.0] - 2026-05-27
 
@@ -561,20 +472,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Enforce AND for multi-performer filter and natural-language pill layout
 - Improve Random settings UX and toggle accent color
 
-### Refactoring
-
-- Extract pill group methods to reduce cognitive complexity
-
 ## [6.3.0] - 2026-05-19
 
 ### Features
 
 - Restrict marker video playback and seek bar to marker duration
 - Extend include subtags toggle to also traverse child studio hierarchy
-
-### Refactoring
-
-- Group count params in calculateHasMoreForMixedContent to satisfy S107
 
 ## [6.2.0] - 2026-05-18
 
@@ -605,10 +508,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Add studio chips with hover overlay to feed cards
 
-### Refactoring
-
-- Extract chip helpers to eliminate BasePost duplication
-
 ## [6.1.1] - 2026-05-18
 
 ### Bug Fixes
@@ -634,9 +533,5 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Display marker tags as chips next to performers in footer
 - Show tags and saved filters on search bar focus; update API to support empty tag search
 - Filter tag suggestions to only show tags that have scene markers
-
-### Refactoring
-
-- Rename UI branding from Stash TV to Stashgifs across UI and docs
 
 
