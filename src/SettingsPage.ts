@@ -249,10 +249,12 @@ export class SettingsPage {
     const layoutTabButton = createTabButton('Feed');
     const filtersTabButton = createTabButton('Filters');
     const contentTabButton = createTabButton('Appearance');
+    const postTabButton = createTabButton('Post');
     const whisparrTabButton = createTabButton('Discovery');
     tabBar.appendChild(layoutTabButton);
     tabBar.appendChild(filtersTabButton);
     tabBar.appendChild(contentTabButton);
+    tabBar.appendChild(postTabButton);
     tabBar.appendChild(whisparrTabButton);
     modal.appendChild(tabBar);
 
@@ -267,19 +269,23 @@ export class SettingsPage {
     filtersContent.style.display = 'none';
     const contentTabContent = document.createElement('div');
     contentTabContent.style.display = 'none';
+    const postContent = document.createElement('div');
+    postContent.style.display = 'none';
     const whisparrContent = document.createElement('div');
     whisparrContent.style.display = 'none';
 
-    const setActiveTab = (active: 'layout' | 'filters' | 'content' | 'whisparr') => {
+    const setActiveTab = (active: 'layout' | 'filters' | 'content' | 'post' | 'whisparr') => {
       layoutContent.style.display     = active === 'layout'   ? 'block' : 'none';
       filtersContent.style.display    = active === 'filters'  ? 'block' : 'none';
       contentTabContent.style.display = active === 'content'  ? 'block' : 'none';
+      postContent.style.display       = active === 'post'     ? 'block' : 'none';
       whisparrContent.style.display   = active === 'whisparr' ? 'block' : 'none';
 
       const tabs = [
         { btn: layoutTabButton,   key: 'layout'   },
         { btn: filtersTabButton,  key: 'filters'  },
         { btn: contentTabButton,  key: 'content'  },
+        { btn: postTabButton,     key: 'post'     },
         { btn: whisparrTabButton, key: 'whisparr' },
       ];
       for (const { btn, key } of tabs) {
@@ -293,12 +299,14 @@ export class SettingsPage {
     layoutTabButton.addEventListener('click',   () => setActiveTab('layout'));
     filtersTabButton.addEventListener('click',  () => setActiveTab('filters'));
     contentTabButton.addEventListener('click',  () => setActiveTab('content'));
+    postTabButton.addEventListener('click',     () => setActiveTab('post'));
     whisparrTabButton.addEventListener('click', () => setActiveTab('whisparr'));
     setActiveTab('layout');
 
     contentWrapper.appendChild(layoutContent);
     contentWrapper.appendChild(filtersContent);
     contentWrapper.appendChild(contentTabContent);
+    contentWrapper.appendChild(postContent);
     contentWrapper.appendChild(whisparrContent);
     modal.appendChild(contentWrapper);
 
@@ -624,22 +632,31 @@ export class SettingsPage {
     contentTabContent.appendChild(themeSection);
 
     // Layout Settings Section
-    const layoutSection = document.createElement('div');
-    layoutSection.style.marginBottom = '24px';
-    layoutSection.style.border = `1px solid ${THEME.colors.border}`;
-    layoutSection.style.borderRadius = THEME.radius.card;
-    layoutSection.style.padding = '16px';
+    // ── Post tab: each group is its own bordered box ───────────────────────
+    const createPostBox = (title: string): HTMLElement => {
+      const box = document.createElement('div');
+      box.style.marginBottom = '24px';
+      box.style.border = `1px solid ${THEME.colors.border}`;
+      box.style.borderRadius = THEME.radius.card;
+      box.style.padding = '16px';
+      const heading = document.createElement('h3');
+      heading.textContent = title;
+      heading.style.margin = '0 0 16px 0';
+      heading.style.color = THEME.colors.textPrimary;
+      heading.style.fontSize = THEME.typography.sizeTitle;
+      heading.style.fontWeight = THEME.typography.weightTitle;
+      box.appendChild(heading);
+      const body = document.createElement('div');
+      box.appendChild(body);
+      postContent.appendChild(box);
+      return body;
+    };
+    const headerGroup = createPostBox('Header');
+    const buttonsGroup = createPostBox('Actions');
+    const performersGroup = createPostBox('Performers');
 
-    const layoutSectionTitle = document.createElement('h3');
-    layoutSectionTitle.textContent = 'Post';
-    layoutSectionTitle.style.margin = '0 0 16px 0';
-    layoutSectionTitle.style.color = THEME.colors.textPrimary;
-    layoutSectionTitle.style.fontSize = THEME.typography.sizeTitle;
-    layoutSectionTitle.style.fontWeight = THEME.typography.weightTitle;
-    layoutSection.appendChild(layoutSectionTitle);
-
-    // Indented sub-groups inside the Post section (heading + indented rows, like Content Types nesting)
-    const createSubGroup = (title: string, parent: HTMLElement = layoutSection): HTMLElement => {
+    // Indented sub-group (heading + indented rows, like Content Types nesting)
+    const createSubGroup = (title: string, parent: HTMLElement): HTMLElement => {
       const group = document.createElement('div');
       group.style.marginBottom = '16px';
       const heading = document.createElement('div');
@@ -655,9 +672,6 @@ export class SettingsPage {
       parent.appendChild(group);
       return body;
     };
-    const performersGroup = createSubGroup('Performers');
-    const uiElementsGroup = createSubGroup('Header');
-    const buttonsGroup = createSubGroup('Buttons');
 
 
     const reelAutoScrollContainer = document.createElement('div');
@@ -846,7 +860,7 @@ export class SettingsPage {
       () => this.saveSettings()
     );
     sceneTitleContainer.appendChild(sceneTitleToggleContainer);
-    uiElementsGroup.appendChild(sceneTitleContainer);
+    headerGroup.appendChild(sceneTitleContainer);
     (this as any).sceneTitleToggle = sceneTitleToggle;
 
     const tagLimitRow = document.createElement('div');
@@ -863,7 +877,7 @@ export class SettingsPage {
       (tagDisplayLimitInput as any).saveTimeout = setTimeout(() => { this.saveSettings(); }, 500);
     });
     tagLimitRow.appendChild(tagDisplayLimitInput);
-    uiElementsGroup.appendChild(tagLimitRow);
+    headerGroup.appendChild(tagLimitRow);
     (this as any).tagDisplayLimitInput = tagDisplayLimitInput;
 
     const performerLimitRow = document.createElement('div');
@@ -1115,7 +1129,6 @@ export class SettingsPage {
 
     layoutContent.appendChild(behaviorSection);
     layoutContent.appendChild(contentTypesSection);
-    contentTabContent.appendChild(layoutSection);
 
     // ── StashDB Discovery Section ──────────────────────────────────────────
     const discoverySection = document.createElement('div');
