@@ -638,22 +638,21 @@ export class SettingsPage {
     layoutSectionTitle.style.fontWeight = THEME.typography.weightTitle;
     layoutSection.appendChild(layoutSectionTitle);
 
-    // Collapsible sub-groups inside the Post section (native <details> — no JS state needed)
+    // Indented sub-groups inside the Post section (heading + indented rows, like Content Types nesting)
     const createSubGroup = (title: string): HTMLElement => {
-      const details = document.createElement('details');
-      details.style.marginBottom = '12px';
-      const summary = document.createElement('summary');
-      summary.textContent = title;
-      summary.style.cursor = 'pointer';
-      summary.style.color = THEME.colors.textPrimary;
-      summary.style.fontSize = THEME.typography.sizeBody;
-      summary.style.fontWeight = THEME.typography.weightTitle;
-      summary.style.padding = '4px 0';
-      details.appendChild(summary);
+      const group = document.createElement('div');
+      group.style.marginBottom = '16px';
+      const heading = document.createElement('div');
+      heading.textContent = title;
+      heading.style.color = THEME.colors.textSecondary;
+      heading.style.fontSize = THEME.typography.sizeBody;
+      heading.style.fontWeight = THEME.typography.weightTitle;
+      heading.style.marginBottom = '8px';
+      group.appendChild(heading);
       const body = document.createElement('div');
-      body.style.paddingTop = '8px';
-      details.appendChild(body);
-      layoutSection.appendChild(details);
+      body.style.paddingLeft = '12px';
+      group.appendChild(body);
+      layoutSection.appendChild(group);
       return body;
     };
     const performersGroup = createSubGroup('Performers');
