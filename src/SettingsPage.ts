@@ -638,6 +638,28 @@ export class SettingsPage {
     layoutSectionTitle.style.fontWeight = THEME.typography.weightTitle;
     layoutSection.appendChild(layoutSectionTitle);
 
+    // Collapsible sub-groups inside the Post section (native <details> — no JS state needed)
+    const createSubGroup = (title: string): HTMLElement => {
+      const details = document.createElement('details');
+      details.style.marginBottom = '12px';
+      const summary = document.createElement('summary');
+      summary.textContent = title;
+      summary.style.cursor = 'pointer';
+      summary.style.color = THEME.colors.textPrimary;
+      summary.style.fontSize = THEME.typography.sizeBody;
+      summary.style.fontWeight = THEME.typography.weightTitle;
+      summary.style.padding = '4px 0';
+      details.appendChild(summary);
+      const body = document.createElement('div');
+      body.style.paddingTop = '8px';
+      details.appendChild(body);
+      layoutSection.appendChild(details);
+      return body;
+    };
+    const performersGroup = createSubGroup('Performers');
+    const uiElementsGroup = createSubGroup('UI Elements');
+    const buttonsGroup = createSubGroup('Buttons');
+
 
     const reelAutoScrollContainer = document.createElement('div');
     reelAutoScrollContainer.style.display = 'flex';
@@ -721,7 +743,7 @@ export class SettingsPage {
       () => this.saveSettings()
     );
     verifiedCheckmarksContainer.appendChild(verifiedCheckmarksToggleContainer);
-    layoutSection.appendChild(verifiedCheckmarksContainer);
+    performersGroup.appendChild(verifiedCheckmarksContainer);
     (this as any).showVerifiedCheckmarksToggle = verifiedCheckmarksToggle;
 
     const productionAgeContainer = document.createElement('div');
@@ -743,7 +765,7 @@ export class SettingsPage {
     );
     productionAgeContainer.appendChild(productionAgeToggleContainer);
 
-    layoutSection.appendChild(productionAgeContainer);
+    performersGroup.appendChild(productionAgeContainer);
     (this as any).showProductionAgeToggle = productionAgeToggle;
 
     const studioChipsContainer = document.createElement('div');
@@ -764,7 +786,7 @@ export class SettingsPage {
       () => this.saveSettings()
     );
     studioChipsContainer.appendChild(studioChipsToggleContainer);
-    layoutSection.appendChild(studioChipsContainer);
+    performersGroup.appendChild(studioChipsContainer);
     (this as any).showStudioChipsToggle = studioChipsToggle;
 
     const performerEmbellishmentContainer = document.createElement('div');
@@ -785,7 +807,7 @@ export class SettingsPage {
       () => this.saveSettings()
     );
     performerEmbellishmentContainer.appendChild(performerEmbellishmentToggleContainer);
-    layoutSection.appendChild(performerEmbellishmentContainer);
+    performersGroup.appendChild(performerEmbellishmentContainer);
     (this as any).showPerformerEmbellishmentToggle = performerEmbellishmentToggle;
 
     const genderToggles: Array<{ key: string; label: string; description: string; checked: boolean }> = [
@@ -802,7 +824,7 @@ export class SettingsPage {
       row.appendChild(buildInfoLabel(label, description));
       const { container: toggleContainer, input } = this.createToggleSwitch(checked, () => this.saveSettings());
       row.appendChild(toggleContainer);
-      layoutSection.appendChild(row);
+      performersGroup.appendChild(row);
       (this as any)[key] = input;
     }
 
@@ -824,7 +846,7 @@ export class SettingsPage {
       () => this.saveSettings()
     );
     sceneTitleContainer.appendChild(sceneTitleToggleContainer);
-    layoutSection.appendChild(sceneTitleContainer);
+    uiElementsGroup.appendChild(sceneTitleContainer);
     (this as any).sceneTitleToggle = sceneTitleToggle;
 
     const tagLimitRow = document.createElement('div');
@@ -841,7 +863,7 @@ export class SettingsPage {
       (tagDisplayLimitInput as any).saveTimeout = setTimeout(() => { this.saveSettings(); }, 500);
     });
     tagLimitRow.appendChild(tagDisplayLimitInput);
-    layoutSection.appendChild(tagLimitRow);
+    uiElementsGroup.appendChild(tagLimitRow);
     (this as any).tagDisplayLimitInput = tagDisplayLimitInput;
 
     const performerLimitRow = document.createElement('div');
@@ -858,7 +880,7 @@ export class SettingsPage {
       (performerDisplayLimitInput as any).saveTimeout = setTimeout(() => { this.saveSettings(); }, 500);
     });
     performerLimitRow.appendChild(performerDisplayLimitInput);
-    layoutSection.appendChild(performerLimitRow);
+    performersGroup.appendChild(performerLimitRow);
     (this as any).performerDisplayLimitInput = performerDisplayLimitInput;
 
     const appendButtonToggle = (labelText: string, tooltip: string, checked: boolean, refKey: string): void => {
@@ -870,7 +892,7 @@ export class SettingsPage {
       container.appendChild(buildInfoLabel(labelText, tooltip));
       const { container: toggleContainer, input } = this.createToggleSwitch(checked, () => this.saveSettings());
       container.appendChild(toggleContainer);
-      layoutSection.appendChild(container);
+      buttonsGroup.appendChild(container);
       (this as any)[refKey] = input;
     };
     appendButtonToggle(
