@@ -24,6 +24,7 @@ export const SceneFields = `
     performers {
       id
       name
+      gender
       favorite
       image_path
       birthdate

@@ -788,6 +788,24 @@ export class SettingsPage {
     layoutSection.appendChild(performerEmbellishmentContainer);
     (this as any).showPerformerEmbellishmentToggle = performerEmbellishmentToggle;
 
+    const genderToggles: Array<{ key: string; label: string; description: string; checked: boolean }> = [
+      { key: 'showMalePerformersToggle', label: 'Male Performers', description: 'Show name chips and badges for male performers.', checked: this.settings.showMalePerformers !== false },
+      { key: 'showFemalePerformersToggle', label: 'Female Performers', description: 'Show name chips and badges for female performers.', checked: this.settings.showFemalePerformers !== false },
+      { key: 'showOtherGenderPerformersToggle', label: 'Other Genders', description: 'Show name chips and badges for performers of other genders (trans, intersex, non-binary). Performers without a gender set are always shown.', checked: this.settings.showOtherGenderPerformers !== false },
+    ];
+    for (const { key, label, description, checked } of genderToggles) {
+      const row = document.createElement('div');
+      row.style.display = 'flex';
+      row.style.justifyContent = 'space-between';
+      row.style.alignItems = 'center';
+      row.style.marginBottom = '16px';
+      row.appendChild(buildInfoLabel(label, description));
+      const { container: toggleContainer, input } = this.createToggleSwitch(checked, () => this.saveSettings());
+      row.appendChild(toggleContainer);
+      layoutSection.appendChild(row);
+      (this as any)[key] = input;
+    }
+
     const sceneTitleContainer = document.createElement('div');
     sceneTitleContainer.style.display = 'flex';
     sceneTitleContainer.style.justifyContent = 'space-between';
@@ -1869,6 +1887,7 @@ export class SettingsPage {
       'portraitToggle', 'landscapeToggle',
       'themeBackgroundInput', 'themePrimaryInput', 'themeSecondaryInput', 'themeAccentInput',
       'showVerifiedCheckmarksToggle', 'showProductionAgeToggle', 'showStudioChipsToggle', 'showPerformerEmbellishmentToggle', 'sceneTitleToggle', 'showSceneTagsToggle', 'showPerformerTagsToggle',
+      'showMalePerformersToggle', 'showFemalePerformersToggle', 'showOtherGenderPerformersToggle',
       'showBookmarkToggle', 'showOCountToggle', 'showRatingToggle', 'ratingHotkeysToggle', 'showViewCountToggle',
       'discoveryPanelToggle', 'excludedTagsInput',
       'includeSubtagsToggle', 'trackWatchHistoryToggle', 'seenHistorySizeInput', 'contentLimitInput', 'tagDisplayLimitInput',
@@ -1938,6 +1957,9 @@ export class SettingsPage {
       showProductionAge: inputs.showProductionAgeToggle.checked,
       showStudioChips: inputs.showStudioChipsToggle.checked,
       showPerformerEmbellishment: inputs.showPerformerEmbellishmentToggle.checked,
+      showMalePerformers: inputs.showMalePerformersToggle.checked,
+      showFemalePerformers: inputs.showFemalePerformersToggle.checked,
+      showOtherGenderPerformers: inputs.showOtherGenderPerformersToggle.checked,
       showSceneTitle: inputs.sceneTitleToggle.checked,
       showSceneTags: inputs.showSceneTagsToggle.checked,
       showPerformerTags: inputs.showPerformerTagsToggle.checked,

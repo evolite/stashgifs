@@ -45,6 +45,7 @@ export interface Performer {
   id: string;
   name: string;
   image_path?: string;
+  gender?: string;
   favorite?: boolean;
   birthdate?: string;
   stash_ids?: Array<{ stash_id: string; endpoint: string }>;
@@ -142,6 +143,9 @@ export interface FeedSettings {
   performerDisplayLimit?: number; // Max performers shown with full name before collapsing into a • • • button that expands to portrait-only chips (default 3)
   showStudioChips?: boolean; // Show studio logo + name chips alongside performer chips, default: true
   showPerformerEmbellishment?: boolean; // Show laurel-wreath tier badge (from performer rating) on avatars, default: false
+  showMalePerformers?: boolean; // Show male performer chips, default: true
+  showFemalePerformers?: boolean; // Show female performer chips, default: true
+  showOtherGenderPerformers?: boolean; // Show non-male/female performer chips, default: true
   enableDiscoveryPanel?: boolean; // Show StashDB discovery sidebar panel, default: true
   discoveryPanelSize?: number; // Panel width in px (1–1000), default 260
   discoverySceneOrder?: 'latest' | 'random' | 'trending'; // Scene selection: latest (default), random, or trending

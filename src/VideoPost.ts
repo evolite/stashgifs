@@ -146,9 +146,9 @@ export class VideoPost extends VideoPostBase {
   }
 
   private buildPerformersSection(): HTMLElement {
-    const performers = (this.data.marker.scene.performers ?? []).filter(
+    const performers = this.filterPerformersByGender((this.data.marker.scene.performers ?? []).filter(
       (p) => p?.id && p?.name
-    );
+    ));
     const performersSection = this.createPerformersContainer(performers.length);
     if (performers.length > 0) {
       this.appendPerformerChips(performersSection, performers);

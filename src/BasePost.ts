@@ -29,6 +29,9 @@ export interface BasePostOptions {
   showProductionAge?: boolean;
   showStudioChips?: boolean;
   showPerformerEmbellishment?: boolean;
+  showMalePerformers?: boolean;
+  showFemalePerformers?: boolean;
+  showOtherGenderPerformers?: boolean;
   showSceneTitle?: boolean;
   showPerformerTags?: boolean;
   showSceneTags?: boolean;
@@ -138,6 +141,9 @@ export abstract class BasePost {
   protected showProductionAge: boolean = false;
   protected showStudioChips: boolean = true;
   protected showPerformerEmbellishment: boolean = false;
+  protected showMalePerformers: boolean = true;
+  protected showFemalePerformers: boolean = true;
+  protected showOtherGenderPerformers: boolean = true;
   protected showSceneTitle: boolean = false;
   protected showPerformerTags: boolean = false;
   protected showSceneTags: boolean = false;
@@ -193,6 +199,9 @@ export abstract class BasePost {
     this.showProductionAge = options?.showProductionAge === true;
     this.showStudioChips = options?.showStudioChips !== false;
     this.showPerformerEmbellishment = options?.showPerformerEmbellishment === true;
+    this.showMalePerformers = options?.showMalePerformers !== false;
+    this.showFemalePerformers = options?.showFemalePerformers !== false;
+    this.showOtherGenderPerformers = options?.showOtherGenderPerformers !== false;
     this.showSceneTitle = options?.showSceneTitle === true;
     this.showPerformerTags = options?.showPerformerTags === true;
     this.showSceneTags = options?.showSceneTags === true;
@@ -618,6 +627,24 @@ export abstract class BasePost {
   public setShowPerformerEmbellishment(show: boolean): void {
     this.showPerformerEmbellishment = show;
     this.refreshHeader();
+  }
+
+  public setPerformerGenderVisibility(male: boolean, female: boolean, other: boolean): void {
+    this.showMalePerformers = male;
+    this.showFemalePerformers = female;
+    this.showOtherGenderPerformers = other;
+    this.refreshHeader();
+  }
+
+  /** Filter performer chips by the gender visibility settings. Unknown/unset gender is always shown. */
+  protected filterPerformersByGender(performers: Performer[]): Performer[] {
+    return performers.filter((p) => {
+      const g = p.gender?.toUpperCase();
+      if (!g) return true;
+      if (g === 'MALE') return this.showMalePerformers;
+      if (g === 'FEMALE') return this.showFemalePerformers;
+      return this.showOtherGenderPerformers;
+    });
   }
 
   public setShowSceneTitle(show: boolean): void {
@@ -2144,7 +2171,7 @@ export abstract class BasePost {
     const header = this.createHeaderContainer();
 
     // Performer chips section — filter to valid entries (id + name required)
-    const performers = (options.performers ?? []).filter((p) => p?.id && p?.name);
+    const performers = this.filterPerformersByGender((options.performers ?? []).filter((p) => p?.id && p?.name));
     const performersSection = this.createPerformersContainer(performers.length);
     if (performers.length > 0) {
       this.appendPerformerChips(performersSection, performers);

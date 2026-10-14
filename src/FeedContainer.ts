@@ -49,6 +49,9 @@ const DEFAULT_SETTINGS: FeedSettings = {
   showProductionAge: false,
   showStudioChips: true,
   showPerformerEmbellishment: false,
+  showMalePerformers: true,
+  showFemalePerformers: true,
+  showOtherGenderPerformers: true,
   showSceneTitle: false,
   excludedTagNames: ['VR'],
   imagesInGalleryOnly: false,
@@ -647,6 +650,16 @@ export class FeedContainer {
     this.forEachPost(
       newSettings.showPerformerEmbellishment !== undefined,
       p => p.setShowPerformerEmbellishment?.(updatedSettings.showPerformerEmbellishment === true)
+    );
+    this.forEachPost(
+      newSettings.showMalePerformers !== undefined
+        || newSettings.showFemalePerformers !== undefined
+        || newSettings.showOtherGenderPerformers !== undefined,
+      p => p.setPerformerGenderVisibility?.(
+        updatedSettings.showMalePerformers !== false,
+        updatedSettings.showFemalePerformers !== false,
+        updatedSettings.showOtherGenderPerformers !== false
+      )
     );
     this.forEachPost(
       newSettings.showSceneTitle !== undefined && updatedSettings.showSceneTitle !== previousShowSceneTitle,
@@ -3546,6 +3559,9 @@ export class FeedContainer {
       showProductionAge: this.settings.showProductionAge === true,
       showStudioChips: this.settings.showStudioChips !== false,
       showPerformerEmbellishment: this.settings.showPerformerEmbellishment === true,
+      showMalePerformers: this.settings.showMalePerformers !== false,
+      showFemalePerformers: this.settings.showFemalePerformers !== false,
+      showOtherGenderPerformers: this.settings.showOtherGenderPerformers !== false,
       showSceneTitle: this.settings.showSceneTitle === true,
       showPerformerTags: this.settings.showPerformerTags === true,
       showSceneTags: this.settings.showSceneTags === true,
