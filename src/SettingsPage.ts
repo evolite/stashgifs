@@ -639,7 +639,7 @@ export class SettingsPage {
     layoutSection.appendChild(layoutSectionTitle);
 
     // Indented sub-groups inside the Post section (heading + indented rows, like Content Types nesting)
-    const createSubGroup = (title: string): HTMLElement => {
+    const createSubGroup = (title: string, parent: HTMLElement = layoutSection): HTMLElement => {
       const group = document.createElement('div');
       group.style.marginBottom = '16px';
       const heading = document.createElement('div');
@@ -652,11 +652,11 @@ export class SettingsPage {
       const body = document.createElement('div');
       body.style.paddingLeft = '12px';
       group.appendChild(body);
-      layoutSection.appendChild(group);
+      parent.appendChild(group);
       return body;
     };
     const performersGroup = createSubGroup('Performers');
-    const uiElementsGroup = createSubGroup('UI Elements');
+    const uiElementsGroup = createSubGroup('Header');
     const buttonsGroup = createSubGroup('Buttons');
 
 
@@ -732,7 +732,7 @@ export class SettingsPage {
 
     verifiedCheckmarksContainer.appendChild(
       buildInfoLabel(
-        'Display Verified Badge',
+        'Verified Badge',
         'Shows a verified badge on performer chips when they have a Stash ID.'
       )
     );
@@ -753,7 +753,7 @@ export class SettingsPage {
 
     productionAgeContainer.appendChild(
       buildInfoLabel(
-        'Performer Age',
+        'Age',
         'Shows the performer\'s age next to their name. Shows age at time of production (marked with *) when a date is available, otherwise current age.'
       )
     );
@@ -775,7 +775,7 @@ export class SettingsPage {
 
     studioChipsContainer.appendChild(
       buildInfoLabel(
-        'Studio Chips',
+        'Studio',
         'Shows the studio logo and name alongside performer chips.'
       )
     );
@@ -796,7 +796,7 @@ export class SettingsPage {
 
     performerEmbellishmentContainer.appendChild(
       buildInfoLabel(
-        'Performer Tier Badges',
+        'Tier Badges',
         'Shows a laurel-wreath tier badge on performer avatars, based on their rating.'
       )
     );
@@ -809,10 +809,11 @@ export class SettingsPage {
     performersGroup.appendChild(performerEmbellishmentContainer);
     (this as any).showPerformerEmbellishmentToggle = performerEmbellishmentToggle;
 
+    const displayGroup = createSubGroup('Display', performersGroup);
     const genderToggles: Array<{ key: string; label: string; description: string; checked: boolean }> = [
-      { key: 'showMalePerformersToggle', label: 'Male Performers', description: 'Show name chips and badges for male performers.', checked: this.settings.showMalePerformers !== false },
-      { key: 'showFemalePerformersToggle', label: 'Female Performers', description: 'Show name chips and badges for female performers.', checked: this.settings.showFemalePerformers !== false },
-      { key: 'showOtherGenderPerformersToggle', label: 'Other Genders', description: 'Show name chips and badges for performers of other genders (trans, intersex, non-binary). Performers without a gender set are always shown.', checked: this.settings.showOtherGenderPerformers !== false },
+      { key: 'showMalePerformersToggle', label: 'Male', description: 'Show name chips and badges for male performers.', checked: this.settings.showMalePerformers !== false },
+      { key: 'showFemalePerformersToggle', label: 'Female', description: 'Show name chips and badges for female performers.', checked: this.settings.showFemalePerformers !== false },
+      { key: 'showOtherGenderPerformersToggle', label: 'Other', description: 'Show name chips and badges for performers of other genders (trans, intersex, non-binary). Performers without a gender set are always shown.', checked: this.settings.showOtherGenderPerformers !== false },
     ];
     for (const { key, label, description, checked } of genderToggles) {
       const row = document.createElement('div');
@@ -823,7 +824,7 @@ export class SettingsPage {
       row.appendChild(buildInfoLabel(label, description));
       const { container: toggleContainer, input } = this.createToggleSwitch(checked, () => this.saveSettings());
       row.appendChild(toggleContainer);
-      performersGroup.appendChild(row);
+      displayGroup.appendChild(row);
       (this as any)[key] = input;
     }
 
@@ -835,7 +836,7 @@ export class SettingsPage {
 
     sceneTitleContainer.appendChild(
       buildInfoLabel(
-        'Scene Title',
+        'Title',
         'Shows the scene or image title above performers in each post.'
       )
     );
@@ -867,7 +868,7 @@ export class SettingsPage {
 
     const performerLimitRow = document.createElement('div');
     performerLimitRow.style.cssText = 'display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;';
-    performerLimitRow.appendChild(buildInfoLabel('Performer Limit', 'Max number of performers shown with full name before collapsing into a • • • button; expanding shows the rest as portrait-only chips.'));
+    performerLimitRow.appendChild(buildInfoLabel('Limit', 'Max number of performers shown with full name before collapsing into a • • • button; expanding shows the rest as portrait-only chips.'));
     const performerDisplayLimitInput = document.createElement('input');
     performerDisplayLimitInput.type = 'number';
     performerDisplayLimitInput.value = String(this.settings.performerDisplayLimit ?? 3);
@@ -895,25 +896,25 @@ export class SettingsPage {
       (this as any)[refKey] = input;
     };
     appendButtonToggle(
-      'Show Bookmark Button',
+      'Bookmark',
       'Show a bookmark button to add the scene to your "Stashgifs bookmark" tag in Stash.',
       this.settings.showBookmarkButton === true,
       'showBookmarkToggle',
     );
     appendButtonToggle(
-      'Show O-Count Button',
+      'O-Count',
       'Show the O-count button in the post button group.',
       this.settings.showOCountButton !== false,
       'showOCountToggle',
     );
     appendButtonToggle(
-      'Show View Count',
+      'View Count',
       'Show the view-count badge in the post button group.',
       this.settings.showViewCountBadge !== false,
       'showViewCountToggle',
     );
     appendButtonToggle(
-      'Show Rating Button',
+      'Rating',
       'Show the star rating control in the post button group.',
       this.settings.showRatingButton !== false,
       'showRatingToggle',
