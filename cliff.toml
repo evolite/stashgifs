@@ -30,7 +30,7 @@ commit_parsers = [
   # Infra scopes never belong in user-facing notes, whatever the type prefix (e.g. "fix(ci): ...")
   { message = "^[a-z]+\\((ci|build|deps|release)\\)", skip = true },
   { message = "^feat", group = "Features" },
-  { message = "^fix", group = "Bug Fixes" },
+  { message = "^fix", skip = true },
   { message = "^perf", skip = true },
   { message = "^refactor", skip = true },
   { message = "^docs", skip = true },
