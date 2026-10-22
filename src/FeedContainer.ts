@@ -6,6 +6,17 @@
 import { SceneMarker, FilterOptions, FeedSettings, VideoPostData, ImagePostData, ImageVideoPostData, Image, SavedSearch, DateRangeFilter, SavedFilterMode } from './types.js';
 
 type SavedFilter = { id: string; name: string; mode: SavedFilterMode };
+
+// Serializable snapshot of the interactive filter state, stored in history.state
+// so browser back/forward steps through filter changes.
+interface FilterSnapshot {
+  tags: [number, string][];
+  performers: [number, string][];
+  studios: [number, string][];
+  markerName?: string;
+  dateRange?: DateRangeFilter;
+  savedFilter?: SavedFilter;
+}
 import { StashAPI, generateRandomSortSeed } from './StashAPI.js';
 import { PluginSettingsManager } from './PluginSettingsManager.js';
 import { VideoPost } from './VideoPost.js';
@@ -146,6 +157,8 @@ export class FeedContainer {
   private postsContainer!: HTMLElement;
   private headerBar?: HTMLElement;
   private selectedSavedFilter?: SavedFilter;
+  private lastSnapshotJson = '';
+  private suppressHistoryPush = false;
   private preloadedTags: Array<{ id: string; name: string }> = [];
   private preloadedPerformers: Array<{ id: string; name: string; image_path?: string }> = [];
   private isPreloading: boolean = false;
@@ -1349,6 +1362,7 @@ export class FeedContainer {
     this.closeSuggestions();
     updateSearchBarDisplay();
     this.currentFilters = { savedFilterId: filter.id, savedFilterMode: filter.mode, limit: FeedContainer.CONTENT_LOAD_LIMIT, offset: 0 };
+    this.pushFilterHistory();
     if (withScroll) this.scrollToTop();
     this.loadVideos(this.currentFilters, false).catch((e) => console.error('Apply saved filter failed', e));
   }
@@ -1696,6 +1710,7 @@ export class FeedContainer {
       tagDepth: this.settings.includeSubtags ? -1 : 0,
       studioDepth: this.settings.includeSubtags ? -1 : 0,
     };
+    this.pushFilterHistory();
     this.scrollToTop();
     this.loadVideos(this.currentFilters, false).catch((e) => console.error('Apply marker search failed', e));
   }
@@ -1999,6 +2014,7 @@ export class FeedContainer {
       this.selectedMarkerName = undefined;
       this.selectedSavedFilter = undefined;
       this.currentFilters = undefined;
+      this.pushFilterHistory();
 
       this.updateActivePills();
       this.updateQueryInputDisplay();
@@ -2847,6 +2863,7 @@ export class FeedContainer {
       dateRangeFilter: this.selectedDateRange,
     };
     this.currentFilters = newFilters;
+    this.pushFilterHistory();
     await this.loadVideos(newFilters, false, loadSignal);
   }
 
@@ -2913,6 +2930,7 @@ export class FeedContainer {
       dateRangeFilter: this.selectedDateRange,
     };
     this.currentFilters = newFilters;
+    this.pushFilterHistory();
     this.loadVideos(newFilters, false).catch((e) => console.error('Apply filters failed', e));
   }
 
@@ -3204,6 +3222,11 @@ export class FeedContainer {
    * Initialize the feed
    */
   async init(filters?: FilterOptions): Promise<void> {
+    window.addEventListener('popstate', this.onPopState);
+    const initialSnapshot = this.captureSnapshot();
+    this.lastSnapshotJson = JSON.stringify(initialSnapshot);
+    history.replaceState({ filterSnapshot: initialSnapshot }, '');
+
     // Load rating system configuration
     try {
       const config = await this.api.getUIConfiguration();
@@ -5525,6 +5548,53 @@ export class FeedContainer {
     this.debouncedApplyFilters();
   }
 
+  private captureSnapshot(): FilterSnapshot {
+    return {
+      tags: [...this.selectedTagIds.entries()],
+      performers: [...this.selectedPerformerIds.entries()],
+      studios: [...this.selectedStudioIds.entries()],
+      markerName: this.selectedMarkerName,
+      dateRange: this.selectedDateRange,
+      savedFilter: this.selectedSavedFilter,
+    };
+  }
+
+  private pushFilterHistory(): void {
+    if (this.suppressHistoryPush) return;
+    const snapshot = this.captureSnapshot();
+    const json = JSON.stringify(snapshot);
+    if (json === this.lastSnapshotJson) return; // dedupe consecutive identical states
+    this.lastSnapshotJson = json;
+    history.pushState({ filterSnapshot: snapshot }, ''); // same URL — reload-safe
+  }
+
+  private restoreSnapshot(snapshot: FilterSnapshot): void {
+    this.selectedTagIds.clear();
+    this.selectedPerformerIds.clear();
+    this.selectedStudioIds.clear();
+    for (const [id, name] of snapshot.tags) this.selectedTagIds.set(id, name);
+    for (const [id, name] of snapshot.performers) this.selectedPerformerIds.set(id, name);
+    for (const [id, name] of snapshot.studios) this.selectedStudioIds.set(id, name);
+    this.selectedMarkerName = snapshot.markerName;
+    this.selectedDateRange = snapshot.dateRange;
+    this.selectedSavedFilter = snapshot.savedFilter;
+    this.updateActivePills();
+    this.updateQueryInputDisplay();
+    this.applyFilters().catch((e) => console.error('Restore filters failed', e));
+  }
+
+  private readonly onPopState = (event: PopStateEvent): void => {
+    const snapshot = (event.state as { filterSnapshot?: FilterSnapshot } | null)?.filterSnapshot;
+    if (!snapshot) return; // not one of our entries
+    this.suppressHistoryPush = true;
+    this.lastSnapshotJson = JSON.stringify(snapshot);
+    try {
+      this.restoreSnapshot(snapshot);
+    } finally {
+      this.suppressHistoryPush = false;
+    }
+  };
+
   private deleteCustomSavedSearch(id: string): void {
     const existing = this.settingsManager.data.settings.savedSearches ?? [];
     this.settingsManager.save({ settings: { savedSearches: existing.filter(s => s.id !== id) } });
@@ -5894,6 +5964,7 @@ export class FeedContainer {
 
   private teardownListeners(): void {
     document.removeEventListener('keydown', this.onRatingHotkey);
+    window.removeEventListener('popstate', this.onPopState);
     this.removeMobileAutoplayUnlockListeners();
     this.removeAutoplayUnlockHandlers();
 
