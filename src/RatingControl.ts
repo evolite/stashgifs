@@ -9,6 +9,9 @@ import { THEME, throttle, initPopoverDialog } from './utils.js';
 const RATING_MAX_STARS = 10;
 const RATING_MIN_STARS = 0;
 const RESIZE_THROTTLE_MS = 100;
+// ponytail: touch pointerup selects before the tap's synthesized click fires; the dialog must
+// outlive that click or it falls through to the footer button underneath (o-count on mobile).
+const TOUCH_CLICK_SETTLE_MS = 250;
 
 interface RatingSystemConfig {
   type?: string;
@@ -242,7 +245,7 @@ export class RatingControl {
         const previewValue = this.hoveredPreviewValue ?? this.calculatePreviewValueFromPointer(event.clientX);
         if (previewValue !== undefined) {
           this.lastPointerSelectionTs = performance.now();
-          void this.onRatingStarSelect(previewValue);
+          void this.onRatingStarSelect(previewValue, true);
         }
       };
       starsContainer.addEventListener('pointermove', handlePointerMove);
@@ -601,7 +604,7 @@ export class RatingControl {
     await this.persistRatingChange(previousValue, previousRating100, previousHasRating);
   }
 
-  private async onRatingStarSelect(value: number): Promise<void> {
+  private async onRatingStarSelect(value: number, deferClose = false): Promise<void> {
     if (this.isSavingRating) return;
 
     const nextValue = this.clampRatingValue(value);
@@ -613,7 +616,11 @@ export class RatingControl {
     this.hasRating = nextValue > 0;
     this.updateRatingDisplay();
     this.updateRatingStarButtons();
-    this.closeRatingDialog();
+    if (deferClose) {
+      setTimeout(() => this.closeRatingDialog(), TOUCH_CLICK_SETTLE_MS);
+    } else {
+      this.closeRatingDialog();
+    }
 
     await this.persistRatingChange(previousValue, previousRating100, previousHasRating);
   }
