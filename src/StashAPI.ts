@@ -57,6 +57,7 @@ import {
 import { GraphQLClient } from './graphql/client.js';
 import { TtlCache } from './api/TtlCache.js';
 import { MediaUrls } from './api/MediaUrls.js';
+import { ApiIO } from './api/ApiIO.js';
 import { FeedFilters, type ImageFilterOptions, type TagSource } from './api/FeedFilters.js';
 import { Batcher } from './api/Batcher.js';
 import { generateRandomSortSeed } from './api/sortSeed.js';
@@ -97,6 +98,7 @@ export class StashAPI {
    *  which resolve to the sources their subtree lives in. Cached for the session. */
   private readonly _tagSourceCache = new Map<string, TagSource>();
   private readonly filters = new FeedFilters(this._tagSourceCache);
+  private readonly io = new ApiIO(() => this.gqlClient);
 
   // Magic numbers as constants
   private static readonly SEARCH_FETCH_MULTIPLIER = 3; // Fetch 3x limit when searching to improve relevance
@@ -152,10 +154,6 @@ export class StashAPI {
     this.gqlClient.destroy();
   }
 
-  /** Executor for runAliased: our GraphQL client, data only (errors throw). */
-  private readonly aliasedExec = async (query: string, variables: Record<string, unknown>) =>
-    (await this.gqlClient.query<Record<string, unknown>>({ query, variables })).data;
-
   /**
    * Build cache key with proper escaping to prevent collisions
    */
@@ -174,7 +172,7 @@ export class StashAPI {
     queryFn: () => Promise<T[]>,
     signal?: AbortSignal
   ): Promise<T[]> {
-    if (this.isAborted(signal)) return [];
+    if (this.io.isAborted(signal)) return [];
 
     // Check cache first (only for non-empty terms)
     if (!isEmptyTerm) {
@@ -185,7 +183,7 @@ export class StashAPI {
     try {
       const results = await queryFn();
       
-      if (this.isAborted(signal)) return [];
+      if (this.io.isAborted(signal)) return [];
       
       // Cache the result (only for non-empty terms)
       if (!isEmptyTerm) {
@@ -194,7 +192,7 @@ export class StashAPI {
       
       return results;
     } catch (error: unknown) {
-      return this.handleError('searchWithCache', error, signal, []);
+      return this.io.handleError('searchWithCache', error, signal, []);
     }
   }
 
@@ -290,46 +288,6 @@ export class StashAPI {
   }
 
   /**
-   * Check if operation is aborted (only check at critical points)
-   */
-  private isAborted(signal?: AbortSignal): boolean {
-    return signal?.aborted ?? false;
-  }
-
-  /**
-   * Standardized error logging
-   */
-  private logError(method: string, error: unknown): void {
-    if (error instanceof GraphQLRequestError || error instanceof GraphQLResponseError || error instanceof GraphQLNetworkError) {
-      console.warn(`[StashAPI] ${method} failed`, error);
-    } else {
-      console.warn(`[StashAPI] ${method} failed`, error instanceof Error ? error.message : 'Unknown error');
-    }
-  }
-
-  /**
-   * For reads whose callers must tell "failed" from "empty": an abort yields `emptyResult`,
-   * anything else is logged and rethrown (so a transient error is never mistaken for
-   * "no saved filter" / "no stash-boxes" / "server has no settings" and acted on).
-   */
-  private rethrowUnlessAbort<T>(method: string, error: unknown, signal: AbortSignal | undefined, emptyResult: T): T {
-    if (isAbortError(error) || this.isAborted(signal)) return emptyResult;
-    this.logError(method, error);
-    throw error;
-  }
-
-  /**
-   * Handle errors consistently - returns empty result for aborted operations, logs others
-   */
-  private handleError<T>(method: string, error: unknown, signal: AbortSignal | undefined, emptyResult: T): T {
-    if (isAbortError(error) || this.isAborted(signal)) {
-      return emptyResult;
-    }
-    this.logError(method, error);
-    return emptyResult;
-  }
-
-  /**
    * Search performers (by name) for autocomplete
    * Returns performers regardless of scene/image counts
    * Includes caching for autocomplete results only
@@ -383,7 +341,7 @@ export class StashAPI {
    * Used for hover overlay display
    */
   async getPerformerDetails(performerId: string, signal?: AbortSignal): Promise<PerformerExtended | null> {
-    if (this.isAborted(signal)) return null;
+    if (this.io.isAborted(signal)) return null;
 
     try {
       const result = await this.gqlClient.query<FindPerformerResponse>({
@@ -392,28 +350,28 @@ export class StashAPI {
         signal,
       });
 
-      if (this.isAborted(signal)) return null;
+      if (this.io.isAborted(signal)) return null;
 
       const performers = result.data?.findPerformers?.performers ?? [];
       return performers[0] ?? null;
     } catch (error: unknown) {
-      return this.handleError('getPerformerDetails', error, signal, null);
+      return this.io.handleError('getPerformerDetails', error, signal, null);
     }
   }
 
   // fallow-ignore-next-line unused-class-member
   async getStudioDetails(studioId: string, signal?: AbortSignal): Promise<StudioExtended | null> {
-    if (this.isAborted(signal)) return null;
+    if (this.io.isAborted(signal)) return null;
     try {
       const result = await this.gqlClient.query<FindStudioResponse>({
         query: queries.FIND_STUDIO,
         variables: { id: studioId },
         signal,
       });
-      if (this.isAborted(signal)) return null;
+      if (this.io.isAborted(signal)) return null;
       return result.data?.findStudio ?? null;
     } catch (error: unknown) {
-      return this.handleError('getStudioDetails', error, signal, null);
+      return this.io.handleError('getStudioDetails', error, signal, null);
     }
   }
 
@@ -421,7 +379,7 @@ export class StashAPI {
    * Get detailed tag information by ID
    */
   async getTagDetails(tagId: string, signal?: AbortSignal): Promise<{ id: string; name: string; image_path?: string; description?: string; favorite?: boolean } | null> {
-    if (this.isAborted(signal)) return null;
+    if (this.io.isAborted(signal)) return null;
 
     try {
       const result = await this.gqlClient.query<FindTagsExtendedResponse>({
@@ -430,12 +388,12 @@ export class StashAPI {
         signal,
       });
 
-      if (this.isAborted(signal)) return null;
+      if (this.io.isAborted(signal)) return null;
 
       const tags = result.data?.findTags?.tags ?? [];
       return tags[0] ?? null;
     } catch (error: unknown) {
-      return this.handleError('getTagDetails', error, signal, null);
+      return this.io.handleError('getTagDetails', error, signal, null);
     }
   }
 
@@ -444,7 +402,7 @@ export class StashAPI {
    * Fetch saved filters the feed can apply (scene markers and images) from Stash
    */
   async fetchSavedFilters(signal?: AbortSignal): Promise<Array<{ id: string; name: string; mode: SavedFilterMode }>> {
-    if (this.isAborted(signal)) return [];
+    if (this.io.isAborted(signal)) return [];
     
     try {
       const result = await this.gqlClient.query<GetSavedFiltersResponse>({
@@ -452,12 +410,12 @@ export class StashAPI {
         signal,
       });
       
-      if (this.isAborted(signal)) return [];
+      if (this.io.isAborted(signal)) return [];
       return (result.data?.findSavedFilters || []).filter(
         (f): f is { id: string; name: string; mode: SavedFilterMode } => f.mode === 'SCENE_MARKERS' || f.mode === 'IMAGES'
       );
     } catch (error: unknown) {
-      return this.rethrowUnlessAbort('fetchSavedFilters', error, signal, []);
+      return this.io.rethrowUnlessAbort('fetchSavedFilters', error, signal, []);
     }
   }
 
@@ -469,7 +427,7 @@ export class StashAPI {
    * so the feed can't silently fall back to unfiltered results.
    */
   async getSavedFilter(id: string, signal?: AbortSignal): Promise<GetSavedFilterResponse['findSavedFilter']> {
-    if (this.isAborted(signal)) return null;
+    if (this.io.isAborted(signal)) return null;
 
     try {
       // Shared, signal-free load (see TtlCache): one caller aborting must not fail the others.
@@ -477,9 +435,9 @@ export class StashAPI {
         const result = await this.gqlClient.query<GetSavedFilterResponse>({ query: queries.GET_SAVED_FILTER, variables: { id } });
         return result.data?.findSavedFilter || null;
       }, (f) => f !== null);
-      return this.isAborted(signal) ? null : filter;
+      return this.io.isAborted(signal) ? null : filter;
     } catch (error: unknown) {
-      return this.rethrowUnlessAbort('getSavedFilter', error, signal, null);
+      return this.io.rethrowUnlessAbort('getSavedFilter', error, signal, null);
     }
   }
 
@@ -487,7 +445,7 @@ export class StashAPI {
    * Fetch scene markers from Stash
    */
   async fetchSceneMarkers(filters?: FilterOptions, signal?: AbortSignal): Promise<{ markers: SceneMarker[]; totalCount: number; sortSeed?: string }> {
-    if (this.isAborted(signal)) return { markers: [], totalCount: 0 };
+    if (this.io.isAborted(signal)) return { markers: [], totalCount: 0 };
     
     // Fetching scene markers with filters
     
@@ -497,7 +455,7 @@ export class StashAPI {
     }
     
     const savedFilterCriteria = await this.getSavedFilterCriteria(filters, signal);
-    if (this.isAborted(signal)) return { markers: [], totalCount: 0 };
+    if (this.io.isAborted(signal)) return { markers: [], totalCount: 0 };
 
     try {
       const limit = filters?.limit || 20;
@@ -511,11 +469,11 @@ export class StashAPI {
       const sceneMarkerFilter = this.filters.buildSceneMarkerFilter(filters, savedFilterCriteria);
 
       const { markers, totalCount } = await this.executeMarkerQueryWithCount(filter, sceneMarkerFilter, signal);
-      if (this.isAborted(signal)) return { markers: [], totalCount: 0 };
+      if (this.io.isAborted(signal)) return { markers: [], totalCount: 0 };
 
       return { markers, totalCount, sortSeed: filter.sort };
     } catch (error: unknown) {
-      return this.handleError('fetchSceneMarkers', error, signal, { markers: [], totalCount: 0 });
+      return this.io.handleError('fetchSceneMarkers', error, signal, { markers: [], totalCount: 0 });
     }
   }
 
@@ -546,7 +504,7 @@ export class StashAPI {
     const desc = (field: string) =>
       `findTags(tag_filter:{parents:{value:[$v],modifier:INCLUDES,depth:-1},${field}:{value:0,modifier:GREATER_THAN}},filter:{per_page:1}){count}`;
     try {
-      const rows = await runAliased(this.aliasedExec, 'TagSources', 'ID!', missing, {
+      const rows = await runAliased(this.io.aliasedExec, 'TagSources', 'ID!', missing, {
         self: 'findTags(ids:[$v]){tags{scene_count scene_marker_count performer_count image_count}}',
         dm: desc('marker_count'),
         ds: desc('scene_count'),
@@ -593,7 +551,7 @@ export class StashAPI {
       signal,
     });
     
-    if (this.isAborted(signal)) return { markers: [], totalCount: 0 };
+    if (this.io.isAborted(signal)) return { markers: [], totalCount: 0 };
     
     const responseData = result.data?.findSceneMarkers;
     const markers = responseData?.scene_markers || [];
@@ -620,9 +578,9 @@ export class StashAPI {
     sceneMarkerFilter: SceneMarkerFilterInput,
     signal?: AbortSignal
   ): Promise<{ markers: SceneMarker[]; totalCount: number }> {
-    this.logError('retryMarkerQueryWithCount', new Error('Count > 0 but no markers returned - retrying with page 1'));
+    this.io.logError('retryMarkerQueryWithCount', new Error('Count > 0 but no markers returned - retrying with page 1'));
     
-    if (this.isAborted(signal)) return { markers: [], totalCount: 0 };
+    if (this.io.isAborted(signal)) return { markers: [], totalCount: 0 };
     
     // Create a copy of the filter to avoid mutating the input parameter
     const retryFilter = { ...filter, page: 1 };
@@ -635,7 +593,7 @@ export class StashAPI {
       signal,
     });
     
-    if (this.isAborted(signal)) return { markers: [], totalCount: 0 };
+    if (this.io.isAborted(signal)) return { markers: [], totalCount: 0 };
     
     const retryData = retryResult.data?.findSceneMarkers;
     return {
@@ -661,12 +619,12 @@ export class StashAPI {
       const sceneFilter = this.filters.buildShuffleSceneFilter(filters);
       const { scenes, count: totalCount } = await this.fetchScenesQuery(filter, sceneFilter, signal);
 
-      if (this.isAborted(signal)) return { markers: [], sortSeed, totalCount: 0 };
+      if (this.io.isAborted(signal)) return { markers: [], sortSeed, totalCount: 0 };
 
       return { markers: this.createSyntheticMarkers(scenes, 'synthetic', limit), sortSeed, totalCount };
     } catch (error: unknown) {
       const emptyResult = { markers: [] as SceneMarker[], sortSeed: generateRandomSortSeed(), totalCount: 0 };
-      return this.handleError('fetchScenesForShuffle', error, signal, emptyResult);
+      return this.io.handleError('fetchScenesForShuffle', error, signal, emptyResult);
     }
   }
 
@@ -684,7 +642,7 @@ export class StashAPI {
       signal,
     });
     
-    if (this.isAborted(signal)) return { scenes: [], count: 0 };
+    if (this.io.isAborted(signal)) return { scenes: [], count: 0 };
     
     return { scenes: result.data?.findScenes?.scenes || [], count: result.data?.findScenes?.count ?? 0 };
   }
@@ -739,7 +697,7 @@ export class StashAPI {
     offset: number = 0,
     signal?: AbortSignal
   ): Promise<{ markers: SceneMarker[]; totalCount: number; unfilteredOffsetConsumed: number; sortSeed: string }> {
-    if (this.isAborted(signal)) return { markers: [], totalCount: 0, unfilteredOffsetConsumed: 0, sortSeed: generateRandomSortSeed() };
+    if (this.io.isAborted(signal)) return { markers: [], totalCount: 0, unfilteredOffsetConsumed: 0, sortSeed: generateRandomSortSeed() };
 
     try {
 
@@ -750,7 +708,7 @@ export class StashAPI {
       const sortSeed = filters?.sortSeed || generateRandomSortSeed();
 
       const page = await this.fetchSceneListPage(sceneFilter, offset, sortSeed, signal);
-      if (!page || this.isAborted(signal)) {
+      if (!page || this.io.isAborted(signal)) {
         return { markers: [], totalCount: 0, unfilteredOffsetConsumed: 0, sortSeed: generateRandomSortSeed() };
       }
       const { scenes, totalCount, offsetInPage } = page;
@@ -769,7 +727,7 @@ export class StashAPI {
       
       return { markers, totalCount, unfilteredOffsetConsumed, sortSeed };
     } catch (error: unknown) {
-      return this.handleError('fetchShortFormVideos', error, signal, { markers: [], totalCount: 0, unfilteredOffsetConsumed: 0, sortSeed: generateRandomSortSeed() });
+      return this.io.handleError('fetchShortFormVideos', error, signal, { markers: [], totalCount: 0, unfilteredOffsetConsumed: 0, sortSeed: generateRandomSortSeed() });
     }
   }
 
@@ -788,7 +746,7 @@ export class StashAPI {
     const query = (page: number) => this.fetchScenesQuery({ per_page: perPage, page, sort: sortSeed }, sceneFilter, signal);
 
     let { scenes, count } = await query(wantedPage);
-    if (this.isAborted(signal)) return null;
+    if (this.io.isAborted(signal)) return null;
 
     const totalCount = Math.min(count, this._maxContentLimit);
     if (totalCount === 0) return null;
@@ -796,7 +754,7 @@ export class StashAPI {
     const maxPage = Math.max(1, Math.ceil(totalCount / perPage));
     if (wantedPage > maxPage) {
       ({ scenes } = await query(maxPage));
-      if (this.isAborted(signal)) return null;
+      if (this.io.isAborted(signal)) return null;
     }
     return { scenes, totalCount, offsetInPage: offset % perPage };
   }
@@ -857,7 +815,7 @@ export class StashAPI {
     offset: number = 0,
     signal?: AbortSignal
   ): Promise<{ markers: SceneMarker[]; totalCount: number; unfilteredOffsetConsumed: number; sortSeed: string }> {
-    if (this.isAborted(signal)) return { markers: [], totalCount: 0, unfilteredOffsetConsumed: 0, sortSeed: generateRandomSortSeed() };
+    if (this.io.isAborted(signal)) return { markers: [], totalCount: 0, unfilteredOffsetConsumed: 0, sortSeed: generateRandomSortSeed() };
 
     try {
 
@@ -866,7 +824,7 @@ export class StashAPI {
       const sortSeed = filters?.sortSeed || generateRandomSortSeed();
 
       const page = await this.fetchSceneListPage(sceneFilter, offset, sortSeed, signal);
-      if (!page || this.isAborted(signal)) {
+      if (!page || this.io.isAborted(signal)) {
         return { markers: [], totalCount: 0, unfilteredOffsetConsumed: 0, sortSeed: generateRandomSortSeed() };
       }
       const { scenes, totalCount, offsetInPage } = page;
@@ -882,7 +840,7 @@ export class StashAPI {
 
       return { markers, totalCount, unfilteredOffsetConsumed, sortSeed };
     } catch (error: unknown) {
-      return this.handleError('fetchScenePreviews', error, signal, { markers: [], totalCount: 0, unfilteredOffsetConsumed: 0, sortSeed: generateRandomSortSeed() });
+      return this.io.handleError('fetchScenePreviews', error, signal, { markers: [], totalCount: 0, unfilteredOffsetConsumed: 0, sortSeed: generateRandomSortSeed() });
     }
   }
 
@@ -909,13 +867,13 @@ export class StashAPI {
   private readonly _tagByName = new TtlCache<{ id: string; name: string } | null>(Number.POSITIVE_INFINITY, 200);
 
   async findTagByName(tagName: string, signal?: AbortSignal): Promise<{ id: string; name: string } | null> {
-    if (this.isAborted(signal)) return null;
+    if (this.io.isAborted(signal)) return null;
     try {
       // The shared lookup carries no caller signal (tiny query; one caller aborting must not fail the rest).
       const tag = await this._tagByName.getOrLoad(tagName.toLowerCase(), () => this.queryTagByName(tagName), (t) => t !== null);
-      return this.isAborted(signal) ? null : tag;
+      return this.io.isAborted(signal) ? null : tag;
     } catch (error: unknown) {
-      return this.rethrowUnlessAbort('findTagByName', error, signal, null);
+      return this.io.rethrowUnlessAbort('findTagByName', error, signal, null);
     }
   }
 
@@ -932,7 +890,7 @@ export class StashAPI {
     if (!tag) return null;
     // Validate exact match (case-insensitive) - EQUALS modifier might not work as expected
     if (tag.name.toLowerCase() !== tagName.toLowerCase()) {
-      this.logError('findTagByName', new Error(`Tag name mismatch: searched="${tagName}", found="${tag.name}"`));
+      this.io.logError('findTagByName', new Error(`Tag name mismatch: searched="${tagName}", found="${tag.name}"`));
       return null;
     }
     return tag;
@@ -943,7 +901,7 @@ export class StashAPI {
    * If the tag already exists, attempts to find and return it
    */
   async createTag(tagName: string, signal?: AbortSignal): Promise<{ id: string; name: string } | null> {
-    if (this.isAborted(signal)) return null;
+    if (this.io.isAborted(signal)) return null;
     
     const variables: { input: TagCreateInput } = {
       input: { name: tagName }
@@ -956,25 +914,25 @@ export class StashAPI {
         signal,
       });
       
-      if (this.isAborted(signal)) return null;
+      if (this.io.isAborted(signal)) return null;
       
       return result.data?.tagCreate || null;
     } catch (error: unknown) {
-      if (isAbortError(error) || this.isAborted(signal)) {
+      if (isAbortError(error) || this.io.isAborted(signal)) {
         return null;
       }
       
       // If tag already exists, try to find it
       const errorMessage = error instanceof Error ? error.message : String(error);
       if (errorMessage.includes('already exists') || errorMessage.includes('duplicate')) {
-        this.logError('createTag', new Error(`Tag "${tagName}" already exists, attempting to find it`));
+        this.io.logError('createTag', new Error(`Tag "${tagName}" already exists, attempting to find it`));
         // Try to find the existing tag
         const existingTag = await this.findTagByName(tagName, signal);
         if (existingTag) {
           return existingTag;
         }
       }
-      this.logError('createTag', error);
+      this.io.logError('createTag', error);
       return null;
     }
   }
@@ -1008,7 +966,7 @@ export class StashAPI {
    * @returns True if scene has the tag
    */
   async sceneHasTag(sceneId: string, tagId: string, tags?: Array<{ id: string }>, signal?: AbortSignal): Promise<boolean> {
-    if (this.isAborted(signal)) return false;
+    if (this.io.isAborted(signal)) return false;
     
     // If tags array is provided, use it directly (more efficient)
     if (tags) {
@@ -1017,10 +975,10 @@ export class StashAPI {
     
     try {
       const sceneTagIds = await this.getSceneTagIdSet(sceneId);
-      if (this.isAborted(signal)) return false;
+      if (this.io.isAborted(signal)) return false;
       return sceneTagIds.has(tagId);
     } catch (error: unknown) {
-      return this.rethrowUnlessAbort('sceneHasTag', error, signal, false);
+      return this.io.rethrowUnlessAbort('sceneHasTag', error, signal, false);
     }
   }
 
@@ -1052,7 +1010,7 @@ export class StashAPI {
     newTagIds: string[],
     signal?: AbortSignal
   ): Promise<void> {
-    if (this.isAborted(signal)) return;
+    if (this.io.isAborted(signal)) return;
     
     // Ensure we have required fields
     if (!marker.primary_tag?.id) {
@@ -1068,7 +1026,7 @@ export class StashAPI {
     tagIds: string[],
     signal?: AbortSignal
   ): Promise<void> {
-    if (this.isAborted(signal)) return;
+    if (this.io.isAborted(signal)) return;
 
     const variables: SceneMarkerUpdateInput = {
       id: marker.id,
@@ -1086,7 +1044,7 @@ export class StashAPI {
       signal,
     });
     
-    if (this.isAborted(signal)) return;
+    if (this.io.isAborted(signal)) return;
   }
 
   /**
@@ -1102,7 +1060,7 @@ export class StashAPI {
     tagId: string,
     signal?: AbortSignal
   ): Promise<void> {
-    if (this.isAborted(signal)) return;
+    if (this.io.isAborted(signal)) return;
 
     try {
       const currentTags = this.extractMarkerTagIds(marker);
@@ -1112,10 +1070,10 @@ export class StashAPI {
         await this.updateMarkerTags(marker, [...currentTags, tagId], signal);
       }
     } catch (error) {
-      if (isAbortError(error) || this.isAborted(signal)) {
+      if (isAbortError(error) || this.io.isAborted(signal)) {
         return;
       }
-      this.logError('addTagToMarker', error);
+      this.io.logError('addTagToMarker', error);
       throw error;
     }
   }
@@ -1127,7 +1085,7 @@ export class StashAPI {
     signal: AbortSignal | undefined,
     logContext: string
   ): Promise<void> {
-    if (this.isAborted(signal)) return;
+    if (this.io.isAborted(signal)) return;
 
     try {
       await this.gqlClient.mutate<ImageUpdateResponse>({
@@ -1141,12 +1099,12 @@ export class StashAPI {
         signal,
       });
 
-      if (this.isAborted(signal)) return;
+      if (this.io.isAborted(signal)) return;
     } catch (error) {
-      if (isAbortError(error) || this.isAborted(signal)) {
+      if (isAbortError(error) || this.io.isAborted(signal)) {
         return;
       }
-      this.logError(logContext, error);
+      this.io.logError(logContext, error);
       throw error;
     }
   }
@@ -1169,7 +1127,7 @@ export class StashAPI {
    * Increment image o-counter
    */
   async incrementImageOCount(imageId: string, signal?: AbortSignal): Promise<number> {
-    if (this.isAborted(signal)) return 0;
+    if (this.io.isAborted(signal)) return 0;
     
     try {
       const result = await this.gqlClient.mutate<ImageIncrementOResponse>({
@@ -1180,14 +1138,14 @@ export class StashAPI {
         signal,
       });
       
-      if (this.isAborted(signal)) return 0;
+      if (this.io.isAborted(signal)) return 0;
       
       return result.data?.imageIncrementO ?? 0;
     } catch (error) {
-      if (isAbortError(error) || this.isAborted(signal)) {
+      if (isAbortError(error) || this.io.isAborted(signal)) {
         return 0;
       }
-      this.logError('incrementImageOCount', error);
+      this.io.logError('incrementImageOCount', error);
       throw error;
     }
   }
@@ -1196,7 +1154,7 @@ export class StashAPI {
    * Update performers on a scene
    */
   async updateScenePerformers(sceneId: string, performerIds: string[], signal?: AbortSignal): Promise<void> {
-    if (this.isAborted(signal)) return;
+    if (this.io.isAborted(signal)) return;
 
     const variables = {
       input: {
@@ -1211,14 +1169,14 @@ export class StashAPI {
       signal,
     });
 
-    if (this.isAborted(signal)) return;
+    if (this.io.isAborted(signal)) return;
   }
 
   /**
    * Update performer favorite flag
    */
   async updatePerformerFavorite(performerId: string, favorite: boolean, signal?: AbortSignal): Promise<void> {
-    if (this.isAborted(signal)) return;
+    if (this.io.isAborted(signal)) return;
 
     const variables = {
       input: {
@@ -1233,7 +1191,7 @@ export class StashAPI {
       signal,
     });
 
-    if (this.isAborted(signal)) return;
+    if (this.io.isAborted(signal)) return;
   }
 
   /**
@@ -1248,7 +1206,7 @@ export class StashAPI {
     mode: 'ADD' | 'REMOVE',
     signal?: AbortSignal
   ): Promise<void> {
-    if (this.isAborted(signal)) return;
+    if (this.io.isAborted(signal)) return;
     try {
       const result = await this.gqlClient.mutate<{ bulkSceneUpdate?: Array<{ id: string; tags?: Array<{ id: string }> }> }>({
         mutation: mutations.BULK_SCENE_UPDATE,
@@ -1262,8 +1220,8 @@ export class StashAPI {
         this._sceneTagIds.delete(sceneId);
       }
     } catch (error) {
-      if (isAbortError(error) || this.isAborted(signal)) return;
-      this.logError(methodName, error);
+      if (isAbortError(error) || this.io.isAborted(signal)) return;
+      this.io.logError(methodName, error);
       throw error;
     }
   }
@@ -1284,15 +1242,15 @@ export class StashAPI {
     tagId: string,
     signal?: AbortSignal
   ): Promise<void> {
-    if (this.isAborted(signal)) return;
+    if (this.io.isAborted(signal)) return;
 
     try {
       const currentTags = this.extractMarkerTagIds(marker);
       const tagIds = currentTags.filter(id => id !== tagId);
       await this.updateMarkerTags(marker, tagIds, signal);
     } catch (error) {
-      if (isAbortError(error) || this.isAborted(signal)) return;
-      this.logError('removeTagFromMarker', error);
+      if (isAbortError(error) || this.io.isAborted(signal)) return;
+      this.io.logError('removeTagFromMarker', error);
       throw error;
     }
   }
@@ -1312,7 +1270,7 @@ export class StashAPI {
    * @returns The updated o count and history
    */
   async incrementOCount(sceneId: string, times?: string[], signal?: AbortSignal): Promise<{ count: number; history: string[] }> {
-    if (this.isAborted(signal)) return { count: 0, history: [] };
+    if (this.io.isAborted(signal)) return { count: 0, history: [] };
     
     const variables = {
       id: sceneId,
@@ -1326,7 +1284,7 @@ export class StashAPI {
         signal,
       });
       
-      if (this.isAborted(signal)) return { count: 0, history: [] };
+      if (this.io.isAborted(signal)) return { count: 0, history: [] };
       
       const sceneAddO = result.data?.sceneAddO;
       if (sceneAddO && 'count' in sceneAddO) {
@@ -1335,10 +1293,10 @@ export class StashAPI {
       // Return provided times in history even when count is missing
       return { count: 0, history: times || [] };
     } catch (error) {
-      if (isAbortError(error) || this.isAborted(signal)) {
+      if (isAbortError(error) || this.io.isAborted(signal)) {
         return { count: 0, history: [] };
       }
-      this.logError('incrementOCount', error);
+      this.io.logError('incrementOCount', error);
       throw error;
     }
   }
@@ -1355,7 +1313,7 @@ export class StashAPI {
         variables: { id: sceneId },
       });
     } catch (error) {
-      this.logError('incrementScenePlayCount', error);
+      this.io.logError('incrementScenePlayCount', error);
     }
   }
 
@@ -1373,7 +1331,7 @@ export class StashAPI {
         variables: { id: sceneId, resume_time: resumeTime, playDuration },
       });
     } catch (error) {
-      this.logError('saveSceneActivity', error);
+      this.io.logError('saveSceneActivity', error);
     }
   }
 
@@ -1402,7 +1360,7 @@ export class StashAPI {
     mutation: string,
     signal?: AbortSignal
   ): Promise<number> {
-    if (this.isAborted(signal)) return 0;
+    if (this.io.isAborted(signal)) return 0;
 
     try {
       await this.gqlClient.mutate<T>({
@@ -1411,13 +1369,13 @@ export class StashAPI {
         signal,
       });
 
-      if (this.isAborted(signal)) return 0;
+      if (this.io.isAborted(signal)) return 0;
       return rating100;
     } catch (error) {
-      if (isAbortError(error) || this.isAborted(signal)) {
+      if (isAbortError(error) || this.io.isAborted(signal)) {
         return 0;
       }
-      this.logError(methodName, error);
+      this.io.logError(methodName, error);
       throw error;
     }
   }
@@ -1464,15 +1422,15 @@ export class StashAPI {
         variables,
         signal,
       });
-      if (this.isAborted(signal)) {
+      if (this.io.isAborted(signal)) {
         return [];
       }
       return result.data?.findTags?.tags || [];
     } catch (error: unknown) {
-      if (isAbortError(error) || this.isAborted(signal)) {
+      if (isAbortError(error) || this.io.isAborted(signal)) {
         return [];
       }
-      this.logError('findTagsForSelect', error);
+      this.io.logError('findTagsForSelect', error);
       throw error;
     }
   }
@@ -1483,18 +1441,18 @@ export class StashAPI {
    * @returns Array of galleries with id, title, and folder path
    */
   async findGalleries(signal?: AbortSignal): Promise<Gallery[]> {
-    if (this.isAborted(signal)) return [];
+    if (this.io.isAborted(signal)) return [];
     try {
       const result = await this.gqlClient.query<FindGalleriesResponse>({
         query: queries.FIND_GALLERIES,
         variables: { filter: { per_page: -1, sort: 'title', direction: 'ASC' } },
         signal,
       });
-      if (this.isAborted(signal)) return [];
+      if (this.io.isAborted(signal)) return [];
       return result.data?.findGalleries?.galleries ?? [];
     } catch (error: unknown) {
-      if (isAbortError(error) || this.isAborted(signal)) return [];
-      this.logError('findGalleries', error);
+      if (isAbortError(error) || this.io.isAborted(signal)) return [];
+      this.io.logError('findGalleries', error);
       return [];
     }
   }
@@ -1551,7 +1509,7 @@ export class StashAPI {
     tagIds: string[] = [],
     signal?: AbortSignal
   ): Promise<{ id: string; title: string; seconds: number; end_seconds?: number; stream?: string; preview?: string; scene: { id: string; title?: string; files?: Array<{ width?: number; height?: number; path?: string }>; performers?: Array<{ id: string; name: string; image_path?: string }> } | Scene; primary_tag: { id: string; name: string }; tags: Array<{ id: string; name: string }> }> {
-    if (this.isAborted(signal)) {
+    if (this.io.isAborted(signal)) {
       throw new Error('Operation aborted');
     }
     
@@ -1574,7 +1532,7 @@ export class StashAPI {
         signal,
       });
       
-      if (this.isAborted(signal)) {
+      if (this.io.isAborted(signal)) {
         throw new Error('Operation aborted');
       }
       
@@ -1588,10 +1546,10 @@ export class StashAPI {
         end_seconds: marker.end_seconds ?? undefined,
       };
     } catch (error) {
-      if (isAbortError(error) || this.isAborted(signal)) {
+      if (isAbortError(error) || this.io.isAborted(signal)) {
         throw new Error('Operation aborted');
       }
-      this.logError('createSceneMarker', error);
+      this.io.logError('createSceneMarker', error);
       throw error;
     }
   }
@@ -1611,7 +1569,7 @@ export class StashAPI {
     offset: number = 0,
     signal?: AbortSignal
   ): Promise<{ images: GQLImage[]; totalCount: number; sortSeed: string }> {
-    if (this.isAborted(signal)) return { images: [], totalCount: 0, sortSeed: generateRandomSortSeed() };
+    if (this.io.isAborted(signal)) return { images: [], totalCount: 0, sortSeed: generateRandomSortSeed() };
 
     // Input validation
     if (!Array.isArray(fileExtensions)) {
@@ -1627,7 +1585,7 @@ export class StashAPI {
     // Build regex pattern from file extensions
     const regexPattern = this.filters.buildPathRegex(fileExtensions);
     const savedFilterCriteria = await this.getSavedFilterCriteria(filters, signal);
-    if (this.isAborted(signal)) return { images: [], totalCount: 0, sortSeed: generateRandomSortSeed() };
+    if (this.io.isAborted(signal)) return { images: [], totalCount: 0, sortSeed: generateRandomSortSeed() };
     const imageFilter = this.filters.buildImageFilter(regexPattern, filters, savedFilterCriteria);
 
     // Reuse existing sort seed for pagination, or generate new one for first page
@@ -1654,17 +1612,17 @@ export class StashAPI {
         signal,
       });
 
-      if (this.isAborted(signal)) return { images: [], totalCount: 0, sortSeed: generateRandomSortSeed() };
+      if (this.io.isAborted(signal)) return { images: [], totalCount: 0, sortSeed: generateRandomSortSeed() };
 
       const images = result.data?.findImages?.images || [];
       const totalCount = Math.min(result.data?.findImages?.count ?? 0, this._maxContentLimit);
 
       return { images, totalCount, sortSeed };
     } catch (e: unknown) {
-      if (isAbortError(e) || this.isAborted(signal)) {
+      if (isAbortError(e) || this.io.isAborted(signal)) {
         return { images: [], totalCount: 0, sortSeed: generateRandomSortSeed() };
       }
-      return this.handleError('findImages', e, signal, { images: [], totalCount: 0, sortSeed: generateRandomSortSeed() });
+      return this.io.handleError('findImages', e, signal, { images: [], totalCount: 0, sortSeed: generateRandomSortSeed() });
     }
   }
 
@@ -1682,11 +1640,11 @@ export class StashAPI {
    * Get the rating system options from the UI configuration
    */
   async getUIConfiguration(signal?: AbortSignal): Promise<{ type?: string; starPrecision?: string } | null> {
-    if (this.isAborted(signal)) return null;
+    if (this.io.isAborted(signal)) return null;
 
     try {
       const { ui } = await this.getConfiguration();
-      if (this.isAborted(signal)) return null;
+      if (this.io.isAborted(signal)) return null;
 
       // UI is returned as a JSON string in some Stash versions
       if (typeof ui === 'string') {
@@ -1698,7 +1656,7 @@ export class StashAPI {
       }
       return ui?.ratingSystemOptions || null;
     } catch (error) {
-      return this.handleError('getUIConfiguration', error, signal, null);
+      return this.io.handleError('getUIConfiguration', error, signal, null);
     }
   }
 
@@ -1707,15 +1665,15 @@ export class StashAPI {
    * a failed request throws so callers don't mistake it for "no settings".
    */
   async getPluginSettings(pluginId: string, signal?: AbortSignal): Promise<Record<string, unknown> | null> {
-    if (this.isAborted(signal)) return null;
+    if (this.io.isAborted(signal)) return null;
 
     try {
       const { plugins } = await this.getConfiguration();
-      if (this.isAborted(signal)) return null;
+      if (this.io.isAborted(signal)) return null;
       const pluginConfig = plugins && typeof plugins === 'object' ? plugins[pluginId] : undefined;
       return pluginConfig && typeof pluginConfig === 'object' ? pluginConfig : null;
     } catch (error) {
-      return this.rethrowUnlessAbort('getPluginSettings', error, signal, null);
+      return this.io.rethrowUnlessAbort('getPluginSettings', error, signal, null);
     }
   }
 
@@ -1723,7 +1681,7 @@ export class StashAPI {
    * Save plugin-specific settings to Stash server
    */
   async savePluginSettings(pluginId: string, input: Record<string, unknown>, signal?: AbortSignal): Promise<boolean> {
-    if (this.isAborted(signal)) return false;
+    if (this.io.isAborted(signal)) return false;
 
     try {
       await this.gqlClient.mutate<ConfigurePluginResponse>({
@@ -1734,7 +1692,7 @@ export class StashAPI {
       this._configuration.clear();
       return true;
     } catch (error) {
-      this.handleError('savePluginSettings', error, signal, false);
+      this.io.handleError('savePluginSettings', error, signal, false);
       return false;
     }
   }
@@ -1751,7 +1709,7 @@ export class StashAPI {
     signal?: AbortSignal
   ): Promise<Map<string, string>> {
     const out = new Map<string, string>();
-    if (this.isAborted(signal)) return out;
+    if (this.io.isAborted(signal)) return out;
 
     const todo = new Map<string, string | undefined>();
     for (const { stashId, sceneUrl } of items) {
@@ -1773,7 +1731,7 @@ export class StashAPI {
         if (localId) out.set(stashId, localId);
       }));
     } catch (error: unknown) {
-      this.handleError('findLocalSceneIdsByStashDbIds', error, signal, null);
+      this.io.handleError('findLocalSceneIdsByStashDbIds', error, signal, null);
     }
     return out;
   }
@@ -1805,7 +1763,7 @@ export class StashAPI {
 
   /** First matching scene id (or null) per scene filter, in order, in one request. */
   private async lookupSceneIds(filters: Array<Record<string, unknown>>): Promise<Array<string | null>> {
-    const rows = await runAliased(this.aliasedExec, 'FindLocalScenes', 'SceneFilterType', filters, {
+    const rows = await runAliased(this.io.aliasedExec, 'FindLocalScenes', 'SceneFilterType', filters, {
       s: 'findScenes(scene_filter: $v, filter: { per_page: 1 }) { scenes { id } }',
     });
     return rows.map((row) => (row.s as { scenes: Array<{ id: string }> } | undefined)?.scenes[0]?.id ?? null);
@@ -1813,7 +1771,7 @@ export class StashAPI {
 
   // fallow-ignore-next-line unused-class-member
   async getStashBoxes(signal?: AbortSignal): Promise<StashBox[]> {
-    if (this.isAborted(signal)) return [];
+    if (this.io.isAborted(signal)) return [];
 
     try {
       const result = await this.gqlClient.query<GetStashBoxConfigResponse>({
@@ -1821,11 +1779,11 @@ export class StashAPI {
         signal,
       });
 
-      if (this.isAborted(signal)) return [];
+      if (this.io.isAborted(signal)) return [];
 
       return result.data?.configuration?.general?.stashBoxes ?? [];
     } catch (error: unknown) {
-      return this.rethrowUnlessAbort('getStashBoxes', error, signal, []);
+      return this.io.rethrowUnlessAbort('getStashBoxes', error, signal, []);
     }
   }
 
