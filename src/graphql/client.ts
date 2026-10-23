@@ -415,8 +415,9 @@ export class GraphQLClient {
       }
     }
 
-    // Create request key for deduplication
-    const requestKey = this._getRequestKey('query', query, variables);
+    // Create request key for deduplication. Scope by abort signal: a shared in-flight request
+    // carries the first caller's signal, so a different caller must not inherit its abort.
+    const requestKey = this._getRequestKey('query', query, variables) + this._signalTag(signal);
 
     // Check for in-flight request
     const pending = this.pendingRequests.get(requestKey);
@@ -440,7 +441,7 @@ export class GraphQLClient {
       
       // Cache successful query responses (if enabled)
       if (this.enableResponseCache && result.data && !result.errors) {
-        this.responseCache.set(requestKey, {
+        this.responseCache.set(this._getRequestKey('query', query, variables), {
           data: result,
           timestamp: Date.now(),
           ttl: this.cacheTTL,
@@ -453,6 +454,19 @@ export class GraphQLClient {
       // Map deletion maintains order of remaining entries
       this.pendingRequests.delete(requestKey);
     }
+  }
+
+  private readonly signalIds = new WeakMap<AbortSignal, number>();
+  private nextSignalId = 1;
+
+  private _signalTag(signal?: AbortSignal): string {
+    if (!signal) return '';
+    let id = this.signalIds.get(signal);
+    if (id === undefined) {
+      id = this.nextSignalId++;
+      this.signalIds.set(signal, id);
+    }
+    return `|s${id}`;
   }
 
   /**

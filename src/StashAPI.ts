@@ -793,18 +793,21 @@ export class StashAPI {
     try {
       if (this.isAborted(signal)) return 1;
       
-      const countResult = await this.gqlClient.query<CheckTagsHaveMarkersResponse>({
-        query: queries.GET_MARKER_COUNT,
-        variables: {
-          filter: countFilter,
-          scene_marker_filter: Object.keys(countSceneFilter).length > 0 ? countSceneFilter : {},
-        },
-        signal,
+      const markerVariables = {
+        filter: countFilter,
+        scene_marker_filter: Object.keys(countSceneFilter).length > 0 ? countSceneFilter : {},
+      };
+      const rawCount = await this.cachedCount(`markers:${JSON.stringify(markerVariables)}`, async () => {
+        const countResult = await this.gqlClient.query<CheckTagsHaveMarkersResponse>({
+          query: queries.GET_MARKER_COUNT,
+          variables: markerVariables, // no caller signal: shared promise (see cachedCount)
+        });
+        return countResult.data?.findSceneMarkers?.count || 0;
       });
       
       if (this.isAborted(signal)) return 1;
       
-      const totalCount = Math.min(countResult.data?.findSceneMarkers?.count || 0, this._maxContentLimit);
+      const totalCount = Math.min(rawCount, this._maxContentLimit);
       if (totalCount > 0) {
         const totalPages = Math.ceil(totalCount / limit);
         return Math.floor(Math.random() * totalPages) + 1;
@@ -1348,15 +1351,36 @@ export class StashAPI {
   /**
    * Calculate random page for shuffle mode
    */
-  /** Runs the GET_SCENE_COUNT query (per_page:1, page:1 — count only, no rows) shared by shuffle-mode and short-form page math. */
-  private async fetchSceneCount(sceneFilter: SceneFilterInput | null, signal?: AbortSignal): Promise<number> {
-    const countFilter: FindFilterInput = { per_page: 1, page: 1 };
-    const countResult = await this.gqlClient.query<FindScenesResponse>({
-      query: queries.GET_SCENE_COUNT,
-      variables: { filter: countFilter, ...(sceneFilter && { scene_filter: sceneFilter }) },
-      signal,
+  /**
+   * Short-lived memo for count-only queries. Paging re-asks the same count for the same filter on
+   * every page; the answer only matters for page math, so a minute of staleness is harmless.
+   * Failures/aborts are evicted so the next call retries.
+   */
+  private readonly _countCache = new Map<string, { at: number; value: Promise<number> }>();
+  private static readonly COUNT_TTL_MS = 60_000;
+
+  private cachedCount(key: string, load: () => Promise<number>): Promise<number> {
+    const hit = this._countCache.get(key);
+    if (hit && Date.now() - hit.at < StashAPI.COUNT_TTL_MS) return hit.value;
+    const value = load();
+    this._countCache.set(key, { at: Date.now(), value });
+    value.catch(() => {
+      if (this._countCache.get(key)?.value === value) this._countCache.delete(key);
     });
-    return countResult.data?.findScenes?.count || 0;
+    return value;
+  }
+
+  /** Runs the GET_SCENE_COUNT query (per_page:1, page:1 — count only, no rows) shared by shuffle-mode and short-form page math. */
+  private fetchSceneCount(sceneFilter: SceneFilterInput | null, signal?: AbortSignal): Promise<number> {
+    const countFilter: FindFilterInput = { per_page: 1, page: 1 };
+    return this.cachedCount(`scenes:${JSON.stringify(sceneFilter)}`, async () => {
+      const countResult = await this.gqlClient.query<FindScenesResponse>({
+        query: queries.GET_SCENE_COUNT,
+        variables: { filter: countFilter, ...(sceneFilter && { scene_filter: sceneFilter }) },
+        // No caller signal: the promise is shared, so one caller aborting must not fail the others.
+      });
+      return countResult.data?.findScenes?.count || 0;
+    });
   }
 
   private async calculateRandomScenePage(filters: FilterOptions | undefined, limit: number, signal?: AbortSignal): Promise<{ page: number; totalCount: number }> {
@@ -1937,8 +1961,14 @@ export class StashAPI {
   /**
    * Find a tag by name
    */
+  /** Resolved tags by lowercase name — callers re-resolve the same few tags (favorite, bookmark, excluded) on every load. Misses aren't cached (the tag may be created later). */
+  private readonly _tagByNameCache = new Map<string, { id: string; name: string }>();
+
   async findTagByName(tagName: string, signal?: AbortSignal): Promise<{ id: string; name: string } | null> {
     if (this.isAborted(signal)) return null;
+    const cacheKey = tagName.toLowerCase();
+    const cached = this._tagByNameCache.get(cacheKey);
+    if (cached) return cached;
     
     const variables = {
       filter: { per_page: 1, page: 1 },
@@ -1961,6 +1991,7 @@ export class StashAPI {
         // Validate exact match (case-insensitive) - EQUALS modifier might not work as expected
         if (tag.name.toLowerCase() === tagName.toLowerCase()) {
           // Found matching tag
+          this._tagByNameCache.set(cacheKey, tag);
           return tag;
         } else {
           this.logError('findTagByName', new Error(`Tag name mismatch: searched="${tagName}", found="${tag.name}"`));

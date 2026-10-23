@@ -114,11 +114,8 @@ export class RatingControl {
     this.ratingDisplayValue = valueSpan;
     wrapper.appendChild(button);
 
-    const dialog = this.createRatingDialog();
-    wrapper.appendChild(dialog);
-
+    // The dialog (many star buttons + listeners) is built on first open — most posts never rate.
     this.updateRatingDisplay();
-    this.updateRatingStarButtons();
 
     return wrapper;
   }
@@ -353,7 +350,12 @@ export class RatingControl {
   }
 
   private openRatingDialog(): void {
-    if (!this.ratingDialog || this.isRatingDialogOpen) return;
+    if (this.isRatingDialogOpen) return;
+    if (!this.ratingDialog && this.ratingWrapper) {
+      this.ratingWrapper.appendChild(this.createRatingDialog());
+      this.updateRatingStarButtons();
+    }
+    if (!this.ratingDialog) return;
     this.isRatingDialogOpen = true;
     this.ratingDialog.hidden = false;
     this.ratingDialog.setAttribute('aria-hidden', 'false');

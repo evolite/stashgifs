@@ -224,7 +224,7 @@
   width: 100%;
   /* Performance optimization: enable content-visibility for off-screen posts */
   content-visibility: auto;
-  contain-intrinsic-size: auto 500px; /* Estimated height for layout stability */
+  contain-intrinsic-size: auto 100svh; /* Reel cards are full-viewport; matches real height so snap geometry does not jump */
 }
 
 .video-post,

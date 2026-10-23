@@ -121,6 +121,7 @@ export class FeedContainer {
   private settings: FeedSettings;
   private settingsPage?: SettingsPage;
   private settingsContainer?: HTMLElement;
+  private ratingConfigReady: Promise<void> = Promise.resolve();
   private ratingSystemConfig: { type?: string; starPrecision?: string } | null | undefined;
   private imagesLoadedCount: number = 0; // Track how many images we've loaded
   private markersLoadedCount: number = 0; // Track how many markers we've loaded
@@ -3227,14 +3228,14 @@ export class FeedContainer {
     this.lastSnapshotJson = JSON.stringify(initialSnapshot);
     history.replaceState({ filterSnapshot: initialSnapshot }, '');
 
-    // Load rating system configuration
-    try {
-      const config = await this.api.getUIConfiguration();
-      this.ratingSystemConfig = config || { type: 'stars', starPrecision: 'full' };
-    } catch (error) {
-      console.warn('Failed to load rating system configuration, using defaults', error);
-      this.ratingSystemConfig = { type: 'stars', starPrecision: 'full' }; // Default fallback
-    }
+    // Load rating system configuration in parallel with the first feed fetch; posts only
+    // need it at render time, so loadVideos awaits ratingConfigReady before building them.
+    this.ratingConfigReady = this.api.getUIConfiguration()
+      .then((config) => { this.ratingSystemConfig = config || { type: 'stars', starPrecision: 'full' }; })
+      .catch((error) => {
+        console.warn('Failed to load rating system configuration, using defaults', error);
+        this.ratingSystemConfig = { type: 'stars', starPrecision: 'full' }; // Default fallback
+      });
     this.currentFilters = filters;
     await this.refreshFeed();
     if (this.posts.size === 0) {
@@ -4465,15 +4466,18 @@ export class FeedContainer {
       // to corrupt the winning load's filters/sortSeed. The resolved copy is written back to
       // this.currentFilters below for pagination persistence.
       const currentFilters: FilterOptions = { ...(filters || this.currentFilters) };
-      await this.updateExcludedTagIds();
+      // Independent lookups: run together instead of back to back.
+      await Promise.all([
+        this.updateExcludedTagIds(),
+        // Warm the tag→effective-source cache so the filter builders can route each selected tag to
+        // the single server-side field that can match it (own ∪ descendants resolves parent tags).
+        this.selectedTagIds.size > 0
+          ? this.api.getTagSources([...this.selectedTagIds.keys()].map(String))
+          : undefined,
+      ]);
       this.applyExcludedTagsToFilters(currentFilters);
       this.applyOrientationFilterToFilters(currentFilters);
       this.applySceneTagSettingToFilters(currentFilters);
-      // Warm the tag→effective-source cache so the filter builders can route each selected tag to
-      // the single server-side field that can match it (own ∪ descendants resolves parent tags).
-      if (this.selectedTagIds.size > 0) {
-        await this.api.getTagSources([...this.selectedTagIds.keys()].map(String));
-      }
       const { limit, offset, page } = this.calculatePaginationParams(currentFilters, append);
 
       if (this.checkAbortAndCleanup(signal)) {
@@ -4522,6 +4526,7 @@ export class FeedContainer {
 
       // Store currentFilters (with sortSeed) back to this.currentFilters for pagination persistence
       this.currentFilters = currentFilters;
+      await this.ratingConfigReady;
 
       if (reqId !== this.latestLoadId || this.checkAbortAndCleanup(signal)) {
         return;
@@ -5938,6 +5943,7 @@ export class FeedContainer {
   }
 
   destroy(): void {
+    this.cancelAllPendingRequests(); // don't let an in-flight load keep building posts into a detached DOM
     if (this.settingsReloadTimeoutId) {
       clearTimeout(this.settingsReloadTimeoutId);
       this.settingsReloadTimeoutId = undefined;

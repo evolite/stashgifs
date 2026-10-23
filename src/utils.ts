@@ -593,8 +593,12 @@ function hasFullscreenSupport(element: Element): boolean {
  * Returns true for phones and tablets; false for mouse-driven desktops.
  * A touchscreen laptop with a mouse attached returns false (primary pointer is fine).
  */
+let coarsePointerQuery: MediaQueryList | undefined;
 export function isMobileDevice(): boolean {
-  return 'matchMedia' in globalThis && globalThis.matchMedia('(pointer: coarse)').matches;
+  if (!('matchMedia' in globalThis)) return false;
+  // MediaQueryList.matches is live, so one cached list stays correct without re-parsing per call.
+  coarsePointerQuery ??= globalThis.matchMedia('(pointer: coarse)');
+  return coarsePointerQuery.matches;
 }
 
 /**

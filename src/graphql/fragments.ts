@@ -27,7 +27,6 @@ export const SceneFields = `
       gender
       favorite
       image_path
-      birthdate
       rating100
       stash_ids {
         stash_id
@@ -51,14 +50,11 @@ export const SceneFields = `
       audio_codec
       width
       height
-      bit_rate
     }
     paths {
       screenshot
       preview
       stream
-      webp
-      vtt
     }
     sceneStreams {
       url
@@ -214,7 +210,6 @@ export const SlimImageData = `
       gender
       favorite
       image_path
-      birthdate
       rating100
       stash_ids {
         stash_id
@@ -239,29 +234,18 @@ export const VisualFileData = `
       id
       path
       size
-      mod_time
-      fingerprints {
-        type
-        value
-      }
     }
     ... on ImageFile {
       id
       path
       size
-      mod_time
       width
       height
-      fingerprints {
-        type
-        value
-      }
     }
     ... on VideoFile {
       id
       path
       size
-      mod_time
       duration
       video_codec
       audio_codec
@@ -269,10 +253,6 @@ export const VisualFileData = `
       height
       frame_rate
       bit_rate
-      fingerprints {
-        type
-        value
-      }
     }
   }
 `;
