@@ -31,6 +31,11 @@ export class SettingsPage {
     this.render();
   }
 
+  /** Render the settings modal into `container`. It manages itself from there (save/close callbacks). */
+  static mount(...args: ConstructorParameters<typeof SettingsPage>): SettingsPage {
+    return new SettingsPage(...args);
+  }
+
   /**
    * Create an info button with hover tooltip
    */

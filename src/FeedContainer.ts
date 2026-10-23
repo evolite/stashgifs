@@ -2041,7 +2041,7 @@ export class FeedContainer {
       document.body.appendChild(this.settingsContainer);
     }
 
-    new SettingsPageCtor(
+    SettingsPageCtor.mount(
       this.settingsContainer,
       this.settings,
       (signal) => this.api.findGalleries(signal),
