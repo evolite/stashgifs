@@ -5,6 +5,22 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [7.23.0] - 2026-10-23
+
+### Bug Fixes
+
+- Restore performer birthdate for age chips, guard settings modal open, keep fresh scene tags over stale batch reads
+- Route every filter reset and query build through one FilterState (studio, marker and date-range drops)
+- Apply server-synced settings through the same path as edits, drop duplicate player destroy and skeleton wipe
+- Surface transient lookup failures instead of treating them as empty results
+- Correct heart state after failed toggles, keep add-tag dialog attached, detect load failures on the player, limit discovery jiggle to one card
+- Stop cache-busting stream URLs so transcodes can be reused; page gallery loading
+
+### Features
+
+- Faster loading and smoother scrolling
+- Resume a video where you left off when scrolling back to it
+
 ## [7.22.0] - 2026-10-22
 
 ### Bug Fixes
