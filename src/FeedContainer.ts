@@ -18,7 +18,7 @@ import { ReelScroller } from './ReelScroller.js';
 import { FavoritesManager } from './FavoritesManager.js';
 import { BookmarkManager } from './BookmarkManager.js';
 import type { SettingsPage } from './SettingsPage.js';
-import { debounce, isTypingTarget, showToast, normalizeMediaUrl, isStandaloneNavigator, isMobileDevice, detectVideoFromVisualFiles, isMp4File, getImageUrlForDisplay, THEME, THEME_DEFAULTS, normalizeHexColor, toRgba, buildFullUrl, applyThemeColors } from './utils.js';
+import { debounce, isTypingTarget, showToast, normalizeMediaUrl, isStandaloneNavigator, isMobileDevice, detectVideoFromVisualFiles, isMp4File, getImageUrlForDisplay, THEME, THEME_DEFAULTS, normalizeHexColor, toRgba, buildFullUrl, applyThemeColors, setIcon } from './utils.js';
 import { GQLImage } from './graphql/types.js';
 import { getStashBaseUrl } from './utils/baseUrl.js';
 import { SETTINGS_SVG, STASHGIFS_LOGO_SVG, IMAGE_SVG, MARKER_SVG, HEART_SVG_OUTLINE } from './icons.js';
@@ -183,6 +183,7 @@ export class FeedContainer {
 
     this.initializeContainers();
     this.applyThemeSettings(this.settings);
+    this.applyFooterVisibility(this.settings);
     this.loadUserPreferences();
     
     // Create header bar with unified search
@@ -555,6 +556,13 @@ export class FeedContainer {
     this.discoveryPanel = undefined;
   }
 
+  /** Footer button visibility is a class on the feed root, so it costs nothing per post and works for cards built while hidden. */
+  private applyFooterVisibility(settings: FeedSettings): void {
+    this.container.classList.toggle('feed-container--hide-ocount', settings.showOCountButton === false);
+    this.container.classList.toggle('feed-container--hide-rating', settings.showRatingButton === false);
+    this.container.classList.toggle('feed-container--hide-views', settings.showViewCountBadge === false);
+  }
+
   private forEachPost(condition: boolean, fn: (post: PostType) => void): void {
     if (!condition) return;
     for (const post of this.posts.values()) {
@@ -609,9 +617,7 @@ export class FeedContainer {
       p => p.setShowSceneTags?.(updatedSettings.showSceneTags === true)
     );
     this.forEachPost(newSettings.reelAutoScroll !== undefined, p => p.setReelAutoScroll(newSettings.reelAutoScroll!));
-    this.forEachPost(newSettings.showOCountButton !== undefined, p => p.setShowOCountButton(newSettings.showOCountButton!));
-    this.forEachPost(newSettings.showRatingButton !== undefined, p => p.setShowRatingButton(newSettings.showRatingButton!));
-    this.forEachPost(newSettings.showViewCountBadge !== undefined, p => p.setShowViewCountBadge(newSettings.showViewCountBadge!));
+    this.applyFooterVisibility(updatedSettings);
     this.forEachPost(
       newSettings.showBookmarkButton !== undefined,
       p => { if (p instanceof VideoPost) p.setShowBookmarkButton(newSettings.showBookmarkButton!); }
@@ -1917,7 +1923,7 @@ export class FeedContainer {
 
     const brand = document.createElement('span');
     brand.className = 'feed-brand-text';
-    brand.innerHTML = STASHGIFS_LOGO_SVG;
+    setIcon(brand, STASHGIFS_LOGO_SVG);
     brand.style.color = 'var(--color-accent)';
     brand.style.display = 'inline-flex';
     brand.style.alignItems = 'center';
@@ -2185,7 +2191,7 @@ export class FeedContainer {
     settingsButton.style.justifyContent = 'center';
     settingsButton.style.transition = 'background 0.2s ease, border-color 0.2s ease, color 0.2s ease';
     // Standard settings/gear icon
-    settingsButton.innerHTML = SETTINGS_SVG;
+    setIcon(settingsButton, SETTINGS_SVG);
 
     settingsButton.addEventListener('mouseenter', () => {
       settingsButton.style.color = THEME.colors.textPrimary;
@@ -3473,8 +3479,6 @@ export class FeedContainer {
       performerDisplayLimit: this.settings.performerDisplayLimit ?? 3,
       showMarkerTitle: this.settings.searchMarkersByName === true,
       showBookmarkButton: this.settings.showBookmarkButton === true,
-      showOCountButton: this.settings.showOCountButton !== false,
-      showRatingButton: this.settings.showRatingButton !== false,
       showViewCountBadge: this.settings.showViewCountBadge !== false,
       ratingSystemConfig: this.ratingSystemConfig,
       hdModeFromSettings: this.useHDMode,

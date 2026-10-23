@@ -5,7 +5,7 @@
 
 import { FavoritesManager, FAVORITE_TAG_NAME } from './FavoritesManager.js';
 import { StashAPI } from './StashAPI.js';
-import { normalizeMediaUrl, showToast, isMobileDevice, THEME, subscribeWindowScroll, applyMenuItemHover, extractValidPerformerIds, initPopoverDialog, formatViewCount } from './utils.js';
+import { normalizeMediaUrl, showToast, isMobileDevice, THEME, applyMenuItemHover, extractValidPerformerIds, initPopoverDialog, formatViewCount, setIcon } from './utils.js';
 import { RatingControl } from './RatingControl.js';
 import { ADD_TAG_SVG, HEART_SVG_OUTLINE, HEART_SVG_FILLED, OCOUNT_SVG, EXTERNAL_LINK_SVG, STAR_SVG, STAR_SVG_OUTLINE, VERIFIED_SVG, EYE_SVG, CLAPPERBOARD_SVG } from './icons.js';
 import { DISCOVERY_ICON_SVG, type DiscoveryPanelControl } from './DiscoveryPanel.js';
@@ -35,19 +35,12 @@ export interface BasePostOptions {
   showSceneTitle?: boolean;
   showPerformerTags?: boolean;
   showSceneTags?: boolean;
-  showOCountButton?: boolean;
-  showRatingButton?: boolean;
   tagDisplayLimit?: number;
   performerDisplayLimit?: number;
   showViewCountBadge?: boolean;
   discoveryPanel?: DiscoveryPanelControl;
   reelAutoScroll?: boolean;
   onReelAdvance?: () => void; // Reel mode: advance one card via the JS scroller
-}
-
-interface HoverHandlers {
-  mouseenter: () => void;
-  mouseleave: () => void;
 }
 
 interface PerformerRatingInfo {
@@ -120,7 +113,6 @@ export abstract class BasePost {
   protected readonly api?: StashAPI;
   protected readonly onPlayerReady?: (postId: string) => void;
   protected readonly onPauseAll?: () => void;
-  protected readonly hoverHandlers: Map<HTMLElement, HoverHandlers> = new Map();
   protected readonly onPerformerChipClick?: (performerId: number, performerName: string) => void | Promise<void>;
   protected readonly onTagChipClick?: (tagId: number, tagName: string) => void | Promise<void>;
   protected readonly onStudioChipClick?: (studioId: number, studioName: string) => void | Promise<void>;
@@ -146,8 +138,6 @@ export abstract class BasePost {
   protected showSceneTitle: boolean = false;
   protected showPerformerTags: boolean = false;
   protected showSceneTags: boolean = false;
-  protected showOCountButton: boolean = true;
-  protected showRatingButton: boolean = true;
   protected showViewCountBadge: boolean = true;
   protected tagDisplayLimit: number = 10;
   protected performerDisplayLimit: number = 3;
@@ -165,7 +155,6 @@ export abstract class BasePost {
   private readonly performerOverlayMgr: OverlayManager<PerformerExtended>;
   private readonly tagOverlayMgr: OverlayManager<Tag>;
   private readonly studioOverlayMgr: OverlayManager<StudioExtended>;
-  private overlayScrollCleanup?: () => void;
   // Add performer dialog
   private addPerformerDialog: HTMLElement | null = null;
   private addPerformerDialogInput: HTMLInputElement | null = null;
@@ -205,8 +194,6 @@ export abstract class BasePost {
     this.showSceneTitle = options?.showSceneTitle === true;
     this.showPerformerTags = options?.showPerformerTags === true;
     this.showSceneTags = options?.showSceneTags === true;
-    this.showOCountButton = options?.showOCountButton !== false;
-    this.showRatingButton = options?.showRatingButton !== false;
     this.showViewCountBadge = options?.showViewCountBadge !== false;
     this.tagDisplayLimit = options?.tagDisplayLimit ?? 10;
     this.performerDisplayLimit = options?.performerDisplayLimit ?? 3;
@@ -229,12 +216,6 @@ export abstract class BasePost {
       (data) => this.createStudioOverlay(data),
       (overlay, chip) => this.positionOverlay(overlay, chip)
     );
-
-    this.overlayScrollCleanup = subscribeWindowScroll(() => {
-      this.performerOverlayMgr.hide(true);
-      this.tagOverlayMgr.hide(true);
-      this.studioOverlayMgr.hide(true);
-    });
   }
 
   protected renderBasePost(config: {
@@ -301,15 +282,6 @@ export abstract class BasePost {
     this.performerOverlayMgr.destroy();
     this.tagOverlayMgr.destroy();
     this.studioOverlayMgr.destroy();
-    if (this.overlayScrollCleanup) {
-      this.overlayScrollCleanup();
-      this.overlayScrollCleanup = undefined;
-    }
-
-    for (const [button] of this.hoverHandlers) {
-      this.removeHoverEffect(button);
-    }
-    this.hoverHandlers.clear();
 
     if (this.discoveryCollapseUnsubscribe) {
       this.discoveryCollapseUnsubscribe();
@@ -397,8 +369,7 @@ export abstract class BasePost {
     footer: HTMLElement;
   }): void {
     this.applyReelContainerStyles();
-    const isPortrait = this.applyReelPlayerStyles(elements.playerContainer);
-    this.applyReelMediaStyles(elements.playerContainer, isPortrait);
+    this.applyReelPlayerStyles(elements.playerContainer);
     this.addPlayerGradientOverlay(elements.playerContainer);
 
     const isNarrow = globalThis.innerWidth < 768;
@@ -483,10 +454,6 @@ export abstract class BasePost {
         container.classList.remove(className);
       }
     }
-  }
-
-  private applyReelMediaStyles(_playerContainer: HTMLElement, _isPortrait: boolean): void {
-    // object-fit is set at construction time by each player (NativeVideoPlayer/ImagePlayer)
   }
 
   private applyReelHeaderStyles(header: HTMLElement, isMobile: boolean): void {
@@ -662,23 +629,6 @@ export abstract class BasePost {
     this.refreshHeader();
   }
 
-  public setShowOCountButton(show: boolean): void {
-    this.showOCountButton = show;
-    if (this.oCountButton) this.oCountButton.style.display = show ? '' : 'none';
-  }
-
-  public setShowRatingButton(show: boolean): void {
-    this.showRatingButton = show;
-    const rating = this.container.querySelector<HTMLElement>('.rating-control');
-    if (rating) rating.style.display = show ? '' : 'none';
-  }
-
-  public setShowViewCountBadge(show: boolean): void {
-    this.showViewCountBadge = show;
-    const badge = this.container.querySelector<HTMLElement>('.icon-btn--views');
-    if (badge) badge.style.display = show ? '' : 'none';
-  }
-
   protected buildTitleElement(title: string): HTMLElement {
     const color = THEME.colors.textPrimary;
 
@@ -694,7 +644,7 @@ export abstract class BasePost {
     el.style.minWidth = '0';
 
     const icon = document.createElement('span');
-    icon.innerHTML = CLAPPERBOARD_SVG;
+    setIcon(icon, CLAPPERBOARD_SVG);
     icon.style.flexShrink = '0';
     icon.style.display = 'flex';
     icon.style.alignItems = 'center';
@@ -757,15 +707,6 @@ export abstract class BasePost {
     info.appendChild(row);
     footer.appendChild(info);
 
-    footer.addEventListener('mouseenter', (e) => {
-      e.stopPropagation();
-      e.stopImmediatePropagation();
-    });
-    footer.addEventListener('mouseleave', (e) => {
-      e.stopPropagation();
-      e.stopImmediatePropagation();
-    });
-
     return { footer, info, row, buttonGroup };
   }
 
@@ -774,7 +715,8 @@ export abstract class BasePost {
       this.heartButton = this.createHeartButton();
       buttonGroup.appendChild(this.heartButton);
     }
-    if (this.api && this.showOCountButton) {
+    // O-count and rating are always built; the feed root hides them (feed-container--hide-*), so toggling the setting needs no rebuild.
+    if (this.api) {
       this.oCountButton = this.createOCountButton();
       buttonGroup.appendChild(this.oCountButton);
     }
@@ -782,10 +724,8 @@ export abstract class BasePost {
       const viewCount = this.getAndIncrementLocalViewCount(imageId);
       buttonGroup.appendChild(this.createViewCountBadge(viewCount));
     }
-    if (this.showRatingButton) {
-      const ratingControl = this.createRatingSection();
-      buttonGroup.appendChild(ratingControl);
-    }
+    const ratingControl = this.createRatingSection();
+    buttonGroup.appendChild(ratingControl);
   }
 
   /** Trailing footer buttons shared by image-type posts: discovery + open-in-Stash. */
@@ -868,52 +808,6 @@ export abstract class BasePost {
     button.style.height = '44px';
     button.style.minWidth = '44px';
     button.style.minHeight = '44px';
-  }
-
-  /**
-   * Add hover effect to a button element - CRITICAL: Only affects icon, not container
-   */
-  protected addHoverEffect(button: HTMLElement): void {
-    const getIconElement = (): HTMLElement | SVGElement | null => {
-      const svg = button.querySelector('svg');
-      if (svg) return svg as SVGElement;
-      const firstChild = button.firstElementChild as HTMLElement;
-      if (firstChild) return firstChild;
-      return null;
-    };
-
-    const mouseenter = () => {
-      if (!(button instanceof HTMLButtonElement) || !button.disabled) {
-        const icon = getIconElement();
-        if (icon) {
-          icon.style.transform = 'scale(1.1)';
-          icon.style.transition = 'transform 0.2s cubic-bezier(0.2, 0, 0, 1)';
-        }
-      }
-    };
-    const mouseleave = () => {
-      const icon = getIconElement();
-      if (icon) {
-        icon.style.transform = 'scale(1)';
-      }
-    };
-    
-    button.addEventListener('mouseenter', mouseenter);
-    button.addEventListener('mouseleave', mouseleave);
-    
-    this.hoverHandlers.set(button, { mouseenter, mouseleave });
-  }
-
-  /**
-   * Remove hover effect from a button element
-   */
-  protected removeHoverEffect(button: HTMLElement): void {
-    const handlers = this.hoverHandlers.get(button);
-    if (handlers) {
-      button.removeEventListener('mouseenter', handlers.mouseenter);
-      button.removeEventListener('mouseleave', handlers.mouseleave);
-      this.hoverHandlers.delete(button);
-    }
   }
 
   /**
@@ -1000,7 +894,7 @@ export abstract class BasePost {
   private buildVerifiedBadge(): HTMLElement {
     const verifiedBadge = document.createElement('span');
     verifiedBadge.className = 'performer-chip__verified';
-    verifiedBadge.innerHTML = VERIFIED_SVG;
+    setIcon(verifiedBadge, VERIFIED_SVG);
     verifiedBadge.style.display = 'inline-flex';
     verifiedBadge.style.alignItems = 'center';
     verifiedBadge.style.justifyContent = 'center';
@@ -1040,9 +934,6 @@ export abstract class BasePost {
     chip.style.backdropFilter = 'none';
     chip.style.color = '#ffffff';
     chip.style.textShadow = '0 2px 8px rgba(0, 0, 0, 0.65)';
-
-    chip.addEventListener('mouseenter', () => { chip.style.color = '#ffffff'; });
-    chip.addEventListener('mouseleave', () => { chip.style.color = '#ffffff'; });
 
     return chip;
   }
@@ -1209,14 +1100,14 @@ export abstract class BasePost {
 
     const favoriteIcon = document.createElement('span');
     favoriteIcon.className = 'performer-chip__favorite-icon';
-    favoriteIcon.innerHTML = isFavorite ? HEART_SVG_FILLED : HEART_SVG_OUTLINE;
+    setIcon(favoriteIcon, isFavorite ? HEART_SVG_FILLED : HEART_SVG_OUTLINE);
     favoriteIcon.style.display = 'inline-flex';
     favoriteIcon.style.alignItems = 'center';
     favoriteIcon.style.justifyContent = 'center';
     favoriteButton.appendChild(favoriteIcon);
 
     const updateFavoriteIcon = (nextFavorite: boolean): void => {
-      favoriteIcon.innerHTML = nextFavorite ? HEART_SVG_FILLED : HEART_SVG_OUTLINE;
+      setIcon(favoriteIcon, nextFavorite ? HEART_SVG_FILLED : HEART_SVG_OUTLINE);
       favoriteButton.style.color = getFavoriteColor(nextFavorite);
       favoriteButton.setAttribute('aria-label', nextFavorite ? 'Unfavorite performer' : 'Favorite performer');
       favoriteButton.title = nextFavorite ? 'Unfavorite performer' : 'Favorite performer';
@@ -1229,7 +1120,7 @@ export abstract class BasePost {
       for (const button of buttons) {
         const icon = button.querySelector<HTMLElement>('.performer-chip__favorite-icon');
         if (icon) {
-          icon.innerHTML = nextFavorite ? HEART_SVG_FILLED : HEART_SVG_OUTLINE;
+          setIcon(icon, nextFavorite ? HEART_SVG_FILLED : HEART_SVG_OUTLINE);
         }
         button.style.color = getFavoriteColor(nextFavorite);
         button.setAttribute('aria-label', nextFavorite ? 'Unfavorite performer' : 'Favorite performer');
@@ -1381,7 +1272,7 @@ export abstract class BasePost {
     nameLink.appendChild(name);
 
     const externalIcon = document.createElement('span');
-    externalIcon.innerHTML = EXTERNAL_LINK_SVG;
+    setIcon(externalIcon, EXTERNAL_LINK_SVG);
     externalIcon.style.display = 'inline-flex';
     externalIcon.style.alignItems = 'center';
     externalIcon.style.opacity = '0.7';
@@ -2089,9 +1980,6 @@ export abstract class BasePost {
       }
     };
     
-    hashtag.addEventListener('mouseenter', () => { hashtag.style.color = '#ffffff'; });
-    hashtag.addEventListener('mouseleave', () => { hashtag.style.color = '#ffffff'; });
-    
     const isMobile = isMobileDevice();
     // Add hover overlay handlers for tags (desktop only)
     if (this.api && this.canHoverDevice()) {
@@ -2417,8 +2305,7 @@ export abstract class BasePost {
     iconBtn.title = title;
     this.applyIconButtonStyles(iconBtn);
     iconBtn.style.padding = '0';
-    iconBtn.innerHTML = EXTERNAL_LINK_SVG;
-    this.addHoverEffect(iconBtn);
+    setIcon(iconBtn, EXTERNAL_LINK_SVG);
     return iconBtn;
   }
 
@@ -2442,11 +2329,10 @@ export abstract class BasePost {
       options.onClick(event);
     });
 
-    this.addHoverEffect(displayButton);
 
     const iconSpan = document.createElement('span');
     iconSpan.className = 'rating-display__icon';
-    iconSpan.innerHTML = STAR_SVG_OUTLINE;
+    setIcon(iconSpan, STAR_SVG_OUTLINE);
     iconSpan.style.display = 'flex';
     iconSpan.style.alignItems = 'center';
     iconSpan.style.justifyContent = 'center';
@@ -2479,7 +2365,7 @@ export abstract class BasePost {
 
     const outlineSpan = document.createElement('span');
     outlineSpan.className = 'rating-dialog__star-outline';
-    outlineSpan.innerHTML = STAR_SVG_OUTLINE;
+    setIcon(outlineSpan, STAR_SVG_OUTLINE);
     outlineSpan.style.position = 'absolute';
     outlineSpan.style.display = 'flex';
     outlineSpan.style.alignItems = 'center';
@@ -2488,7 +2374,7 @@ export abstract class BasePost {
 
     const fillSpan = document.createElement('span');
     fillSpan.className = 'rating-dialog__star-fill';
-    fillSpan.innerHTML = STAR_SVG;
+    setIcon(fillSpan, STAR_SVG);
     fillSpan.style.position = 'absolute';
     fillSpan.style.display = 'flex';
     fillSpan.style.alignItems = 'center';
@@ -3451,7 +3337,7 @@ export abstract class BasePost {
     addTagBtn.title = title;
     this.applyIconButtonStyles(addTagBtn);
     addTagBtn.style.padding = '0';
-    addTagBtn.innerHTML = ADD_TAG_SVG;
+    setIcon(addTagBtn, ADD_TAG_SVG);
 
     const clickHandler = (e: Event) => {
       e.preventDefault();
@@ -3460,7 +3346,6 @@ export abstract class BasePost {
     };
 
     addTagBtn.addEventListener('click', clickHandler);
-    this.addHoverEffect(addTagBtn);
     this.addTagButton = addTagBtn;
     return addTagBtn;
   }
@@ -3557,8 +3442,7 @@ export abstract class BasePost {
     btn.setAttribute('aria-label', 'Toggle StashDB discovery panel');
     btn.title = 'StashDB Discovery';
     this.applyIconButtonStyles(btn);
-    btn.innerHTML = DISCOVERY_ICON_SVG;
-    this.addHoverEffect(btn);
+    setIcon(btn, DISCOVERY_ICON_SVG);
 
     const applyState = (collapsed: boolean) => {
       btn.style.color = collapsed ? THEME.colors.iconInactive : THEME.colors.accentPrimary;
@@ -3627,7 +3511,6 @@ export abstract class BasePost {
     };
 
     heartBtn.addEventListener('click', clickHandler);
-    this.addHoverEffect(heartBtn);
     this.heartButton = heartBtn;
     return heartBtn;
   }
@@ -3642,11 +3525,11 @@ export abstract class BasePost {
     const inactiveColor = THEME.colors.textPrimary;
     
     if (this.isFavorite) {
-      btn.innerHTML = HEART_SVG_FILLED;
+      setIcon(btn, HEART_SVG_FILLED);
       btn.style.color = THEME.colors.accentPrimary;
       btn.title = 'Remove from favorites';
     } else {
-      btn.innerHTML = HEART_SVG_OUTLINE;
+      setIcon(btn, HEART_SVG_OUTLINE);
       btn.style.color = inactiveColor;
       btn.title = 'Add to favorites';
     }
@@ -3713,7 +3596,6 @@ export abstract class BasePost {
     };
 
     oCountBtn.addEventListener('click', clickHandler);
-    this.addHoverEffect(oCountBtn);
     return oCountBtn;
   }
 

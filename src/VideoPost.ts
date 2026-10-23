@@ -5,7 +5,7 @@
 
 import { VideoPostData, Scene, IVideoPlayer } from './types.js';
 import { StashAPI } from './StashAPI.js';
-import { calculateAspectRatio, getAspectRatioClass, normalizeMediaUrl, showToast, toAbsoluteUrl, THEME, extractValidPerformerIds } from './utils.js';
+import { calculateAspectRatio, getAspectRatioClass, normalizeMediaUrl, showToast, toAbsoluteUrl, THEME, extractValidPerformerIds, setIcon } from './utils.js';
 import { getStashBaseUrl } from './utils/baseUrl.js';
 import { MARKER_SVG, BOOKMARK_SVG_OUTLINE, BOOKMARK_SVG_FILLED } from './icons.js';
 import { VideoPostBase, BaseVideoPostOptions } from './VideoPostBase.js';
@@ -377,20 +377,18 @@ export class VideoPost extends VideoPostBase {
     // Add buttons in order
     this.addActionButtons(buttonGroup);
 
-    if (this.showViewCountBadge) {
-      const viewCount = this.data.marker.scene.play_count ?? 0;
-      buttonGroup.appendChild(this.createViewCountBadge(viewCount));
-    }
+    // View count, O-count and rating are always built; the feed root hides them
+    // (feed-container--hide-*), so toggling a setting needs no rebuild.
+    const viewCount = this.data.marker.scene.play_count ?? 0;
+    buttonGroup.appendChild(this.createViewCountBadge(viewCount));
 
-    if (this.api && this.showOCountButton) {
+    if (this.api) {
       const oCountBtn = this.createOCountButton();
       buttonGroup.appendChild(oCountBtn);
     }
 
-    if (this.showRatingButton) {
-      const ratingControl = this.createRatingSection();
-      buttonGroup.appendChild(ratingControl);
-    }
+    const ratingControl = this.createRatingSection();
+    buttonGroup.appendChild(ratingControl);
 
     // Scene previews stay preview-only — there's no full-scene upgrade to offer.
     if (this.api && !this.hdModeFromSettings && !this.isScenePreviewContent()) {
@@ -464,7 +462,6 @@ export class VideoPost extends VideoPostBase {
       }
     });
 
-    this.addHoverEffect(btn);
     return btn;
   }
 
@@ -472,11 +469,11 @@ export class VideoPost extends VideoPostBase {
     const btn = button || this.bookmarkButton;
     if (!btn) return;
     if (this.isBookmarked) {
-      btn.innerHTML = BOOKMARK_SVG_FILLED;
+      setIcon(btn, BOOKMARK_SVG_FILLED);
       btn.style.color = THEME.colors.accentPrimary;
       btn.title = 'Remove from bookmarks';
     } else {
-      btn.innerHTML = BOOKMARK_SVG_OUTLINE;
+      setIcon(btn, BOOKMARK_SVG_OUTLINE);
       btn.style.color = THEME.colors.textPrimary;
       btn.title = 'Add to bookmarks';
     }
@@ -520,7 +517,7 @@ export class VideoPost extends VideoPostBase {
     markerBtn.title = 'Create marker from post';
     this.applyIconButtonStyles(markerBtn);
     markerBtn.style.padding = '0';
-    markerBtn.innerHTML = MARKER_SVG;
+    setIcon(markerBtn, MARKER_SVG);
 
     const clickHandler = (e: Event) => {
       e.preventDefault();
@@ -529,7 +526,6 @@ export class VideoPost extends VideoPostBase {
     };
 
     markerBtn.addEventListener('click', clickHandler);
-    this.addHoverEffect(markerBtn);
     this.markerButton = markerBtn;
     return markerBtn;
   }

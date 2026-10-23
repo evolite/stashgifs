@@ -6,7 +6,7 @@
 
 import type { IVideoPlayer, VideoSource } from './types.js';
 import { VideoJsPlayer } from './VideoJsPlayer.js';
-import { isMobileDevice, THEME, showToast, createCoverDiv } from './utils.js';
+import { isMobileDevice, THEME, showToast, createCoverDiv, setIcon } from './utils.js';
 import { HQ_SVG_OUTLINE, HQ_SVG_FILLED, VOLUME_MUTED_SVG, VOLUME_UNMUTED_SVG } from './icons.js';
 import { BasePost, BasePostOptions } from './BasePost.js';
 import { setupTouchHandlers, preventClickAfterTouch } from './utils/touchHandlers.js';
@@ -190,11 +190,11 @@ export abstract class VideoPostBase extends BasePost {
 
   protected updateHQButton(button: HTMLElement): void {
     if (this.isHQMode) {
-      button.innerHTML = HQ_SVG_FILLED;
+      setIcon(button, HQ_SVG_FILLED);
       button.style.color = THEME.colors.accentPrimary;
       button.title = 'HD video loaded';
     } else {
-      button.innerHTML = HQ_SVG_OUTLINE;
+      setIcon(button, HQ_SVG_OUTLINE);
       button.style.color = THEME.colors.textSecondary;
       button.title = this.getHQButtonOffLabel();
     }
@@ -252,10 +252,10 @@ export abstract class VideoPostBase extends BasePost {
 
     const isMuted = this.getGlobalMuteState();
     if (isMuted) {
-      btn.innerHTML = VOLUME_MUTED_SVG;
+      setIcon(btn, VOLUME_MUTED_SVG);
       btn.setAttribute('aria-label', 'Unmute');
     } else {
-      btn.innerHTML = VOLUME_UNMUTED_SVG;
+      setIcon(btn, VOLUME_UNMUTED_SVG);
       btn.setAttribute('aria-label', 'Mute');
     }
 
@@ -310,7 +310,6 @@ export abstract class VideoPostBase extends BasePost {
     };
 
     hqBtn.addEventListener('click', clickHandler);
-    this.addHoverEffect(hqBtn);
     return hqBtn;
   }
 

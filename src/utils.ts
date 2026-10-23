@@ -665,3 +665,20 @@ export function initPopoverDialog(dialog: HTMLElement, bottomOffset: string): vo
   dialog.style.position = 'absolute';
   dialog.style.bottom = bottomOffset;
 }
+
+const iconTemplates = new Map<string, DocumentFragment>();
+
+/**
+ * Set an element's content to an SVG icon string. The markup is parsed once per distinct string and
+ * cloned afterwards, instead of re-running the HTML parser for every button on every card.
+ */
+export function setIcon(el: Element, svg: string): void {
+  let template = iconTemplates.get(svg);
+  if (!template) {
+    const holder = document.createElement('template');
+    holder.innerHTML = svg;
+    template = holder.content;
+    iconTemplates.set(svg, template);
+  }
+  el.replaceChildren(template.cloneNode(true));
+}

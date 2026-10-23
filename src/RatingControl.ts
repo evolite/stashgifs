@@ -4,7 +4,7 @@
  */
 
 import { STAR_SVG, STAR_SVG_OUTLINE } from './icons.js';
-import { THEME, throttle, initPopoverDialog } from './utils.js';
+import { THEME, throttle, initPopoverDialog, setIcon } from './utils.js';
 
 const RATING_MAX_STARS = 10;
 const RATING_MIN_STARS = 0;
@@ -498,10 +498,10 @@ export class RatingControl {
     }
     if (this.ratingDisplayIcon) {
       if (this.hasRating) {
-        this.ratingDisplayIcon.innerHTML = STAR_SVG;
+        setIcon(this.ratingDisplayIcon, STAR_SVG);
         this.ratingDisplayIcon.style.color = '#FFD700';
       } else {
-        this.ratingDisplayIcon.innerHTML = STAR_SVG_OUTLINE;
+        setIcon(this.ratingDisplayIcon, STAR_SVG_OUTLINE);
         this.ratingDisplayIcon.style.color = THEME.colors.iconInactive;
       }
     }

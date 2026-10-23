@@ -907,7 +907,6 @@
   transition: transform 0.2s var(--ease-spring),
               color 0.2s ease,
               opacity 0.2s ease;
-  will-change: transform;
 }
 
 /* Icon SVG sizing - make icons 24px */
@@ -925,6 +924,11 @@
 .icon-btn:hover svg,
 .icon-btn:hover > * {
   transform: scale(1.1);
+}
+
+.icon-btn:disabled:hover svg,
+.icon-btn:disabled:hover > * {
+  transform: none;
 }
 
 .icon-btn--primary {
@@ -1652,3 +1656,10 @@ body::-webkit-scrollbar,
   cursor: pointer;
 }
 .whats-new__close:hover { background: color-mix(in srgb, var(--color-accent) 10%, transparent); }
+
+/* Footer buttons hidden via settings (toggled on the feed root; no per-card work) */
+.feed-container--hide-ocount .icon-btn--ocount,
+.feed-container--hide-rating .rating-control,
+.feed-container--hide-views .icon-btn--views {
+  display: none !important;
+}
