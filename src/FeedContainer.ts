@@ -434,9 +434,10 @@ export class FeedContainer {
   }
 
   /**
-   * Save settings to localStorage
+   * Apply a settings change to the live feed. `persist` is true for edits made here (settings page)
+   * and false for values that just arrived from the server, which are already stored.
    */
-  private handleSettingsChange(newSettings: Partial<FeedSettings>): void {
+  private applySettings(newSettings: Partial<FeedSettings>, persist: boolean): void {
     const previousSettings = { ...this.settings };
     const previousShowVerified = this.settings.showVerifiedCheckmarks;
     const previousShowProductionAge = this.settings.showProductionAge;
@@ -449,13 +450,12 @@ export class FeedContainer {
     this.settings = updatedSettings;
     this.api.maxContentLimit = updatedSettings.contentLimit ?? 5000;
     this.api.maxResolution = updatedSettings.maxResolution ?? 0;
-    this.saveSettingsToStorage(updatedSettings);
+    if (persist) this.saveSettingsToStorage(updatedSettings);
     this.applyThemeSettings(updatedSettings);
 
     if (newSettings.hdMode !== undefined) {
-      const newHDMode = newSettings.hdMode;
-      this.useHDMode = newHDMode;
-      this.settingsManager.save({ hdMode: newHDMode });
+      this.useHDMode = newSettings.hdMode;
+      if (persist) this.settingsManager.save({ hdMode: newSettings.hdMode });
     }
 
     this.handlePostDisplaySettingsChange(newSettings, updatedSettings, previousShowVerified, previousShowProductionAge, previousShowStudioChips, previousShowSceneTitle);
@@ -2228,7 +2228,7 @@ export class FeedContainer {
       this.settingsContainer,
       this.settings,
       (signal) => this.api.findGalleries(signal),
-      (newSettings) => this.handleSettingsChange(newSettings),
+      (newSettings) => this.applySettings(newSettings, true),
       () => {
         this.settingsContainer?.remove();
         this.settingsContainer = undefined;
@@ -4541,12 +4541,10 @@ export class FeedContainer {
       append
     } = options;
 
-    if (!append) {
-      this.clearPosts();
-    }
+    // (A fresh load already cleared the feed and showed skeletons in initializeLoadState.)
 
     // Calculate hasMore using API counts to determine if there's more content available
-    // This ensures infinite scroll works correctly when filters are applied
+    // This keeps paging correct when filters are applied
     this.calculateHasMore({
       pagination: {
         append,
@@ -5398,29 +5396,12 @@ export class FeedContainer {
   private removePost(postId: string): void {
     const post = this.posts.get(postId);
     if (post) {
-      this.destroyPostPlayer(post);
-      post.destroy();
+      post.destroy(); // each post unloads and disposes its own player
       this.posts.delete(postId);
       this.removePostFromOrder(postId);
     }
     
     this.cleanupLoadObserver(postId);
-  }
-
-  /**
-   * Destroy a post's video player
-   */
-  private destroyPostPlayer(post: PostType): void {
-    const player = post.getPlayer();
-    if (!player) {
-      return;
-    }
-    
-    // Only video players have unload method
-    if (isVideoPlayer(player) && !player.getIsUnloaded()) {
-      player.unload();
-    }
-    player.destroy();
   }
 
   /**
@@ -5928,98 +5909,10 @@ export class FeedContainer {
     if (error) error.style.display = 'none';
   }
 
-  /**
-   * Update settings
-   */
+  /** Settings pushed from the server: same live effects as an edit, without writing them back. */
   updateSettings(newSettings: Partial<FeedSettings>): void {
-    const previousExcludedTags = this.normalizeExcludedTagNames(this.settings.excludedTagNames ?? []);
-    const previousShowVerified = this.settings.showVerifiedCheckmarks;
-    const previousShowProductionAge = this.settings.showProductionAge;
-    const previousShowStudioChips = this.settings.showStudioChips;
-    const previousShowPerformerEmbellishment = this.settings.showPerformerEmbellishment;
-    const previousShowSceneTitle = this.settings.showSceneTitle;
-    const previousOrientation = this.normalizeOrientationFilter(this.settings.orientationFilter ?? []);
-    this.settings = { ...this.settings, ...newSettings };
-
+    this.applySettings(newSettings, false);
     this.refreshAutoplayAfterLayout();
-    this.applyPostDisplaySettings(newSettings, previousShowVerified, previousShowProductionAge, previousShowStudioChips, previousShowPerformerEmbellishment, previousShowSceneTitle);
-    this.reloadFeedIfFiltersChanged(newSettings, previousExcludedTags, previousOrientation);
-  }
-
-  private applyPostDisplaySettings(
-    newSettings: Partial<FeedSettings>,
-    previousShowVerified: boolean | undefined,
-    previousShowProductionAge: boolean | undefined,
-    previousShowStudioChips: boolean | undefined,
-    previousShowPerformerEmbellishment: boolean | undefined,
-    previousShowSceneTitle: boolean | undefined
-  ): void {
-    this.applyPostDisplayToggle(
-      newSettings.showVerifiedCheckmarks,
-      previousShowVerified,
-      this.settings.showVerifiedCheckmarks,
-      (post, on) => post.setShowVerifiedCheckmarks?.(on),
-      false,
-    );
-    this.applyPostDisplayToggle(
-      newSettings.showProductionAge,
-      previousShowProductionAge,
-      this.settings.showProductionAge,
-      (post, on) => post.setShowProductionAge?.(on),
-      true,
-    );
-    this.applyPostDisplayToggle(
-      newSettings.showStudioChips,
-      previousShowStudioChips,
-      this.settings.showStudioChips,
-      (post, on) => post.setShowStudioChips?.(on),
-      false,
-    );
-    this.applyPostDisplayToggle(
-      newSettings.showPerformerEmbellishment,
-      previousShowPerformerEmbellishment,
-      this.settings.showPerformerEmbellishment,
-      (post, on) => post.setShowPerformerEmbellishment?.(on),
-      false,
-    );
-    this.applyPostDisplayToggle(
-      newSettings.showSceneTitle,
-      previousShowSceneTitle,
-      this.settings.showSceneTitle,
-      (post, on) => post.setShowSceneTitle?.(on),
-      true,
-    );
-  }
-
-  private applyPostDisplayToggle(
-    next: boolean | undefined,
-    previous: boolean | undefined,
-    current: boolean | undefined,
-    apply: (post: PostType, on: boolean) => void,
-    defaultValue: boolean,
-  ): void {
-    if (next === undefined || current === previous) return;
-    const on = current ?? defaultValue;
-    for (const post of this.posts.values()) {
-      apply(post, on);
-    }
-  }
-
-  private reloadFeedIfFiltersChanged(
-    newSettings: Partial<FeedSettings>,
-    previousExcludedTags: string[],
-    previousOrientation: string[]
-  ): void {
-    const nextExcludedTags = this.normalizeExcludedTagNames(this.settings.excludedTagNames ?? []);
-    const nextOrientation = this.normalizeOrientationFilter(this.settings.orientationFilter ?? []);
-    const excludedTagsChanged = !this.areExcludedTagNamesEqual(previousExcludedTags, nextExcludedTags);
-    const orientationChanged = newSettings.orientationFilter !== undefined
-      && !this.areOrientationFiltersEqual(previousOrientation, nextOrientation);
-    if (excludedTagsChanged || orientationChanged) {
-      this.loadVideos(this.currentFilters, false, undefined, true).catch((e) => {
-        console.error('Failed to reload feed after filter update', e);
-      });
-    }
   }
 
   /**

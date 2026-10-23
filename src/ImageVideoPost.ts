@@ -309,6 +309,8 @@ export class ImageVideoPost extends VideoPostBase {
    */
   destroy(): void {
     if (this.player) {
+      // Release decoder/buffers before disposing, like VideoPost does.
+      if (!this.player.getIsUnloaded()) this.player.unload();
       this.player.destroy();
       this.player = undefined;
     }
