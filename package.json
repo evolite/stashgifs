@@ -10,7 +10,7 @@
     "release": "pnpm run build",
     "clean": "rm -rf stashgifs/app/assets/*.js stashgifs/app/assets/*.js.map stashgifs/app/assets/chunks",
     "type-check": "tsc --noEmit",
-    "check": "node scripts/check-api-helpers.mjs && node scripts/check-saved-filter-normalize.mjs && node scripts/check-resolution-cap.mjs && node scripts/check-seen-history.mjs"
+    "check": "node scripts/check-api-helpers.mjs && node scripts/check-saved-filter-normalize.mjs && node scripts/check-resolution-cap.mjs && node scripts/check-seen-history.mjs && node scripts/check-filter-state.mjs"
   },
   "devDependencies": {
     "esbuild": "^0.28.2",

@@ -6,6 +6,8 @@
 import { SceneMarker, FilterOptions, FeedSettings, VideoPostData, ImagePostData, ImageVideoPostData, Image, SavedSearch, DateRangeFilter } from './types.js';
 import { FilterState, type FilterSnapshot, type SavedFilter } from './FilterState.js';
 import { SeenHistory } from './SeenHistory.js';
+import { FilterHistory } from './FilterHistory.js';
+import { SavedSearches } from './SavedSearches.js';
 
 import { StashAPI, generateRandomSortSeed } from './StashAPI.js';
 import { PluginSettingsManager } from './PluginSettingsManager.js';
@@ -125,8 +127,12 @@ export class FeedContainer {
   private saveSearchInputVisible = false;
   private postsContainer!: HTMLElement;
   private headerBar?: HTMLElement;
-  private lastSnapshotJson = '';
-  private suppressHistoryPush = false;
+  private readonly filterHistory = new FilterHistory(this.filterState, () => {
+    this.updateActivePills();
+    this.updateQueryInputDisplay();
+    this.applyFilters().catch((e) => console.error('Restore filters failed', e));
+  });
+  private readonly savedSearches: SavedSearches;
   private preloadedTags: Array<{ id: string; name: string }> = [];
   private preloadedPerformers: Array<{ id: string; name: string; image_path?: string }> = [];
   private isPreloading: boolean = false;
@@ -166,6 +172,7 @@ export class FeedContainer {
     this.container = container;
     this.api = api || new StashAPI();
     this.settingsManager = settingsManager || new PluginSettingsManager(this.api);
+    this.savedSearches = new SavedSearches(this.settingsManager);
     // Merge settings: defaults first, then passed settings (which may include loaded settings from index.ts)
     // If no settings passed, load from localStorage
     const loadedSettings = settings && Object.keys(settings).length > 0 ? settings : this.loadSettingsFromStorage();
@@ -1215,7 +1222,7 @@ export class FeedContainer {
     this.closeSuggestions();
     updateSearchBarDisplay();
     this.currentFilters = this.buildCurrentFilterOptions();
-    this.pushFilterHistory();
+    this.filterHistory.push();
     if (withScroll) this.scrollToTop();
     this.loadVideos(this.currentFilters, false).catch((e) => console.error('Apply saved filter failed', e));
   }
@@ -1322,7 +1329,7 @@ export class FeedContainer {
     container: HTMLElement,
     updateSearchBarDisplay: () => void
   ): void {
-    const searches = this.settingsManager.data.settings.savedSearches ?? [];
+    const searches = this.savedSearches.list();
     if (searches.length === 0) return;
 
     const section = document.createElement('div');
@@ -1367,7 +1374,7 @@ export class FeedContainer {
       del.addEventListener('mouseleave', () => { del.style.opacity = '0.5'; });
       del.addEventListener('click', (e) => {
         e.stopPropagation();
-        this.deleteCustomSavedSearch(search.id);
+        this.savedSearches.delete(search.id);
         wrapper.remove();
       });
 
@@ -1559,7 +1566,7 @@ export class FeedContainer {
       tagDepth: this.settings.includeSubtags ? -1 : 0,
       studioDepth: this.settings.includeSubtags ? -1 : 0,
     };
-    this.pushFilterHistory();
+    this.filterHistory.push();
     this.scrollToTop();
     this.loadVideos(this.currentFilters, false).catch((e) => console.error('Apply marker search failed', e));
   }
@@ -1866,7 +1873,7 @@ export class FeedContainer {
     brandContainer.addEventListener('click', () => {
       this.filterState.reset();
       this.currentFilters = undefined;
-      this.pushFilterHistory();
+      this.filterHistory.push();
 
       this.updateActivePills();
       this.updateQueryInputDisplay();
@@ -2716,7 +2723,7 @@ export class FeedContainer {
 
     const newFilters = this.buildCurrentFilterOptions(queryValue);
     this.currentFilters = newFilters;
-    this.pushFilterHistory();
+    this.filterHistory.push();
     await this.loadVideos(newFilters, false, loadSignal);
   }
 
@@ -2765,7 +2772,7 @@ export class FeedContainer {
 
     const newFilters = this.buildCurrentFilterOptions();
     this.currentFilters = newFilters;
-    this.pushFilterHistory();
+    this.filterHistory.push();
     this.loadVideos(newFilters, false).catch((e) => console.error('Apply filters failed', e));
   }
 
@@ -2941,7 +2948,7 @@ export class FeedContainer {
     const confirm = (): void => {
       const name = input.value.trim();
       this.saveSearchInputVisible = false;
-      if (name) this.saveCurrentSearch(name);
+      if (name) this.savedSearches.save(name, this.filterState.toSnapshot());
       this.updateActivePills();
     };
 
@@ -3053,10 +3060,7 @@ export class FeedContainer {
    * Initialize the feed
    */
   async init(filters?: FilterOptions): Promise<void> {
-    window.addEventListener('popstate', this.onPopState);
-    const initialSnapshot = this.filterState.toSnapshot();
-    this.lastSnapshotJson = JSON.stringify(initialSnapshot);
-    history.replaceState({ filterSnapshot: initialSnapshot }, '');
+    this.filterHistory.start();
 
     // Load rating system configuration in parallel with the first feed fetch; posts only
     // need it at render time, so loadVideos awaits ratingConfigReady before building them.
@@ -5163,67 +5167,12 @@ export class FeedContainer {
     return post?.getPerformers() ?? [];
   }
 
-  private saveCurrentSearch(name: string): void {
-    const existing = this.settingsManager.data.settings.savedSearches ?? [];
-    const matchIndex = existing.findIndex((s) => s.name.trim().toLowerCase() === name.trim().toLowerCase());
-
-    const entry: SavedSearch = {
-      id: matchIndex >= 0 ? existing[matchIndex]!.id : crypto.randomUUID(),
-      name,
-      ...this.searchFields(this.filterState.toSnapshot()),
-    };
-
-    const savedSearches = matchIndex >= 0
-      ? existing.map((s, i) => (i === matchIndex ? entry : s))
-      : [...existing, entry];
-    this.settingsManager.save({ settings: { savedSearches } });
-  }
-
-  /** The part of a snapshot a saved search stores (no saved-filter reference). */
-  private searchFields(snapshot: FilterSnapshot): Pick<SavedSearch, 'tags' | 'performers' | 'studios' | 'markerName' | 'dateRange'> {
-    const { tags, performers, studios, markerName, dateRange } = snapshot;
-    return { tags, performers, studios, markerName, dateRange };
-  }
-
   private applyCustomSavedSearch(search: SavedSearch): void {
     this.filterState.replace(search);
     this.closeSuggestions();
     this.updateActivePills();
     this.updateQueryInputDisplay();
     this.debouncedApplyFilters();
-  }
-
-  private pushFilterHistory(): void {
-    if (this.suppressHistoryPush) return;
-    const snapshot = this.filterState.toSnapshot();
-    const json = JSON.stringify(snapshot);
-    if (json === this.lastSnapshotJson) return; // dedupe consecutive identical states
-    this.lastSnapshotJson = json;
-    history.pushState({ filterSnapshot: snapshot }, ''); // same URL — reload-safe
-  }
-
-  private restoreSnapshot(snapshot: FilterSnapshot): void {
-    this.filterState.replace(snapshot);
-    this.updateActivePills();
-    this.updateQueryInputDisplay();
-    this.applyFilters().catch((e) => console.error('Restore filters failed', e));
-  }
-
-  private readonly onPopState = (event: PopStateEvent): void => {
-    const snapshot = (event.state as { filterSnapshot?: FilterSnapshot } | null)?.filterSnapshot;
-    if (!snapshot) return; // not one of our entries
-    this.suppressHistoryPush = true;
-    this.lastSnapshotJson = JSON.stringify(snapshot);
-    try {
-      this.restoreSnapshot(snapshot);
-    } finally {
-      this.suppressHistoryPush = false;
-    }
-  };
-
-  private deleteCustomSavedSearch(id: string): void {
-    const existing = this.settingsManager.data.settings.savedSearches ?? [];
-    this.settingsManager.save({ settings: { savedSearches: existing.filter(s => s.id !== id) } });
   }
 
   /**
@@ -5548,7 +5497,7 @@ export class FeedContainer {
 
   private teardownListeners(): void {
     document.removeEventListener('keydown', this.onRatingHotkey);
-    window.removeEventListener('popstate', this.onPopState);
+    this.filterHistory.stop();
     this.removeMobileAutoplayUnlockListeners();
     this.removeAutoplayUnlockHandlers();
 
