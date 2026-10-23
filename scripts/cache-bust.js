@@ -40,7 +40,7 @@ function collectJsFiles(dir) {
 
 // Relative ESM specifiers ending in .js, in `from '…'`, bare `import '…'`, and dynamic
 // `import('…')`. Only specifiers starting with `.` are touched (skip bare/vendor imports).
-// tsc overwrites these files each build, so they always start clean (no token stacking).
+// bundle.js re-emits these files each build, so they always start clean (no token stacking).
 const FROM_RE = /(\bfrom\s*)(['"])(\.\.?\/[^'"]+?\.js)(\2)/g;
 const SIDE_EFFECT_RE = /(\bimport\s*)(['"])(\.\.?\/[^'"]+?\.js)(\2)/g;
 const DYNAMIC_RE = /(\bimport\(\s*)(['"])(\.\.?\/[^'"]+?\.js)(\2)/g;

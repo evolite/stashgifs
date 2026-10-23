@@ -112,21 +112,6 @@ export interface TagFilterInput {
 }
 
 /**
- * PerformerFilterType - Filter for performers
- */
-interface PerformerFilterInput {
-  scene_count?: {
-    value: number;
-    modifier: ComparisonModifier;
-  };
-  image_count?: {
-    value: number;
-    modifier: ComparisonModifier;
-  };
-  [key: string]: unknown;
-}
-
-/**
  * ImageFilterType - Filter for images
  */
 export interface ImageFilterInput {
@@ -327,13 +312,6 @@ export interface FindStudioResponse {
 }
 
 /**
- * FindScene response
- */
-export interface FindSceneResponse {
-  findScene: Scene | null;
-}
-
-/**
  * GetSavedFilters response
  */
 export interface GetSavedFiltersResponse {
@@ -363,30 +341,6 @@ export interface GetSavedFilterResponse {
 export interface CheckTagsHaveMarkersResponse {
   findSceneMarkers: {
     count: number;
-  };
-}
-
-/**
- * CheckPerformerHasMarkers response
- */
-interface CheckPerformerHasMarkersResponse {
-  findSceneMarkers: {
-    count: number;
-  };
-}
-
-/**
- * FindSceneMarkerTags response
- */
-export interface FindSceneMarkerTagsResponse {
-  sceneMarkerTags: Array<{
-    scene_markers: Array<{
-      seconds: number;
-    }>;
-  }> | {
-    scene_markers: Array<{
-      seconds: number;
-    }>;
   };
 }
 
@@ -726,13 +680,6 @@ export interface StashBoxScene {
   date?: string;
   images?: Array<{ url: string }>;
   studio?: { name: string };
-}
-
-export interface StashBoxScenesResponse {
-  queryScenes: {
-    count: number;
-    scenes: StashBoxScene[];
-  };
 }
 
 /**

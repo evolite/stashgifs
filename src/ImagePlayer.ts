@@ -346,40 +346,6 @@ export class ImagePlayer {
   }
 
   /**
-   * Get the image element (for images) or video element (for videos)
-   */
-  getImageElement(): HTMLImageElement | HTMLVideoElement {
-    if (this.isVideo && this.videoElement) {
-      return this.videoElement;
-    }
-    if (this.imageElement) {
-      return this.imageElement;
-    }
-    throw new Error('Media element is not initialized');
-  }
-
-  /**
-   * Check if media is loaded
-   */
-  isImageLoaded(): boolean {
-    return this.isLoaded;
-  }
-
-  /**
-   * Check if this is a GIF
-   */
-  getIsGif(): boolean {
-    return this.isGif;
-  }
-
-  /**
-   * Check if this is a video
-   */
-  getIsVideo(): boolean {
-    return this.isVideo;
-  }
-
-  /**
    * Destroy the player
    */
   destroy(): void {

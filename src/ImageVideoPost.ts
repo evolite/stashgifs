@@ -305,15 +305,6 @@ export class ImageVideoPost extends VideoPostBase {
   }
 
   /**
-   * Hide the post (used when player creation fails)
-   */
-  hidePost(): void {
-    if (this.container) {
-      this.container.style.display = 'none';
-    }
-  }
-
-  /**
    * Destroy the post
    */
   destroy(): void {

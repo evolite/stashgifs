@@ -11,8 +11,6 @@ import { getAspectRatioClass, detectVideoFromVisualFiles, getImageUrlForDisplay 
 import { BasePost } from './BasePost.js';
 
 // Constants
-const OCOUNT_DIGIT_WIDTH_PX = 8; // Approximate pixels per digit for 14px font
-const OCOUNT_MIN_WIDTH_PX = 14;
 const OCOUNT_THREE_DIGIT_PADDING = 10;
 const OCOUNT_DEFAULT_PADDING = 8;
 

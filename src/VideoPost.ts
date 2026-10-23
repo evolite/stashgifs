@@ -14,8 +14,6 @@ import { BookmarkManager } from './BookmarkManager.js';
 // Constants for magic numbers and strings
 const FAVORITE_TAG_NAME = 'StashGifs Favorite';
 const MARKER_TAG_NAME = 'StashGifs Marker';
-const OCOUNT_DIGIT_WIDTH_PX = 8; // Approximate pixels per digit for 14px font
-const OCOUNT_MIN_WIDTH_PX = 14;
 
 interface VideoPostOptions extends BaseVideoPostOptions {
   useShuffleMode?: boolean;
@@ -30,7 +28,6 @@ export class VideoPost extends VideoPostBase {
   protected readonly data: VideoPostData;
   private player?: IVideoPlayer;
   private markerButton?: HTMLElement;
-  private playButton?: HTMLElement;
   private markerDialog?: HTMLElement;
   private markerDialogInput?: HTMLInputElement;
   private markerDialogSuggestions?: HTMLElement;
@@ -417,14 +414,12 @@ export class VideoPost extends VideoPostBase {
    * Create play button to open scene in Stash
    */
   private createPlayButton(): HTMLElement {
-    const iconBtn = this.buildExternalLinkButton(
+    return this.buildExternalLinkButton(
       this.getSceneLink(),
       'icon-btn--play',
       'View full scene',
       'Open scene in Stash'
     );
-    this.playButton = iconBtn;
-    return iconBtn;
   }
 
 
@@ -1066,13 +1061,6 @@ export class VideoPost extends VideoPostBase {
   }
 
 
-  /**
-   * Check if currently in HQ mode (using scene video)
-   */
-  isInHQMode(): boolean {
-    return this.isHQMode;
-  }
-
 
   /**
    * Get the post ID
@@ -1102,14 +1090,6 @@ export class VideoPost extends VideoPostBase {
 
   protected getHQButtonOffLabel(): string {
     return 'Load HD video with audio';
-  }
-
-  /**
-   * Hide the entire post (used when video fails to load permanently)
-   */
-  hidePost(): void {
-    this.container.style.display = 'none';
-    this.hasFailedPermanently = true;
   }
 
   /**

@@ -338,28 +338,6 @@ export function detectDeviceCapabilities(): DeviceCapabilities {
 }
 
 /**
- * Get optimized thumbnail URL with size parameters
- * Downsizes image before loading to reduce memory usage
- */
-function getOptimizedThumbnailUrl(baseUrl: string, maxWidth: number, maxHeight?: number): string {
-  if (!baseUrl) return baseUrl;
-  
-  // If URL already has query parameters, append with &
-  const separator = baseUrl.includes('?') ? '&' : '?';
-  
-  // Request specific dimensions to reduce memory footprint
-  // Most image servers support width/height parameters
-  const params = new URLSearchParams();
-  params.set('w', maxWidth.toString());
-  if (maxHeight) {
-    params.set('h', maxHeight.toString());
-  }
-  params.set('fit', 'cover'); // Maintain aspect ratio with cover
-  
-  return `${baseUrl}${separator}${params.toString()}`;
-}
-
-/**
  * Convert a relative URL to an absolute URL
  * Handles both relative paths and already absolute URLs
  */
@@ -446,148 +424,6 @@ export function isStandaloneNavigator(nav: Navigator): nav is NavigatorStandalon
 }
 
 /**
- * Element with webkit fullscreen methods
- */
-interface ElementWebkitFullscreen extends Element {
-  webkitRequestFullscreen?: () => Promise<void>;
-  webkitEnterFullscreen?: () => void;
-}
-
-/**
- * Element with moz fullscreen methods
- */
-interface ElementMozFullscreen extends Element {
-  mozRequestFullscreen?: () => Promise<void>;
-}
-
-/**
- * Element with ms fullscreen methods
- */
-interface ElementMsFullscreen extends Element {
-  msRequestFullscreen?: () => Promise<void>;
-}
-
-/**
- * Container with webkit fullscreen methods
- */
-interface HTMLElementWebkitFullscreen extends HTMLElement {
-  webkitRequestFullscreen?: () => Promise<void>;
-}
-
-/**
- * Container with moz fullscreen methods
- */
-interface HTMLElementMozFullscreen extends HTMLElement {
-  mozRequestFullscreen?: () => Promise<void>;
-}
-
-/**
- * Container with ms fullscreen methods
- */
-interface HTMLElementMsFullscreen extends HTMLElement {
-  msRequestFullscreen?: () => Promise<void>;
-}
-
-/**
- * Document with webkit fullscreen methods
- */
-interface DocumentWebkitFullscreen extends Document {
-  webkitExitFullscreen?: () => Promise<void>;
-  webkitFullscreenElement?: Element | null;
-}
-
-/**
- * Document with moz fullscreen methods
- */
-interface DocumentMozFullscreen extends Document {
-  mozCancelFullscreen?: () => Promise<void>;
-  mozFullScreenElement?: Element | null;
-}
-
-/**
- * Document with ms fullscreen methods
- */
-interface DocumentMsFullscreen extends Document {
-  msExitFullscreen?: () => Promise<void>;
-  msFullscreenElement?: Element | null;
-}
-
-/**
- * Type guard for element with webkit fullscreen support
- */
-function hasWebkitFullscreen(element: Element): element is ElementWebkitFullscreen {
-  return 'webkitRequestFullscreen' in element || 'webkitEnterFullscreen' in element;
-}
-
-/**
- * Type guard for element with moz fullscreen support
- */
-function hasMozFullscreen(element: Element): element is ElementMozFullscreen {
-  return 'mozRequestFullscreen' in element;
-}
-
-/**
- * Type guard for element with ms fullscreen support
- */
-function hasMsFullscreen(element: Element): element is ElementMsFullscreen {
-  return 'msRequestFullscreen' in element;
-}
-
-/**
- * Type guard for HTML element with webkit fullscreen support
- */
-function hasWebkitFullscreenHTMLElement(element: HTMLElement): element is HTMLElementWebkitFullscreen {
-  return 'webkitRequestFullscreen' in element;
-}
-
-/**
- * Type guard for HTML element with moz fullscreen support
- */
-function hasMozFullscreenHTMLElement(element: HTMLElement): element is HTMLElementMozFullscreen {
-  return 'mozRequestFullscreen' in element;
-}
-
-/**
- * Type guard for HTML element with ms fullscreen support
- */
-function hasMsFullscreenHTMLElement(element: HTMLElement): element is HTMLElementMsFullscreen {
-  return 'msRequestFullscreen' in element;
-}
-
-/**
- * Type guard for document with webkit fullscreen support
- */
-function hasWebkitFullscreenDocument(doc: Document): doc is DocumentWebkitFullscreen {
-  return 'webkitExitFullscreen' in doc || 'webkitFullscreenElement' in doc;
-}
-
-/**
- * Type guard for document with moz fullscreen support
- */
-function hasMozFullscreenDocument(doc: Document): doc is DocumentMozFullscreen {
-  return 'mozCancelFullscreen' in doc || 'mozFullScreenElement' in doc;
-}
-
-/**
- * Type guard for document with ms fullscreen support
- */
-function hasMsFullscreenDocument(doc: Document): doc is DocumentMsFullscreen {
-  return 'msExitFullscreen' in doc || 'msFullscreenElement' in doc;
-}
-
-/**
- * Check if fullscreen API is supported
- */
-function hasFullscreenSupport(element: Element): boolean {
-  return !!(
-    element.requestFullscreen ||
-    hasWebkitFullscreen(element) ||
-    hasMozFullscreen(element) ||
-    hasMsFullscreen(element)
-  );
-}
-
-/**
  * Detect if the primary pointer is coarse (touch/stylus).
  * Uses CSS Media Queries Level 4 — the RWD-standard capability check.
  * Returns true for phones and tablets; false for mouse-driven desktops.
@@ -602,69 +438,10 @@ export function isMobileDevice(): boolean {
 }
 
 /**
- * Returns true when the device's primary pointer supports hover (i.e. a real cursor).
- * Used to gate hover-based UI behaviours like hover-to-unmute.
- */
-
-/**
- * Detect if the current device is an iOS device
- */
-function isIOSDevice(): boolean {
-  const userAgent = typeof navigator === 'undefined' ? '' : navigator.userAgent;
-  return /iPhone|iPad|iPod/i.test(userAgent);
-}
-
-/**
- * Detect if the current device is an Android device
- */
-function isAndroidDevice(): boolean {
-  const userAgent = typeof navigator === 'undefined' ? '' : navigator.userAgent;
-  return /Android/i.test(userAgent);
-}
-
-/**
  * Image codecs that should be treated as images (not videos)
  * These codecs may have animation but should be displayed as images
  */
 const IMAGE_CODECS = ['gif', 'webp', 'apng', 'avif', 'heic', 'heif'] as const;
-
-/**
- * Image file extensions that should always be displayed as images (not videos)
- * Even if they have animation or video-like properties
- */
-const IMAGE_EXTENSIONS = [
-  '.gif', '.png', '.jpg', '.jpeg', '.webp', '.avif', 
-  '.apng', '.heic', '.heif', '.bmp', '.svg', '.ico'
-] as const;
-
-/**
- * Video file extensions that should be rendered as looping videos
- */
-const VIDEO_EXTENSIONS = [
-  '.m4v', '.mp4', '.wmv', '.avi', '.mpg', '.mpeg',
-  '.rmvb', '.rm', '.flv', '.asf', '.mkv', '.webm',
-  '.f4v', '.mov', '.ogv', '.3gp', '.ts', '.m2v'
-] as const;
-
-/**
- * Check if a URL points to an image file that should always be displayed as an image
- * @param url The URL to check
- * @returns true if the URL ends with an image extension
- */
-function isImageFile(url: string): boolean {
-  const lowerUrl = url.toLowerCase();
-  return IMAGE_EXTENSIONS.some(ext => lowerUrl.endsWith(ext));
-}
-
-/**
- * Check if a URL points to a video file based on extension
- * @param url The URL to check
- * @returns true if the URL ends with a video extension
- */
-function isVideoFile(url: string): boolean {
-  const lowerUrl = url.toLowerCase();
-  return VIDEO_EXTENSIONS.some(ext => lowerUrl.endsWith(ext));
-}
 
 /**
  * Check if a codec is an image codec (should be treated as image, not video)
@@ -673,15 +450,6 @@ function isVideoFile(url: string): boolean {
  */
 function isImageCodec(codec: string): boolean {
   return IMAGE_CODECS.includes(codec.toLowerCase() as typeof IMAGE_CODECS[number]);
-}
-
-/**
- * Check if a codec is a video codec (not an image codec)
- * @param codec The codec string to check
- * @returns true if the codec is a video codec
- */
-function isVideoCodec(codec: string): boolean {
-  return !isImageCodec(codec);
 }
 
 /**

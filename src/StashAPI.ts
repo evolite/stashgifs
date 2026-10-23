@@ -24,14 +24,12 @@ import {
   PerformerExtended,
   FindStudioResponse,
   StudioExtended,
-  FindSceneResponse,
   FindImagesResponse,
   FindGalleriesResponse,
   Gallery,
   GetSavedFiltersResponse,
   GetSavedFilterResponse,
   CheckTagsHaveMarkersResponse,
-  FindSceneMarkerTagsResponse,
   TagCreateResponse,
   SceneMarkerUpdateResponse,
   SceneMarkerCreateResponse,
@@ -115,7 +113,6 @@ export class StashAPI {
   // Simple cache for autocomplete search results only (not filtered queries)
   private readonly searchCache: Map<string, { data: unknown; timestamp: number }> = new Map();
   private readonly SEARCH_CACHE_TTL = 5 * 60 * 1000; // 5 minutes
-  private readonly _performerTagsCache = new Map<string, Array<{ id: string; name: string }>>();
   /** Per-tag EFFECTIVE presence across sources (own counts ∪ all descendants' counts, > 0), used
    *  to route a tag to the single filter field that can match it — including parent-only tags,
    *  which resolve to the sources their subtree lives in. Cached for the session. */
@@ -163,12 +160,11 @@ export class StashAPI {
 
     this.apiKey = apiKey || this.pluginApi?.apiKey;
     
-    // Initialize GraphQL client (response caching disabled - we handle caching selectively)
+    // Result caching is selective and lives in StashAPI; the client only dedupes in-flight queries.
     this.gqlClient = new GraphQLClient({
       baseUrl: this.baseUrl,
       apiKey: this.apiKey,
       pluginApi: this.pluginApi,
-      enableResponseCache: false, // Disabled: filtered queries should not be cached
     });
   }
 
@@ -582,30 +578,6 @@ export class StashAPI {
    * Get detailed performer information by ID
    * Used for hover overlay display
    */
-  /** Batch-fetch performer tags for a list of performers, populating tags in-place. Results are cached. */
-  async enrichPerformerTags(performers: Performer[]): Promise<void> {
-    const uncachedIds = [...new Set(
-      // Performers that already arrived with a tags array (SceneFields/SlimImageData include it) need no lookup.
-      performers.filter(p => p.id && !Array.isArray(p.tags) && !this._performerTagsCache.has(p.id)).map(p => p.id)
-    )];
-    if (uncachedIds.length > 0) {
-      try {
-        const result = await this.gqlClient.query<FindPerformerResponse>({
-          query: queries.FIND_PERFORMER_TAGS,
-          variables: { ids: uncachedIds },
-        });
-        for (const p of result.data?.findPerformers?.performers ?? []) {
-          this._performerTagsCache.set(p.id, p.tags ?? []);
-        }
-      } catch { /* non-fatal — posts just show without performer tags */ }
-    }
-    for (const p of performers) {
-      if (p.id && !p.tags?.length) {
-        p.tags = this._performerTagsCache.get(p.id) ?? [];
-      }
-    }
-  }
-
   async getPerformerDetails(performerId: string, signal?: AbortSignal): Promise<PerformerExtended | null> {
     if (this.isAborted(signal)) return null;
 
@@ -740,15 +712,10 @@ export class StashAPI {
       const { markers, totalCount } = await this.executeMarkerQueryWithCount(filter, sceneMarkerFilter, signal);
       if (this.isAborted(signal)) return { markers: [], totalCount: 0 };
 
-      await this.maybeEnrichPerformerTags(markers, filters);
       return { markers, totalCount, sortSeed: filter.sort };
     } catch (error: unknown) {
       return this.handleError('fetchSceneMarkers', error, signal, { markers: [], totalCount: 0 });
     }
-  }
-
-  private async maybeEnrichPerformerTags(markers: SceneMarker[], filters?: FilterOptions): Promise<void> {
-    if (filters?.showPerformerTags) await this.enrichPerformerTags(markers.flatMap(m => m.scene?.performers ?? []));
   }
 
   /**
@@ -1364,9 +1331,6 @@ export class StashAPI {
     }
   }
 
-  /**
-   * Calculate random page for shuffle mode
-   */
   /**
    * Short-lived memo for count-only queries. Paging re-asks the same count for the same filter on
    * every page; the answer only matters for page math, so a minute of staleness is harmless.
@@ -2698,60 +2662,6 @@ export class StashAPI {
   }
 
   /**
-   * Fetch marker times for a scene using FindSceneMarkerTags query
-   * Returns array of marker seconds values
-   */
-  async fetchSceneMarkerTags(sceneId: string, signal?: AbortSignal): Promise<number[]> {
-    try {
-      if (this.isAborted(signal)) return [];
-
-      const result = await this.gqlClient.query<FindSceneMarkerTagsResponse>({
-        query: queries.FIND_SCENE_MARKER_TAGS,
-        variables: { id: sceneId },
-        signal,
-      });
-      
-      if (this.isAborted(signal)) return [];
-      
-      const sceneMarkerTags = result.data?.sceneMarkerTags;
-      if (!sceneMarkerTags) {
-        return [];
-      }
-
-      return this.extractMarkerTimes(sceneMarkerTags);
-    } catch (e: unknown) {
-      if (isAbortError(e) || this.isAborted(signal)) {
-        return [];
-      }
-      return this.handleError('fetchSceneMarkerTags', e, signal, []);
-    }
-  }
-
-  /**
-   * Extract marker times from scene marker tags response
-   * Consolidates the extraction logic into a single method
-   */
-  private extractMarkerTimes(sceneMarkerTags: unknown): number[] {
-    const tagGroups = Array.isArray(sceneMarkerTags) ? sceneMarkerTags : [sceneMarkerTags];
-    const markerTimes: number[] = [];
-    
-    for (const tagGroup of tagGroups) {
-      // Check if value is a tag group with scene_markers
-      if (typeof tagGroup === 'object' && tagGroup !== null && 'scene_markers' in tagGroup) {
-        const sceneMarkers = (tagGroup as { scene_markers?: Array<{ seconds?: number }> }).scene_markers;
-        if (Array.isArray(sceneMarkers)) {
-          const times = sceneMarkers
-            .map(marker => marker.seconds)
-            .filter((seconds): seconds is number => typeof seconds === 'number');
-          markerTimes.push(...times);
-        }
-      }
-    }
-    
-    return markerTimes;
-  }
-
-  /**
    * Build regex pattern from file extensions
    * Converts ['.gif', '.webm'] to "(?i)\.(gif|webm)$" (case-insensitive)
    * @throws Error if fileExtensions is empty or all extensions are invalid
@@ -2935,11 +2845,6 @@ export class StashAPI {
 
       const images = result.data?.findImages?.images || [];
       const totalCount = Math.min(result.data?.findImages?.count ?? 0, this._maxContentLimit);
-
-      if (filters?.showPerformerTags) {
-        const imagePerformers = images.flatMap(img => (img.performers ?? []) as Performer[]);
-        await this.enrichPerformerTags(imagePerformers);
-      }
 
       return { images, totalCount, sortSeed };
     } catch (e: unknown) {
