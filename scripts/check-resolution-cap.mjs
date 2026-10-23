@@ -1,24 +1,10 @@
-// ponytail: standalone self-check for the two pure helpers in StashAPI (resolutionEnum
-// + capStreamUrl). No test runner in this repo; run manually: `node scripts/check-resolution-cap.mjs`.
-// Keep in sync with src/StashAPI.ts if that logic changes.
+// Offline check for the pure helpers in MediaUrls (resolutionEnum + capStreamUrl).
+// Run: node scripts/check-resolution-cap.mjs
 import assert from 'node:assert/strict';
+import { loadTs } from './load-ts.mjs';
 
-const resolutionEnum = (px) => {
-  if (px <= 240) return 'LOW';
-  if (px <= 480) return 'STANDARD';
-  if (px <= 720) return 'STANDARD_HD';
-  if (px <= 1080) return 'FULL_HD';
-  return 'FOUR_K';
-};
-
-const capStreamUrl = (url, resolutionEnum) => {
-  const [base, hash] = url.split('#');
-  const [path, query = ''] = base.split('?');
-  const params = query.split('&').filter((p) => p && !p.startsWith('resolution='));
-  params.push(`resolution=${resolutionEnum}`);
-  const fragment = hash ? `#${hash}` : '';
-  return `${path}?${params.join('&')}${fragment}`;
-};
+const { MediaUrls } = await loadTs('src/api/MediaUrls.ts');
+const { resolutionEnum, capStreamUrl } = MediaUrls;
 
 assert.equal(resolutionEnum(1080), 'FULL_HD');
 assert.equal(resolutionEnum(720), 'STANDARD_HD');
