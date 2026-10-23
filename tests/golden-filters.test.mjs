@@ -26,7 +26,7 @@ async function makeApi() {
   // tag routing: 1 -> marker only, 2 -> scene only, 3 -> performer only, 4 -> image only, 5 -> everywhere
   const sources = { 1: [1, 0, 0, 0], 2: [0, 1, 0, 0], 3: [0, 0, 1, 0], 4: [0, 0, 0, 1], 5: [1, 1, 1, 1] };
   for (const [id, [marker, scene, performer, image]] of Object.entries(sources)) {
-    api._tagSourceCache.set(id, { marker: !!marker, scene: !!scene, performer: !!performer, image: !!image });
+    api.tags.tagSources.set(id, { marker: !!marker, scene: !!scene, performer: !!performer, image: !!image });
   }
   return api;
 }
