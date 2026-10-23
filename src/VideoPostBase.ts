@@ -28,7 +28,6 @@ export abstract class VideoPostBase extends BasePost {
   protected getGlobalMuteState?: () => boolean;
   protected hasFailedPermanently: boolean = false;
   protected errorPlaceholder?: HTMLElement;
-  protected loadErrorHandler?: () => void;
   protected hdModeFromSettings: boolean = false;
   private progressBar?: { track: HTMLElement; fill: HTMLElement; cleanup: () => void };
 
@@ -143,18 +142,13 @@ export abstract class VideoPostBase extends BasePost {
    * failure once every source is spent — see handlePlayerError().
    */
   protected attachLoadErrorHandler(): void {
-    const videoElement = this.getPlayer()?.getVideoElement();
-    if (!videoElement) return;
-    this.detachLoadErrorHandler();
-    this.loadErrorHandler = () => this.handlePlayerError();
-    videoElement.addEventListener('error', this.loadErrorHandler);
+    // Registered on the player, not its <video>: video.js replaces that element on reset/src,
+    // which silently dropped a DOM listener after an unload/reload cycle.
+    this.getPlayer()?.onSourcesExhausted(() => this.handlePlayerError());
   }
 
   protected detachLoadErrorHandler(): void {
-    if (this.loadErrorHandler) {
-      this.getPlayer()?.getVideoElement()?.removeEventListener('error', this.loadErrorHandler);
-      this.loadErrorHandler = undefined;
-    }
+    this.getPlayer()?.offSourcesExhausted();
   }
 
   /**

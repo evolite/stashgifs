@@ -1188,13 +1188,14 @@ export class VideoPost extends VideoPostBase {
    * Open marker dialog
    */
   private openMarkerDialog(mode: 'create' | 'add' = 'create'): void {
-    if (!this.markerDialog) {
-      // Find button group from either marker button or add tag button
-      const buttonGroup = (this.markerButton || this.addTagButton)?.parentElement;
-      if (!buttonGroup) return;
-      const dialog = this.createMarkerDialog();
+    // Anchor to the button's *current* parent: a header refresh replaces that parent, which
+    // would otherwise leave the dialog detached (open but invisible).
+    const buttonGroup = (this.markerButton || this.addTagButton)?.parentElement;
+    if (!buttonGroup) return;
+    this.markerDialog ??= this.createMarkerDialog();
+    if (this.markerDialog.parentElement !== buttonGroup) {
       buttonGroup.style.position = 'relative';
-      buttonGroup.appendChild(dialog);
+      buttonGroup.appendChild(this.markerDialog);
     }
     if (this.isMarkerDialogOpen) return;
 
@@ -1253,7 +1254,7 @@ export class VideoPost extends VideoPostBase {
     }
   }
 
-  private closeMarkerDialog(): void {
+  private closeMarkerDialog(resumePlayback = true): void {
     if (!this.isMarkerDialogOpen) return;
     this.isMarkerDialogOpen = false;
 
@@ -1288,8 +1289,8 @@ export class VideoPost extends VideoPostBase {
     document.removeEventListener('touchstart', this.onMarkerDialogOutsideClick);
     document.removeEventListener('keydown', this.onMarkerDialogKeydown);
 
-    // Marker creation paused the active card via onPauseAll; resume it now.
-    this.onPlayerReady?.(this.data.marker.id);
+    // Marker creation paused the active card via onPauseAll; resume it now (not while tearing down).
+    if (resumePlayback) this.onPlayerReady?.(this.data.marker.id);
   }
 
   /**
@@ -1997,7 +1998,7 @@ export class VideoPost extends VideoPostBase {
    */
   destroy(): void {
     this.stopWatchTracking();
-    this.closeMarkerDialog();
+    this.closeMarkerDialog(false);
 
     // Destroy player
     if (this.player) {

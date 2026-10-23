@@ -220,6 +220,10 @@ export interface IVideoPlayer {
   reload(): void;
   getIsUnloaded(): boolean;
   hasLoadError(): boolean;
+  /** Register a callback fired once every candidate source has failed to load. */
+  onSourcesExhausted(callback: () => void): void;
+  /** Remove the registered sources-exhausted callback. */
+  offSourcesExhausted(): void;
   /** Register a callback fired once each time the media loops back to its start. */
   onLoop(callback: () => void): void;
   /** Remove the registered loop callback. */

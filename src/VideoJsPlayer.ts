@@ -54,6 +54,7 @@ export class VideoJsPlayer implements IVideoPlayer {
   private looping = false;
   private startSeekFixed = false;
   private onLoopCallback?: () => void;
+  private onSourcesExhaustedCallback?: () => void;
   private onTimeUpdateCallback?: () => void;
 
   constructor(container: HTMLElement, videoUrl: string, options?: VideoJsPlayerOptions) {
@@ -234,6 +235,7 @@ export class VideoJsPlayer implements IVideoPlayer {
       this.player.play()?.catch(() => {});
     } else {
       this.sourcesExhausted = true;
+      this.onSourcesExhaustedCallback?.();
     }
   }
 
@@ -445,6 +447,14 @@ export class VideoJsPlayer implements IVideoPlayer {
     }
   }
 
+  onSourcesExhausted(callback: () => void): void {
+    this.onSourcesExhaustedCallback = callback;
+  }
+
+  offSourcesExhausted(): void {
+    this.onSourcesExhaustedCallback = undefined;
+  }
+
   onLoop(callback: () => void): void {
     this.onLoopCallback = callback;
   }
@@ -465,6 +475,7 @@ export class VideoJsPlayer implements IVideoPlayer {
     this.destroyed = true;
     this.looping = false;
     this.onLoopCallback = undefined;
+    this.onSourcesExhaustedCallback = undefined;
     this.onTimeUpdateCallback = undefined;
     if (this.player) {
       try {

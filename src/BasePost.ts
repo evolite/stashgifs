@@ -153,6 +153,7 @@ export abstract class BasePost {
   protected performerDisplayLimit: number = 3;
   protected discoveryPanel?: DiscoveryPanelControl;
   private discoveryCollapseUnsubscribe?: () => void;
+  private static discoveryJigglePlayed = false;
   private discoveryJiggleTimerId?: ReturnType<typeof setTimeout>;
   protected readonly touchCleanups: Array<() => void> = [];
   protected reelAutoScroll: boolean = false;
@@ -3568,11 +3569,15 @@ export abstract class BasePost {
     btn.addEventListener('click', () => panel.toggle());
     this.discoveryCollapseUnsubscribe = panel.onCollapseChange(applyState);
 
-    this.discoveryJiggleTimerId = setTimeout(() => {
-      this.discoveryJiggleTimerId = undefined;
-      btn.style.animation = 'stashgifs-jiggle 1.1s ease-in-out, stashgifs-discovery-pulse 1.1s ease-in-out';
-      btn.addEventListener('animationend', () => { btn.style.animation = ''; }, { once: true });
-    }, 3000);
+    // One-shot hint: only the first discovery button created per page load jiggles.
+    if (!BasePost.discoveryJigglePlayed) {
+      BasePost.discoveryJigglePlayed = true;
+      this.discoveryJiggleTimerId = setTimeout(() => {
+        this.discoveryJiggleTimerId = undefined;
+        btn.style.animation = 'stashgifs-jiggle 1.1s ease-in-out, stashgifs-discovery-pulse 1.1s ease-in-out';
+        btn.addEventListener('animationend', () => { btn.style.animation = ''; }, { once: true });
+      }, 3000);
+    }
 
     return btn;
   }
@@ -3612,8 +3617,7 @@ export abstract class BasePost {
       } catch (error) {
         console.error('Failed to toggle favorite', error);
         showToast('Failed to update favorite. Please try again.');
-        // Revert UI state
-        this.isFavorite = !this.isFavorite;
+        // isFavorite only changes after a successful toggle, so the heart already shows the real state.
         this.updateHeartButton(heartBtn);
       } finally {
         this.isTogglingFavorite = false;
@@ -3654,24 +3658,18 @@ export abstract class BasePost {
       console.error('BasePost: No API available for toggleFavorite');
       return;
     }
-    try {
-      const result = await toggleImageFavorite(
-        this.getImageData().image.id,
-        this.getImageData().image.tags,
-        this.api,
-        this.favoritesManager,
-        this.isFavorite,
-        FAVORITE_TAG_NAME,
-      );
-      this.getImageData().image.tags = result.newTags as Image['tags'];
-      this.isFavorite = result.newIsFavorite;
-      this.updateHeartButton();
-    } catch (error) {
-      console.error('BasePost: Failed to toggle favorite', error);
-      showToast('Failed to update favorite');
-      this.isFavorite = !this.isFavorite;
-      this.updateHeartButton();
-    }
+    // Errors propagate to the heart button's click handler, which reports them; isFavorite is
+    // only assigned after the server accepted the change.
+    const result = await toggleImageFavorite(
+      this.getImageData().image.id,
+      this.getImageData().image.tags,
+      this.api,
+      this.favoritesManager,
+      this.isFavorite,
+      FAVORITE_TAG_NAME,
+    );
+    this.getImageData().image.tags = result.newTags as Image['tags'];
+    this.isFavorite = result.newIsFavorite;
   }
 
   /**
