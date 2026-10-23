@@ -53,7 +53,7 @@ export class FavoritesManager {
         return false;
       }
 
-      return await this.api.markerHasTag(marker, tagId);
+      return this.api.markerHasTag(marker, tagId);
     } catch (error) {
       console.error('FavoritesManager: Failed to check favorite status', error);
       return false;

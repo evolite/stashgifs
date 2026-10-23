@@ -154,7 +154,7 @@ export class TagsApi {
    * Check if a scene marker has a specific tag
    * Uses the marker's existing tags array
    */
-  async markerHasTag(marker: { id: string; tags?: Array<{ id: string }> }, tagId: string): Promise<boolean> {
+  markerHasTag(marker: { id: string; tags?: Array<{ id: string }> }, tagId: string): boolean {
     return marker.tags?.some(tag => tag.id === tagId) ?? false;
   }
 

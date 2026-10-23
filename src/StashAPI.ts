@@ -641,7 +641,7 @@ export class StashAPI {
     return this.tags.ensureTag(tagName);
   }
 
-  markerHasTag(marker: { id: string; tags?: Array<{ id: string }> }, tagId: string): Promise<boolean> {
+  markerHasTag(marker: { id: string; tags?: Array<{ id: string }> }, tagId: string): boolean {
     return this.tags.markerHasTag(marker, tagId);
   }
 
