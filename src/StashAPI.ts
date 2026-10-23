@@ -3,68 +3,34 @@
  * This will interface with the Stash GraphQL API
  */
 
-import { Scene, SceneMarker, FilterOptions, VideoSource, Performer, DateRangeFilter, SavedFilterMode } from './types.js';
-import { normalizeMediaUrl, stripApiKey } from './utils.js';
+import { Scene, SceneMarker, FilterOptions, VideoSource, SavedFilterMode } from './types.js';
 import { getStashBaseUrl } from './utils/baseUrl.js';
 import * as queries from './graphql/queries.js';
-import * as mutations from './graphql/mutations.js';
 import {
   FindFilterInput,
   SceneMarkerFilterInput,
   SceneFilterInput,
-  TagFilterInput,
-  ImageFilterInput,
   FindSceneMarkersResponse,
   FindScenesResponse,
-  FindTagsResponse,
-  FindTagsExtendedResponse,
-  FindStudiosResponse,
-  FindPerformersResponse,
-  FindPerformerResponse,
   PerformerExtended,
-  FindStudioResponse,
   StudioExtended,
   FindImagesResponse,
-  FindGalleriesResponse,
   Gallery,
-  GetSavedFiltersResponse,
   GetSavedFilterResponse,
-  CheckTagsHaveMarkersResponse,
-  TagCreateResponse,
-  SceneMarkerUpdateResponse,
-  SceneMarkerCreateResponse,
-  SceneUpdateResponse,
-  SceneAddOResponse,
-  SceneIncrementPlayCountResponse,
-  SceneSaveActivityResponse,
-  ImageUpdateResponse,
-  ImageIncrementOResponse,
-  TagCreateInput,
-  SceneMarkerUpdateInput,
   TypedGraphQLClient,
   GQLImage,
-  ConfigurationResponse,
-  ConfigurePluginResponse,
   StashBox,
-  GetStashBoxConfigResponse,
 } from './graphql/types.js';
-import {
-  GraphQLRequestError,
-  GraphQLResponseError,
-  GraphQLNetworkError,
-  isAbortError,
-} from './graphql/errors.js';
+import { isAbortError } from './graphql/errors.js';
 import { GraphQLClient } from './graphql/client.js';
-import { TtlCache } from './api/TtlCache.js';
 import { MediaUrls } from './api/MediaUrls.js';
 import { ApiIO } from './api/ApiIO.js';
 import { SearchApi } from './api/SearchApi.js';
 import { ConfigApi } from './api/ConfigApi.js';
+import { EntityApi } from './api/EntityApi.js';
 import { TagsApi, type MarkerTagUpdateData } from './api/TagsApi.js';
-import { FeedFilters, type ImageFilterOptions, type TagSource } from './api/FeedFilters.js';
-import { Batcher } from './api/Batcher.js';
+import { FeedFilters, type ImageFilterOptions } from './api/FeedFilters.js';
 import { generateRandomSortSeed } from './api/sortSeed.js';
-import { runAliased } from './api/aliased.js';
 
 interface StashPluginApi {
   GQL: {
@@ -90,13 +56,13 @@ export class StashAPI {
    *  which resolve to the sources their subtree lives in. Cached for the session. */
   private readonly io = new ApiIO(() => this.gqlClient);
   private readonly tags = new TagsApi(this.io);
+  private readonly entities = new EntityApi(this.io);
   private readonly filters = new FeedFilters(this.tags.tagSources);
   private readonly config = new ConfigApi(this.io);
   private readonly search = new SearchApi(this.io);
 
   // Magic numbers as constants
   private static readonly SHORT_FORM_SCENES_PER_PAGE = 24; // Number of scenes to fetch per page for short-form content
-  private static readonly MAX_MARKERS_PER_SCENE_FOR_SHUFFLE = 5; // Maximum markers per scene in shuffle mode
   private static readonly DEFAULT_CONTENT_LIMIT = 5000; // Default cap for users with extreme amounts
   private _maxContentLimit = StashAPI.DEFAULT_CONTENT_LIMIT;
 
@@ -143,45 +109,6 @@ export class StashAPI {
 
   destroy(): void {
     this.gqlClient.destroy();
-  }
-
-  /**
-   * Get detailed performer information by ID
-   * Used for hover overlay display
-   */
-  async getPerformerDetails(performerId: string, signal?: AbortSignal): Promise<PerformerExtended | null> {
-    if (this.io.isAborted(signal)) return null;
-
-    try {
-      const result = await this.gqlClient.query<FindPerformerResponse>({
-        query: queries.FIND_PERFORMER,
-        variables: { ids: [performerId] },
-        signal,
-      });
-
-      if (this.io.isAborted(signal)) return null;
-
-      const performers = result.data?.findPerformers?.performers ?? [];
-      return performers[0] ?? null;
-    } catch (error: unknown) {
-      return this.io.handleError('getPerformerDetails', error, signal, null);
-    }
-  }
-
-  // fallow-ignore-next-line unused-class-member
-  async getStudioDetails(studioId: string, signal?: AbortSignal): Promise<StudioExtended | null> {
-    if (this.io.isAborted(signal)) return null;
-    try {
-      const result = await this.gqlClient.query<FindStudioResponse>({
-        query: queries.FIND_STUDIO,
-        variables: { id: studioId },
-        signal,
-      });
-      if (this.io.isAborted(signal)) return null;
-      return result.data?.findStudio ?? null;
-    } catch (error: unknown) {
-      return this.io.handleError('getStudioDetails', error, signal, null);
-    }
   }
 
 
@@ -568,375 +495,6 @@ export class StashAPI {
     return this.media.getSceneSources(scene);
   }
 
-  private async updateImageField(
-    imageId: string,
-    field: 'tag_ids' | 'performer_ids',
-    ids: string[],
-    signal: AbortSignal | undefined,
-    logContext: string
-  ): Promise<void> {
-    if (this.io.isAborted(signal)) return;
-
-    try {
-      await this.gqlClient.mutate<ImageUpdateResponse>({
-        mutation: mutations.IMAGE_UPDATE,
-        variables: {
-          input: {
-            id: imageId,
-            [field]: ids,
-          },
-        },
-        signal,
-      });
-
-      if (this.io.isAborted(signal)) return;
-    } catch (error) {
-      if (isAbortError(error) || this.io.isAborted(signal)) {
-        return;
-      }
-      this.io.logError(logContext, error);
-      throw error;
-    }
-  }
-
-  /**
-   * Update tags for an image
-   */
-  async updateImageTags(imageId: string, tagIds: string[], signal?: AbortSignal): Promise<void> {
-    return this.updateImageField(imageId, 'tag_ids', tagIds, signal, 'updateImageTags');
-  }
-
-  /**
-   * Update performers for an image
-   */
-  async updateImagePerformers(imageId: string, performerIds: string[], signal?: AbortSignal): Promise<void> {
-    return this.updateImageField(imageId, 'performer_ids', performerIds, signal, 'updateImagePerformers');
-  }
-
-  /**
-   * Increment image o-counter
-   */
-  async incrementImageOCount(imageId: string, signal?: AbortSignal): Promise<number> {
-    if (this.io.isAborted(signal)) return 0;
-    
-    try {
-      const result = await this.gqlClient.mutate<ImageIncrementOResponse>({
-        mutation: mutations.IMAGE_INCREMENT_O,
-        variables: {
-          id: imageId,
-        },
-        signal,
-      });
-      
-      if (this.io.isAborted(signal)) return 0;
-      
-      return result.data?.imageIncrementO ?? 0;
-    } catch (error) {
-      if (isAbortError(error) || this.io.isAborted(signal)) {
-        return 0;
-      }
-      this.io.logError('incrementImageOCount', error);
-      throw error;
-    }
-  }
-
-  /**
-   * Update performers on a scene
-   */
-  async updateScenePerformers(sceneId: string, performerIds: string[], signal?: AbortSignal): Promise<void> {
-    if (this.io.isAborted(signal)) return;
-
-    const variables = {
-      input: {
-        id: sceneId,
-        performer_ids: performerIds
-      }
-    };
-
-    await this.gqlClient.mutate<SceneUpdateResponse>({
-      mutation: mutations.SCENE_UPDATE,
-      variables,
-      signal,
-    });
-
-    if (this.io.isAborted(signal)) return;
-  }
-
-  /**
-   * Update performer favorite flag
-   */
-  async updatePerformerFavorite(performerId: string, favorite: boolean, signal?: AbortSignal): Promise<void> {
-    if (this.io.isAborted(signal)) return;
-
-    const variables = {
-      input: {
-        id: performerId,
-        favorite,
-      }
-    };
-
-    await this.gqlClient.mutate({
-      mutation: mutations.PERFORMER_UPDATE,
-      variables,
-      signal,
-    });
-
-    if (this.io.isAborted(signal)) return;
-  }
-
-  /**
-   * Increment the o count for a scene
-   * @param sceneId The scene ID
-   * @param times Optional array of timestamps (if not provided, uses current time)
-   * @param signal Optional abort signal
-   * @returns The updated o count and history
-   */
-  async incrementOCount(sceneId: string, times?: string[], signal?: AbortSignal): Promise<{ count: number; history: string[] }> {
-    if (this.io.isAborted(signal)) return { count: 0, history: [] };
-    
-    const variables = {
-      id: sceneId,
-      times: times || undefined
-    };
-
-    try {
-      const result = await this.gqlClient.mutate<SceneAddOResponse>({
-        mutation: mutations.SCENE_ADD_O,
-        variables,
-        signal,
-      });
-      
-      if (this.io.isAborted(signal)) return { count: 0, history: [] };
-      
-      const sceneAddO = result.data?.sceneAddO;
-      if (sceneAddO && 'count' in sceneAddO) {
-        return { count: sceneAddO.count ?? 0, history: times || [] };
-      }
-      // Return provided times in history even when count is missing
-      return { count: 0, history: times || [] };
-    } catch (error) {
-      if (isAbortError(error) || this.io.isAborted(signal)) {
-        return { count: 0, history: [] };
-      }
-      this.io.logError('incrementOCount', error);
-      throw error;
-    }
-  }
-
-  /**
-   * Increment the play count for a scene. Fire-and-forget — never throws.
-   */
-  // fallow-ignore-next-line unused-class-member
-  async incrementScenePlayCount(sceneId: string): Promise<void> {
-    if (!sceneId) return;
-    try {
-      await this.gqlClient.mutate<SceneIncrementPlayCountResponse>({
-        mutation: mutations.SCENE_INCREMENT_PLAY_COUNT,
-        variables: { id: sceneId },
-      });
-    } catch (error) {
-      this.io.logError('incrementScenePlayCount', error);
-    }
-  }
-
-  /**
-   * Save scene watch activity. Fire-and-forget — never throws.
-   * @param resumeTime Current playback position in the scene (seconds), or undefined
-   * @param playDuration Seconds watched in this session
-   */
-  // fallow-ignore-next-line unused-class-member
-  async saveSceneActivity(sceneId: string, resumeTime: number | undefined, playDuration: number): Promise<void> {
-    if (!sceneId || playDuration <= 0) return;
-    try {
-      await this.gqlClient.mutate<SceneSaveActivityResponse>({
-        mutation: mutations.SCENE_SAVE_ACTIVITY,
-        variables: { id: sceneId, resume_time: resumeTime, playDuration },
-      });
-    } catch (error) {
-      this.io.logError('saveSceneActivity', error);
-    }
-  }
-
-  /**
-   * Validate and normalize a rating10 value to rating100
-   */
-  private validateAndNormalizeRating(methodName: string, entityId: string, rating10: number): number {
-    if (!entityId || typeof entityId !== 'string' || entityId.trim() === '') {
-      throw new Error(`${methodName}: entityId is required and must be a non-empty string`);
-    }
-    if (typeof rating10 !== 'number' || !Number.isFinite(rating10)) {
-      throw new TypeError(`${methodName}: rating10 must be a finite number`);
-    }
-    const normalized = Number.isFinite(rating10) ? rating10 : 0;
-    const clamped = Math.min(10, Math.max(0, normalized));
-    return Math.round(clamped * 10);
-  }
-
-  /**
-   * Perform a rating mutation (shared by scene and image rating updates)
-   */
-  private async performRatingMutation<T>(
-    methodName: string,
-    entityId: string,
-    rating100: number,
-    mutation: string,
-    signal?: AbortSignal
-  ): Promise<number> {
-    if (this.io.isAborted(signal)) return 0;
-
-    try {
-      await this.gqlClient.mutate<T>({
-        mutation,
-        variables: { input: { id: entityId, rating100 } },
-        signal,
-      });
-
-      if (this.io.isAborted(signal)) return 0;
-      return rating100;
-    } catch (error) {
-      if (isAbortError(error) || this.io.isAborted(signal)) {
-        return 0;
-      }
-      this.io.logError(methodName, error);
-      throw error;
-    }
-  }
-
-  /**
-   * Update the rating for a scene (0-10 scale → rating100)
-   */
-  async updateSceneRating(sceneId: string, rating10: number, signal?: AbortSignal): Promise<number> {
-    const rating100 = this.validateAndNormalizeRating('updateSceneRating', sceneId, rating10);
-    return this.performRatingMutation<SceneUpdateResponse>('updateSceneRating', sceneId, rating100, mutations.SCENE_UPDATE, signal);
-  }
-
-  /**
-   * Update image rating (0-10 scale → rating100)
-   */
-  async updateImageRating(imageId: string, rating10: number, signal?: AbortSignal): Promise<number> {
-    const rating100 = this.validateAndNormalizeRating('updateImageRating', imageId, rating10);
-    return this.performRatingMutation<{ imageUpdate: { id: string } }>('updateImageRating', imageId, rating100, mutations.IMAGE_UPDATE, signal);
-  }
-
-  /**
-   * Find all galleries (for gallery selector in settings)
-   * @param signal Optional abort signal
-   * @returns Array of galleries with id, title, and folder path
-   */
-  async findGalleries(signal?: AbortSignal): Promise<Gallery[]> {
-    if (this.io.isAborted(signal)) return [];
-    try {
-      const result = await this.gqlClient.query<FindGalleriesResponse>({
-        query: queries.FIND_GALLERIES,
-        variables: { filter: { per_page: -1, sort: 'title', direction: 'ASC' } },
-        signal,
-      });
-      if (this.io.isAborted(signal)) return [];
-      return result.data?.findGalleries?.galleries ?? [];
-    } catch (error: unknown) {
-      if (isAbortError(error) || this.io.isAborted(signal)) return [];
-      this.io.logError('findGalleries', error);
-      return [];
-    }
-  }
-
-  /**
-   * Create a new scene marker
-   * @param sceneId Scene ID
-   * @param seconds Start time in seconds
-   * @param primaryTagId Primary tag ID (required)
-   * @param title Optional title (defaults to empty string)
-   * @param endSeconds Optional end time in seconds
-   * @param tagIds Optional array of additional tag IDs
-   * @param signal Optional abort signal
-   * @returns Created marker data
-   */
-  /**
-   * Validate createSceneMarker input parameters
-   */
-  private validateCreateSceneMarkerInput(
-    sceneId: string,
-    seconds: number,
-    primaryTagId: string,
-    endSeconds: number | null | undefined,
-    tagIds: string[]
-  ): void {
-    if (!sceneId || typeof sceneId !== 'string' || sceneId.trim() === '') {
-      throw new Error('createSceneMarker: sceneId is required and must be a non-empty string');
-    }
-    if (typeof seconds !== 'number' || !Number.isFinite(seconds) || seconds < 0) {
-      throw new TypeError('createSceneMarker: seconds must be a non-negative number');
-    }
-    if (!primaryTagId || typeof primaryTagId !== 'string' || primaryTagId.trim() === '') {
-      throw new Error('createSceneMarker: primaryTagId is required and must be a non-empty string');
-    }
-    if (endSeconds !== null && endSeconds !== undefined) {
-      if (typeof endSeconds !== 'number' || !Number.isFinite(endSeconds) || endSeconds < 0) {
-        throw new TypeError('createSceneMarker: endSeconds must be a non-negative number or null');
-      }
-      if (endSeconds < seconds) {
-        throw new Error('createSceneMarker: endSeconds must be greater than or equal to seconds');
-      }
-    }
-    if (!Array.isArray(tagIds)) {
-      throw new TypeError('createSceneMarker: tagIds must be an array');
-    }
-  }
-
-  async createSceneMarker(
-    sceneId: string,
-    seconds: number,
-    primaryTagId: string,
-    title: string = '',
-    endSeconds?: number | null,
-    tagIds: string[] = [],
-    signal?: AbortSignal
-  ): Promise<{ id: string; title: string; seconds: number; end_seconds?: number; stream?: string; preview?: string; scene: { id: string; title?: string; files?: Array<{ width?: number; height?: number; path?: string }>; performers?: Array<{ id: string; name: string; image_path?: string }> } | Scene; primary_tag: { id: string; name: string }; tags: Array<{ id: string; name: string }> }> {
-    if (this.io.isAborted(signal)) {
-      throw new Error('Operation aborted');
-    }
-    
-    // Input validation
-    this.validateCreateSceneMarkerInput(sceneId, seconds, primaryTagId, endSeconds, tagIds);
-    
-    const variables = {
-      title,
-      seconds,
-      end_seconds: endSeconds ?? null,
-      scene_id: sceneId,
-      primary_tag_id: primaryTagId,
-      tag_ids: tagIds,
-    };
-
-    try {
-      const result = await this.gqlClient.mutate<SceneMarkerCreateResponse>({
-        mutation: mutations.SCENE_MARKER_CREATE,
-        variables,
-        signal,
-      });
-      
-      if (this.io.isAborted(signal)) {
-        throw new Error('Operation aborted');
-      }
-      
-      const marker = result.data?.sceneMarkerCreate;
-      if (!marker) {
-        throw new Error('Failed to create scene marker: response was null');
-      }
-      // Convert null end_seconds to undefined to match return type
-      return {
-        ...marker,
-        end_seconds: marker.end_seconds ?? undefined,
-      };
-    } catch (error) {
-      if (isAbortError(error) || this.io.isAborted(signal)) {
-        throw new Error('Operation aborted');
-      }
-      this.io.logError('createSceneMarker', error);
-      throw error;
-    }
-  }
-
   /**
    * Find images with filtering by file extension, performers, and tags
    * @param fileExtensions Array of file extensions (e.g., ['.gif', '.webm'])
@@ -1126,5 +684,71 @@ export class StashAPI {
 
   getTagSources(ids: string[]): Promise<void> {
     return this.tags.getTagSources(ids);
+  }
+
+  // ---- entity details and writes (see api/EntityApi.ts) ----
+
+  getPerformerDetails(performerId: string, signal?: AbortSignal): Promise<PerformerExtended | null> {
+    return this.entities.getPerformerDetails(performerId, signal);
+  }
+
+  getStudioDetails(studioId: string, signal?: AbortSignal): Promise<StudioExtended | null> {
+    return this.entities.getStudioDetails(studioId, signal);
+  }
+
+  updateImageTags(imageId: string, tagIds: string[], signal?: AbortSignal): Promise<void> {
+    return this.entities.updateImageTags(imageId, tagIds, signal);
+  }
+
+  updateImagePerformers(imageId: string, performerIds: string[], signal?: AbortSignal): Promise<void> {
+    return this.entities.updateImagePerformers(imageId, performerIds, signal);
+  }
+
+  incrementImageOCount(imageId: string, signal?: AbortSignal): Promise<number> {
+    return this.entities.incrementImageOCount(imageId, signal);
+  }
+
+  updateScenePerformers(sceneId: string, performerIds: string[], signal?: AbortSignal): Promise<void> {
+    return this.entities.updateScenePerformers(sceneId, performerIds, signal);
+  }
+
+  updatePerformerFavorite(performerId: string, favorite: boolean, signal?: AbortSignal): Promise<void> {
+    return this.entities.updatePerformerFavorite(performerId, favorite, signal);
+  }
+
+  incrementOCount(sceneId: string, times?: string[], signal?: AbortSignal): Promise<{ count: number; history: string[] }> {
+    return this.entities.incrementOCount(sceneId, times, signal);
+  }
+
+  incrementScenePlayCount(sceneId: string): Promise<void> {
+    return this.entities.incrementScenePlayCount(sceneId);
+  }
+
+  saveSceneActivity(sceneId: string, resumeTime: number | undefined, playDuration: number): Promise<void> {
+    return this.entities.saveSceneActivity(sceneId, resumeTime, playDuration);
+  }
+
+  updateSceneRating(sceneId: string, rating10: number, signal?: AbortSignal): Promise<number> {
+    return this.entities.updateSceneRating(sceneId, rating10, signal);
+  }
+
+  updateImageRating(imageId: string, rating10: number, signal?: AbortSignal): Promise<number> {
+    return this.entities.updateImageRating(imageId, rating10, signal);
+  }
+
+  findGalleries(signal?: AbortSignal): Promise<Gallery[]> {
+    return this.entities.findGalleries(signal);
+  }
+
+  createSceneMarker(
+    sceneId: string,
+    seconds: number,
+    primaryTagId: string,
+    title: string = '',
+    endSeconds?: number | null,
+    tagIds: string[] = [],
+    signal?: AbortSignal
+  ): Promise<{ id: string; title: string; seconds: number; end_seconds?: number; stream?: string; preview?: string; scene: { id: string; title?: string; files?: Array<{ width?: number; height?: number; path?: string }>; performers?: Array<{ id: string; name: string; image_path?: string }> } | Scene; primary_tag: { id: string; name: string }; tags: Array<{ id: string; name: string }> }> {
+    return this.entities.createSceneMarker(sceneId, seconds, primaryTagId, title, endSeconds, tagIds, signal);
   }
 }

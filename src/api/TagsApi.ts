@@ -15,7 +15,6 @@ import type {
   SceneMarkerUpdateResponse,
   SceneMarkerUpdateInput,
 } from '../graphql/types.js';
-import type { Scene } from '../types.js';
 import { isAbortError } from '../graphql/errors.js';
 import type { ApiIO } from './ApiIO.js';
 import { TtlCache } from './TtlCache.js';
