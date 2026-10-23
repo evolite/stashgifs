@@ -4,9 +4,9 @@
 import assert from 'node:assert/strict';
 import { loadTs } from './load-ts.mjs';
 
-const { StashAPI } = await loadTs('src/StashAPI.ts');
+const { normalizeSavedObjectFilter } = await loadTs('src/api/savedFilterCriteria.ts');
 
-const out = Object.create(StashAPI.prototype).normalizeSavedObjectFilter({
+const out = normalizeSavedObjectFilter({
   rating100: { modifier: 'BETWEEN', value: { value: 20, value2: 80 } },
   o_counter: { modifier: 'GREATER_THAN', value: { value: 1, value2: null } },
   resolution: { modifier: 'EQUALS', value: '720p' },
