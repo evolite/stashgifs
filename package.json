@@ -10,7 +10,7 @@
     "release": "pnpm run build",
     "clean": "rm -rf stashgifs/app/assets/*.js stashgifs/app/assets/*.js.map stashgifs/app/assets/chunks",
     "type-check": "tsc --noEmit",
-    "test": "node --test \"tests/**/*.test.mjs\""
+    "test": "node --test tests/*.test.mjs"
   },
   "devDependencies": {
     "esbuild": "^0.28.2",
