@@ -56,8 +56,6 @@ function loadThemeEarly(settings: Partial<FeedSettings>): void {
 }
 
 function applyReelModeEarly(container?: HTMLElement | null): void {
-  document.documentElement.dataset.stashgifsReelReady = 'true';
-
   if (container) {
     container.style.width = '100vw';
     container.style.maxWidth = '100vw';
@@ -93,20 +91,6 @@ function init(): void {
 
   loadFonts();
   const savedSettings = getSavedSettings();
-  
-  // Check if we should scroll to top after reload
-  if (sessionStorage.getItem('stashgifs-scroll-to-top') === 'true') {
-    sessionStorage.removeItem('stashgifs-scroll-to-top');
-    // Scroll to top immediately
-    window.scrollTo(0, 0);
-    // Also ensure document is at top
-    if (document.documentElement) {
-      document.documentElement.scrollTop = 0;
-    }
-    if (document.body) {
-      document.body.scrollTop = 0;
-    }
-  }
   
   interface WindowWithStashgifs extends Window {
     stashgifsFeed?: FeedContainer;

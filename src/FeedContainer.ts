@@ -29,7 +29,7 @@ import { ReelScroller } from './ReelScroller.js';
 import { FavoritesManager } from './FavoritesManager.js';
 import { BookmarkManager } from './BookmarkManager.js';
 import type { SettingsPage } from './SettingsPage.js';
-import { debounce, isTypingTarget, showToast, normalizeMediaUrl, detectDeviceCapabilities, DeviceCapabilities, isStandaloneNavigator, isMobileDevice, detectVideoFromVisualFiles, isMp4File, getImageUrlForDisplay, THEME, THEME_DEFAULTS, normalizeHexColor, toRgba, buildFullUrl, applyThemeColors } from './utils.js';
+import { debounce, isTypingTarget, showToast, normalizeMediaUrl, isStandaloneNavigator, isMobileDevice, detectVideoFromVisualFiles, isMp4File, getImageUrlForDisplay, THEME, THEME_DEFAULTS, normalizeHexColor, toRgba, buildFullUrl, applyThemeColors } from './utils.js';
 import { GQLImage } from './graphql/types.js';
 import { getStashBaseUrl } from './utils/baseUrl.js';
 import { SETTINGS_SVG, STASHGIFS_LOGO_SVG, IMAGE_SVG, MARKER_SVG, HEART_SVG_OUTLINE } from './icons.js';
@@ -37,9 +37,6 @@ import { DiscoveryPanel } from './DiscoveryPanel.js';
 import { WhisparrClient } from './WhisparrClient.js';
 import { DiscoveryManager } from './DiscoveryManager.js';
 import { buildEndOfFeedCard, END_CARD_POST_ID } from './EndOfFeedCard.js';
-
-// Lazy-load videos only as they enter the viewport — no speculative look-ahead.
-const LAZY_LOAD_ROOT_MARGIN = '0px';
 
 const DEFAULT_SETTINGS: FeedSettings = {
   cardMaxWidth: 800,
@@ -76,13 +73,6 @@ const DEFAULT_SETTINGS: FeedSettings = {
 };
 
 /**
- * Debug interface for FeedContainer (for extension/debugging purposes)
- */
-interface FeedContainerDebug {
-  _mobileLoadTimeout?: ReturnType<typeof setTimeout> | null;
-}
-
-/**
  * Type guard to check if a player is a video player (vs the GIF ImagePlayer).
  */
 function isVideoPlayer(player: IVideoPlayer | ImagePlayer | undefined): player is IVideoPlayer {
@@ -101,10 +91,8 @@ type PostType = VideoPost | ImagePost | ImageVideoPost;
 
 export class FeedContainer {
   private static readonly CONTENT_LOAD_LIMIT: number = 8;
-  // Reel scroll advances one card per gesture, so the pixel-based loadMoreTrigger only
-  // enters its prefetch margin once the user is basically on the last card. Prefetch the
-  // next batch this many cards before the end so the (often multi-second) fetch is ready
-  // by the time they arrive.
+  // Reel scroll advances one card per gesture. Prefetch the next batch this many cards
+  // before the end so the (often multi-second) fetch is ready by the time they arrive.
   private static readonly PREFETCH_CARDS_AHEAD = 5;
   private static readonly SEEN_IDS_KEY = 'stashgifs-seen-ids';
   private readonly container: HTMLElement;
@@ -126,9 +114,7 @@ export class FeedContainer {
   private ratingSystemConfig: { type?: string; starPrecision?: string } | null | undefined;
   private imagesLoadedCount: number = 0; // Track how many images we've loaded
   private markersLoadedCount: number = 0; // Track how many markers we've loaded
-  private shortFormLoadedCount: number = 0; // Track how many short-form items we've loaded
   private shortFormUnfilteredOffset: number = 0; // Track offset in UNFILTERED scene list for short-form pagination
-  private scenePreviewLoadedCount: number = 0; // Track how many scene-preview items we've loaded
   private scenePreviewUnfilteredOffset: number = 0; // Track offset in UNFILTERED scene list for scene-preview pagination
   private markerPageSize: number = 0; // Track the page size used for markers (for consistent pagination)
   private imagePageSize: number = 0; // Track the page size used for images (for consistent pagination)
@@ -150,8 +136,6 @@ export class FeedContainer {
   // single full reset, so concurrent force-loads can't race and blank the feed.
   private settingsReloadTimeoutId?: ReturnType<typeof setTimeout>;
   private latestLoadId = 0;
-  private scrollObserver?: IntersectionObserver;
-  private loadMoreTrigger?: HTMLElement;
   private endCard?: HTMLElement;
   private saveSearchInputVisible = false;
   private postsContainer!: HTMLElement;
@@ -175,14 +159,12 @@ export class FeedContainer {
   private placeholderAnimationInterval?: ReturnType<typeof setInterval>; // For scrolling placeholder animation
   private savedFiltersCache: SavedFilter[] = [];
   private savedFiltersPromise?: Promise<void>;
-  private activeSearchAbortController?: AbortController;
   private suggestionAbortController?: AbortController;
   private activeLoadVideosAbortController?: AbortController;
   private skeletonLoaders: HTMLElement[] = [];
   private useHDMode: boolean = false;
   private globalMuteState: boolean = false; // Global mute state - all videos muted when true
   private readonly loadObservers: Map<string, IntersectionObserver> = new Map(); // Track load observers for cleanup
-  private deviceCapabilities: DeviceCapabilities; // Device capabilities for adaptive quality
   private updatePlaceholderVisibilityRef?: () => void; // Reference to updatePlaceholderVisibility function
   // Reel scrolling: JS-driven, one-card-per-gesture (replaces CSS scroll-snap)
   private reelScroller?: ReelScroller;
@@ -215,9 +197,6 @@ export class FeedContainer {
     this.posts = new Map();
     this.postOrder = [];
 
-    this.deviceCapabilities = null!; // Will be set in initializeDeviceConfiguration
-
-    this.initializeDeviceConfiguration();
     this.initializeContainers();
     this.applyThemeSettings(this.settings);
     this.loadUserPreferences();
@@ -238,9 +217,6 @@ export class FeedContainer {
     // Setup JS reel scroller if reel mode is enabled
     this.setupReelScroller();
     
-    // Setup infinite scroll
-    this.setupInfiniteScroll();
-    
     // Unlock autoplay on mobile after first user interaction
     this.unlockMobileAutoplay();
     this.setupAutoplayUnlockHandlers();
@@ -248,16 +224,6 @@ export class FeedContainer {
 
     // Defer suggestion preload until after initial videos load to avoid competing for bandwidth
     // Will be triggered lazily when user opens filter dropdown or after initial load completes
-  }
-
-  /**
-   * Initialize device detection and configuration
-   */
-  private initializeDeviceConfiguration(): void {
-    this.deviceCapabilities = detectDeviceCapabilities();
-
-    this.posts = new Map();
-    this.postOrder = [];
   }
 
   /**
@@ -355,38 +321,12 @@ export class FeedContainer {
     document.documentElement.dataset.stashgifsThemeReady = 'true';
   }
 
-  private getScrollEventTarget(): HTMLElement {
-    return this.scrollContainer;
-  }
-
   private getViewportTop(): number {
     return this.scrollContainer.scrollTop;
   }
 
-  private getViewportHeight(): number {
-    return this.scrollContainer.clientHeight;
-  }
-
-  private getViewportRect(): { top: number; left: number; width: number; height: number } {
-    const rect = this.scrollContainer.getBoundingClientRect();
-    return { top: rect.top, left: rect.left, width: rect.width, height: rect.height };
-  }
-
-  private getObserverRoot(): Element {
-    return this.scrollContainer;
-  }
-
-  private getElementTop(rect: DOMRect): number {
-    const containerRect = this.scrollContainer.getBoundingClientRect();
-    return this.scrollContainer.scrollTop + rect.top - containerRect.top;
-  }
-
-  private scrollToPosition(top: number, behavior: ScrollBehavior = 'auto'): void {
-    this.scrollContainer.scrollTo({ top, behavior });
-  }
-
   private scrollToTop(): void {
-    this.scrollToPosition(0, 'auto');
+    this.scrollContainer.scrollTo({ top: 0, behavior: 'auto' });
   }
 
   private applyReelModeLayout(): void {
@@ -395,7 +335,6 @@ export class FeedContainer {
     this.applyReelHeaderStyles();
     this.setupScrollHandler();
     this.setupReelScroller();
-    this.resetScrollObserver();
     this.refreshAutoplayAfterLayout();
     requestAnimationFrame(() => this.reelScroller?.realign());
     this.ensureReelInitialCardLoaded();
@@ -411,9 +350,7 @@ export class FeedContainer {
     const root = document.documentElement;
     const body = document.body;
     root.style.overflow = 'hidden';
-    if (body.dataset.scrollLock !== 'true') {
-      body.style.overflow = 'hidden';
-    }
+    body.style.overflow = 'hidden';
   }
 
   private applyReelContainerStyles(): void {
@@ -1167,7 +1104,6 @@ export class FeedContainer {
     }
 
     this.setHeaderOverlayState(false);
-    this.unlockBodyScroll();
 
     // Refresh cache in the background for next time the overlay opens
     // Don't await - let it run asynchronously
@@ -1766,7 +1702,6 @@ export class FeedContainer {
     };
 
     suggestions.style.display = 'flex';
-    this.lockBodyScroll();
 
     loadingTimeout = setTimeout(() => {
       if (!ensureLatest()) return;
@@ -2491,7 +2426,6 @@ export class FeedContainer {
       this.setHeaderOverlayState(true);
       panel.style.setProperty('padding-top', this.getSuggestionsTopOffset(), 'important');
       panel.style.display = 'flex';
-      this.lockBodyScroll();
 
       return ensureLatest();
     };
@@ -3405,11 +3339,7 @@ export class FeedContainer {
       return;
     }
 
-    if (this.loadMoreTrigger?.parentNode === postsContainer) {
-      postsContainer.insertBefore(fragment, this.loadMoreTrigger);
-    } else {
-      postsContainer.appendChild(fragment);
-    }
+    postsContainer.appendChild(fragment);
   }
 
   /**
@@ -3715,8 +3645,7 @@ export class FeedContainer {
   private createImagePostInstance(
     postContainer: HTMLElement,
     image: Image,
-    imageUrl: string,
-    onLoadFullVideo?: () => void
+    imageUrl: string
   ): ImagePost {
     const postData: ImagePostData = {
       image,
@@ -3729,7 +3658,6 @@ export class FeedContainer {
       postData,
       {
         ...this.buildCommonPostOptions(),
-        onLoadFullVideo: undefined,
       }
     );
     
@@ -3760,7 +3688,7 @@ export class FeedContainer {
           }
         }
       },
-      { root: this.getObserverRoot(), rootMargin: '200px' }
+      { root: this.scrollContainer, rootMargin: '200px' }
     );
 
     observer.observe(postContainer);
@@ -3781,7 +3709,6 @@ export class FeedContainer {
       this.hasMore = true;
       // Reset loaded counts when starting fresh
       this.markersLoadedCount = 0;
-      this.shortFormLoadedCount = 0;
       this.imagesLoadedCount = 0;
       this.shortFormUnfilteredOffset = 0;
       this.markerPageSize = 0;
@@ -3865,7 +3792,10 @@ export class FeedContainer {
       this.hideSkeletonLoaders();
     }
 
-    this.updateInfiniteScrollTrigger();
+    // A batch can land with no gesture to follow (short pages, filters): re-check once the
+    // load has fully settled (isLoading clears after this returns). Only fires when the feed
+    // actually grew, so an empty page can't loop.
+    setTimeout(() => this.prefetchIfNearEnd(), 0);
 
     if (!append) {
       // First batch rendered: align to the first card and start it playing.
@@ -3917,11 +3847,6 @@ export class FeedContainer {
     // Clear all existing posts and DOM
     this.clearPosts();
 
-    // Recreate load more trigger
-    if (this.loadMoreTrigger && this.postsContainer) {
-      this.postsContainer.appendChild(this.loadMoreTrigger);
-    }
-    
     // Scroll to top
     this.scrollToTop();
     
@@ -3929,7 +3854,6 @@ export class FeedContainer {
     this.currentPage = 1;
     this.hasMore = true;
     this.markersLoadedCount = 0;
-    this.shortFormLoadedCount = 0;
     this.imagesLoadedCount = 0;
     this.shortFormUnfilteredOffset = 0;
     this.markerPageSize = 0;
@@ -4001,28 +3925,6 @@ export class FeedContainer {
       shouldLoadShortForm,
       shouldLoadRandom,
       shouldLoadScenePreviews
-    };
-  }
-
-  /**
-   * Calculate content limits for markers and shortform
-   * Uses stored ratio if available to maintain proportional fetching
-   */
-  private calculateContentLimits(
-    limit: number,
-    shouldLoadMarkers: boolean,
-    shouldLoadShortForm: boolean
-  ): { markerLimit: number; shortFormLimit: number } {
-    if (shouldLoadMarkers && shouldLoadShortForm) {
-      return {
-        markerLimit: limit,
-        shortFormLimit: limit
-      };
-    }
-    
-    return {
-      markerLimit: shouldLoadMarkers ? limit : 0,
-      shortFormLimit: shouldLoadShortForm ? limit : 0
     };
   }
 
@@ -4375,9 +4277,8 @@ export class FeedContainer {
     shouldLoadMarkers: boolean;
     shouldLoadRandom?: boolean;
     realMarkersCount?: number;
-    realShortFormCount?: number;
   }): Promise<Array<{ type: 'marker' | 'image'; data: SceneMarker | Image; date?: string }>> {
-    const { content, counts, currentFilters, offset, append, shouldLoadMarkers, shouldLoadRandom, realMarkersCount, realShortFormCount } = options;
+    const { content, counts, currentFilters, offset, append, shouldLoadMarkers, shouldLoadRandom, realMarkersCount } = options;
     const { markers, shortFormMarkers, scenePreviewMarkers, images } = content;
     const { markerCount, shortFormCount, imageCount } = counts;
 
@@ -4389,19 +4290,14 @@ export class FeedContainer {
     // Use real (non-synthetic) counts for pagination offsets so random markers
     // don't inflate markersLoadedCount and push regular marker queries past the pool.
     const trackableMarkers = realMarkersCount ?? markers.length;
-    const trackableShortForm = realShortFormCount ?? shortFormMarkers.length;
 
     // Track loaded counts for each content type separately
     if (append) {
       this.markersLoadedCount += trackableMarkers;
-      this.shortFormLoadedCount += trackableShortForm;
-      this.scenePreviewLoadedCount += scenePreviewMarkers.length;
       this.imagesLoadedCount += images.length;
     } else {
       // Reset counts when starting fresh
       this.markersLoadedCount = trackableMarkers;
-      this.shortFormLoadedCount = trackableShortForm;
-      this.scenePreviewLoadedCount = scenePreviewMarkers.length;
       this.imagesLoadedCount = images.length;
     }
 
@@ -4507,13 +4403,8 @@ export class FeedContainer {
 
       const { shouldLoadMarkers, shouldLoadImages, shouldLoadShortForm, shouldLoadRandom, shouldLoadScenePreviews } = this.determineContentLoadingFlags(currentFilters);
 
-      // Calculate limits (simple split when both markers and shortform are enabled)
-      const limits = this.calculateContentLimits(limit, shouldLoadMarkers, shouldLoadShortForm);
-      const markerLimit = limits.markerLimit;
-      const shortFormLimit = limits.shortFormLimit;
-
-      // Debug logging for short-form content
-      this.logShortFormSettings(shouldLoadShortForm);
+      const markerLimit = shouldLoadMarkers ? limit : 0;
+      const shortFormLimit = shouldLoadShortForm ? limit : 0;
 
       const {
         markers,
@@ -4569,7 +4460,6 @@ export class FeedContainer {
         // Track only real markers/shortform for pagination offsets — random synthetic
         // markers don't paginate and must not inflate markersLoadedCount.
         realMarkersCount: markers.length,
-        realShortFormCount: shortFormMarkers.length,
         currentFilters,
         offset,
         append,
@@ -4784,14 +4674,6 @@ export class FeedContainer {
    */
   private shouldLoadShortFormContent(): boolean {
     return this.settings.includeShortForm !== false;
-  }
-
-  /**
-   * Log short-form content settings for debugging
-   */
-  private logShortFormSettings(shouldLoadShortForm: boolean): void {
-    // Log short-form content settings for debugging
-    this.shouldLoadShortFormContent();
   }
 
   /**
@@ -5244,10 +5126,6 @@ export class FeedContainer {
       this.activeLoadVideosAbortController.abort();
       this.activeLoadVideosAbortController = undefined;
     }
-    if (this.activeSearchAbortController) {
-      this.activeSearchAbortController.abort();
-      this.activeSearchAbortController = undefined;
-    }
     // Also stop any loading videos
     this.stopLoadingVideos();
   }
@@ -5407,72 +5285,6 @@ export class FeedContainer {
     
     // Clean up all load observers
     this.cleanupLoadObservers();
-    
-    // Recreate load more trigger at bottom of posts
-    if (this.loadMoreTrigger && this.postsContainer) {
-      this.postsContainer.appendChild(this.loadMoreTrigger);
-    }
-  }
-
-  /**
-   * Setup infinite scroll
-   */
-  private setupInfiniteScroll(): void {
-    // Create a trigger element at the bottom of the feed
-    this.loadMoreTrigger = document.createElement('div');
-    this.loadMoreTrigger.className = 'load-more-trigger';
-    this.loadMoreTrigger.style.height = '100px';
-    this.loadMoreTrigger.style.width = '100%';
-    // Append the trigger to the posts container so the filter bar stays intact
-    if (this.postsContainer) {
-      this.postsContainer.appendChild(this.loadMoreTrigger);
-    } else {
-      this.scrollContainer.appendChild(this.loadMoreTrigger);
-    }
-
-    this.resetScrollObserver();
-  }
-
-  private resetScrollObserver(): void {
-    if (!this.loadMoreTrigger) {
-      return;
-    }
-
-    if (this.scrollObserver) {
-      this.scrollObserver.disconnect();
-    }
-
-    // Use Intersection Observer to detect when trigger is visible
-    const rootMargin = isMobileDevice() ? '200px' : '600px';
-    this.scrollObserver = new IntersectionObserver(
-      (entries) => {
-        for (const entry of entries) {
-          if (entry.isIntersecting && !this.isLoading && this.hasMore) {
-            this.loadVideos(undefined, true).catch((error) => {
-              console.error('Error loading more markers:', error);
-            });
-          }
-        }
-      },
-      {
-        root: this.getObserverRoot(),
-        rootMargin,
-        threshold: 0.1,
-      }
-    );
-
-    this.scrollObserver.observe(this.loadMoreTrigger);
-  }
-
-  /**
-   * Update infinite scroll trigger position
-   */
-  private updateInfiniteScrollTrigger(): void {
-    // appendChild on an existing child removes + reinserts it (layout + observer churn), so only move it if needed.
-    if (this.loadMoreTrigger && this.postsContainer && this.postsContainer.lastElementChild !== this.loadMoreTrigger) {
-      // Ensure trigger is at the bottom of posts
-      this.postsContainer.appendChild(this.loadMoreTrigger);
-    }
   }
 
   private getPerformersForPost(postId: string) {
@@ -5569,7 +5381,7 @@ export class FeedContainer {
 
   /**
    * Reconcile the synthetic end-of-feed card with the current hasMore state:
-   * show it (as a full-viewport snap card just before the load-more trigger)
+   * show it (as a full-viewport snap card at the end of the feed)
    * once there's content but nothing more to load, hide it otherwise.
    */
   private updateEndCard(): void {
@@ -5579,11 +5391,7 @@ export class FeedContainer {
     const present = this.endCard?.parentNode === container;
     if (shouldShow && !present) {
       this.endCard = buildEndOfFeedCard(() => this.openSearchFromEndCard());
-      if (this.loadMoreTrigger?.parentNode === container) {
-        container.insertBefore(this.endCard, this.loadMoreTrigger);
-      } else {
-        container.appendChild(this.endCard);
-      }
+      container.appendChild(this.endCard);
     } else if (!shouldShow && this.endCard) {
       this.endCard.remove();
       this.endCard = undefined;
@@ -5595,21 +5403,6 @@ export class FeedContainer {
     // Focusing fires the input's focus handler, which opens the suggestions UI.
     this.headerBar?.querySelector<HTMLInputElement>('.feed-filters__input')?.focus();
   }
-
-  private shouldEnableVisibilityDebug(): boolean {
-    try {
-      if (globalThis.window !== undefined && globalThis.localStorage !== undefined) {
-        return globalThis.localStorage.getItem('stashgifs-visibility-debug') === '1';
-      }
-    } catch {
-      // Ignore storage errors
-    }
-    return false;
-  }
-
-
-  // Background video preloading was removed: videos now load only as they enter
-  // the viewport (see LAZY_LOAD_ROOT_MARGIN), so nothing is fetched ahead of time.
 
   /**
    * Free memory by removing cards the user has already scrolled past.
@@ -5843,7 +5636,7 @@ export class FeedContainer {
       previousTarget.removeEventListener('scroll', previousHandler);
     }
     this.scrollHandler = handleScroll;
-    this.scrollEventTarget = this.getScrollEventTarget();
+    this.scrollEventTarget = this.scrollContainer;
     this.scrollEventTarget.addEventListener('scroll', handleScroll, { passive: true });
   }
 
@@ -5885,10 +5678,17 @@ export class FeedContainer {
 
   /**
    * Kick off the next batch once the active card is within PREFETCH_CARDS_AHEAD of the
-   * last loaded card. Complements the pixel-based loadMoreTrigger, which fires too late
-   * in reel mode (one full-viewport card per gesture). loadVideos guards against
-   * concurrent loads, so an overlap with the observer is harmless.
+   * last loaded card. loadVideos guards against concurrent loads.
    */
+  private lastSafetyPrefetchLength = -1;
+
+  private prefetchIfNearEnd(): void {
+    if (this.postOrder.length === this.lastSafetyPrefetchLength) return;
+    this.lastSafetyPrefetchLength = this.postOrder.length;
+    const currentId = this.reelScroller?.getCurrentPostId();
+    this.maybePrefetchMore(currentId ? Math.max(0, this.postOrder.indexOf(currentId)) : 0);
+  }
+
   private maybePrefetchMore(index: number): void {
     if (!this.hasMore || this.isLoading) return;
     if (index < this.postOrder.length - FeedContainer.PREFETCH_CARDS_AHEAD) return;
@@ -5958,10 +5758,6 @@ export class FeedContainer {
     }
 
     this.cleanupLoadObservers();
-    if (this.scrollObserver) {
-      this.scrollObserver.disconnect();
-      this.scrollObserver = undefined;
-    }
   }
 
   destroy(): void {
@@ -6001,33 +5797,6 @@ export class FeedContainer {
   }
 
   /**
-   * Find the card closest to the viewport center
-   */
-  private findCardClosestToCenter(): HTMLElement | null {
-    const cards = this.getAllCardContainers();
-    if (cards.length === 0) {
-      return null;
-    }
-
-    const viewportCenter = this.getViewportTop() + this.getViewportHeight() / 2;
-    let closestCard: HTMLElement | null = null;
-    let minDistance = Infinity;
-
-    for (const card of cards) {
-      const rect = card.getBoundingClientRect();
-      const cardCenter = this.getElementTop(rect) + rect.height / 2;
-      const distance = Math.abs(cardCenter - viewportCenter);
-
-      if (distance < minDistance) {
-        minDistance = distance;
-        closestCard = card;
-      }
-    }
-
-    return closestCard;
-  }
-
-  /**
    * Extract post ID from a card element
    */
   private getPostIdFromCard(card: HTMLElement): string | null {
@@ -6035,60 +5804,10 @@ export class FeedContainer {
   }
 
   private ensureReelInitialCardLoaded(): void {
-    // Prefer the scroller's top-aligned index (consistent with how it computes the
-    // current card during normal scrolling). Fall back to center-distance for the
-    // initial call before the scroller exists.
-    const postId = this.reelScroller?.getCurrentPostId()
-      ?? this.getPostIdFromCard(this.findCardClosestToCenter() ?? document.createElement('div'));
+    const postId = this.reelScroller?.getCurrentPostId();
     if (!postId) return;
     this.playback.setActive(postId);
     this.discoveryManager?.onPrimaryPostChanged(postId, this.getPerformersForPost(postId));
-  }
-
-  /**
-   * Lock body scroll (prevent page scrolling)
-   */
-  private lockBodyScroll(): void {
-    const body = document.body;
-    // Only lock if not already locked
-    if (body.dataset.scrollLock === 'true') {
-      return;
-    }
-    body.dataset.scrollLock = 'true';
-    // Preserve layout when scrollbar disappears
-    const scrollbarWidth = globalThis.innerWidth - document.documentElement.clientWidth;
-    if (scrollbarWidth > 0) {
-      body.style.paddingRight = `${scrollbarWidth}px`;
-    }
-    body.style.overflow = 'hidden';
-  }
-
-  /**
-   * Unlock body scroll (restore page scrolling)
-   */
-  private unlockBodyScroll(): void {
-    const body = document.body;
-    // Only unlock if currently locked
-    if (body.dataset.scrollLock !== 'true') {
-      return;
-    }
-    body.style.overflow = 'hidden'; // reel-only: always locked
-    body.style.paddingRight = '';
-    delete body.dataset.scrollLock;
-  }
-
-  /**
-   * Show loading indicator
-   */
-  private showLoading(): void {
-    let loading = this.container.querySelector('.feed-loading') as HTMLElement;
-    if (!loading) {
-      loading = document.createElement('div');
-      loading.className = 'feed-loading';
-      loading.textContent = 'Loading videos...';
-      this.container.appendChild(loading);
-    }
-    loading.style.display = 'block';
   }
 
   /**
@@ -6392,26 +6111,5 @@ export class FeedContainer {
    */
   getSettings(): FeedSettings {
     return { ...this.settings };
-  }
-
-  /**
-   * Cleanup
-   */
-  cleanup(): void {
-    this.cancelAllPendingRequests();
-    this.stopLoadingVideos();
-    this.teardownListeners();
-    this.clearPosts();
-    this.hideSkeletonLoaders();
-
-    const debugThis = this as FeedContainer & FeedContainerDebug;
-    if (debugThis._mobileLoadTimeout) {
-      clearTimeout(debugThis._mobileLoadTimeout);
-      debugThis._mobileLoadTimeout = null;
-    }
-
-    if (this.loadMoreTrigger) {
-      this.loadMoreTrigger = undefined;
-    }
   }
 }
