@@ -3,7 +3,7 @@
  * Shared functionality for VideoPost and ImagePost
  */
 
-import { FavoritesManager } from './FavoritesManager.js';
+import { FavoritesManager, FAVORITE_TAG_NAME } from './FavoritesManager.js';
 import { StashAPI } from './StashAPI.js';
 import { normalizeMediaUrl, showToast, isMobileDevice, THEME, subscribeWindowScroll, applyMenuItemHover, extractValidPerformerIds, initPopoverDialog, formatViewCount } from './utils.js';
 import { RatingControl } from './RatingControl.js';
@@ -77,7 +77,6 @@ interface AddTagDialogState {
  * Contains shared functionality to reduce code duplication
  */
 export abstract class BasePost {
-  private static readonly FAVORITE_TAG_NAME = 'StashGifs Favorite';
 
   /**
    * Post data. Concrete subclasses narrow this to their specific type.
@@ -102,7 +101,7 @@ export abstract class BasePost {
       performers: this.getImageData().image.performers,
       tags: this.getImageData().image.tags,
       studio: this.getImageData().image.studio,
-      favoriteTagName: BasePost.FAVORITE_TAG_NAME,
+      favoriteTagName: FAVORITE_TAG_NAME,
       title: this.getImageData().image.title,
     });
   }
@@ -3662,7 +3661,7 @@ export abstract class BasePost {
         this.api,
         this.favoritesManager,
         this.isFavorite,
-        'StashGifs Favorite',
+        FAVORITE_TAG_NAME,
       );
       this.getImageData().image.tags = result.newTags as Image['tags'];
       this.isFavorite = result.newIsFavorite;
@@ -3736,7 +3735,7 @@ export abstract class BasePost {
    */
   protected async checkFavoriteStatus(): Promise<void> {
     const tags = this.getFavoriteTagSource();
-    this.isFavorite = tags?.some((tag) => tag.name === 'StashGifs Favorite') ?? false;
+    this.isFavorite = tags?.some((tag) => tag.name === FAVORITE_TAG_NAME) ?? false;
     
     // Update heart button if it exists
     if (this.heartButton) {

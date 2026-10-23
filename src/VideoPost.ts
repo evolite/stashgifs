@@ -10,9 +10,9 @@ import { getStashBaseUrl } from './utils/baseUrl.js';
 import { MARKER_SVG, BOOKMARK_SVG_OUTLINE, BOOKMARK_SVG_FILLED } from './icons.js';
 import { VideoPostBase, BaseVideoPostOptions } from './VideoPostBase.js';
 import { BookmarkManager } from './BookmarkManager.js';
+import { FAVORITE_TAG_NAME } from './FavoritesManager.js';
 
 // Constants for magic numbers and strings
-const FAVORITE_TAG_NAME = 'StashGifs Favorite';
 const MARKER_TAG_NAME = 'StashGifs Marker';
 
 interface VideoPostOptions extends BaseVideoPostOptions {

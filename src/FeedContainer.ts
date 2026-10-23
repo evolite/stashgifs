@@ -3,20 +3,9 @@
  * Main application container managing the feed
  */
 
-import { SceneMarker, FilterOptions, FeedSettings, VideoPostData, ImagePostData, ImageVideoPostData, Image, SavedSearch, DateRangeFilter, SavedFilterMode } from './types.js';
+import { SceneMarker, FilterOptions, FeedSettings, VideoPostData, ImagePostData, ImageVideoPostData, Image, SavedSearch, DateRangeFilter } from './types.js';
+import { FilterState, type FilterSnapshot, type SavedFilter } from './FilterState.js';
 
-type SavedFilter = { id: string; name: string; mode: SavedFilterMode };
-
-// Serializable snapshot of the interactive filter state, stored in history.state
-// so browser back/forward steps through filter changes.
-interface FilterSnapshot {
-  tags: [number, string][];
-  performers: [number, string][];
-  studios: [number, string][];
-  markerName?: string;
-  dateRange?: DateRangeFilter;
-  savedFilter?: SavedFilter;
-}
 import { StashAPI, generateRandomSortSeed } from './StashAPI.js';
 import { PluginSettingsManager } from './PluginSettingsManager.js';
 import { VideoPost } from './VideoPost.js';
@@ -120,11 +109,7 @@ export class FeedContainer {
   private imagePageSize: number = 0; // Track the page size used for images (for consistent pagination)
   private isLoading: boolean = false;
   private currentFilters?: FilterOptions;
-  private readonly selectedTagIds: Map<number, string> = new Map();
-  private readonly selectedPerformerIds: Map<number, string> = new Map();
-  private readonly selectedStudioIds: Map<number, string> = new Map();
-  private selectedMarkerName?: string; // Active "search markers by name" filter (exact title)
-  private selectedDateRange?: DateRangeFilter; // Active "created within" filter (week/month/year)
+  private readonly filterState = new FilterState();
   private readonly debouncedApplyFilters!: () => void;
   private activePillsBar?: HTMLElement;
   private hasMore: boolean = true;
@@ -140,7 +125,6 @@ export class FeedContainer {
   private saveSearchInputVisible = false;
   private postsContainer!: HTMLElement;
   private headerBar?: HTMLElement;
-  private selectedSavedFilter?: SavedFilter;
   private lastSnapshotJson = '';
   private suppressHistoryPush = false;
   private preloadedTags: Array<{ id: string; name: string }> = [];
@@ -1292,13 +1276,10 @@ export class FeedContainer {
     updateSearchBarDisplay: () => void,
     withScroll: boolean
   ): void {
-    this.selectedSavedFilter = filter;
-    this.selectedTagIds.clear();
-    this.selectedPerformerIds.clear();
-    this.selectedMarkerName = undefined;
+    this.filterState.replace({ savedFilter: filter });
     this.closeSuggestions();
     updateSearchBarDisplay();
-    this.currentFilters = { savedFilterId: filter.id, savedFilterMode: filter.mode, limit: FeedContainer.CONTENT_LOAD_LIMIT, offset: 0 };
+    this.currentFilters = this.buildCurrentFilterOptions();
     this.pushFilterHistory();
     if (withScroll) this.scrollToTop();
     this.loadVideos(this.currentFilters, false).catch((e) => console.error('Apply saved filter failed', e));
@@ -1324,15 +1305,15 @@ export class FeedContainer {
     pillRow.style.gap = '8px';
 
     pillRow.appendChild(this.createPillButton('Favorites', async () => {
-      this.selectedSavedFilter = undefined;
+      this.filterState.savedFilter = undefined;
       try {
-        const favoriteTag = await this.api.findTagByName('StashGifs Favorite');
-        if (favoriteTag) {
-          const tagId = Number.parseInt(favoriteTag.id, 10);
-          if (this.selectedTagIds.has(tagId)) {
-            this.selectedTagIds.delete(tagId);
+        const favoriteTagId = await this.favoritesManager.getFavoriteTagId();
+        if (favoriteTagId) {
+          const tagId = Number.parseInt(favoriteTagId, 10);
+          if (this.filterState.tags.has(tagId)) {
+            this.filterState.tags.delete(tagId);
           } else {
-            this.selectedTagIds.set(tagId, 'Favorites');
+            this.filterState.tags.set(tagId, 'Favorites');
           }
         }
       } catch (error) {
@@ -1392,7 +1373,7 @@ export class FeedContainer {
 
     for (const option of matches) {
       dateSection.appendChild(this.createListButton(`Created ${option.label}`, () => {
-        this.selectedDateRange = option.value;
+        this.filterState.dateRange = option.value;
         this.closeSuggestions();
         updateSearchBarDisplay();
         this.debouncedApplyFilters();
@@ -1484,19 +1465,19 @@ export class FeedContainer {
     for (const tag of tags) {
       const tagId = Number.parseInt(tag.id, 10);
       const btn = this.createListButton(tag.name, () => {
-        this.selectedSavedFilter = undefined;
-        if (this.selectedTagIds.has(tagId)) {
-          this.selectedTagIds.delete(tagId);
+        this.filterState.savedFilter = undefined;
+        if (this.filterState.tags.has(tagId)) {
+          this.filterState.tags.delete(tagId);
           btn.classList.remove('feed-list-button--selected');
         } else {
-          this.selectedTagIds.set(tagId, tag.name);
+          this.filterState.tags.set(tagId, tag.name);
           btn.classList.add('feed-list-button--selected');
         }
         updateSearchBarDisplay();
         this.debouncedApplyFilters();
         this.focusSearchInput();
       }, { leadingText: '#' });
-      if (this.selectedTagIds.has(tagId)) {
+      if (this.filterState.tags.has(tagId)) {
         btn.classList.add('feed-list-button--selected');
       }
       tagsSection.appendChild(btn);
@@ -1531,12 +1512,12 @@ export class FeedContainer {
       const btn = this.createListButton(
         performer.name,
         () => {
-          this.selectedSavedFilter = undefined;
-          if (this.selectedPerformerIds.has(performerId)) {
-            this.selectedPerformerIds.delete(performerId);
+          this.filterState.savedFilter = undefined;
+          if (this.filterState.performers.has(performerId)) {
+            this.filterState.performers.delete(performerId);
             btn.classList.remove('feed-list-button--selected');
           } else {
-            this.selectedPerformerIds.set(performerId, performer.name);
+            this.filterState.performers.set(performerId, performer.name);
             btn.classList.add('feed-list-button--selected');
           }
           updateSearchBarDisplay();
@@ -1545,7 +1526,7 @@ export class FeedContainer {
         },
         { leadingImage: imageSrc, leadingText: imageSrc ? undefined : performer.name.charAt(0).toUpperCase() }
       );
-      if (this.selectedPerformerIds.has(performerId)) {
+      if (this.filterState.performers.has(performerId)) {
         btn.classList.add('feed-list-button--selected');
       }
       performersSection.appendChild(btn);
@@ -1575,12 +1556,12 @@ export class FeedContainer {
       const btn = this.createListButton(
         studio.name,
         () => {
-          this.selectedSavedFilter = undefined;
-          if (this.selectedStudioIds.has(studioId)) {
-            this.selectedStudioIds.delete(studioId);
+          this.filterState.savedFilter = undefined;
+          if (this.filterState.studios.has(studioId)) {
+            this.filterState.studios.delete(studioId);
             btn.classList.remove('feed-list-button--selected');
           } else {
-            this.selectedStudioIds.set(studioId, studio.name);
+            this.filterState.studios.set(studioId, studio.name);
             btn.classList.add('feed-list-button--selected');
           }
           updateSearchBarDisplay();
@@ -1589,7 +1570,7 @@ export class FeedContainer {
         },
         { leadingImage: imageSrc, leadingText: imageSrc ? undefined : studio.name.charAt(0).toUpperCase(), imageObjectFit: 'contain' }
       );
-      if (this.selectedStudioIds.has(studioId)) {
+      if (this.filterState.studios.has(studioId)) {
         btn.classList.add('feed-list-button--selected');
       }
       studiosSection.appendChild(btn);
@@ -1629,11 +1610,7 @@ export class FeedContainer {
    * through as filters.query → findSceneMarkers `q`.
    */
   private applyMarkerTitleSearch(title: string): void {
-    this.selectedSavedFilter = undefined;
-    this.selectedTagIds.clear();
-    this.selectedPerformerIds.clear();
-    this.selectedStudioIds.clear();
-    this.selectedMarkerName = title;
+    this.filterState.replace({ markerName: title });
     this.closeSuggestions();
 
     const queryInput = this.container.querySelector<HTMLInputElement>('.feed-filters__input');
@@ -1658,8 +1635,8 @@ export class FeedContainer {
    * narrows server-side (fuzzy) and this enforces "only markers with that name".
    */
   private filterMarkersByName(markers: SceneMarker[]): SceneMarker[] {
-    if (!this.selectedMarkerName) return markers;
-    const target = this.selectedMarkerName.trim().toLowerCase();
+    if (!this.filterState.markerName) return markers;
+    const target = this.filterState.markerName.trim().toLowerCase();
     return markers.filter((marker) => (marker.title ?? '').trim().toLowerCase() === target);
   }
 
@@ -1738,11 +1715,11 @@ export class FeedContainer {
       section.remove();
     }
 
-    const availableTags = this.filterUnselected(freshTags, this.selectedTagIds).slice(0, 3);
+    const availableTags = this.filterUnselected(freshTags, this.filterState.tags).slice(0, 3);
 
     this.createTagsSection(container, availableTags, updateSearchBarDisplay, apply, 'Suggested Tags');
 
-    const availablePerformers = this.filterUnselected(freshPerformers, this.selectedPerformerIds).slice(0, 3);
+    const availablePerformers = this.filterUnselected(freshPerformers, this.filterState.performers).slice(0, 3);
 
     this.createPerformersSection(container, availablePerformers, updateSearchBarDisplay, apply, 'Suggested Performers');
 
@@ -1816,15 +1793,15 @@ export class FeedContainer {
 
     if (!ensureLatest()) return;
 
-    const filteredTags = this.filterUnselected(tagItems, this.selectedTagIds).slice(0, 20);
+    const filteredTags = this.filterUnselected(tagItems, this.filterState.tags).slice(0, 20);
 
     this.createTagsSection(container, this.sortByMatchAccuracy(filteredTags, trimmedText), updateSearchBarDisplay, apply);
 
-    const filteredPerformers = this.filterUnselected(performerItems, this.selectedPerformerIds).slice(0, 20);
+    const filteredPerformers = this.filterUnselected(performerItems, this.filterState.performers).slice(0, 20);
 
     this.createPerformersSection(container, this.sortByMatchAccuracy(filteredPerformers, trimmedText), updateSearchBarDisplay, apply);
 
-    const filteredStudios = this.filterUnselected(studioItems, this.selectedStudioIds).slice(0, 20);
+    const filteredStudios = this.filterUnselected(studioItems, this.filterState.studios).slice(0, 20);
 
     this.createStudiosSection(container, this.sortByMatchAccuracy(filteredStudios, trimmedText), updateSearchBarDisplay, apply);
 
@@ -1952,11 +1929,7 @@ export class FeedContainer {
     });
 
     brandContainer.addEventListener('click', () => {
-      this.selectedTagIds.clear();
-      this.selectedPerformerIds.clear();
-      this.selectedStudioIds.clear();
-      this.selectedMarkerName = undefined;
-      this.selectedSavedFilter = undefined;
+      this.filterState.reset();
       this.currentFilters = undefined;
       this.pushFilterHistory();
 
@@ -2560,7 +2533,7 @@ export class FeedContainer {
     };
 
     const clearSearchSelection = () => {
-      this.selectedSavedFilter = undefined;
+      this.filterState.savedFilter = undefined;
     };
 
     const prepareSearchForInput = () => {
@@ -2629,8 +2602,8 @@ export class FeedContainer {
     queryInput.addEventListener('input', () => {
       const text = queryInput.value;
       // Clear saved filter when user types something new
-      if (text !== this.selectedSavedFilter?.name) {
-        this.selectedSavedFilter = undefined;
+      if (text !== this.filterState.savedFilter?.name) {
+        this.filterState.savedFilter = undefined;
       }
       // Use debounced function for better performance - only fetch suggestions, don't apply
       debouncedFetchSuggestions(text, false);
@@ -2693,11 +2666,11 @@ export class FeedContainer {
    * Handle performer chip click - toggle performer in active filter set
    */
   private handlePerformerChipClick(performerId: number, performerName: string): void {
-    this.selectedSavedFilter = undefined;
-    if (this.selectedPerformerIds.has(performerId)) {
-      this.selectedPerformerIds.delete(performerId);
+    this.filterState.savedFilter = undefined;
+    if (this.filterState.performers.has(performerId)) {
+      this.filterState.performers.delete(performerId);
     } else {
-      this.selectedPerformerIds.set(performerId, performerName);
+      this.filterState.performers.set(performerId, performerName);
     }
     this.updateActivePills();
     this.updateQueryInputDisplay();
@@ -2709,11 +2682,11 @@ export class FeedContainer {
    * Handle tag chip click - toggle tag in active filter set
    */
   private handleTagChipClick(tagId: number, tagName: string): void {
-    this.selectedSavedFilter = undefined;
-    if (this.selectedTagIds.has(tagId)) {
-      this.selectedTagIds.delete(tagId);
+    this.filterState.savedFilter = undefined;
+    if (this.filterState.tags.has(tagId)) {
+      this.filterState.tags.delete(tagId);
     } else {
-      this.selectedTagIds.set(tagId, tagName);
+      this.filterState.tags.set(tagId, tagName);
     }
     this.updateActivePills();
     this.updateQueryInputDisplay();
@@ -2722,11 +2695,11 @@ export class FeedContainer {
   }
 
   private handleStudioChipClick(studioId: number, studioName: string): void {
-    this.selectedSavedFilter = undefined;
-    if (this.selectedStudioIds.has(studioId)) {
-      this.selectedStudioIds.delete(studioId);
+    this.filterState.savedFilter = undefined;
+    if (this.filterState.studios.has(studioId)) {
+      this.filterState.studios.delete(studioId);
     } else {
-      this.selectedStudioIds.set(studioId, studioName);
+      this.filterState.studios.set(studioId, studioName);
     }
     this.updateActivePills();
     this.updateQueryInputDisplay();
@@ -2766,7 +2739,7 @@ export class FeedContainer {
       }
       
       if (exactTag) {
-        this.selectedTagIds.set(Number.parseInt(exactTag.id, 10), exactTag.name);
+        this.filterState.tags.set(Number.parseInt(exactTag.id, 10), exactTag.name);
         return {};
       }
 
@@ -2776,7 +2749,7 @@ export class FeedContainer {
       }
 
       if (matchingPerformers && matchingPerformers.length > 0 && matchingPerformers[0]) {
-        this.selectedPerformerIds.set(Number.parseInt(String(matchingPerformers[0].id), 10), matchingPerformers[0].name);
+        this.filterState.performers.set(Number.parseInt(String(matchingPerformers[0].id), 10), matchingPerformers[0].name);
         return {};
       }
 
@@ -2798,26 +2771,15 @@ export class FeedContainer {
     const q = this.getCurrentQueryFromInput();
     let queryValue: string | undefined;
 
-    if (q && !this.selectedSavedFilter && this.selectedTagIds.size === 0 && this.selectedPerformerIds.size === 0) {
+    if (q && !this.filterState.savedFilter && this.filterState.tags.size === 0
+      && this.filterState.performers.size === 0 && this.filterState.studios.size === 0) {
       const resolved = await this.resolveQueryToFilters(q, loadSignal);
       if (loadSignal?.aborted) return;
       queryValue = resolved.queryValue;
       this.updateActivePills();
     }
 
-    const filterValues = this.buildFiltersForApply();
-    const newFilters: FilterOptions = {
-      query: queryValue,
-      tags: filterValues.tags,
-      performers: filterValues.performers,
-      savedFilterId: this.selectedSavedFilter?.id || undefined,
-      savedFilterMode: this.selectedSavedFilter?.mode,
-      limit: FeedContainer.CONTENT_LOAD_LIMIT,
-      offset: 0,
-      tagDepth: this.settings.includeSubtags ? -1 : 0,
-      studioDepth: this.settings.includeSubtags ? -1 : 0,
-      dateRangeFilter: this.selectedDateRange,
-    };
+    const newFilters = this.buildCurrentFilterOptions(queryValue);
     this.currentFilters = newFilters;
     this.pushFilterHistory();
     await this.loadVideos(newFilters, false, loadSignal);
@@ -2827,10 +2789,10 @@ export class FeedContainer {
    * Get display name for the current filter selection
    */
   private getSelectedFilterDisplayName(): string {
-    if (this.selectedTagIds.size > 0 || this.selectedPerformerIds.size > 0) {
+    if (this.filterState.tags.size > 0 || this.filterState.performers.size > 0) {
       return '';
     }
-    return this.selectedSavedFilter ? this.selectedSavedFilter.name : '';
+    return this.filterState.savedFilter ? this.filterState.savedFilter.name : '';
   }
 
   /**
@@ -2851,18 +2813,13 @@ export class FeedContainer {
     this.updateActivePills();
   }
 
-  /**
-   * Build filter values from selected tag and performer Maps
-   */
-  private buildFiltersForApply(): { tags?: string[]; performers?: string[]; studios?: string[] } {
-    const tags = [...this.selectedTagIds.keys()].map(String);
-    const performers = [...this.selectedPerformerIds.keys()].map(String);
-    const studios = [...this.selectedStudioIds.keys()].map(String);
-    return {
-      tags: tags.length ? tags : undefined,
-      performers: performers.length ? performers : undefined,
-      studios: studios.length ? studios : undefined,
-    };
+  /** Feed query for the current selection; `query` overrides the marker-name search (resolved free text). */
+  private buildCurrentFilterOptions(query?: string): FilterOptions {
+    return this.filterState.toFilterOptions({
+      limit: FeedContainer.CONTENT_LOAD_LIMIT,
+      includeSubtags: !!this.settings.includeSubtags,
+      query,
+    });
   }
 
   /**
@@ -2871,20 +2828,7 @@ export class FeedContainer {
   private async applyFilters(): Promise<void> {
     this.updateQueryInputDisplay();
 
-    const filterValues = this.buildFiltersForApply();
-    const newFilters: FilterOptions = {
-      query: this.selectedMarkerName,
-      tags: filterValues.tags,
-      performers: filterValues.performers,
-      studios: filterValues.studios,
-      savedFilterId: this.selectedSavedFilter?.id || undefined,
-      savedFilterMode: this.selectedSavedFilter?.mode,
-      limit: FeedContainer.CONTENT_LOAD_LIMIT,
-      offset: 0,
-      tagDepth: this.settings.includeSubtags ? -1 : 0,
-      studioDepth: this.settings.includeSubtags ? -1 : 0,
-      dateRangeFilter: this.selectedDateRange,
-    };
+    const newFilters = this.buildCurrentFilterOptions();
     this.currentFilters = newFilters;
     this.pushFilterHistory();
     this.loadVideos(newFilters, false).catch((e) => console.error('Apply filters failed', e));
@@ -2902,9 +2846,9 @@ export class FeedContainer {
   }
 
   private appendMarkerNamePill(): void {
-    if (!this.selectedMarkerName) return;
-    this.activePillsBar!.appendChild(this.createActivePill(`▶ ${this.selectedMarkerName}`, () => {
-      this.selectedMarkerName = undefined;
+    if (!this.filterState.markerName) return;
+    this.activePillsBar!.appendChild(this.createActivePill(`▶ ${this.filterState.markerName}`, () => {
+      this.filterState.markerName = undefined;
       this.updateActivePills();
       this.updateQueryInputDisplay();
       this.debouncedApplyFilters();
@@ -2918,11 +2862,11 @@ export class FeedContainer {
   };
 
   private appendDateRangePill(): void {
-    if (!this.selectedDateRange) return;
+    if (!this.filterState.dateRange) return;
     this.activePillsBar!.appendChild(this.createActivePill(
-      `📅 ${FeedContainer.DATE_RANGE_LABELS[this.selectedDateRange]}`,
+      `📅 ${FeedContainer.DATE_RANGE_LABELS[this.filterState.dateRange]}`,
       () => {
-        this.selectedDateRange = undefined;
+        this.filterState.dateRange = undefined;
         this.updateActivePills();
         this.debouncedApplyFilters();
       }
@@ -2930,9 +2874,9 @@ export class FeedContainer {
   }
 
   private appendTagPills(): void {
-    for (const [id, name] of this.selectedTagIds) {
+    for (const [id, name] of this.filterState.tags) {
       this.activePillsBar!.appendChild(this.createActivePill(`#${name}`, () => {
-        this.selectedTagIds.delete(id);
+        this.filterState.tags.delete(id);
         this.updateActivePills();
         this.updateQueryInputDisplay();
         this.debouncedApplyFilters();
@@ -2942,15 +2886,15 @@ export class FeedContainer {
 
   private appendPerformerPills(): void {
     let first = true;
-    for (const [id, name] of this.selectedPerformerIds) {
+    for (const [id, name] of this.filterState.performers) {
       if (first) {
-        if (this.selectedTagIds.size > 0) this.activePillsBar!.appendChild(this.createPillWord('with'));
+        if (this.filterState.tags.size > 0) this.activePillsBar!.appendChild(this.createPillWord('with'));
         first = false;
       } else {
         this.activePillsBar!.appendChild(this.createPillWord('and'));
       }
       this.activePillsBar!.appendChild(this.createActivePill(`@${name}`, () => {
-        this.selectedPerformerIds.delete(id);
+        this.filterState.performers.delete(id);
         this.updateActivePills();
         this.updateQueryInputDisplay();
         this.debouncedApplyFilters();
@@ -2959,9 +2903,9 @@ export class FeedContainer {
   }
 
   private appendStudioPills(): void {
-    const hasPrior = this.selectedTagIds.size > 0 || this.selectedPerformerIds.size > 0;
+    const hasPrior = this.filterState.tags.size > 0 || this.filterState.performers.size > 0;
     let first = true;
-    for (const [id, name] of this.selectedStudioIds) {
+    for (const [id, name] of this.filterState.studios) {
       if (first) {
         if (hasPrior) this.activePillsBar!.appendChild(this.createPillWord('by'));
         first = false;
@@ -2969,7 +2913,7 @@ export class FeedContainer {
         this.activePillsBar!.appendChild(this.createPillWord('or'));
       }
       this.activePillsBar!.appendChild(this.createActivePill(name, () => {
-        this.selectedStudioIds.delete(id);
+        this.filterState.studios.delete(id);
         this.updateActivePills();
         this.updateQueryInputDisplay();
         this.debouncedApplyFilters();
@@ -2984,8 +2928,7 @@ export class FeedContainer {
       this.activePillsBar.firstChild.remove();
     }
 
-    const total = this.selectedTagIds.size + this.selectedPerformerIds.size + this.selectedStudioIds.size
-      + (this.selectedMarkerName ? 1 : 0) + (this.selectedDateRange ? 1 : 0);
+    const total = this.filterState.pillCount;
     if (total === 0) {
       this.activePillsBar.style.display = 'none';
       return;
@@ -3007,10 +2950,7 @@ export class FeedContainer {
 
     if (total >= 2) {
       const clearAll = this.createActivePill('Clear all', () => {
-        this.selectedTagIds.clear();
-        this.selectedPerformerIds.clear();
-        this.selectedStudioIds.clear();
-        this.selectedMarkerName = undefined;
+        this.filterState.reset();
         this.updateActivePills();
         this.updateQueryInputDisplay();
         this.debouncedApplyFilters();
@@ -3179,7 +3119,7 @@ export class FeedContainer {
    */
   async init(filters?: FilterOptions): Promise<void> {
     window.addEventListener('popstate', this.onPopState);
-    const initialSnapshot = this.captureSnapshot();
+    const initialSnapshot = this.filterState.toSnapshot();
     this.lastSnapshotJson = JSON.stringify(initialSnapshot);
     history.replaceState({ filterSnapshot: initialSnapshot }, '');
 
@@ -3900,7 +3840,7 @@ export class FeedContainer {
       };
     }
     const isUsingSavedFilter = !!(activeFilters.savedFilterId);
-    const isMarkerNameSearch = !!this.selectedMarkerName;
+    const isMarkerNameSearch = !!this.filterState.markerName;
 
     if (isUsingSavedFilter || isMarkerNameSearch) {
       return {
@@ -4388,8 +4328,8 @@ export class FeedContainer {
         this.updateExcludedTagIds(),
         // Warm the tag→effective-source cache so the filter builders can route each selected tag to
         // the single server-side field that can match it (own ∪ descendants resolves parent tags).
-        this.selectedTagIds.size > 0
-          ? this.api.getTagSources([...this.selectedTagIds.keys()].map(String))
+        this.filterState.tags.size > 0
+          ? this.api.getTagSources([...this.filterState.tags.keys()].map(String))
           : undefined,
       ]);
       this.applyExcludedTagsToFilters(currentFilters);
@@ -5299,10 +5239,7 @@ export class FeedContainer {
     const entry: SavedSearch = {
       id: matchIndex >= 0 ? existing[matchIndex]!.id : crypto.randomUUID(),
       name,
-      tags: [...this.selectedTagIds.entries()],
-      performers: [...this.selectedPerformerIds.entries()],
-      studios: [...this.selectedStudioIds.entries()],
-      markerName: this.selectedMarkerName,
+      ...this.searchFields(this.filterState.toSnapshot()),
     };
 
     const savedSearches = matchIndex >= 0
@@ -5311,36 +5248,23 @@ export class FeedContainer {
     this.settingsManager.save({ settings: { savedSearches } });
   }
 
+  /** The part of a snapshot a saved search stores (no saved-filter reference). */
+  private searchFields(snapshot: FilterSnapshot): Pick<SavedSearch, 'tags' | 'performers' | 'studios' | 'markerName' | 'dateRange'> {
+    const { tags, performers, studios, markerName, dateRange } = snapshot;
+    return { tags, performers, studios, markerName, dateRange };
+  }
+
   private applyCustomSavedSearch(search: SavedSearch): void {
-    this.selectedTagIds.clear();
-    this.selectedPerformerIds.clear();
-    this.selectedStudioIds.clear();
-    this.selectedMarkerName = undefined;
-    this.selectedSavedFilter = undefined;
-    for (const [id, name] of search.tags) this.selectedTagIds.set(id, name);
-    for (const [id, name] of search.performers) this.selectedPerformerIds.set(id, name);
-    for (const [id, name] of search.studios) this.selectedStudioIds.set(id, name);
-    this.selectedMarkerName = search.markerName;
+    this.filterState.replace(search);
     this.closeSuggestions();
     this.updateActivePills();
     this.updateQueryInputDisplay();
     this.debouncedApplyFilters();
   }
 
-  private captureSnapshot(): FilterSnapshot {
-    return {
-      tags: [...this.selectedTagIds.entries()],
-      performers: [...this.selectedPerformerIds.entries()],
-      studios: [...this.selectedStudioIds.entries()],
-      markerName: this.selectedMarkerName,
-      dateRange: this.selectedDateRange,
-      savedFilter: this.selectedSavedFilter,
-    };
-  }
-
   private pushFilterHistory(): void {
     if (this.suppressHistoryPush) return;
-    const snapshot = this.captureSnapshot();
+    const snapshot = this.filterState.toSnapshot();
     const json = JSON.stringify(snapshot);
     if (json === this.lastSnapshotJson) return; // dedupe consecutive identical states
     this.lastSnapshotJson = json;
@@ -5348,15 +5272,7 @@ export class FeedContainer {
   }
 
   private restoreSnapshot(snapshot: FilterSnapshot): void {
-    this.selectedTagIds.clear();
-    this.selectedPerformerIds.clear();
-    this.selectedStudioIds.clear();
-    for (const [id, name] of snapshot.tags) this.selectedTagIds.set(id, name);
-    for (const [id, name] of snapshot.performers) this.selectedPerformerIds.set(id, name);
-    for (const [id, name] of snapshot.studios) this.selectedStudioIds.set(id, name);
-    this.selectedMarkerName = snapshot.markerName;
-    this.selectedDateRange = snapshot.dateRange;
-    this.selectedSavedFilter = snapshot.savedFilter;
+    this.filterState.replace(snapshot);
     this.updateActivePills();
     this.updateQueryInputDisplay();
     this.applyFilters().catch((e) => console.error('Restore filters failed', e));

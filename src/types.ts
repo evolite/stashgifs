@@ -169,6 +169,7 @@ export interface SavedSearch {
   performers: [number, string][];
   studios: [number, string][];
   markerName?: string;
+  dateRange?: DateRangeFilter;
 }
 
 export interface VideoPostData {

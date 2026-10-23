@@ -6,7 +6,7 @@
 import { StashAPI } from './StashAPI.js';
 import { SceneMarker } from './types.js';
 
-const FAVORITE_TAG_NAME = 'StashGifs Favorite';
+export const FAVORITE_TAG_NAME = 'StashGifs Favorite';
 
 export class FavoritesManager {
   private readonly api: StashAPI;
