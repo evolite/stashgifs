@@ -53,6 +53,8 @@ export class VideoJsPlayer implements IVideoPlayer {
   // overlapping timeupdate/ended events.
   private looping = false;
   private startSeekFixed = false;
+  // Where playback was when the player was last unloaded; the next load resumes there instead of the clip start.
+  private resumeAt = 0;
   private onLoopCallback?: () => void;
   private onSourcesExhaustedCallback?: () => void;
   private onTimeUpdateCallback?: () => void;
@@ -149,9 +151,10 @@ export class VideoJsPlayer implements IVideoPlayer {
   private attachEventListeners(player: VjsPlayer): void {
     player.on('loadedmetadata', () => {
       this.state.duration = this.safeNumber(() => player.duration());
-      // Seek to the clip's start once metadata is available.
-      if (this.startAt > 0) {
-        try { player.currentTime(this.startAt); } catch { /* not seekable yet */ }
+      // Seek to where we left off (or the clip's start) once metadata is available.
+      const target = this.seekTarget();
+      if (target > 0) {
+        try { player.currentTime(target); } catch { /* not seekable yet */ }
       }
     });
 
@@ -215,11 +218,25 @@ export class VideoJsPlayer implements IVideoPlayer {
    * first 'playing' event if the position drifted from startAt.
    */
   private fixStartSeek(player: VjsPlayer): void {
-    if (this.startSeekFixed || this.startAt <= 0) return;
+    const target = this.seekTarget();
+    if (this.startSeekFixed || target <= 0) return;
     this.startSeekFixed = true;
-    if (Math.abs(this.safeNumber(() => player.currentTime()) - this.startAt) > 0.5) {
-      try { player.currentTime(this.startAt); } catch { /* not seekable */ }
+    if (Math.abs(this.safeNumber(() => player.currentTime()) - target) > 0.5) {
+      try { player.currentTime(target); } catch { /* not seekable */ }
     }
+  }
+
+  /** Where a fresh load should start: the remembered position if any, else the clip start. */
+  private seekTarget(): number {
+    return this.resumeAt > 0 ? this.resumeAt : this.startAt;
+  }
+
+  /** Remember the playback position at unload, unless it is at (or past) the clip's edges. */
+  private rememberPosition(): void {
+    const at = this.safeNumber(() => this.player!.currentTime());
+    const end = this.endAt > 0 ? this.endAt : this.state.duration;
+    const meaningful = at > this.startAt + 1 && (end <= 0 || at < end - 1);
+    this.resumeAt = meaningful ? at : 0;
   }
 
   /**
@@ -403,6 +420,7 @@ export class VideoJsPlayer implements IVideoPlayer {
       return;
     }
     this.looping = false;
+    this.rememberPosition();
     try {
       this.player!.pause();
       this.player!.reset();
