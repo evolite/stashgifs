@@ -4,7 +4,7 @@
  */
 
 import { SceneMarker, FilterOptions, FeedSettings, VideoPostData, ImagePostData, ImageVideoPostData, Image, SavedSearch, DateRangeFilter } from './types.js';
-import { FilterState, type FilterSnapshot, type SavedFilter } from './FilterState.js';
+import { FilterState, type SavedFilter } from './FilterState.js';
 import { SeenHistory } from './SeenHistory.js';
 import { AutoplayUnlock } from './AutoplayUnlock.js';
 import { FilterHistory } from './FilterHistory.js';
@@ -1594,7 +1594,8 @@ export class FeedContainer {
 
     // Cancel the previous keystroke's queries rather than letting 3-4 stale requests finish.
     this.suggestionAbortController?.abort();
-    const suggestionSignal = (this.suggestionAbortController = new AbortController()).signal;
+    this.suggestionAbortController = new AbortController();
+    const suggestionSignal = this.suggestionAbortController.signal;
 
     try {
       [tagItems, performerItems, studioItems, markerItems] = await Promise.all([

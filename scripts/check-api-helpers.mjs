@@ -33,7 +33,8 @@ const { runAliased } = await loadTs('src/api/aliased.ts');
   assert.equal(expiring.has('a'), false, 'ttl 0 expires immediately');
 
   const newer = new TtlCache(1000);
-  const slow = newer.set('k', new Promise((_, rej) => setTimeout(() => rej(new Error('late')), 5)));
+  const slow = new Promise((_, rej) => setTimeout(() => rej(new Error('late')), 5));
+  newer.set('k', slow);
   newer.set('k', 'fresh');
   await slow.catch(() => {});
   assert.equal(await newer.peek('k'), 'fresh', 'a failing old load does not evict a newer value');

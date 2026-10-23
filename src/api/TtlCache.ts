@@ -28,11 +28,15 @@ export class TtlCache<V> {
   }
 
   getOrLoad(key: string, load: () => Promise<V>, keep: (value: V) => boolean = () => true): Promise<V> {
-    return this.peek(key) ?? this.set(key, load(), keep);
+    return this.peek(key) ?? this.store(key, load(), keep);
   }
 
-  /** Store a value or an in-flight load. Returns the stored promise. */
-  set(key: string, value: V | Promise<V>, keep: (value: V) => boolean = () => true): Promise<V> {
+  /** Store a value or an in-flight load, replacing any entry for the key. */
+  set(key: string, value: V | Promise<V>, keep: (value: V) => boolean = () => true): void {
+    void this.store(key, value, keep);
+  }
+
+  private store(key: string, value: V | Promise<V>, keep: (value: V) => boolean): Promise<V> {
     const promise = Promise.resolve(value);
     if (this.entries.size >= this.max) {
       const oldest = this.entries.keys().next().value;
