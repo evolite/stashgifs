@@ -29,7 +29,7 @@ export class BookmarkManager {
       this.bookmarkTagPromise = null;
     });
     const tagId = await this.bookmarkTagPromise;
-    this.bookmarkTagId = tagId;
+    if (tagId) this.bookmarkTagId = tagId; // a failed lookup (null) is retried next time, not remembered
     return tagId;
   }
 

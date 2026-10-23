@@ -21,7 +21,7 @@ export class FavoritesManager {
    * Get or create the favorite tag
    */
   async getFavoriteTagId(): Promise<string | null> {
-    // If we already have it cached (including a null failure result), return it
+    // Only successful lookups are cached
     if (this.favoriteTagId !== undefined) {
       return this.favoriteTagId;
     }
@@ -36,7 +36,7 @@ export class FavoritesManager {
       this.favoriteTagPromise = null;
     });
     const tagId = await this.favoriteTagPromise;
-    this.favoriteTagId = tagId;
+    if (tagId) this.favoriteTagId = tagId; // a failed lookup (null) is retried next time, not remembered
     return tagId;
   }
 

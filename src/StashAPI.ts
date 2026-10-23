@@ -515,6 +515,17 @@ export class StashAPI {
   }
 
   /**
+   * For reads whose callers must tell "failed" from "empty": an abort yields `emptyResult`,
+   * anything else is logged and rethrown (so a transient error is never mistaken for
+   * "no saved filter" / "no stash-boxes" / "server has no settings" and acted on).
+   */
+  private rethrowUnlessAbort<T>(method: string, error: unknown, signal: AbortSignal | undefined, emptyResult: T): T {
+    if (isAbortError(error) || this.isAborted(signal)) return emptyResult;
+    this.logError(method, error);
+    throw error;
+  }
+
+  /**
    * Handle errors consistently - returns empty result for aborted operations, logs others
    */
   private handleError<T>(method: string, error: unknown, signal: AbortSignal | undefined, emptyResult: T): T {
@@ -653,7 +664,7 @@ export class StashAPI {
         (f): f is { id: string; name: string; mode: SavedFilterMode } => f.mode === 'SCENE_MARKERS' || f.mode === 'IMAGES'
       );
     } catch (error: unknown) {
-      return this.handleError('fetchSavedFilters', error, signal, []);
+      return this.rethrowUnlessAbort('fetchSavedFilters', error, signal, []);
     }
   }
 
@@ -674,7 +685,7 @@ export class StashAPI {
       
       return result.data?.findSavedFilter || null;
     } catch (error: unknown) {
-      return this.handleError('getSavedFilter', error, signal, null);
+      return this.rethrowUnlessAbort('getSavedFilter', error, signal, null);
     }
   }
 
@@ -1980,7 +1991,7 @@ export class StashAPI {
       }
       return null;
     } catch (error: unknown) {
-      return this.handleError('findTagByName', error, signal, null);
+      return this.rethrowUnlessAbort('findTagByName', error, signal, null);
     }
   }
 
@@ -2054,7 +2065,7 @@ export class StashAPI {
       if (this.isAborted(signal)) return false;
       return sceneTagIds.has(tagId);
     } catch (error: unknown) {
-      return this.handleError('sceneHasTag', error, signal, false);
+      return this.rethrowUnlessAbort('sceneHasTag', error, signal, false);
     }
   }
 
@@ -2911,7 +2922,7 @@ export class StashAPI {
 
       return pluginConfig;
     } catch (error) {
-      return this.handleError('getPluginSettings', error, signal, null);
+      return this.rethrowUnlessAbort('getPluginSettings', error, signal, null);
     }
   }
 
@@ -3035,7 +3046,7 @@ export class StashAPI {
 
       return result.data?.configuration?.general?.stashBoxes ?? [];
     } catch (error: unknown) {
-      return this.handleError('getStashBoxes', error, signal, []) ?? [];
+      return this.rethrowUnlessAbort('getStashBoxes', error, signal, []);
     }
   }
 

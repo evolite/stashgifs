@@ -722,16 +722,20 @@ export class FeedContainer {
       }
     }
 
+    let lookupFailed = false;
     const resolvedTags = await Promise.all(
       Array.from(uniqueNameMap.values()).map(async (name) => {
         try {
           return await this.api.findTagByName(name);
         } catch (error) {
+          lookupFailed = true;
           console.warn('Failed to resolve excluded tag', { name, error });
           return null;
         }
       })
     );
+    // Don't remember the names as resolved when a lookup failed: the next load retries.
+    if (lookupFailed) this.excludedTagNamesNormalized = [];
 
     this.excludedTagIds = resolvedTags
       .filter((tag): tag is { id: string; name: string } => tag !== null)
