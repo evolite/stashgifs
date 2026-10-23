@@ -1,0 +1,1203 @@
+{
+  "markers/none": [
+    {
+      "op": "FindSceneMarkers",
+      "variables": {
+        "filter": {
+          "per_page": 8,
+          "page": 1,
+          "sort": "random_1"
+        },
+        "scene_marker_filter": {}
+      }
+    }
+  ],
+  "shortform/none": [
+    {
+      "op": "FindScenes",
+      "variables": {
+        "filter": {
+          "per_page": 24,
+          "page": 1,
+          "sort": "random_1"
+        },
+        "scene_filter": {
+          "file_count": {
+            "value": 0,
+            "modifier": "GREATER_THAN"
+          },
+          "duration": {
+            "value": 120,
+            "modifier": "LESS_THAN"
+          }
+        }
+      }
+    }
+  ],
+  "previews/none": [
+    {
+      "op": "FindScenes",
+      "variables": {
+        "filter": {
+          "per_page": 24,
+          "page": 1,
+          "sort": "random_1"
+        }
+      }
+    }
+  ],
+  "markers/tags": [
+    {
+      "op": "FindSceneMarkers",
+      "variables": {
+        "filter": {
+          "per_page": 8,
+          "page": 1,
+          "sort": "random_1"
+        },
+        "scene_marker_filter": {
+          "tags": {
+            "value": [
+              "-1"
+            ],
+            "modifier": "INCLUDES_ALL",
+            "depth": 0
+          }
+        }
+      }
+    }
+  ],
+  "shortform/tags": [
+    {
+      "op": "FindScenes",
+      "variables": {
+        "filter": {
+          "per_page": 24,
+          "page": 1,
+          "sort": "random_1"
+        },
+        "scene_filter": {
+          "file_count": {
+            "value": 0,
+            "modifier": "GREATER_THAN"
+          },
+          "duration": {
+            "value": 120,
+            "modifier": "LESS_THAN"
+          },
+          "tags": {
+            "value": [
+              "-1"
+            ],
+            "modifier": "INCLUDES_ALL",
+            "depth": 0
+          }
+        }
+      }
+    }
+  ],
+  "previews/tags": [
+    {
+      "op": "FindScenes",
+      "variables": {
+        "filter": {
+          "per_page": 24,
+          "page": 1,
+          "sort": "random_1"
+        },
+        "scene_filter": {
+          "tags": {
+            "value": [
+              "-1"
+            ],
+            "modifier": "INCLUDES_ALL",
+            "depth": 0
+          }
+        }
+      }
+    }
+  ],
+  "markers/tagsDepth": [
+    {
+      "op": "FindSceneMarkers",
+      "variables": {
+        "filter": {
+          "per_page": 8,
+          "page": 1,
+          "sort": "random_1"
+        },
+        "scene_marker_filter": {
+          "tags": {
+            "value": [
+              "1"
+            ],
+            "modifier": "INCLUDES_ALL",
+            "depth": -1
+          }
+        }
+      }
+    }
+  ],
+  "shortform/tagsDepth": [
+    {
+      "op": "FindScenes",
+      "variables": {
+        "filter": {
+          "per_page": 24,
+          "page": 1,
+          "sort": "random_1"
+        },
+        "scene_filter": {
+          "file_count": {
+            "value": 0,
+            "modifier": "GREATER_THAN"
+          },
+          "duration": {
+            "value": 120,
+            "modifier": "LESS_THAN"
+          },
+          "tags": {
+            "value": [
+              "-1"
+            ],
+            "modifier": "INCLUDES_ALL",
+            "depth": -1
+          }
+        }
+      }
+    }
+  ],
+  "previews/tagsDepth": [
+    {
+      "op": "FindScenes",
+      "variables": {
+        "filter": {
+          "per_page": 24,
+          "page": 1,
+          "sort": "random_1"
+        },
+        "scene_filter": {
+          "tags": {
+            "value": [
+              "-1"
+            ],
+            "modifier": "INCLUDES_ALL",
+            "depth": -1
+          }
+        }
+      }
+    }
+  ],
+  "markers/performers": [
+    {
+      "op": "FindSceneMarkers",
+      "variables": {
+        "filter": {
+          "per_page": 8,
+          "page": 1,
+          "sort": "random_1"
+        },
+        "scene_marker_filter": {
+          "performers": {
+            "value": [
+              10
+            ],
+            "modifier": "INCLUDES_ALL"
+          }
+        }
+      }
+    }
+  ],
+  "shortform/performers": [
+    {
+      "op": "FindScenes",
+      "variables": {
+        "filter": {
+          "per_page": 24,
+          "page": 1,
+          "sort": "random_1"
+        },
+        "scene_filter": {
+          "file_count": {
+            "value": 0,
+            "modifier": "GREATER_THAN"
+          },
+          "duration": {
+            "value": 120,
+            "modifier": "LESS_THAN"
+          },
+          "performers": {
+            "value": [
+              10
+            ],
+            "modifier": "INCLUDES_ALL"
+          }
+        }
+      }
+    }
+  ],
+  "previews/performers": [
+    {
+      "op": "FindScenes",
+      "variables": {
+        "filter": {
+          "per_page": 24,
+          "page": 1,
+          "sort": "random_1"
+        },
+        "scene_filter": {
+          "performers": {
+            "value": [
+              10
+            ],
+            "modifier": "INCLUDES_ALL"
+          }
+        }
+      }
+    }
+  ],
+  "markers/studios": [
+    {
+      "op": "FindSceneMarkers",
+      "variables": {
+        "filter": {
+          "per_page": 8,
+          "page": 1,
+          "sort": "random_1"
+        },
+        "scene_marker_filter": {
+          "scene_filter": {
+            "studios": {
+              "value": [
+                "20"
+              ],
+              "modifier": "INCLUDES",
+              "depth": -1
+            }
+          }
+        }
+      }
+    }
+  ],
+  "shortform/studios": [
+    {
+      "op": "FindScenes",
+      "variables": {
+        "filter": {
+          "per_page": 24,
+          "page": 1,
+          "sort": "random_1"
+        },
+        "scene_filter": {
+          "file_count": {
+            "value": 0,
+            "modifier": "GREATER_THAN"
+          },
+          "duration": {
+            "value": 120,
+            "modifier": "LESS_THAN"
+          },
+          "studios": {
+            "value": [
+              "20"
+            ],
+            "modifier": "INCLUDES",
+            "depth": -1
+          }
+        }
+      }
+    }
+  ],
+  "previews/studios": [
+    {
+      "op": "FindScenes",
+      "variables": {
+        "filter": {
+          "per_page": 24,
+          "page": 1,
+          "sort": "random_1"
+        },
+        "scene_filter": {
+          "studios": {
+            "value": [
+              "20"
+            ],
+            "modifier": "INCLUDES",
+            "depth": -1
+          }
+        }
+      }
+    }
+  ],
+  "markers/everything": [
+    {
+      "op": "FindSceneMarkers",
+      "variables": {
+        "filter": {
+          "per_page": 8,
+          "page": 1,
+          "sort": "random_1"
+        },
+        "scene_marker_filter": {
+          "tags": {
+            "value": [
+              "-1"
+            ],
+            "modifier": "INCLUDES_ALL",
+            "depth": 0,
+            "excludes": [
+              "9"
+            ]
+          },
+          "scene_tags": {
+            "value": [],
+            "modifier": "INCLUDES",
+            "depth": 0,
+            "excludes": [
+              "9"
+            ]
+          },
+          "scene_filter": {
+            "performer_tags": {
+              "value": [],
+              "modifier": "INCLUDES",
+              "depth": 0,
+              "excludes": [
+                "9"
+              ]
+            },
+            "studios": {
+              "value": [
+                "20"
+              ],
+              "modifier": "INCLUDES",
+              "depth": 0
+            },
+            "orientation": {
+              "value": "PORTRAIT"
+            }
+          },
+          "performers": {
+            "value": [
+              10,
+              11
+            ],
+            "modifier": "INCLUDES_ALL"
+          },
+          "created_at": {
+            "value": "DATE",
+            "modifier": "GREATER_THAN"
+          }
+        }
+      }
+    }
+  ],
+  "shortform/everything": [
+    {
+      "op": "FindScenes",
+      "variables": {
+        "filter": {
+          "per_page": 24,
+          "page": 1,
+          "sort": "random_1"
+        },
+        "scene_filter": {
+          "file_count": {
+            "value": 0,
+            "modifier": "GREATER_THAN"
+          },
+          "duration": {
+            "value": 120,
+            "modifier": "LESS_THAN"
+          },
+          "tags": {
+            "value": [
+              "-1"
+            ],
+            "modifier": "INCLUDES_ALL",
+            "depth": 0,
+            "excludes": [
+              "9"
+            ]
+          },
+          "performer_tags": {
+            "value": [],
+            "modifier": "INCLUDES",
+            "depth": 0,
+            "excludes": [
+              "9"
+            ]
+          },
+          "performers": {
+            "value": [
+              10,
+              11
+            ],
+            "modifier": "INCLUDES_ALL"
+          },
+          "studios": {
+            "value": [
+              "20"
+            ],
+            "modifier": "INCLUDES",
+            "depth": 0
+          },
+          "orientation": {
+            "value": "PORTRAIT"
+          },
+          "created_at": {
+            "value": "DATE",
+            "modifier": "GREATER_THAN"
+          }
+        }
+      }
+    }
+  ],
+  "previews/everything": [
+    {
+      "op": "FindScenes",
+      "variables": {
+        "filter": {
+          "per_page": 24,
+          "page": 1,
+          "sort": "random_1"
+        },
+        "scene_filter": {
+          "tags": {
+            "value": [
+              "-1"
+            ],
+            "modifier": "INCLUDES_ALL",
+            "depth": 0,
+            "excludes": [
+              "9"
+            ]
+          },
+          "performer_tags": {
+            "value": [],
+            "modifier": "INCLUDES",
+            "depth": 0,
+            "excludes": [
+              "9"
+            ]
+          },
+          "performers": {
+            "value": [
+              10,
+              11
+            ],
+            "modifier": "INCLUDES_ALL"
+          },
+          "studios": {
+            "value": [
+              "20"
+            ],
+            "modifier": "INCLUDES",
+            "depth": 0
+          },
+          "orientation": {
+            "value": "PORTRAIT"
+          },
+          "created_at": {
+            "value": "DATE",
+            "modifier": "GREATER_THAN"
+          }
+        }
+      }
+    }
+  ],
+  "markers/savedFilter": [
+    {
+      "op": "GetSavedFilter",
+      "variables": {
+        "id": "3"
+      }
+    },
+    {
+      "op": "FindSceneMarkers",
+      "variables": {
+        "filter": {
+          "per_page": 8,
+          "page": 1,
+          "sort": "date",
+          "q": "abc",
+          "direction": "DESC"
+        },
+        "scene_marker_filter": {
+          "tags": {
+            "value": [
+              "4"
+            ],
+            "modifier": "INCLUDES",
+            "depth": 1
+          },
+          "rating100": {
+            "modifier": "GREATER_THAN",
+            "value": 40
+          },
+          "performers": {
+            "value": [
+              7
+            ],
+            "modifier": "INCLUDES_ALL"
+          }
+        }
+      }
+    }
+  ],
+  "shortform/savedFilter": [
+    {
+      "op": "FindScenes",
+      "variables": {
+        "filter": {
+          "per_page": 24,
+          "page": 1,
+          "sort": "random_1"
+        },
+        "scene_filter": {
+          "file_count": {
+            "value": 0,
+            "modifier": "GREATER_THAN"
+          },
+          "duration": {
+            "value": 120,
+            "modifier": "LESS_THAN"
+          },
+          "tags": {
+            "value": [
+              "5"
+            ],
+            "modifier": "INCLUDES_ALL",
+            "depth": 0
+          }
+        }
+      }
+    }
+  ],
+  "previews/savedFilter": [
+    {
+      "op": "FindScenes",
+      "variables": {
+        "filter": {
+          "per_page": 24,
+          "page": 1,
+          "sort": "random_1"
+        },
+        "scene_filter": {
+          "tags": {
+            "value": [
+              "5"
+            ],
+            "modifier": "INCLUDES_ALL",
+            "depth": 0
+          }
+        }
+      }
+    }
+  ],
+  "markers/savedImages": [
+    {
+      "op": "GetSavedFilter",
+      "variables": {
+        "id": "3"
+      }
+    },
+    {
+      "op": "FindSceneMarkers",
+      "variables": {
+        "filter": {
+          "per_page": 8,
+          "page": 1,
+          "sort": "date",
+          "q": "abc",
+          "direction": "DESC"
+        },
+        "scene_marker_filter": {
+          "tags": {
+            "value": [
+              "4"
+            ],
+            "modifier": "INCLUDES",
+            "depth": 1
+          },
+          "rating100": {
+            "modifier": "GREATER_THAN",
+            "value": 40
+          },
+          "performers": {
+            "value": [
+              7
+            ],
+            "modifier": "INCLUDES_ALL"
+          }
+        }
+      }
+    }
+  ],
+  "shortform/savedImages": [
+    {
+      "op": "FindScenes",
+      "variables": {
+        "filter": {
+          "per_page": 24,
+          "page": 1,
+          "sort": "random_1"
+        },
+        "scene_filter": {
+          "file_count": {
+            "value": 0,
+            "modifier": "GREATER_THAN"
+          },
+          "duration": {
+            "value": 120,
+            "modifier": "LESS_THAN"
+          }
+        }
+      }
+    }
+  ],
+  "previews/savedImages": [
+    {
+      "op": "FindScenes",
+      "variables": {
+        "filter": {
+          "per_page": 24,
+          "page": 1,
+          "sort": "random_1"
+        }
+      }
+    }
+  ],
+  "markers/query": [
+    {
+      "op": "FindSceneMarkers",
+      "variables": {
+        "filter": {
+          "per_page": 8,
+          "page": 1,
+          "sort": "random_1",
+          "q": "hello"
+        },
+        "scene_marker_filter": {}
+      }
+    }
+  ],
+  "shortform/query": [
+    {
+      "op": "FindScenes",
+      "variables": {
+        "filter": {
+          "per_page": 24,
+          "page": 1,
+          "sort": "random_1"
+        },
+        "scene_filter": {
+          "file_count": {
+            "value": 0,
+            "modifier": "GREATER_THAN"
+          },
+          "duration": {
+            "value": 120,
+            "modifier": "LESS_THAN"
+          }
+        }
+      }
+    }
+  ],
+  "previews/query": [
+    {
+      "op": "FindScenes",
+      "variables": {
+        "filter": {
+          "per_page": 24,
+          "page": 1,
+          "sort": "random_1"
+        }
+      }
+    }
+  ],
+  "markers/orientation": [
+    {
+      "op": "FindSceneMarkers",
+      "variables": {
+        "filter": {
+          "per_page": 8,
+          "page": 1,
+          "sort": "random_1"
+        },
+        "scene_marker_filter": {
+          "scene_filter": {
+            "orientation": {
+              "value": [
+                "LANDSCAPE",
+                "SQUARE"
+              ]
+            }
+          }
+        }
+      }
+    }
+  ],
+  "shortform/orientation": [
+    {
+      "op": "FindScenes",
+      "variables": {
+        "filter": {
+          "per_page": 24,
+          "page": 1,
+          "sort": "random_1"
+        },
+        "scene_filter": {
+          "file_count": {
+            "value": 0,
+            "modifier": "GREATER_THAN"
+          },
+          "duration": {
+            "value": 120,
+            "modifier": "LESS_THAN"
+          },
+          "orientation": {
+            "value": [
+              "LANDSCAPE",
+              "SQUARE"
+            ]
+          }
+        }
+      }
+    }
+  ],
+  "previews/orientation": [
+    {
+      "op": "FindScenes",
+      "variables": {
+        "filter": {
+          "per_page": 24,
+          "page": 1,
+          "sort": "random_1"
+        },
+        "scene_filter": {
+          "orientation": {
+            "value": [
+              "LANDSCAPE",
+              "SQUARE"
+            ]
+          }
+        }
+      }
+    }
+  ],
+  "markers/excluded": [
+    {
+      "op": "FindSceneMarkers",
+      "variables": {
+        "filter": {
+          "per_page": 8,
+          "page": 1,
+          "sort": "random_1"
+        },
+        "scene_marker_filter": {
+          "tags": {
+            "value": [],
+            "modifier": "INCLUDES",
+            "depth": 0,
+            "excludes": [
+              "9",
+              "12"
+            ]
+          }
+        }
+      }
+    }
+  ],
+  "shortform/excluded": [
+    {
+      "op": "FindScenes",
+      "variables": {
+        "filter": {
+          "per_page": 24,
+          "page": 1,
+          "sort": "random_1"
+        },
+        "scene_filter": {
+          "file_count": {
+            "value": 0,
+            "modifier": "GREATER_THAN"
+          },
+          "duration": {
+            "value": 120,
+            "modifier": "LESS_THAN"
+          },
+          "tags": {
+            "value": [],
+            "modifier": "INCLUDES",
+            "depth": 0,
+            "excludes": [
+              "9",
+              "12"
+            ]
+          }
+        }
+      }
+    }
+  ],
+  "previews/excluded": [
+    {
+      "op": "FindScenes",
+      "variables": {
+        "filter": {
+          "per_page": 24,
+          "page": 1,
+          "sort": "random_1"
+        },
+        "scene_filter": {
+          "tags": {
+            "value": [],
+            "modifier": "INCLUDES",
+            "depth": 0,
+            "excludes": [
+              "9",
+              "12"
+            ]
+          }
+        }
+      }
+    }
+  ],
+  "markers/offset": [
+    {
+      "op": "FindSceneMarkers",
+      "variables": {
+        "filter": {
+          "per_page": 8,
+          "page": 3,
+          "sort": "random_1"
+        },
+        "scene_marker_filter": {}
+      }
+    }
+  ],
+  "shortform/offset": [
+    {
+      "op": "FindScenes",
+      "variables": {
+        "filter": {
+          "per_page": 24,
+          "page": 1,
+          "sort": "random_1"
+        },
+        "scene_filter": {
+          "file_count": {
+            "value": 0,
+            "modifier": "GREATER_THAN"
+          },
+          "duration": {
+            "value": 120,
+            "modifier": "LESS_THAN"
+          }
+        }
+      }
+    }
+  ],
+  "previews/offset": [
+    {
+      "op": "FindScenes",
+      "variables": {
+        "filter": {
+          "per_page": 24,
+          "page": 1,
+          "sort": "random_1"
+        }
+      }
+    }
+  ],
+  "markers/shuffle": [
+    {
+      "op": "FindScenes",
+      "variables": {
+        "filter": {
+          "per_page": 8,
+          "page": 1,
+          "sort": "random_1"
+        },
+        "scene_filter": {
+          "has_markers": "false",
+          "tags": {
+            "value": [
+              "2"
+            ],
+            "modifier": "INCLUDES_ALL",
+            "depth": 0
+          }
+        }
+      }
+    }
+  ],
+  "shortform/shuffle": [
+    {
+      "op": "FindScenes",
+      "variables": {
+        "filter": {
+          "per_page": 24,
+          "page": 1,
+          "sort": "random_1"
+        },
+        "scene_filter": {
+          "file_count": {
+            "value": 0,
+            "modifier": "GREATER_THAN"
+          },
+          "duration": {
+            "value": 120,
+            "modifier": "LESS_THAN"
+          },
+          "tags": {
+            "value": [
+              "2"
+            ],
+            "modifier": "INCLUDES_ALL",
+            "depth": 0
+          }
+        }
+      }
+    }
+  ],
+  "previews/shuffle": [
+    {
+      "op": "FindScenes",
+      "variables": {
+        "filter": {
+          "per_page": 24,
+          "page": 1,
+          "sort": "random_1"
+        },
+        "scene_filter": {
+          "tags": {
+            "value": [
+              "2"
+            ],
+            "modifier": "INCLUDES_ALL",
+            "depth": 0
+          }
+        }
+      }
+    }
+  ],
+  "images/none": [
+    {
+      "op": "FindImages",
+      "variables": {
+        "filter": {
+          "per_page": 20,
+          "page": 1,
+          "sort": "random_SEED",
+          "direction": "DESC"
+        },
+        "image_filter": {
+          "path": {
+            "value": "(?i)\\.(gif|mp4)$",
+            "modifier": "MATCHES_REGEX"
+          }
+        },
+        "image_ids": null
+      }
+    }
+  ],
+  "images/tags": [
+    {
+      "op": "FindImages",
+      "variables": {
+        "filter": {
+          "per_page": 20,
+          "page": 1,
+          "sort": "random_SEED",
+          "direction": "DESC"
+        },
+        "image_filter": {
+          "path": {
+            "value": "(?i)\\.(gif|mp4)$",
+            "modifier": "MATCHES_REGEX"
+          },
+          "tags": {
+            "value": [
+              "-1"
+            ],
+            "modifier": "INCLUDES_ALL"
+          }
+        },
+        "image_ids": null
+      }
+    }
+  ],
+  "images/performerTags": [
+    {
+      "op": "FindImages",
+      "variables": {
+        "filter": {
+          "per_page": 20,
+          "page": 1,
+          "sort": "random_SEED",
+          "direction": "DESC"
+        },
+        "image_filter": {
+          "path": {
+            "value": "(?i)\\.(gif|mp4)$",
+            "modifier": "MATCHES_REGEX"
+          },
+          "tags": {
+            "value": [
+              "4"
+            ],
+            "modifier": "INCLUDES_ALL",
+            "depth": 0
+          },
+          "performer_tags": {
+            "value": [
+              "3"
+            ],
+            "modifier": "INCLUDES_ALL",
+            "depth": 0
+          }
+        },
+        "image_ids": null
+      }
+    }
+  ],
+  "images/excluded": [
+    {
+      "op": "FindImages",
+      "variables": {
+        "filter": {
+          "per_page": 20,
+          "page": 1,
+          "sort": "random_SEED",
+          "direction": "DESC"
+        },
+        "image_filter": {
+          "path": {
+            "value": "(?i)\\.(gif|mp4)$",
+            "modifier": "MATCHES_REGEX"
+          },
+          "tags": {
+            "value": [
+              "4"
+            ],
+            "modifier": "INCLUDES_ALL",
+            "depth": 0,
+            "excludes": [
+              "9"
+            ]
+          },
+          "performer_tags": {
+            "value": [],
+            "modifier": "INCLUDES",
+            "depth": 0,
+            "excludes": [
+              "9"
+            ]
+          }
+        },
+        "image_ids": null
+      }
+    }
+  ],
+  "images/misc": [
+    {
+      "op": "FindImages",
+      "variables": {
+        "filter": {
+          "per_page": 20,
+          "page": 1,
+          "sort": "random_SEED",
+          "direction": "DESC"
+        },
+        "image_filter": {
+          "path": {
+            "value": "(?i)\\.(gif|mp4)$",
+            "modifier": "MATCHES_REGEX"
+          },
+          "performers": {
+            "value": [
+              "10"
+            ],
+            "modifier": "INCLUDES_ALL"
+          },
+          "orientation": {
+            "value": "PORTRAIT"
+          },
+          "galleries": {
+            "value": [
+              "1",
+              "2"
+            ],
+            "modifier": "INCLUDES"
+          },
+          "studios": {
+            "value": [
+              "20"
+            ],
+            "modifier": "INCLUDES",
+            "depth": -1
+          },
+          "created_at": {
+            "value": "DATE",
+            "modifier": "GREATER_THAN"
+          }
+        },
+        "image_ids": null
+      }
+    }
+  ],
+  "images/saved": [
+    {
+      "op": "GetSavedFilter",
+      "variables": {
+        "id": "3"
+      }
+    },
+    {
+      "op": "FindImages",
+      "variables": {
+        "filter": {
+          "q": "abc",
+          "sort": "random_SEED",
+          "direction": "DESC",
+          "per_page": 20,
+          "page": 1
+        },
+        "image_filter": {
+          "tags": {
+            "value": [
+              "4"
+            ],
+            "modifier": "INCLUDES",
+            "depth": 1
+          },
+          "rating100": {
+            "modifier": "GREATER_THAN",
+            "value": 40
+          },
+          "performers": {
+            "value": [
+              7
+            ],
+            "modifier": "INCLUDES_ALL"
+          },
+          "AND": {
+            "path": {
+              "value": "(?i)\\.(gif|mp4)$",
+              "modifier": "MATCHES_REGEX"
+            },
+            "orientation": {
+              "value": "LANDSCAPE"
+            },
+            "created_at": {
+              "value": "DATE",
+              "modifier": "GREATER_THAN"
+            }
+          }
+        },
+        "image_ids": null
+      }
+    }
+  ]
+}
