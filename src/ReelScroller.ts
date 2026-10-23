@@ -62,6 +62,8 @@ export class ReelScroller {
   private touchStartY = 0;
   private touchStartScrollTop = 0;
   private touchStartIndex = 0;
+  private touchLowerBound = 0;
+  private touchUpperBound = 0;
   private touchLastY = 0;
   private touchLastTime = 0;
   private touchVelocity = 0;
@@ -270,11 +272,13 @@ export class ReelScroller {
   // --- Input handlers ------------------------------------------------------
 
   private handleWheel(e: WheelEvent): void {
+    const now = performance.now();
+    // Inertial-tail events are swallowed below; skip the getComputedStyle ancestor walk for them.
+    const inTail = this.isAnimating || now < this.wheelCooldownUntil;
     // Let nested scrollable UI (e.g. a search-suggestions dropdown) scroll natively.
-    if (this.isOverNestedScrollable(e.target)) return;
+    if (!inTail && this.isOverNestedScrollable(e.target)) return;
     e.preventDefault(); // We own scrolling; never let the container free-scroll.
     if (Math.abs(e.deltaY) < WHEEL_MIN_DELTA) return;
-    const now = performance.now();
     // A wheel event while still animating or cooling down is the inertial tail of
     // the same trackpad flick — swallow it AND push the cooldown out, so momentum
     // can't sneak a second advance once the window elapses. A real second gesture
@@ -337,6 +341,11 @@ export class ReelScroller {
     this.touchVelocity = 0;
     this.touchStartScrollTop = this.scrollContainer.scrollTop;
     this.touchStartIndex = this.getCurrentIndex();
+    // Geometry is fixed for the gesture (pruning is blocked while touchActive), so read
+    // the ±1 card bounds once here instead of forcing layout on every touchmove.
+    const cards = this.getCards();
+    this.touchLowerBound = this.boundScrollTop(cards, this.touchStartIndex - 1);
+    this.touchUpperBound = this.boundScrollTop(cards, this.touchStartIndex + 1);
   }
 
   private handleTouchMove(e: TouchEvent): void {
@@ -353,11 +362,8 @@ export class ReelScroller {
 
     // Follow the finger, but clamp to ±1 card so a single swipe can never fling
     // past one neighbour.
-    const cards = this.getCards();
     const desired = this.touchStartScrollTop + (this.touchStartY - y);
-    const lower = this.boundScrollTop(cards, this.touchStartIndex - 1);
-    const upper = this.boundScrollTop(cards, this.touchStartIndex + 1);
-    this.scrollContainer.scrollTop = Math.max(lower, Math.min(desired, upper));
+    this.scrollContainer.scrollTop = Math.max(this.touchLowerBound, Math.min(desired, this.touchUpperBound));
   }
 
   /** scrollTop that would align card[index] to top, clamped to existing cards. */

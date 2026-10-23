@@ -22,6 +22,7 @@ export class ReelPlaybackController {
   private readonly getPost: (postId: string) => PostType | undefined;
 
   private activePostId?: string;
+  private preloadedPostId?: string;
   private globalMute = false;
 
   constructor(options: ReelPlaybackControllerOptions) {
@@ -58,6 +59,11 @@ export class ReelPlaybackController {
     const idx = order.indexOf(activePostId);
     if (idx < 0) return;
     const nextId = order[idx + 1];
+    // Release the previously warmed card if the user moved off it (e.g. scrolled back up),
+    // otherwise it keeps its decoder + buffer for the rest of the session.
+    const stale = this.preloadedPostId;
+    if (stale && stale !== nextId && stale !== activePostId) this.deactivate(stale);
+    this.preloadedPostId = nextId;
     if (!nextId) return;
     const post = this.getPost(nextId);
     if (!(post instanceof VideoPost || post instanceof ImageVideoPost)) return;

@@ -230,6 +230,8 @@ export class ImagePlayer {
             this.videoElement.play().catch((error) => {
               console.log('ImagePlayer: Play failed on visibility', error);
             });
+          } else if (!entry.isIntersecting && this.videoElement && !this.videoElement.paused) {
+            this.videoElement.pause(); // don't keep decoding while off-screen
           }
         }
       },
