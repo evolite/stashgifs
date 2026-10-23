@@ -9,6 +9,12 @@ the commit-derived history is in CHANGELOG.md.
 To release: add a `## [x.y.z] - YYYY-MM-DD` section at the top (use `### Features` and `### Bug Fixes`), then tag.
 A version without a section gets a one-line "maintenance release" note.
 
+## [7.23.2] - 2026-10-23
+
+### Features
+
+- A shorter "What's new" that shows only the latest release, with a link to all releases
+
 ## [7.23.0] - 2026-10-23
 
 ### Features
