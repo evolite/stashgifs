@@ -10,50 +10,15 @@ export const FAVORITE_TAG_NAME = 'StashGifs Favorite';
 
 export class FavoritesManager {
   private readonly api: StashAPI;
-  private favoriteTagId: string | null | undefined = undefined;
-  private favoriteTagPromise: Promise<string | null> | null = null;
 
   constructor(api: StashAPI) {
     this.api = api;
   }
 
-  /**
-   * Get or create the favorite tag
-   */
+  /** Id of the favorite tag, created on first use. Null if Stash couldn't provide it (retried next call). */
   async getFavoriteTagId(): Promise<string | null> {
-    // Only successful lookups are cached
-    if (this.favoriteTagId !== undefined) {
-      return this.favoriteTagId;
-    }
-
-    // If there's already a request in progress, wait for it
-    if (this.favoriteTagPromise) {
-      return this.favoriteTagPromise;
-    }
-
-    // Start a new request
-    this.favoriteTagPromise = this.findOrCreateFavoriteTag().finally(() => {
-      this.favoriteTagPromise = null;
-    });
-    const tagId = await this.favoriteTagPromise;
-    if (tagId) this.favoriteTagId = tagId; // a failed lookup (null) is retried next time, not remembered
-    return tagId;
-  }
-
-  /**
-   * Find existing favorite tag or create it
-   */
-  private async findOrCreateFavoriteTag(): Promise<string | null> {
     try {
-      // First, try to find the tag
-      const existingTag = await this.api.findTagByName(FAVORITE_TAG_NAME);
-      if (existingTag) {
-        return existingTag.id;
-      }
-
-      // If not found, create it
-      const newTag = await this.api.createTag(FAVORITE_TAG_NAME);
-      return newTag?.id || null;
+      return (await this.api.ensureTag(FAVORITE_TAG_NAME))?.id ?? null;
     } catch (error) {
       console.error('FavoritesManager: Failed to get favorite tag', error);
       return null;

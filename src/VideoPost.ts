@@ -1658,10 +1658,7 @@ export class VideoPost extends VideoPostBase {
 
   private async ensureMarkerTagExists(api: StashAPI): Promise<string | null> {
     try {
-      const existing = await api.findTagByName(MARKER_TAG_NAME);
-      if (existing) return existing.id;
-      const created = await api.createTag(MARKER_TAG_NAME);
-      return created?.id ?? null;
+      return (await api.ensureTag(MARKER_TAG_NAME))?.id ?? null;
     } catch (error) {
       console.warn('VideoPost: Failed to get marker tag, continuing without it', error);
       return null;

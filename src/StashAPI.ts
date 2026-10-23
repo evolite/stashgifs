@@ -43,8 +43,7 @@ import {
   SceneMarkerUpdateInput,
   TypedGraphQLClient,
   GQLImage,
-  UIConfigurationResponse,
-  PluginConfigurationResponse,
+  ConfigurationResponse,
   ConfigurePluginResponse,
   StashBox,
   GetStashBoxConfigResponse,
@@ -56,6 +55,9 @@ import {
   isAbortError,
 } from './graphql/errors.js';
 import { GraphQLClient } from './graphql/client.js';
+import { TtlCache } from './api/TtlCache.js';
+import { Batcher } from './api/Batcher.js';
+import { runAliased } from './api/aliased.js';
 
 type ImageOrientation = 'landscape' | 'portrait' | 'square';
 
@@ -111,8 +113,7 @@ export class StashAPI {
   // Centralized GraphQL client
   private readonly gqlClient: GraphQLClient;
   // Simple cache for autocomplete search results only (not filtered queries)
-  private readonly searchCache: Map<string, { data: unknown; timestamp: number }> = new Map();
-  private readonly SEARCH_CACHE_TTL = 5 * 60 * 1000; // 5 minutes
+  private readonly searchCache = new TtlCache<unknown[]>(5 * 60 * 1000, 300);
   /** Per-tag EFFECTIVE presence across sources (own counts ∪ all descendants' counts, > 0), used
    *  to route a tag to the single filter field that can match it — including parent-only tags,
    *  which resolve to the sources their subtree lives in. Cached for the session. */
@@ -123,7 +124,6 @@ export class StashAPI {
   private static readonly MIN_SEARCH_LIMIT = 20; // Minimum results to fetch when not searching
   private static readonly MIN_MARKER_COUNT_FOR_TAG_FILTER = 10; // Minimum markers required for tag to appear in suggestions
   private static readonly SHORT_FORM_SCENES_PER_PAGE = 24; // Number of scenes to fetch per page for short-form content
-  private static readonly MAX_PAGE_FALLBACK = 100; // Fallback max page when count query fails
   private static readonly MAX_MARKERS_PER_SCENE_FOR_SHUFFLE = 5; // Maximum markers per scene in shuffle mode
   private static readonly DEFAULT_CONTENT_LIMIT = 5000; // Default cap for users with extreme amounts
   private _maxContentLimit = StashAPI.DEFAULT_CONTENT_LIMIT;
@@ -171,6 +171,10 @@ export class StashAPI {
   destroy(): void {
     this.gqlClient.destroy();
   }
+
+  /** Executor for runAliased: our GraphQL client, data only (errors throw). */
+  private readonly aliasedExec = async (query: string, variables: Record<string, unknown>) =>
+    (await this.gqlClient.query<Record<string, unknown>>({ query, variables })).data;
 
   /** Stash UI resolution labels -> ResolutionEnum (saved filters store the label). */
   private static readonly RESOLUTION_ENUMS: Record<string, string> = {
@@ -383,10 +387,8 @@ export class StashAPI {
 
     // Check cache first (only for non-empty terms)
     if (!isEmptyTerm) {
-      const cached = this.searchCache.get(cacheKey);
-      if (cached && Date.now() - cached.timestamp < this.SEARCH_CACHE_TTL) {
-        return cached.data as T[];
-      }
+      const cached = this.searchCache.peek(cacheKey);
+      if (cached) return (await cached) as T[];
     }
 
     try {
@@ -396,7 +398,7 @@ export class StashAPI {
       
       // Cache the result (only for non-empty terms)
       if (!isEmptyTerm) {
-        this.searchCache.set(cacheKey, { data: results, timestamp: Date.now() });
+        this.searchCache.set(cacheKey, results);
       }
       
       return results;
@@ -668,22 +670,23 @@ export class StashAPI {
     }
   }
 
+  /** Saved-filter criteria by id: re-read for every page of a saved-filter feed otherwise. */
+  private readonly _savedFilters = new TtlCache<GetSavedFilterResponse['findSavedFilter']>(60_000, 50);
+
   /**
-   * Get a saved filter's criteria
+   * Get a saved filter's criteria. Resolves null when it doesn't exist; a failed request throws
+   * so the feed can't silently fall back to unfiltered results.
    */
   async getSavedFilter(id: string, signal?: AbortSignal): Promise<GetSavedFilterResponse['findSavedFilter']> {
     if (this.isAborted(signal)) return null;
-    
+
     try {
-      const result = await this.gqlClient.query<GetSavedFilterResponse>({
-        query: queries.GET_SAVED_FILTER,
-        variables: { id },
-        signal
-      });
-      
-      if (this.isAborted(signal)) return null;
-      
-      return result.data?.findSavedFilter || null;
+      // Shared, signal-free load (see TtlCache): one caller aborting must not fail the others.
+      const filter = await this._savedFilters.getOrLoad(id, async () => {
+        const result = await this.gqlClient.query<GetSavedFilterResponse>({ query: queries.GET_SAVED_FILTER, variables: { id } });
+        return result.data?.findSavedFilter || null;
+      }, (f) => f !== null);
+      return this.isAborted(signal) ? null : filter;
     } catch (error: unknown) {
       return this.rethrowUnlessAbort('getSavedFilter', error, signal, null);
     }
@@ -707,12 +710,8 @@ export class StashAPI {
 
     try {
       const limit = filters?.limit || 20;
-      let page = this.calculateInitialPage(limit, filters);
-      
-      if (!filters?.offset && !this.hasActiveFilters(filters)) {
-        page = await this.calculateRandomPage(filters, savedFilterCriteria, limit, signal);
-        if (this.isAborted(signal)) return { markers: [], totalCount: 0 };
-      }
+      // The sort is a fresh random seed, so page 1 is already a random sample: no count query needed.
+      const page = this.calculateInitialPage(limit, filters);
 
       const filter = this.buildFindFilter(filters, savedFilterCriteria, page, limit);
       // buildSceneMarkerFilter routes each selected tag to its source field (tags / scene_tags /
@@ -755,50 +754,6 @@ export class StashAPI {
    */
   private calculateInitialPage(limit: number, filters?: FilterOptions): number {
     return filters?.offset ? Math.floor(filters.offset / limit) + 1 : 1;
-  }
-
-  /**
-   * Calculate random page for unfiltered queries
-   */
-  private async calculateRandomPage(
-    filters: FilterOptions | undefined,
-    savedFilterCriteria: GetSavedFilterResponse['findSavedFilter'],
-    limit: number,
-    signal?: AbortSignal
-  ): Promise<number> {
-    const countFilter = this.buildCountFilter(filters, savedFilterCriteria);
-    const countSceneFilter = this.buildCountSceneFilter(filters, savedFilterCriteria);
-
-    try {
-      if (this.isAborted(signal)) return 1;
-      
-      const markerVariables = {
-        filter: countFilter,
-        scene_marker_filter: Object.keys(countSceneFilter).length > 0 ? countSceneFilter : {},
-      };
-      const rawCount = await this.cachedCount(`markers:${JSON.stringify(markerVariables)}`, async () => {
-        const countResult = await this.gqlClient.query<CheckTagsHaveMarkersResponse>({
-          query: queries.GET_MARKER_COUNT,
-          variables: markerVariables, // no caller signal: shared promise (see cachedCount)
-        });
-        return countResult.data?.findSceneMarkers?.count || 0;
-      });
-      
-      if (this.isAborted(signal)) return 1;
-      
-      const totalCount = Math.min(rawCount, this._maxContentLimit);
-      if (totalCount > 0) {
-        const totalPages = Math.ceil(totalCount / limit);
-        return Math.floor(Math.random() * totalPages) + 1;
-      }
-    } catch (error: unknown) {
-      if (isAbortError(error) || this.isAborted(signal)) {
-        return 1;
-      }
-      this.logError('calculateRandomPage', error);
-    }
-    
-    return 1;
   }
 
   /**
@@ -1084,35 +1039,25 @@ export class StashAPI {
     type Counts = { scene_count?: number; scene_marker_count?: number; performer_count?: number; image_count?: number };
     // One request for every uncached tag. Descendants are asked as four count-only queries
     // (> 0 per source) instead of downloading the whole subtree with per_page:-1.
-    const desc = (alias: string, field: string) =>
-      `${alias}:findTags(tag_filter:{parents:{value:[$id],modifier:INCLUDES,depth:-1},${field}:{value:0,modifier:GREATER_THAN}},filter:{per_page:1}){count}`;
-    const variables: Record<string, string> = {};
-    const defs: string[] = [];
-    const fields: string[] = [];
-    missing.forEach((id, i) => {
-      variables[`id${i}`] = id;
-      defs.push(`$id${i}:ID!`);
-      fields.push(
-        `self${i}:findTags(ids:[$id${i}]){tags{scene_count scene_marker_count performer_count image_count}}`,
-        desc(`dm${i}`, 'marker_count').replaceAll('$id', `$id${i}`),
-        desc(`ds${i}`, 'scene_count').replaceAll('$id', `$id${i}`),
-        desc(`dp${i}`, 'performer_count').replaceAll('$id', `$id${i}`),
-        desc(`di${i}`, 'image_count').replaceAll('$id', `$id${i}`),
-      );
-    });
+    const desc = (field: string) =>
+      `findTags(tag_filter:{parents:{value:[$v],modifier:INCLUDES,depth:-1},${field}:{value:0,modifier:GREATER_THAN}},filter:{per_page:1}){count}`;
     try {
-      const result = await this.gqlClient.query<Record<string, { tags?: Counts[]; count?: number } | undefined>>({
-        query: `query TagSources(${defs.join(',')}){${fields.join('\n')}}`,
-        variables,
+      const rows = await runAliased(this.aliasedExec, 'TagSources', 'ID!', missing, {
+        self: 'findTags(ids:[$v]){tags{scene_count scene_marker_count performer_count image_count}}',
+        dm: desc('marker_count'),
+        ds: desc('scene_count'),
+        dp: desc('performer_count'),
+        di: desc('image_count'),
       });
-      const data = result.data ?? {};
+      const count = (row: Record<string, unknown>, alias: string) => (row[alias] as { count?: number } | undefined)?.count ?? 0;
       missing.forEach((id, i) => {
-        const own = data[`self${i}`]?.tags?.[0];
+        const row = rows[i];
+        const own = (row.self as { tags?: Counts[] } | undefined)?.tags?.[0];
         this._tagSourceCache.set(id, {
-          marker: (own?.scene_marker_count ?? 0) > 0 || (data[`dm${i}`]?.count ?? 0) > 0,
-          scene: (own?.scene_count ?? 0) > 0 || (data[`ds${i}`]?.count ?? 0) > 0,
-          performer: (own?.performer_count ?? 0) > 0 || (data[`dp${i}`]?.count ?? 0) > 0,
-          image: (own?.image_count ?? 0) > 0 || (data[`di${i}`]?.count ?? 0) > 0,
+          marker: (own?.scene_marker_count ?? 0) > 0 || count(row, 'dm') > 0,
+          scene: (own?.scene_count ?? 0) > 0 || count(row, 'ds') > 0,
+          performer: (own?.performer_count ?? 0) > 0 || count(row, 'dp') > 0,
+          image: (own?.image_count ?? 0) > 0 || count(row, 'di') > 0,
         });
       });
     } catch { /* leave uncached — routing falls back to the primary enabled source */ }
@@ -1295,25 +1240,13 @@ export class StashAPI {
   private async fetchScenesForShuffle(filters?: FilterOptions, signal?: AbortSignal): Promise<{ markers: SceneMarker[]; sortSeed: string; totalCount: number }> {
     try {
       const limit = filters?.limit || 20;
-      let page: number;
-      let totalCount: number;
-
-      if (filters?.offset) {
-        page = Math.floor(filters.offset / limit) + 1;
-        totalCount = await this.getShuffleSceneCount(filters, signal);
-      } else {
-        const result = await this.calculateRandomScenePage(filters, limit, signal);
-        if (this.isAborted(signal)) return { markers: [], sortSeed: generateRandomSortSeed(), totalCount: 0 };
-        page = result.page;
-        totalCount = result.totalCount;
-      }
-
-      if (this.isAborted(signal)) return { markers: [], sortSeed: generateRandomSortSeed(), totalCount: 0 };
+      // A fresh random sort seed makes page 1 a random sample; the page's own count drives paging.
+      const page = filters?.offset ? Math.floor(filters.offset / limit) + 1 : 1;
 
       const sortSeed = filters?.sortSeed || generateRandomSortSeed();
       const filter: FindFilterInput = { per_page: limit, page, sort: sortSeed };
       const sceneFilter = this.buildShuffleSceneFilter(filters);
-      const scenes = await this.fetchScenesQuery(filter, sceneFilter, signal);
+      const { scenes, count: totalCount } = await this.fetchScenesQuery(filter, sceneFilter, signal);
 
       if (this.isAborted(signal)) return { markers: [], sortSeed, totalCount: 0 };
 
@@ -1322,80 +1255,6 @@ export class StashAPI {
       const emptyResult = { markers: [] as SceneMarker[], sortSeed: generateRandomSortSeed(), totalCount: 0 };
       return this.handleError('fetchScenesForShuffle', error, signal, emptyResult);
     }
-  }
-
-  private async getShuffleSceneCount(filters?: FilterOptions, signal?: AbortSignal): Promise<number> {
-    const countFilter: FindFilterInput = { per_page: 1, page: 1 };
-    const sceneFilter = this.buildShuffleSceneFilter(filters);
-    try {
-      if (this.isAborted(signal)) return 0;
-      const result = await this.gqlClient.query<FindScenesResponse>({
-        query: queries.GET_SCENE_COUNT,
-        variables: { filter: countFilter, ...(sceneFilter && { scene_filter: sceneFilter }) },
-        signal,
-      });
-      return result.data?.findScenes?.count || 0;
-    } catch (e: unknown) {
-      if (isAbortError(e) || this.isAborted(signal)) return 0;
-      this.logError('getShuffleSceneCount', e);
-      return 0;
-    }
-  }
-
-  /**
-   * Short-lived memo for count-only queries. Paging re-asks the same count for the same filter on
-   * every page; the answer only matters for page math, so a minute of staleness is harmless.
-   * Failures/aborts are evicted so the next call retries.
-   */
-  private readonly _countCache = new Map<string, { at: number; value: Promise<number> }>();
-  private static readonly COUNT_TTL_MS = 60_000;
-
-  private cachedCount(key: string, load: () => Promise<number>): Promise<number> {
-    const hit = this._countCache.get(key);
-    if (hit && Date.now() - hit.at < StashAPI.COUNT_TTL_MS) return hit.value;
-    const value = load();
-    this._countCache.set(key, { at: Date.now(), value });
-    value.catch(() => {
-      if (this._countCache.get(key)?.value === value) this._countCache.delete(key);
-    });
-    return value;
-  }
-
-  /** Runs the GET_SCENE_COUNT query (per_page:1, page:1 — count only, no rows) shared by shuffle-mode and short-form page math. */
-  private fetchSceneCount(sceneFilter: SceneFilterInput | null, signal?: AbortSignal): Promise<number> {
-    const countFilter: FindFilterInput = { per_page: 1, page: 1 };
-    return this.cachedCount(`scenes:${JSON.stringify(sceneFilter)}`, async () => {
-      const countResult = await this.gqlClient.query<FindScenesResponse>({
-        query: queries.GET_SCENE_COUNT,
-        variables: { filter: countFilter, ...(sceneFilter && { scene_filter: sceneFilter }) },
-        // No caller signal: the promise is shared, so one caller aborting must not fail the others.
-      });
-      return countResult.data?.findScenes?.count || 0;
-    });
-  }
-
-  private async calculateRandomScenePage(filters: FilterOptions | undefined, limit: number, signal?: AbortSignal): Promise<{ page: number; totalCount: number }> {
-    const sceneFilter = this.buildShuffleSceneFilter(filters);
-
-    try {
-      if (this.isAborted(signal)) return { page: 1, totalCount: 0 };
-
-      const totalCount = await this.fetchSceneCount(sceneFilter, signal);
-
-      if (this.isAborted(signal)) return { page: 1, totalCount: 0 };
-
-      if (totalCount > 0) {
-        const totalPages = Math.ceil(totalCount / limit);
-        return { page: Math.floor(Math.random() * totalPages) + 1, totalCount };
-      }
-    } catch (e: unknown) {
-      if (isAbortError(e) || this.isAborted(signal)) {
-        return { page: 1, totalCount: 0 };
-      }
-      this.logError('calculateRandomScenePage', e);
-    }
-
-    return { page: 1, totalCount: 0 };
   }
 
   /**
@@ -1421,16 +1280,16 @@ export class StashAPI {
     filter: FindFilterInput,
     sceneFilter: SceneFilterInput | null,
     signal?: AbortSignal
-  ): Promise<Scene[]> {
+  ): Promise<{ scenes: Scene[]; count: number }> {
     const result = await this.gqlClient.query<FindScenesResponse>({
       query: queries.FIND_SCENES,
       variables: { filter, ...(sceneFilter && { scene_filter: sceneFilter }) },
       signal,
     });
     
-    if (this.isAborted(signal)) return [];
+    if (this.isAborted(signal)) return { scenes: [], count: 0 };
     
-    return result.data?.findScenes?.scenes || [];
+    return { scenes: result.data?.findScenes?.scenes || [], count: result.data?.findScenes?.count ?? 0 };
   }
 
   /**
@@ -1487,35 +1346,17 @@ export class StashAPI {
 
     try {
 
-      const scenesPerPage = StashAPI.SHORT_FORM_SCENES_PER_PAGE;
       
       const sceneFilter = this.buildShortFormSceneFilter(filters, maxDuration);
       
-      const { maxPage, totalCount } = await this.getMaxPageForShortForm(sceneFilter, scenesPerPage, signal);
-      if (maxPage === 0) {
-        return { markers: [], totalCount: 0, unfilteredOffsetConsumed: 0, sortSeed: generateRandomSortSeed() };
-      }
-      
-      // Calculate page from offset based on scenesPerPage
-      const page = Math.floor(offset / scenesPerPage) + 1;
-      // Ensure page doesn't exceed maxPage
-      const actualPage = Math.min(page, maxPage);
-      
-      // Calculate offset within the page
-      const offsetInPage = offset % scenesPerPage;
-      
       // Reuse existing sort seed for pagination, or generate new one for first page
       const sortSeed = filters?.sortSeed || generateRandomSortSeed();
-      
-      // Fetch only the single page needed
-      const filter: FindFilterInput = {
-        per_page: scenesPerPage,
-        page: actualPage,
-        sort: sortSeed,
-      };
-      
-      const scenes = await this.fetchScenesQuery(filter, sceneFilter, signal);
-      if (this.isAborted(signal)) return { markers: [], totalCount: 0, unfilteredOffsetConsumed: 0, sortSeed: generateRandomSortSeed() };
+
+      const page = await this.fetchSceneListPage(sceneFilter, offset, sortSeed, signal);
+      if (!page || this.isAborted(signal)) {
+        return { markers: [], totalCount: 0, unfilteredOffsetConsumed: 0, sortSeed: generateRandomSortSeed() };
+      }
+      const { scenes, totalCount, offsetInPage } = page;
       
       // Filter by duration (GraphQL filter should handle this, but filter client-side as backup)
       const shortFormScenes = this.filterShortFormScenes(scenes, maxDuration);
@@ -1536,36 +1377,32 @@ export class StashAPI {
   }
 
   /**
-   * Get maximum valid page number for short-form content
+   * One page of a short-form/scene-preview scene list. The total comes back with the page itself;
+   * an offset past the (capped) end is clamped to the last page. Null when there are no scenes.
    */
-  private async getMaxPageForShortForm(
+  private async fetchSceneListPage(
     sceneFilter: SceneFilterInput | null,
-    scenesPerPage: number,
+    offset: number,
+    sortSeed: string,
     signal?: AbortSignal
-  ): Promise<{ maxPage: number; totalCount: number }> {
-    let maxPage = StashAPI.MAX_PAGE_FALLBACK;
-    let totalCount = 0;
-    try {
-      const rawCount = await this.fetchSceneCount(sceneFilter, signal);
+  ): Promise<{ scenes: Scene[]; totalCount: number; offsetInPage: number } | null> {
+    const perPage = StashAPI.SHORT_FORM_SCENES_PER_PAGE;
+    const wantedPage = Math.floor(offset / perPage) + 1;
+    const query = (page: number) => this.fetchScenesQuery({ per_page: perPage, page, sort: sortSeed }, sceneFilter, signal);
 
-      if (this.isAborted(signal)) return { maxPage: 0, totalCount: 0 };
+    let { scenes, count } = await query(wantedPage);
+    if (this.isAborted(signal)) return null;
 
-      totalCount = Math.min(rawCount, this._maxContentLimit);
-      
-      if (totalCount > 0) {
-        maxPage = Math.max(1, Math.ceil(totalCount / scenesPerPage));
-      } else {
-        this.logError('getMaxPageForShortForm', new Error('No scenes found matching filter'));
-        return { maxPage: 0, totalCount: 0 };
-      }
-    } catch (error: unknown) {
-      this.logError('getMaxPageForShortForm', error);
-      // If we can't get count, we can't reliably calculate totalCount, so return 0
-      return { maxPage, totalCount: 0 };
+    const totalCount = Math.min(count, this._maxContentLimit);
+    if (totalCount === 0) return null;
+
+    const maxPage = Math.max(1, Math.ceil(totalCount / perPage));
+    if (wantedPage > maxPage) {
+      ({ scenes } = await query(maxPage));
+      if (this.isAborted(signal)) return null;
     }
-    return { maxPage, totalCount };
+    return { scenes, totalCount, offsetInPage: offset % perPage };
   }
-
 
   /**
    * Build scene filter for short-form content
@@ -1684,29 +1521,16 @@ export class StashAPI {
     if (this.isAborted(signal)) return { markers: [], totalCount: 0, unfilteredOffsetConsumed: 0, sortSeed: generateRandomSortSeed() };
 
     try {
-      const scenesPerPage = StashAPI.SHORT_FORM_SCENES_PER_PAGE;
 
       const sceneFilter = this.buildScenePreviewFilter(filters);
 
-      const { maxPage, totalCount } = await this.getMaxPageForShortForm(sceneFilter, scenesPerPage, signal);
-      if (maxPage === 0) {
-        return { markers: [], totalCount: 0, unfilteredOffsetConsumed: 0, sortSeed: generateRandomSortSeed() };
-      }
-
-      const page = Math.floor(offset / scenesPerPage) + 1;
-      const actualPage = Math.min(page, maxPage);
-      const offsetInPage = offset % scenesPerPage;
-
       const sortSeed = filters?.sortSeed || generateRandomSortSeed();
 
-      const filter: FindFilterInput = {
-        per_page: scenesPerPage,
-        page: actualPage,
-        sort: sortSeed,
-      };
-
-      const scenes = await this.fetchScenesQuery(filter, sceneFilter, signal);
-      if (this.isAborted(signal)) return { markers: [], totalCount: 0, unfilteredOffsetConsumed: 0, sortSeed: generateRandomSortSeed() };
+      const page = await this.fetchSceneListPage(sceneFilter, offset, sortSeed, signal);
+      if (!page || this.isAborted(signal)) {
+        return { markers: [], totalCount: 0, unfilteredOffsetConsumed: 0, sortSeed: generateRandomSortSeed() };
+      }
+      const { scenes, totalCount, offsetInPage } = page;
 
       // Drop scenes without a generated preview (client-side backup filter)
       const previewableScenes = scenes.filter((scene) => !!scene.paths?.preview);
@@ -1953,46 +1777,36 @@ export class StashAPI {
    * Find a tag by name
    */
   /** Resolved tags by lowercase name — callers re-resolve the same few tags (favorite, bookmark, excluded) on every load. Misses aren't cached (the tag may be created later). */
-  private readonly _tagByNameCache = new Map<string, { id: string; name: string }>();
+  private readonly _tagByName = new TtlCache<{ id: string; name: string } | null>(Number.POSITIVE_INFINITY, 200);
 
   async findTagByName(tagName: string, signal?: AbortSignal): Promise<{ id: string; name: string } | null> {
     if (this.isAborted(signal)) return null;
-    const cacheKey = tagName.toLowerCase();
-    const cached = this._tagByNameCache.get(cacheKey);
-    if (cached) return cached;
-    
-    const variables = {
-      filter: { per_page: 1, page: 1 },
-      tag_filter: { name: { value: tagName, modifier: 'EQUALS' } }
-    };
-
     try {
-      // Use findTags (plural) instead of findTag (singular) as it's more widely supported
-      const result = await this.gqlClient.query<FindTagsResponse>({
-        query: queries.FIND_TAGS,
-        variables,
-        signal,
-      });
-      
-      if (this.isAborted(signal)) return null;
-      
-      const tags = result.data?.findTags?.tags || [];
-      if (tags.length > 0) {
-        const tag = tags[0];
-        // Validate exact match (case-insensitive) - EQUALS modifier might not work as expected
-        if (tag.name.toLowerCase() === tagName.toLowerCase()) {
-          // Found matching tag
-          this._tagByNameCache.set(cacheKey, tag);
-          return tag;
-        } else {
-          this.logError('findTagByName', new Error(`Tag name mismatch: searched="${tagName}", found="${tag.name}"`));
-          return null;
-        }
-      }
-      return null;
+      // The shared lookup carries no caller signal (tiny query; one caller aborting must not fail the rest).
+      const tag = await this._tagByName.getOrLoad(tagName.toLowerCase(), () => this.queryTagByName(tagName), (t) => t !== null);
+      return this.isAborted(signal) ? null : tag;
     } catch (error: unknown) {
       return this.rethrowUnlessAbort('findTagByName', error, signal, null);
     }
+  }
+
+  private async queryTagByName(tagName: string): Promise<{ id: string; name: string } | null> {
+    // Use findTags (plural) instead of findTag (singular) as it's more widely supported
+    const result = await this.gqlClient.query<FindTagsResponse>({
+      query: queries.FIND_TAGS,
+      variables: {
+        filter: { per_page: 1, page: 1 },
+        tag_filter: { name: { value: tagName, modifier: 'EQUALS' } },
+      },
+    });
+    const tag = result.data?.findTags?.tags?.[0];
+    if (!tag) return null;
+    // Validate exact match (case-insensitive) - EQUALS modifier might not work as expected
+    if (tag.name.toLowerCase() !== tagName.toLowerCase()) {
+      this.logError('findTagByName', new Error(`Tag name mismatch: searched="${tagName}", found="${tag.name}"`));
+      return null;
+    }
+    return tag;
   }
 
   /**
@@ -2036,6 +1850,18 @@ export class StashAPI {
     }
   }
 
+  /** Tags this plugin owns (favorite, bookmark, marker), resolved once per session. */
+  private readonly _ensuredTags = new TtlCache<{ id: string; name: string } | null>(Number.POSITIVE_INFINITY, 20);
+
+  /** Find the tag by name, creating it if missing. Concurrent callers share one lookup; failures throw and aren't remembered. */
+  ensureTag(tagName: string): Promise<{ id: string; name: string } | null> {
+    return this._ensuredTags.getOrLoad(
+      tagName.toLowerCase(),
+      async () => (await this.findTagByName(tagName)) ?? (await this.createTag(tagName)),
+      (tag) => tag !== null,
+    );
+  }
+
   /**
    * Check if a scene marker has a specific tag
    * Uses the marker's existing tags array
@@ -2070,54 +1896,23 @@ export class StashAPI {
   }
 
   /** Scene tag ids fetched so far, so repeat checks and toggles don't re-query. */
-  private readonly _sceneTagIdCache = new Map<string, { at: number; ids: Set<string> }>();
-  private static readonly SCENE_TAGS_TTL_MS = 60_000;
-  private _sceneTagBatch: Map<string, Array<{ resolve: (ids: Set<string>) => void; reject: (e: unknown) => void }>> | undefined;
+  private readonly _sceneTagIds = new TtlCache<Set<string>>(60_000, 1000);
 
-  /**
-   * Tag ids of a scene. Requests made within a few ms (one per post while a page renders)
-   * coalesce into a single findScenes(ids: [...]) instead of one findScene per post.
-   */
-  private getSceneTagIdSet(sceneId: string): Promise<Set<string>> {
-    const cached = this._sceneTagIdCache.get(sceneId);
-    if (cached && Date.now() - cached.at < StashAPI.SCENE_TAGS_TTL_MS) return Promise.resolve(cached.ids);
-
-    return new Promise((resolve, reject) => {
-      if (!this._sceneTagBatch) {
-        const batch = new Map<string, Array<{ resolve: (ids: Set<string>) => void; reject: (e: unknown) => void }>>();
-        this._sceneTagBatch = batch;
-        setTimeout(() => {
-          this._sceneTagBatch = undefined;
-          void this.flushSceneTagBatch(batch);
-        }, 10);
-      }
-      const waiters = this._sceneTagBatch.get(sceneId) ?? [];
-      waiters.push({ resolve, reject });
-      this._sceneTagBatch.set(sceneId, waiters);
-    });
-  }
-
-  private async flushSceneTagBatch(batch: Map<string, Array<{ resolve: (ids: Set<string>) => void; reject: (e: unknown) => void }>>): Promise<void> {
-    const startedAt = Date.now();
-    try {
+  /** Per-post checks made while a page renders coalesce into one findScenes(ids: [...]) instead of one findScene each. */
+  private readonly _sceneTagBatcher = new Batcher<string, Set<string>>(
+    10,
+    async (ids) => {
       const result = await this.gqlClient.query<{ findScenes?: { scenes?: Array<{ id: string; tags?: Array<{ id: string }> }> } }>({
         query: queries.FIND_SCENES_TAG_IDS,
-        variables: { ids: [...batch.keys()], filter: { per_page: -1 } },
+        variables: { ids, filter: { per_page: -1 } },
       });
-      const found = new Map<string, Set<string>>();
-      for (const scene of result.data?.findScenes?.scenes ?? []) {
-        found.set(scene.id, new Set((scene.tags ?? []).map((t) => t.id)));
-      }
-      for (const [sceneId, waiters] of batch) {
-        // A tag mutation that landed while this read was in flight is newer than the snapshot: keep it.
-        const newer = this._sceneTagIdCache.get(sceneId);
-        const ids = newer && newer.at >= startedAt ? newer.ids : (found.get(sceneId) ?? new Set<string>());
-        if (ids !== newer?.ids) this._sceneTagIdCache.set(sceneId, { at: Date.now(), ids });
-        for (const w of waiters) w.resolve(ids);
-      }
-    } catch (error) {
-      for (const waiters of batch.values()) for (const w of waiters) w.reject(error);
-    }
+      return new Map((result.data?.findScenes?.scenes ?? []).map((scene) => [scene.id, new Set((scene.tags ?? []).map((t) => t.id))]));
+    },
+    () => new Set<string>(),
+  );
+
+  private getSceneTagIdSet(sceneId: string): Promise<Set<string>> {
+    return this._sceneTagIds.getOrLoad(sceneId, () => this._sceneTagBatcher.load(sceneId));
   }
 
   /**
@@ -2333,9 +2128,9 @@ export class StashAPI {
       });
       const updated = result.data?.bulkSceneUpdate?.find((sc) => sc.id === sceneId);
       if (updated?.tags) {
-        this._sceneTagIdCache.set(sceneId, { at: Date.now(), ids: new Set(updated.tags.map((t) => t.id)) });
+        this._sceneTagIds.set(sceneId, new Set(updated.tags.map((t) => t.id)));
       } else {
-        this._sceneTagIdCache.delete(sceneId);
+        this._sceneTagIds.delete(sceneId);
       }
     } catch (error) {
       if (isAbortError(error) || this.isAborted(signal)) return;
@@ -2866,61 +2661,52 @@ export class StashAPI {
     }
   }
 
+  /** ui + plugin configuration share one request; callers within a few seconds reuse it. */
+  private readonly _configuration = new TtlCache<ConfigurationResponse['configuration']>(5_000, 1);
+
+  private getConfiguration(): Promise<ConfigurationResponse['configuration']> {
+    return this._configuration.getOrLoad('configuration', async () => {
+      const result = await this.gqlClient.query<ConfigurationResponse>({ query: queries.GET_CONFIGURATION });
+      return result.data?.configuration ?? {};
+    });
+  }
+
   /**
-   * Get current UI configuration, including rating system settings
-   * @param signal Optional abort signal
-   * @returns Current rating system configuration or null if unavailable
+   * Get the rating system options from the UI configuration
    */
   async getUIConfiguration(signal?: AbortSignal): Promise<{ type?: string; starPrecision?: string } | null> {
     if (this.isAborted(signal)) return null;
-    
+
     try {
-      const result = await this.gqlClient.query<UIConfigurationResponse>({
-        query: queries.GET_UI_CONFIGURATION,
-        signal,
-      });
-      
+      const { ui } = await this.getConfiguration();
       if (this.isAborted(signal)) return null;
-      
-      // UI is returned as a JSON string, need to parse it
-      const uiConfig = result.data?.configuration?.ui;
-      if (typeof uiConfig === 'string') {
+
+      // UI is returned as a JSON string in some Stash versions
+      if (typeof ui === 'string') {
         try {
-          const parsed = JSON.parse(uiConfig) as { ratingSystemOptions?: { type?: string; starPrecision?: string } };
-          return parsed.ratingSystemOptions || null;
+          return (JSON.parse(ui) as { ratingSystemOptions?: { type?: string; starPrecision?: string } }).ratingSystemOptions || null;
         } catch {
           return null;
         }
-      } else if (uiConfig && typeof uiConfig === 'object' && 'ratingSystemOptions' in uiConfig) {
-        return (uiConfig as { ratingSystemOptions?: { type?: string; starPrecision?: string } }).ratingSystemOptions || null;
       }
-      return null;
+      return ui?.ratingSystemOptions || null;
     } catch (error) {
       return this.handleError('getUIConfiguration', error, signal, null);
     }
   }
 
   /**
-   * Get plugin-specific settings from Stash server
+   * Get plugin-specific settings from Stash server. Resolves null when the server has none;
+   * a failed request throws so callers don't mistake it for "no settings".
    */
   async getPluginSettings(pluginId: string, signal?: AbortSignal): Promise<Record<string, unknown> | null> {
     if (this.isAborted(signal)) return null;
 
     try {
-      const result = await this.gqlClient.query<PluginConfigurationResponse>({
-        query: queries.GET_PLUGIN_CONFIGURATION,
-        signal,
-      });
-
+      const { plugins } = await this.getConfiguration();
       if (this.isAborted(signal)) return null;
-
-      const plugins = result.data?.configuration?.plugins;
-      if (!plugins || typeof plugins !== 'object') return null;
-
-      const pluginConfig = plugins[pluginId];
-      if (!pluginConfig || typeof pluginConfig !== 'object') return null;
-
-      return pluginConfig;
+      const pluginConfig = plugins && typeof plugins === 'object' ? plugins[pluginId] : undefined;
+      return pluginConfig && typeof pluginConfig === 'object' ? pluginConfig : null;
     } catch (error) {
       return this.rethrowUnlessAbort('getPluginSettings', error, signal, null);
     }
@@ -2938,6 +2724,7 @@ export class StashAPI {
         variables: { plugin_id: pluginId, input },
         signal,
       });
+      this._configuration.clear();
       return true;
     } catch (error) {
       this.handleError('savePluginSettings', error, signal, false);
@@ -2946,15 +2733,12 @@ export class StashAPI {
   }
 
   /** stash-box scene id -> local scene id (null = not in library). Misses are cached too: they're the common case. */
-  private readonly _localSceneIdCache = new Map<string, { at: number; id: string | null }>();
-  private static readonly LOCAL_ID_TTL_MS = 5 * 60_000;
+  private readonly _localSceneIds = new TtlCache<string | null>(5 * 60_000, 1000);
 
   /**
    * Resolve many stash-box scenes to local scene ids in at most two requests (stash_id lookups,
-   * then URL lookups for the misses) by aliasing one findScenes per scene into a single query,
-   * instead of one or two requests per scene.
+   * then URL lookups for the misses), instead of one or two requests per scene.
    */
-  // fallow-ignore-next-line unused-class-member
   async findLocalSceneIdsByStashDbIds(
     items: Array<{ stashId: string; sceneUrl?: string }>,
     signal?: AbortSignal
@@ -2962,74 +2746,62 @@ export class StashAPI {
     const out = new Map<string, string>();
     if (this.isAborted(signal)) return out;
 
-    const now = Date.now();
     const todo = new Map<string, string | undefined>();
     for (const { stashId, sceneUrl } of items) {
-      const cached = this._localSceneIdCache.get(stashId);
-      if (cached && now - cached.at < StashAPI.LOCAL_ID_TTL_MS) {
-        if (cached.id) out.set(stashId, cached.id);
-      } else {
-        todo.set(stashId, sceneUrl);
+      if (!this._localSceneIds.has(stashId)) todo.set(stashId, sceneUrl);
+    }
+
+    if (todo.size > 0) {
+      // One shared lookup for everything missing; each id's cache entry resolves from it.
+      // No caller signal: the entries are shared with other callers.
+      const lookup = this.lookupLocalSceneIds(todo);
+      for (const stashId of todo.keys()) {
+        this._localSceneIds.set(stashId, lookup.then((found) => found.get(stashId) ?? null));
       }
     }
-    if (todo.size === 0) return out;
 
     try {
-      // Stash matches stash_id regardless of endpoint; URL lookup covers scenes added without a stash_id link.
-      const ids = [...todo.keys()];
-      const byStashId = await this.lookupSceneIds(
-        ids.map((stashId) => ({ stash_id_endpoint: { stash_id: stashId, modifier: 'EQUALS' } })),
-        signal
-      );
-      if (this.isAborted(signal)) return out;
-
-      const misses: string[] = [];
-      ids.forEach((stashId, i) => {
-        const localId = byStashId[i];
-        if (localId) this.recordLocalSceneId(stashId, localId, out);
-        else if (todo.get(stashId)) misses.push(stashId);
-        else this._localSceneIdCache.set(stashId, { at: Date.now(), id: null });
-      });
-
-      if (misses.length > 0) {
-        const byUrl = await this.lookupSceneIds(
-          misses.map((stashId) => ({ url: { modifier: 'EQUALS', value: todo.get(stashId) } })),
-          signal
-        );
-        if (this.isAborted(signal)) return out;
-        misses.forEach((stashId, i) => {
-          const localId = byUrl[i];
-          if (localId) this.recordLocalSceneId(stashId, localId, out);
-          else this._localSceneIdCache.set(stashId, { at: Date.now(), id: null });
-        });
-      }
+      await Promise.all(items.map(async ({ stashId }) => {
+        const localId = await this._localSceneIds.peek(stashId);
+        if (localId) out.set(stashId, localId);
+      }));
     } catch (error: unknown) {
       this.handleError('findLocalSceneIdsByStashDbIds', error, signal, null);
     }
     return out;
   }
 
-  private recordLocalSceneId(stashId: string, localId: string, out: Map<string, string>): void {
-    out.set(stashId, localId);
-    this._localSceneIdCache.set(stashId, { at: Date.now(), id: localId });
+  private async lookupLocalSceneIds(todo: Map<string, string | undefined>): Promise<Map<string, string>> {
+    const found = new Map<string, string>();
+    const stashIds = [...todo.keys()];
+    // Stash matches stash_id regardless of endpoint; URL lookup covers scenes added without a stash_id link.
+    const byStashId = await this.lookupSceneIds(
+      stashIds.map((stashId) => ({ stash_id_endpoint: { stash_id: stashId, modifier: 'EQUALS' } }))
+    );
+    const misses: string[] = [];
+    stashIds.forEach((stashId, i) => {
+      const localId = byStashId[i];
+      if (localId) found.set(stashId, localId);
+      else if (todo.get(stashId)) misses.push(stashId);
+    });
+    if (misses.length > 0) {
+      const byUrl = await this.lookupSceneIds(
+        misses.map((stashId) => ({ url: { modifier: 'EQUALS', value: todo.get(stashId) } }))
+      );
+      misses.forEach((stashId, i) => {
+        const localId = byUrl[i];
+        if (localId) found.set(stashId, localId);
+      });
+    }
+    return found;
   }
 
-  /** One request, one aliased findScenes per filter; returns the first matching scene id (or null) per filter, in order. */
-  private async lookupSceneIds(filters: Array<Record<string, unknown>>, signal?: AbortSignal): Promise<Array<string | null>> {
-    const variables: Record<string, unknown> = {};
-    const defs: string[] = [];
-    const fields: string[] = [];
-    filters.forEach((filter, i) => {
-      variables[`f${i}`] = filter;
-      defs.push(`$f${i}: SceneFilterType`);
-      fields.push(`s${i}: findScenes(scene_filter: $f${i}, filter: { per_page: 1 }) { scenes { id } }`);
+  /** First matching scene id (or null) per scene filter, in order, in one request. */
+  private async lookupSceneIds(filters: Array<Record<string, unknown>>): Promise<Array<string | null>> {
+    const rows = await runAliased(this.aliasedExec, 'FindLocalScenes', 'SceneFilterType', filters, {
+      s: 'findScenes(scene_filter: $v, filter: { per_page: 1 }) { scenes { id } }',
     });
-    const result = await this.gqlClient.query<Record<string, { scenes: Array<{ id: string }> } | undefined>>({
-      query: `query FindLocalScenes(${defs.join(', ')}) { ${fields.join(' ')} }`,
-      variables,
-      signal,
-    });
-    return filters.map((_, i) => result.data?.[`s${i}`]?.scenes[0]?.id ?? null);
+    return rows.map((row) => (row.s as { scenes: Array<{ id: string }> } | undefined)?.scenes[0]?.id ?? null);
   }
 
   // fallow-ignore-next-line unused-class-member

@@ -6,22 +6,12 @@
 import { SceneFields, SceneMarkerFields, TagFields, TagFieldsExtended, PerformerFields, PerformerFieldsExtended, SlimImageData, VisualFileData } from './fragments.js';
 
 /**
- * Get UI configuration
+ * Get UI + plugin configuration in one request (rating system, plugin settings)
  */
-export const GET_UI_CONFIGURATION = `
+export const GET_CONFIGURATION = `
   query Configuration {
     configuration {
       ui
-    }
-  }
-`;
-
-/**
- * Get plugin configuration
- */
-export const GET_PLUGIN_CONFIGURATION = `
-  query PluginConfiguration {
-    configuration {
       plugins
     }
   }

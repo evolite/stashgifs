@@ -9,7 +9,8 @@
     "deploy:local": "rm -rf /home/evotech/Services/containers/data/stash/plugins/surging9143/stashgifs/stashgifs/app/assets && mkdir -p /home/evotech/Services/containers/data/stash/plugins/surging9143/stashgifs/stashgifs/app && cp -r stashgifs/app/assets /home/evotech/Services/containers/data/stash/plugins/surging9143/stashgifs/stashgifs/app/ && cp stashgifs/app/index.html /home/evotech/Services/containers/data/stash/plugins/surging9143/stashgifs/stashgifs/app/",
     "release": "pnpm run build",
     "clean": "rm -rf stashgifs/app/assets/*.js stashgifs/app/assets/*.js.map stashgifs/app/assets/chunks",
-    "type-check": "tsc --noEmit"
+    "type-check": "tsc --noEmit",
+    "check": "node scripts/check-api-helpers.mjs && node scripts/check-saved-filter-normalize.mjs"
   },
   "devDependencies": {
     "esbuild": "^0.28.2",

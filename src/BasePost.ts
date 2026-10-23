@@ -3664,7 +3664,6 @@ export abstract class BasePost {
       this.getImageData().image.id,
       this.getImageData().image.tags,
       this.api,
-      this.favoritesManager,
       this.isFavorite,
       FAVORITE_TAG_NAME,
     );

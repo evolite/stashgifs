@@ -1,8 +1,10 @@
 #!/usr/bin/env node
 // Offline check: Stash's saved-filter criterion shapes are converted to GraphQL input shapes.
-// Run after `pnpm run build`: node scripts/check-saved-filter-normalize.mjs
+// Run: node scripts/check-saved-filter-normalize.mjs
 import assert from 'node:assert/strict';
-import { StashAPI } from '../stashgifs/app/assets/StashAPI.js';
+import { loadTs } from './load-ts.mjs';
+
+const { StashAPI } = await loadTs('src/StashAPI.ts');
 
 const out = Object.create(StashAPI.prototype).normalizeSavedObjectFilter({
   rating100: { modifier: 'BETWEEN', value: { value: 20, value2: 80 } },

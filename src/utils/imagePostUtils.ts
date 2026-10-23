@@ -5,37 +5,10 @@
  */
 
 import { StashAPI } from '../StashAPI.js';
-import { FavoritesManager } from '../FavoritesManager.js';
 
 interface ImageTag {
   id?: string;
   name: string;
-}
-
-/**
- * Resolve the favorite tag ID for an image, optionally creating it if missing.
- */
-async function resolveImageFavoriteTagId(
-  api: StashAPI,
-  favoritesManager: FavoritesManager | undefined,
-  favoriteTagName: string,
-  createIfMissing: boolean,
-): Promise<string | null> {
-  if (favoritesManager && createIfMissing) {
-    return favoritesManager.getFavoriteTagId();
-  }
-
-  const existingTag = await api.findTagByName(favoriteTagName);
-  if (existingTag) {
-    return existingTag.id;
-  }
-
-  if (!createIfMissing) {
-    return null;
-  }
-
-  const newTag = await api.createTag(favoriteTagName);
-  return newTag?.id ?? null;
 }
 
 interface ToggleImageFavoriteResult {
@@ -52,11 +25,10 @@ export async function toggleImageFavorite(
   imageId: string,
   currentTagsInput: ImageTag[] | undefined,
   api: StashAPI,
-  favoritesManager: FavoritesManager | undefined,
   isFavorite: boolean,
   favoriteTagName: string,
 ): Promise<ToggleImageFavoriteResult> {
-  const favoriteTagId = await resolveImageFavoriteTagId(api, favoritesManager, favoriteTagName, true);
+  const favoriteTagId = (await api.ensureTag(favoriteTagName))?.id;
   if (!favoriteTagId) {
     throw new Error('Favorite tag unavailable');
   }

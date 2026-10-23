@@ -11,36 +11,15 @@ const BOOKMARK_TAG_NAME = 'Stashgifs bookmark';
 
 export class BookmarkManager {
   private readonly api: StashAPI;
-  private bookmarkTagId: string | null | undefined = undefined;
-  private bookmarkTagPromise: Promise<string | null> | null = null;
 
   constructor(api: StashAPI) {
     this.api = api;
   }
 
+  /** Id of the bookmark tag, created on first use. Null if Stash couldn't provide it (retried next call). */
   async getBookmarkTagId(): Promise<string | null> {
-    if (this.bookmarkTagId !== undefined) {
-      return this.bookmarkTagId;
-    }
-    if (this.bookmarkTagPromise) {
-      return this.bookmarkTagPromise;
-    }
-    this.bookmarkTagPromise = this.findOrCreateBookmarkTag().finally(() => {
-      this.bookmarkTagPromise = null;
-    });
-    const tagId = await this.bookmarkTagPromise;
-    if (tagId) this.bookmarkTagId = tagId; // a failed lookup (null) is retried next time, not remembered
-    return tagId;
-  }
-
-  private async findOrCreateBookmarkTag(): Promise<string | null> {
     try {
-      const existingTag = await this.api.findTagByName(BOOKMARK_TAG_NAME);
-      if (existingTag) {
-        return existingTag.id;
-      }
-      const newTag = await this.api.createTag(BOOKMARK_TAG_NAME);
-      return newTag?.id || null;
+      return (await this.api.ensureTag(BOOKMARK_TAG_NAME))?.id ?? null;
     } catch (error) {
       console.error('BookmarkManager: Failed to get bookmark tag', error);
       return null;

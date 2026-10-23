@@ -597,20 +597,6 @@ export interface ImageUpdateResponse {
 }
 
 /**
- * UIConfiguration response
- */
-export interface UIConfigurationResponse {
-  configuration: {
-    ui: {
-      ratingSystemOptions?: {
-        type?: string;
-        starPrecision?: string;
-      };
-    };
-  };
-}
-
-/**
  * ImageIncrementO response
  */
 export interface ImageIncrementOResponse {
@@ -618,11 +604,12 @@ export interface ImageIncrementOResponse {
 }
 
 /**
- * Plugin configuration response
+ * Configuration response (ui + plugins)
  */
-export interface PluginConfigurationResponse {
+export interface ConfigurationResponse {
   configuration: {
-    plugins: Record<string, Record<string, unknown>>;
+    ui?: { ratingSystemOptions?: { type?: string; starPrecision?: string } } | string | null;
+    plugins?: Record<string, Record<string, unknown>>;
   };
 }
 
