@@ -4,14 +4,15 @@
   "description": "StashGifs - TikTok-like vertical scroller interface for Stash.",
   "scripts": {
     "prebuild": "node scripts/generate-version.js && cp node_modules/video.js/dist/video.min.js stashgifs/app/assets/vendor/video.min.js",
-    "build": "tsc && node scripts/cache-bust.js",
-    "watch": "tsc --watch",
+    "build": "tsc --noEmit && node scripts/bundle.js && node scripts/cache-bust.js",
+    "watch": "node scripts/bundle.js --watch",
     "deploy:local": "rm -rf /home/evotech/Services/containers/data/stash/plugins/surging9143/stashgifs/stashgifs/app/assets && mkdir -p /home/evotech/Services/containers/data/stash/plugins/surging9143/stashgifs/stashgifs/app && cp -r stashgifs/app/assets /home/evotech/Services/containers/data/stash/plugins/surging9143/stashgifs/stashgifs/app/ && cp stashgifs/app/index.html /home/evotech/Services/containers/data/stash/plugins/surging9143/stashgifs/stashgifs/app/",
     "release": "pnpm run build",
-    "clean": "rm -rf app/assets/*.js app/assets/*.js.map",
+    "clean": "rm -rf stashgifs/app/assets/*.js stashgifs/app/assets/*.js.map stashgifs/app/assets/chunks",
     "type-check": "tsc --noEmit"
   },
   "devDependencies": {
+    "esbuild": "^0.28.2",
     "typescript": "^7.0.2",
     "video.js": "^8.24.1",
     "videojs-offset": "^2.1.3"

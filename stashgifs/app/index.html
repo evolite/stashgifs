@@ -26,7 +26,7 @@
       html, body { background-color: #000000; margin: 0; padding: 0; }
     </style>
     <!-- Feed UI: placed before the inline script so the script runs only after feed.css is render-blocking-loaded, preventing FOUC -->
-    <link rel="stylesheet" href="./assets/feed.css?v=mvju4lwt">
+    <link rel="stylesheet" href="./assets/feed.css?v=mvkwxepq">
     <script>
       (function () {
         var r = document.documentElement;
@@ -83,10 +83,10 @@
     </script>
     <!-- video.js engine (vendored UMD; includes @videojs/http-streaming for HLS). -->
     <!-- Loaded as classic scripts so the global `window.videojs` is available to the ESM app. -->
-    <link rel="stylesheet" href="./assets/vendor/video-js.min.css?v=mvju4lwt">
-    <script src="./assets/vendor/video.min.js?v=mvju4lwt"></script>
-    <link rel="modulepreload" href="./assets/index.js?v=mvju4lwt">
-    <script type="module" src="./assets/index.js?v=mvju4lwt"></script>
+    <link rel="stylesheet" href="./assets/vendor/video-js.min.css?v=mvkwxepq">
+    <script defer src="./assets/vendor/video.min.js?v=mvkwxepq"></script>
+    <link rel="modulepreload" href="./assets/index.js?v=mvkwxepq">
+    <script type="module" src="./assets/index.js?v=mvkwxepq"></script>
   </head>
   <body>
     <div id="app" class="feed-container">

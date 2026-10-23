@@ -28,7 +28,7 @@ import { ReelPlaybackController } from './ReelPlaybackController.js';
 import { ReelScroller } from './ReelScroller.js';
 import { FavoritesManager } from './FavoritesManager.js';
 import { BookmarkManager } from './BookmarkManager.js';
-import { SettingsPage } from './SettingsPage.js';
+import type { SettingsPage } from './SettingsPage.js';
 import { debounce, isTypingTarget, showToast, normalizeMediaUrl, detectDeviceCapabilities, DeviceCapabilities, isStandaloneNavigator, isMobileDevice, detectVideoFromVisualFiles, isMp4File, getImageUrlForDisplay, THEME, THEME_DEFAULTS, normalizeHexColor, toRgba, buildFullUrl, applyThemeColors } from './utils.js';
 import { GQLImage } from './graphql/types.js';
 import { getStashBaseUrl } from './utils/baseUrl.js';
@@ -118,12 +118,10 @@ export class FeedContainer {
   private discoveryManager?: DiscoveryManager;
   private posts: Map<string, PostType>;
   private postOrder: string[];
-  private images: Image[] = [];
   private settings: FeedSettings;
   private settingsPage?: SettingsPage;
   private settingsContainer?: HTMLElement;
   private ratingSystemConfig: { type?: string; starPrecision?: string } | null | undefined;
-  private markers: SceneMarker[] = [];
   private imagesLoadedCount: number = 0; // Track how many images we've loaded
   private markersLoadedCount: number = 0; // Track how many markers we've loaded
   private shortFormLoadedCount: number = 0; // Track how many short-form items we've loaded
@@ -2279,7 +2277,7 @@ export class FeedContainer {
     });
 
     settingsButton.addEventListener('click', () => {
-      this.openSettings();
+      void this.openSettings();
     });
 
     return settingsButton;
@@ -2288,7 +2286,9 @@ export class FeedContainer {
   /**
    * Open settings page
    */
-  private openSettings(): void {
+  private async openSettings(): Promise<void> {
+    // Lazy: SettingsPage is large and only needed when the modal opens.
+    const { SettingsPage } = await import('./SettingsPage.js');
     if (!this.settingsContainer) {
       this.settingsContainer = document.createElement('div');
       document.body.appendChild(this.settingsContainer);
@@ -3320,21 +3320,6 @@ export class FeedContainer {
   }
 
   /**
-   * Append markers to existing markers array
-   */
-  private appendMarkers(markers: SceneMarker[]): void {
-    this.markers.push(...markers);
-  }
-
-  /**
-   * Replace existing markers with new markers and clear posts
-   */
-  private replaceMarkers(markers: SceneMarker[]): void {
-    this.markers = markers;
-    this.clearPosts();
-  }
-
-  /**
    * Check if signal is aborted and handle cleanup
    */
 
@@ -3769,8 +3754,6 @@ export class FeedContainer {
     if (!append) {
       // Clear all cached content when starting a new search/filter
       this.clearPosts();
-      this.markers = [];
-      this.images = [];
       this.showSkeletonLoaders();
       this.currentPage = 1;
       this.hasMore = true;
@@ -3923,8 +3906,6 @@ export class FeedContainer {
     // Reset pagination state
     this.currentPage = 1;
     this.hasMore = true;
-    this.markers = [];
-    this.images = [];
     this.markersLoadedCount = 0;
     this.shortFormLoadedCount = 0;
     this.imagesLoadedCount = 0;
@@ -4601,45 +4582,6 @@ export class FeedContainer {
   }
 
   /**
-   * Process markers and images into state when appending
-   */
-  private processMarkersAndImagesAppend(
-    markers: SceneMarker[],
-    images: Image[],
-    shouldLoadMarkers: boolean
-  ): void {
-    // Process markers separately for backward compatibility
-    if (shouldLoadMarkers) {
-      this.appendMarkers(markers);
-    }
-    
-    // Process images
-    if (images.length > 0) {
-      this.images.push(...images);
-    }
-  }
-
-  /**
-   * Process markers and images into state when replacing
-   */
-  private processMarkersAndImagesReplace(
-    markers: SceneMarker[],
-    images: Image[],
-    shouldLoadMarkers: boolean
-  ): void {
-    // Process markers separately for backward compatibility
-    if (shouldLoadMarkers) {
-      this.replaceMarkers(markers);
-    } else {
-      this.clearPosts();
-      this.markers = [];
-    }
-    
-    // Process images - always replace to clear old cached images
-    this.images = images;
-  }
-
-  /**
    * Calculate hasMore for images-only mode
    */
   private calculateHasMoreForImagesOnly(
@@ -4743,10 +4685,8 @@ export class FeedContainer {
       append
     } = options;
 
-    if (append) {
-      this.processMarkersAndImagesAppend(markers, images, shouldLoadMarkers);
-    } else {
-      this.processMarkersAndImagesReplace(markers, images, shouldLoadMarkers);
+    if (!append) {
+      this.clearPosts();
     }
 
     // Calculate hasMore using API counts to determine if there's more content available
@@ -5678,7 +5618,6 @@ export class FeedContainer {
     for (const postId of removeIds) {
       this.removePost(postId);
     }
-    this.cleanupMarkersForRemovedPosts(removeIds);
 
     // Deleting cards above shifts content up; re-anchor the current card explicitly (single
     // source of compensation now that native scroll-anchoring is off).
@@ -5767,18 +5706,6 @@ export class FeedContainer {
       observer.disconnect();
       this.loadObservers.delete(postId);
     }
-  }
-
-  /**
-   * Remove markers for deleted posts to free memory
-   */
-  private cleanupMarkersForRemovedPosts(removedIds: string[]): void {
-    if (removedIds.length === 0) {
-      return;
-    }
-
-    const removedPostIds = new Set(removedIds);
-    this.markers = this.markers.filter(marker => !removedPostIds.has(marker.id));
   }
 
   /**

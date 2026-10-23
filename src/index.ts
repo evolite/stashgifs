@@ -170,7 +170,10 @@ function init(): void {
     });
 
     (globalThis.window as WindowWithStashgifs).stashgifsFeed = feed;
-    maybeShowWhatsNew();
+    // Idle: don't compete with first paint for a once-per-upgrade dialog.
+    const showWhatsNew = () => maybeShowWhatsNew().catch((e: unknown) => console.warn('What\'s new failed:', e));
+    if ('requestIdleCallback' in globalThis) requestIdleCallback(showWhatsNew);
+    else setTimeout(showWhatsNew, 1000);
   } catch (error: unknown) {
     console.error('Stashgifs Feed UI: Fatal error during initialization:', error);
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';

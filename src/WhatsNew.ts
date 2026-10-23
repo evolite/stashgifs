@@ -2,7 +2,7 @@
  * "What's new" dialog: shown once after the plugin updates to a newer version.
  */
 
-import { CHANGELOG, type ChangelogEntry } from './changelog.js';
+import type { ChangelogEntry } from './changelog.js';
 import { VERSION } from './version.js';
 
 const LAST_SEEN_KEY = 'stashgifs-last-seen-version';
@@ -41,7 +41,7 @@ function remember(): void {
   try { localStorage.setItem(LAST_SEEN_KEY, VERSION); } catch { /* ignore storage errors */ }
 }
 
-export function maybeShowWhatsNew(): void {
+export async function maybeShowWhatsNew(): Promise<void> {
   let lastSeen: string | null = null;
   try { lastSeen = localStorage.getItem(LAST_SEEN_KEY); } catch { /* ignore storage errors */ }
 
@@ -51,6 +51,8 @@ export function maybeShowWhatsNew(): void {
     return;
   }
 
+  // Lazy: the changelog is only needed on the first run after an upgrade.
+  const { CHANGELOG } = await import('./changelog.js');
   const entries = CHANGELOG.filter(
     (e) => compareVersions(e.version, lastSeen) > 0 && compareVersions(e.version, VERSION) <= 0
   );
