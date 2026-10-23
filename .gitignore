@@ -40,3 +40,6 @@ stashapp_arch.md
 .opencode/
 .fallow/
 src/changelog.ts
+
+# Generated from scripts/index.template.html by scripts/cache-bust.js (carries the per-build cache-bust token)
+stashgifs/app/index.html

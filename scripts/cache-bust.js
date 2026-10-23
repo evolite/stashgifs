@@ -10,7 +10,7 @@
  * cache key and Cloudflare fetches the fresh file.
  *
  * This stamps a fresh `?v=<token>` onto every relative ESM import in the emitted JS and
- * onto the asset URLs in index.html, so `pnpm run build` + reload always loads new code.
+ * onto the asset URLs in the generated index.html, so `pnpm run build` + reload always loads new code.
  */
 
 const fs = require('fs');
@@ -18,6 +18,7 @@ const path = require('path');
 
 const root = path.join(__dirname, '..');
 const assetsDir = path.join(root, 'stashgifs', 'app', 'assets');
+const indexTemplatePath = path.join(__dirname, 'index.template.html');
 const indexHtmlPath = path.join(root, 'stashgifs', 'app', 'index.html');
 
 // A fresh token per build. Node (not the agent harness), so Date.now() is fine.
@@ -62,19 +63,15 @@ for (const file of collectJsFiles(assetsDir)) {
   }
 }
 
-// index.html is a static (non-generated) file, so replace idempotently: an existing
-// `?v=…` is overwritten rather than appended, preventing token accumulation.
-const ASSET_URL_RE = /((?:src|href)=")(\.\/assets\/[^"?]+?\.(?:js|css|mjs))(\?v=[^"]*)?(")/g;
+// index.html is generated from scripts/index.template.html: the template carries plain asset URLs and
+// each build writes a stamped copy, so the token never shows up as a change in git.
+const ASSET_URL_RE = /((?:src|href)=")(\.\/assets\/[^"?]+?\.(?:js|css|mjs))(")/g;
 let htmlCount = 0;
-if (fs.existsSync(indexHtmlPath)) {
-  const html = fs.readFileSync(indexHtmlPath, 'utf8');
-  const stamped = html.replace(ASSET_URL_RE, (_m, pre, url, _old, post) => {
-    htmlCount++;
-    return `${pre}${url}?v=${token}${post}`;
-  });
-  if (stamped !== html) {
-    fs.writeFileSync(indexHtmlPath, stamped);
-  }
-}
+const template = fs.readFileSync(indexTemplatePath, 'utf8');
+const stamped = template.replace(ASSET_URL_RE, (_m, pre, url, post) => {
+  htmlCount++;
+  return `${pre}${url}?v=${token}${post}`;
+});
+fs.writeFileSync(indexHtmlPath, stamped);
 
 console.log(`Cache-bust token ${token}: stamped ${jsCount} JS file(s) and ${htmlCount} index.html asset ref(s)`);
