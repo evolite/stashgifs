@@ -5447,7 +5447,8 @@ export class FeedContainer {
    * Update infinite scroll trigger position
    */
   private updateInfiniteScrollTrigger(): void {
-    if (this.loadMoreTrigger && this.postsContainer) {
+    // appendChild on an existing child removes + reinserts it (layout + observer churn), so only move it if needed.
+    if (this.loadMoreTrigger && this.postsContainer && this.postsContainer.lastElementChild !== this.loadMoreTrigger) {
       // Ensure trigger is at the bottom of posts
       this.postsContainer.appendChild(this.loadMoreTrigger);
     }
