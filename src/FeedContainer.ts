@@ -5,6 +5,7 @@
 
 import { SceneMarker, FilterOptions, FeedSettings, VideoPostData, ImagePostData, ImageVideoPostData, Image, SavedSearch, DateRangeFilter } from './types.js';
 import { FilterState, type FilterSnapshot, type SavedFilter } from './FilterState.js';
+import { SeenHistory } from './SeenHistory.js';
 
 import { StashAPI, generateRandomSortSeed } from './StashAPI.js';
 import { PluginSettingsManager } from './PluginSettingsManager.js';
@@ -83,7 +84,6 @@ export class FeedContainer {
   // Reel scroll advances one card per gesture. Prefetch the next batch this many cards
   // before the end so the (often multi-second) fetch is ready by the time they arrive.
   private static readonly PREFETCH_CARDS_AHEAD = 5;
-  private static readonly SEEN_IDS_KEY = 'stashgifs-seen-ids';
   private readonly container: HTMLElement;
   private scrollContainer: HTMLElement;
   private readonly api: StashAPI;
@@ -133,8 +133,7 @@ export class FeedContainer {
   private excludedTagIds: string[] = [];
   private excludedTagNamesNormalized: string[] = [];
   private scrollRafPending: boolean = false;
-  private seenSetCache?: { ids: string[]; set: Set<string> };
-  private seenFlushTimer?: ReturnType<typeof setTimeout>;
+  private readonly seenHistory = new SeenHistory(() => this.settings.seenHistorySize ?? 500);
   private cleanupScrollTimeout?: ReturnType<typeof setTimeout>;
   private scrollHandler?: () => void;
   private scrollEventTarget?: Window | HTMLElement;
@@ -778,64 +777,6 @@ export class FeedContainer {
   // from the server count and break pagination. Marker title search (filterMarkersByName) is the
   // only remaining client filter, since Stash has no marker-title filter field.
 
-  private getSeenCache(): { ids: string[]; set: Set<string> } {
-    if (this.seenSetCache) return this.seenSetCache;
-    try {
-      const raw = localStorage.getItem(FeedContainer.SEEN_IDS_KEY);
-      // Keys are "<type>:<id>"; bare legacy ids could match an unrelated item of another type.
-      const ids: string[] = raw ? (JSON.parse(raw) as string[]).filter((k) => k.includes(':')) : [];
-      this.seenSetCache = { ids, set: new Set(ids) };
-    } catch {
-      this.seenSetCache = { ids: [], set: new Set() };
-    }
-    return this.seenSetCache;
-  }
-
-  private getSeenSet(): Set<string> {
-    const maxSeen = this.settings.seenHistorySize ?? 500;
-    if (maxSeen === 0) return new Set();
-    return this.getSeenCache().set;
-  }
-
-  private flushSeenSet(): void {
-    if (!this.seenSetCache) return;
-    try {
-      localStorage.setItem(FeedContainer.SEEN_IDS_KEY, JSON.stringify(this.seenSetCache.ids));
-    } catch {
-      // ignore localStorage errors
-    }
-  }
-
-  /** Marker, scene and image ids are separate sequences, so seen keys carry the content type. */
-  private static seenKey(type: 'marker' | 'image', id: string): string {
-    return `${type}:${id}`;
-  }
-
-  private markItemSeen(type: 'marker' | 'image', itemId: string): void {
-    const id = FeedContainer.seenKey(type, itemId);
-    const maxSeen = this.settings.seenHistorySize ?? 500;
-    if (maxSeen === 0) return;
-    const cache = this.getSeenCache();
-    if (cache.set.has(id)) {
-      // Move to end (most recent)
-      const idx = cache.ids.indexOf(id);
-      if (idx !== -1) cache.ids.splice(idx, 1);
-    } else {
-      cache.set.add(id);
-    }
-    cache.ids.push(id);
-    if (cache.ids.length > maxSeen) {
-      const removed = cache.ids.splice(0, cache.ids.length - maxSeen);
-      for (const r of removed) cache.set.delete(r);
-    }
-    // Debounce the write — flush once after the render batch settles
-    if (this.seenFlushTimer) clearTimeout(this.seenFlushTimer);
-    this.seenFlushTimer = setTimeout(() => {
-      this.seenFlushTimer = undefined;
-      this.flushSeenSet();
-    }, 500);
-  }
-
   private deferAutoAdvance(retries = 5): void {
     if (retries <= 0) return;
     requestAnimationFrame(() => {
@@ -845,22 +786,6 @@ export class FeedContainer {
         void this.loadVideos(undefined, true);
       }
     });
-  }
-
-  private filterSeenContent(
-    content: Array<{ type: 'marker' | 'image'; data: SceneMarker | Image; date?: string }>,
-    append: boolean,
-    savedFilterActive: boolean
-  ): Array<{ type: 'marker' | 'image'; data: SceneMarker | Image; date?: string }> {
-    const maxSeen = this.settings.seenHistorySize ?? 500;
-    // A saved filter is a curated pool the user explicitly picked: never thin it out by history.
-    if (maxSeen === 0 || savedFilterActive) return content;
-    const seen = this.getSeenSet();
-    if (seen.size === 0) return content;
-    const unseen = content.filter(item => !seen.has(FeedContainer.seenKey(item.type, (item.data as { id: string }).id)));
-    // Scroll: strict — never show seen content
-    // Initial load: fall back to showing all if pool exhausted
-    return (!append && unseen.length === 0) ? content : unseen;
   }
 
   /**
@@ -3361,7 +3286,7 @@ export class FeedContainer {
       ? await this.processMarkerForRender(item.data as SceneMarker, fragment, signal)
       : await this.processImageForRender(item.data as Image, fragment, signal);
     if (result.postContainer) {
-      this.markItemSeen(item.type, itemId);
+      this.seenHistory.mark(item.type, itemId);
     }
     return result;
   }
@@ -4231,7 +4156,7 @@ export class FeedContainer {
     const { markerCount, shortFormCount, imageCount } = counts;
 
     // Merge regular markers, short-form markers, scene previews, and images, then filter seen items
-    const mergedContent = this.filterSeenContent(this.mergeMarkersShortFormAndImages(markers, shortFormMarkers, images, scenePreviewMarkers), append, !!currentFilters.savedFilterId);
+    const mergedContent = this.seenHistory.filter(this.mergeMarkersShortFormAndImages(markers, shortFormMarkers, images, scenePreviewMarkers), append, !!currentFilters.savedFilterId);
 
     const expectedLimit = currentFilters.limit || FeedContainer.CONTENT_LOAD_LIMIT;
 
@@ -5647,12 +5572,7 @@ export class FeedContainer {
       clearTimeout(this.cleanupScrollTimeout);
       this.cleanupScrollTimeout = undefined;
     }
-    if (this.seenFlushTimer) {
-      clearTimeout(this.seenFlushTimer);
-      this.flushSeenSet();
-      this.seenFlushTimer = undefined;
-    }
-    this.seenSetCache = undefined;
+    this.seenHistory.dispose();
     if (this.placeholderAnimationInterval) {
       clearInterval(this.placeholderAnimationInterval);
       this.placeholderAnimationInterval = undefined;
