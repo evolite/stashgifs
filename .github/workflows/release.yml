@@ -96,7 +96,8 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          NOTES=$(git-cliff --tag "$GITHUB_REF_NAME" --latest --strip all)
+          # User-facing notes are hand-written in RELEASE_NOTES.md (CHANGELOG.md stays the commit-derived history).
+          NOTES=$(node scripts/release-notes.js "${{ steps.ver.outputs.version }}")
           gh release delete "$GITHUB_REF_NAME" --yes 2>/dev/null || true
           gh release create "$GITHUB_REF_NAME" stashgifs.zip --title "$GITHUB_REF_NAME" --notes "$NOTES"
 

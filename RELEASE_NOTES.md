@@ -1,0 +1,569 @@
+# Release notes
+
+What users see: the GitHub release page and the in-app "What's new" dialog.
+
+Written by hand for each release, user-facing changes only (new things, visible improvements, fixes people
+would notice). Internal work (refactors, API changes, performance plumbing, tests, CI) does not belong here:
+the commit-derived history is in CHANGELOG.md.
+
+To release: add a `## [x.y.z] - YYYY-MM-DD` section at the top (use `### Features` and `### Bug Fixes`), then tag.
+A version without a section gets a one-line "maintenance release" note.
+
+## [7.23.0] - 2026-10-23
+
+### Features
+
+- Faster loading and smoother scrolling
+- Resume a video where you left off when scrolling back to it
+
+## [7.22.0] - 2026-10-22
+
+### Bug Fixes
+
+- Prevent rating star tap from also triggering o-count on mobile
+
+### Features
+
+- Add browser back/forward navigation for feed filters
+
+## [7.21.0] - 2026-10-14
+
+### Bug Fixes
+
+- Set nav button url via href property instead of innerHTML
+
+### Features
+
+- Add settings to hide performer chips by gender
+- Group post settings into collapsible sub-sections
+
+## [7.20.1] - 2026-10-08
+
+### Bug Fixes
+
+- Stop recency bias hiding saved filter results and cross-type seen id collisions
+- Convert saved filter criteria to API input shapes so saved image filters stop failing
+
+## [7.20.0] - 2026-10-08
+
+### Features
+
+- Rate the current post with digit hotkeys
+- Make the what's new dialog a lighter, friendlier floating card
+- Centre the what's new card and list the previous five releases
+- Streamline the what's new card layout and drop emojis
+
+## [7.19.0] - 2026-10-08
+
+### Features
+
+- Show a what's new dialog once after updating to a newer version
+
+## [7.18.1] - 2026-10-08
+
+### Bug Fixes
+
+- Apply saved image filters as authoritative instead of overriding their criteria
+
+## [7.18.0] - 2026-10-05
+
+### Features
+
+- Add saved image filters alongside saved marker filters
+
+## [7.17.1] - 2026-08-30
+
+### Bug Fixes
+
+- Avoid nested template literal in capStreamUrl
+
+## [7.17.0] - 2026-08-30
+
+### Bug Fixes
+
+- Use preview clip duration for non-HD marker seek bar
+- Swallow trackpad momentum so one flick advances one reel card
+- Stop chrome offering login autofill on the feed search input
+
+### Features
+
+- Add a maximum playback resolution setting
+
+## [7.16.0] - 2026-08-25
+
+### Features
+
+- Add settings to hide the rating button and set random-scene snippet duration
+
+## [7.15.1] - 2026-08-13
+
+### Bug Fixes
+
+- Resolve outstanding sonarqube findings
+
+## [7.15.0] - 2026-08-13
+
+### Bug Fixes
+
+- Overwrite existing saved search when name matches instead of duplicating
+
+### Features
+
+- Add a created-within date filter (this week/month/year) across all content types
+
+## [7.14.1] - 2026-08-10
+
+### Bug Fixes
+
+- Use scene preview clip instead of full stream for scene-preview posts
+
+## [7.14.0] - 2026-08-10
+
+### Bug Fixes
+
+- Put the score inside the overlay's tier badge, not the photo again
+- Render the "Perfect" word label in the rainbow gradient too
+- Shrink the score sash and anchor portrait crop to the top
+- Center the score text in the sash
+- Derive sash position from its own pivot instead of eyeballed offsets
+- Drop letter-spacing on the sash to fix single-digit centering
+- Resolve sonarqube code smell issues
+- Use crypto.getRandomValues for scene-preview marker nonce
+
+### Features
+
+- Redesign performer hover overlay rating with medallion + color ramp
+- Add rainbow tier for perfect 10/10 and fix rainbow rendering
+- Replace the overlay rating row with a diagonal score sash
+- Make hover card rating effects always-on, drop redundant text row
+- Add scene previews as a feed content type
+
+## [7.13.1] - 2026-08-05
+
+### Features
+
+- Add tier embellishment to performer hover overlay portrait
+
+## [7.13.0] - 2026-08-05
+
+### Features
+
+- Give bronze and silver tiers their own laurel leaves
+
+## [7.12.4] - 2026-08-05
+
+### Bug Fixes
+
+- Remove inner hairline ring from platinum and diamond badges
+
+## [7.12.3] - 2026-08-05
+
+### Bug Fixes
+
+- Preserve performer rating100 when normalizing image posts
+
+## [7.12.2] - 2026-08-05
+
+### Bug Fixes
+
+- Tighten performer tier badge rating thresholds
+
+## [7.12.1] - 2026-08-05
+
+### Bug Fixes
+
+- Fetch rating100 for image post performers
+- Respect rating system config in performer hover rating display
+
+## [7.12.0] - 2026-08-05
+
+### Features
+
+- Add optional laurel-wreath tier badge on performer avatars
+
+## [7.11.0] - 2026-08-05
+
+### Features
+
+- Add configurable performer chip limit with portrait-only overflow
+
+## [7.10.8] - 2026-07-24
+
+### Bug Fixes
+
+- Anchor progress bar to post container instead of player
+
+## [7.10.7] - 2026-07-24
+
+### Bug Fixes
+
+- Anchor video progress bar to player container instead of header
+
+## [7.10.6] - 2026-07-16
+
+### Bug Fixes
+
+- Use alias_list for performer aliases so FindPerformers validates
+- Keep header above open search overlay so settings button stays clickable
+
+## [7.10.5] - 2026-07-11
+
+### Bug Fixes
+
+- Rank performer search by alias match so exact alias hits surface first
+
+## [7.10.4] - 2026-07-04
+
+### Bug Fixes
+
+- Register trackWatchHistoryToggle in collectFormInputs so it persists
+
+## [7.10.3] - 2026-07-04
+
+### Bug Fixes
+
+- Show end-of-feed card on empty search results instead of error text
+
+## [7.10.2] - 2026-07-03
+
+### Features
+
+- Add Watch History toggle to disable Stash play-count reporting
+
+## [7.10.1] - 2026-07-02
+
+### Bug Fixes
+
+- Refresh tag depth on feed reload and normalize saved filter performers
+
+## [7.10.0] - 2026-07-02
+
+### Features
+
+- Filter tags and excludes fully server-side to fix pagination
+- Group tag-matching toggles under Filters with priority guidance
+
+## [7.9.1] - 2026-07-01
+
+### Bug Fixes
+
+- Honor include sub-hierarchy for markers, scenes, and images
+
+## [7.9.0] - 2026-06-30
+
+### Features
+
+- Show an end-of-feed card with search hint and feedback links
+- Save and restore filter chip sets as named saved searches
+
+## [7.8.3] - 2026-06-30
+
+### Bug Fixes
+
+- Route multi-tag filters to their source and AND server-side so they scale
+
+## [7.8.2] - 2026-06-30
+
+### Bug Fixes
+
+- Match a mix of marker/scene/performer tags instead of returning nothing
+
+## [7.8.1] - 2026-06-30
+
+### Bug Fixes
+
+- Match performer/scene tags across all feed paths and fix synthetic marker tags
+
+## [7.8.0] - 2026-06-29
+
+### Features
+
+- Make tag display limit a user setting (default 10)
+
+## [7.7.0] - 2026-06-29
+
+### Features
+
+- Accent tag hash, collapse overflow tags, reel footer gradient
+
+## [7.6.1] - 2026-06-29
+
+### Bug Fixes
+
+- Reduce tag chip height and gap in post footer
+- Correct keyCache collision in _stableStringify causing OR-query deduplication
+
+## [7.6.0] - 2026-06-29
+
+### Bug Fixes
+
+- Extract nested ternary in console.error intercept (SonarQube S3358)
+
+### Features
+
+- Extend tag filtering to include scene and performer tags
+
+## [7.5.2] - 2026-06-28
+
+### Bug Fixes
+
+- Suppress VHS worker postMessage port error and abort in-flight segment fetches before dispose
+- Add birthdate to image performer mapping and suppress Apollo port errors
+
+## [7.5.1] - 2026-06-28
+
+### Bug Fixes
+
+- Show production age with * indicator and current age as fallback in performer chip
+
+### Features
+
+- Show performer and scene tags on posts with separate display toggles
+
+## [7.5.0] - 2026-06-28
+
+### Features
+
+- Filter markers by scene tags when searching by tag
+
+## [7.4.0] - 2026-06-27
+
+### Features
+
+- Add bookmark button and marker title click-to-filter
+
+## [7.3.0] - 2026-06-27
+
+### Features
+
+- Show marker title instead of tags when marker title search is enabled
+
+## [7.2.3] - 2026-06-26
+
+### Bug Fixes
+
+- Live-apply settings changes without requiring a page refresh
+- Skip play count increment for scene markers
+
+## [7.2.0] - 2026-06-26
+
+### Features
+
+- Redesign settings into 3 tabs (Feed / Appearance / Discovery)
+- Move Filters to its own settings tab
+- Group HD Video and behavior toggles in a Behavior box on Feed tab
+
+## [7.1.7] - 2026-06-21
+
+### Bug Fixes
+
+- Resolve SonarQube code smells in FeedContainer and baseUrl
+- Correct video start position for non-HD and short-form content
+
+## [7.1.6] - 2026-06-15
+
+### Bug Fixes
+
+- Bust plugin asset cache on every build
+- Stop the feed looping the first markers of an exhausted content type
+- Reliable reel scrolling and feed loading
+
+## [7.1.5] - 2026-06-13
+
+### Bug Fixes
+
+- Move Marker Title Search into the Layout section
+
+## [7.1.4] - 2026-06-13
+
+### Bug Fixes
+
+- Keep image lazy-load observers alive across append loads
+
+## [7.1.3] - 2026-06-13
+
+### Bug Fixes
+
+- Support Stash instances served under a base URL path prefix
+
+## [7.1.2] - 2026-06-12
+
+### Bug Fixes
+
+- Prefetch next reel batch several cards before the end
+
+## [7.1.1] - 2026-06-12
+
+### Bug Fixes
+
+- Keep reel scroll position stable when cleaning up distant posts
+
+## [7.1.0] - 2026-06-11
+
+### Features
+
+- Add marker title search to the feed search bar
+
+## [7.0.0] - 2026-06-03
+
+### Bug Fixes
+
+- Prevent tag/performer popups from being hidden under next post card
+- Fire reel auto-advance on clipped marker loops
+- Stop reel snapping back on fast wheel flick
+- Repair four review findings from opus audit
+- Resolve 4 SonarQube violations (new_violations gate)
+- Keep reel progress bar updating after scrolling back to a card
+- Mute audio only from the global mute setting
+- Stop reel swipe ghost-click from pausing the next card on mobile
+- Autoplay reel cards that finish loading after a fast scroll
+
+### Features
+
+- Replace NativeVideoPlayer with video.js engine for codec/HLS support
+- Add draggable accent progress bar to video posts
+
+## [6.7.1] - 2026-05-31
+
+### Bug Fixes
+
+- Hide stale error banner when new load starts or content renders
+- Resolve SonarQube violations from refactor
+- Resolve 8 Opus-reviewed correctness issues
+- Resolve 8 state/memory/cleanup issues from second Opus review
+- Resolve memory leaks, race conditions, and stale state from Opus audit
+- Replace negated condition with early-break in performer cache eviction
+
+## [6.7.0] - 2026-05-30
+
+### Bug Fixes
+
+- Disable pinch-to-zoom on mobile
+- Block pinch-to-zoom via touchmove in browsers that ignore user-scalable
+- Constrain settings tabs to window width and scale to fit
+- Flip add-tag and add-performer dialogs above anchor when below viewport
+- Match rated/unrated star icon size and restore outline when unrated
+- Use object-fit contain in reel mode to prevent media clipping
+- Pass objectFit at construction time to prevent landscape media clipping in reel mode
+
+### Features
+
+- Hide discovery panel and button on mobile
+- Add auto-hide search bar setting, default enabled
+
+## [6.6.0] - 2026-05-28
+
+### Bug Fixes
+
+- Optimize discovery panel and clean up button-group UI
+- Move add-tag to header chip, soften hover dismissal
+- Restore gold rating stars and amp up discovery jiggle
+
+### Features
+
+- Add reel auto-scroll with per-loop advance
+- Auto-advance image posts after 5s dwell in reel autoscroll
+
+## [6.5.0] - 2026-05-27
+
+### Bug Fixes
+
+- Detect locally-existing scenes regardless of stash_id endpoint
+
+### Features
+
+- Add scene title display option to layout settings
+- Add Whisparr integration to discovery panel
+
+## [6.4.0] - 2026-05-22
+
+### Bug Fixes
+
+- Lower view threshold to half-clip or 3 seconds, whichever is smaller
+- Resolve all SonarQube reported issues
+- Eliminate boolean selector param in applyReelHeaderStyles (S2301)
+- Resolve all SonarQube cognitive complexity and void operator issues
+- Resolve SonarQube issues in discovery feature
+
+### Features
+
+- Add performer placeholder and search dialog for posts with no performers
+- Add view count badge with eye icon to scene and image feeds
+- Add StashDB discovery panel sidebar
+- Show play in stash link on discovery cards when scene is locally available
+- Add rate limiter to StashBox discovery requests
+- Improve discovery panel UX and StashDB request efficiency
+- Per-slot discovery card updates with random slot selection
+- Add trending sort option to discovery panel scene order
+
+## [6.3.1] - 2026-05-19
+
+### Bug Fixes
+
+- Change studio filter to OR (INCLUDES) and show "or" separators between studio chips
+- Enforce AND for multi-performer filter and natural-language pill layout
+- Improve Random settings UX and toggle accent color
+
+## [6.3.0] - 2026-05-19
+
+### Features
+
+- Restrict marker video playback and seek bar to marker duration
+- Extend include subtags toggle to also traverse child studio hierarchy
+
+## [6.2.0] - 2026-05-18
+
+### Bug Fixes
+
+- Random mode no longer exhausts when filter matches few scenes
+- Resolve random mode pagination and deduplication issues
+- Logo click now removes active filter chips from the DOM
+
+### Features
+
+- Add setting to include scenes with markers in random mode
+- Generate multiple synthetic markers per scene for small random pools
+
+## [6.1.7] - 2026-05-18
+
+### Bug Fixes
+
+- Studio chip click filters feed instead of navigating to studio page
+
+## [6.1.6] - 2026-05-18
+
+### Bug Fixes
+
+- Remove studio chip style duplication and unnecessary assertion
+
+### Features
+
+- Add studio chips with hover overlay to feed cards
+
+## [6.1.1] - 2026-05-18
+
+### Bug Fixes
+
+- Clear favoriteTagPromise on failure so retries work
+
+## [5.1.0] - 2025-11-18
+
+### Bug Fixes
+
+- Disable random page selection when applying saved filters; only randomize in discovery mode (no query/tags/savedFilterId)
+- Header apply now preserves selected saved filter; restore randomization with filters by counting with merged criteria
+- Ensure saved filter criteria takes precedence; prevent manual tags/query from overwriting saved filter; add debug logging
+- Correctly parse saved filter tags value.items into numeric IDs for scene_marker_filter
+- Remove availablePackages wrapper, use direct array format
+- Ensure stashgifs.mjs is properly included, add icon files, remove old stash-tv files
+
+### Features
+
+- Show selected tags and saved filters as chips in header search; allow removing chips to re-apply filters; unify saved filter selection behavior
+- Enable multi-select tags without closing suggestions; prevent duplicate tag chips in header and filter sheet
+- Show primary tag as badge on video card (fallback to first tag)
+- Display marker tags as chips next to performers in footer
+- Show tags and saved filters on search bar focus; update API to support empty tag search
+- Filter tag suggestions to only show tags that have scene markers
+
+

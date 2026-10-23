@@ -43,8 +43,8 @@ export const BUILD_HASH = '${buildHash}';
 fs.writeFileSync(versionTsPath, versionTsContent);
 console.log(`Version file updated with: ${pkg.version} (hash: ${buildHash})`);
 
-// Bundle CHANGELOG.md (written by git-cliff, same text as the release notes) for the "What's new" dialog.
-const changelogPath = path.join(__dirname, '..', 'CHANGELOG.md');
+// Bundle RELEASE_NOTES.md (hand-written, user-facing) for the "What's new" dialog.
+const changelogPath = path.join(__dirname, '..', 'RELEASE_NOTES.md');
 const changelogTsPath = path.join(__dirname, '..', 'src', 'changelog.ts');
 const entries = [];
 let section;
@@ -64,7 +64,7 @@ for (const line of lines) {
 fs.writeFileSync(
   changelogTsPath,
   `/**
- * Release notes - auto-generated from CHANGELOG.md during the build process
+ * Release notes - auto-generated from RELEASE_NOTES.md during the build process
  */
 export interface ChangelogEntry {
   version: string;
