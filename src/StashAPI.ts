@@ -56,7 +56,6 @@ import {
 } from './graphql/errors.js';
 import { GraphQLClient } from './graphql/client.js';
 import { TtlCache } from './api/TtlCache.js';
-import { normalizeSavedObjectFilter } from './api/savedFilterCriteria.js';
 import { MediaUrls } from './api/MediaUrls.js';
 import { FeedFilters, type ImageFilterOptions, type TagSource } from './api/FeedFilters.js';
 import { Batcher } from './api/Batcher.js';
