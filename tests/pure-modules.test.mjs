@@ -43,6 +43,20 @@ describe('MediaUrls', () => {
     assert.equal(MediaUrls.capStreamUrl('http://s/stream.mp4?apikey=x&resolution=ORIGINAL#t=5', 'FULL_HD'), 'http://s/stream.mp4?apikey=x&resolution=FULL_HD#t=5');
   });
 
+  it('keeps stream URLs stable between calls (a changing URL would restart Stash transcodes)', async () => {
+    const { urls } = await media(720);
+    const scene = {
+      files: [{ height: 2160, video_codec: 'h264' }],
+      paths: { stream: '/scene/1/stream' },
+      sceneStreams: [{ url: '/scene/1/stream.mp4?resolution=ORIGINAL', label: 'MP4' }],
+    };
+    const first = urls.getVideoUrl(scene);
+    const again = urls.getVideoUrl(scene);
+    assert.equal(first, again);
+    assert.ok(!/[?&]t=/.test(first), `unexpected cache-busting param in ${first}`);
+    assert.equal(urls.getMarkerVideoUrl({ stream: '/scene/1/scene_marker/2/stream', scene }), 'http://stash.test/scene/1/scene_marker/2/stream');
+  });
+
   it('skips the direct stream for scenes above the resolution cap', async () => {
     const scene = {
       files: [{ height: 2160, video_codec: 'h264' }],

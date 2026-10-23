@@ -153,3 +153,15 @@ describe('batch window', () => {
     assert.equal(api.calls.length, 2);
   });
 });
+
+describe('galleries', () => {
+  it('loads galleries in pages instead of one unbounded request', async () => {
+    const page = (n) => Array.from({ length: n }, (_, i) => ({ id: String(i), title: `g${i}` }));
+    const api = await newStashApi((op, variables) => ({
+      findGalleries: { count: 250, galleries: page(variables.filter.page === 1 ? 200 : 50) },
+    }));
+    const galleries = await api.findGalleries();
+    assert.equal(galleries.length, 250);
+    assert.deepEqual(api.calls.map((c) => [c.variables.filter.page, c.variables.filter.per_page]), [[1, 200], [2, 200]]);
+  });
+});

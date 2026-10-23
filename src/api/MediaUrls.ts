@@ -35,7 +35,7 @@ export class MediaUrls {
       return this.getVideoUrl(marker.scene);
     }
     
-    return this.addCacheBusting(normalizedUrl);
+    return this.stableUrl(normalizedUrl);
   }
 
   /**
@@ -222,7 +222,7 @@ export class MediaUrls {
     const url = this.buildUrl(path);
     const normalizedUrl = normalizeMediaUrl(url);
     if (!normalizedUrl) return undefined;
-    return this.addCacheBusting(normalizedUrl);
+    return this.stableUrl(normalizedUrl);
   }
 
   /**
@@ -233,11 +233,11 @@ export class MediaUrls {
   }
 
   /**
-   * Add cache-busting parameter to URL
+   * Stream URLs are NOT cache-busted: Stash keys transcode sessions on the exact URL, so a stable URL
+   * lets it resume an existing transcode instead of restarting one on every load. (Image/poster URLs,
+   * which Stash itself versions with ?t=, are handled elsewhere.)
    */
-  private addCacheBusting(url: string): string {
-    const clean = stripApiKey(url);
-    const separator = clean.includes('?') ? '&' : '?';
-    return `${clean}${separator}t=${Date.now()}`;
+  private stableUrl(url: string): string {
+    return stripApiKey(url);
   }
 }

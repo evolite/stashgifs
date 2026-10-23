@@ -25,6 +25,9 @@ import { isAbortError } from '../graphql/errors.js';
 import type { ApiIO } from './ApiIO.js';
 
 export class EntityApi {
+  private static readonly GALLERIES_PER_PAGE = 200;
+  private static readonly MAX_GALLERY_PAGES = 50; // 10,000 galleries; the picker is not meant for more
+
   constructor(private readonly io: ApiIO) {}
 
   /**
@@ -323,13 +326,20 @@ export class EntityApi {
   async findGalleries(signal?: AbortSignal): Promise<Gallery[]> {
     if (this.io.isAborted(signal)) return [];
     try {
-      const result = await this.io.gql.query<FindGalleriesResponse>({
-        query: queries.FIND_GALLERIES,
-        variables: { filter: { per_page: -1, sort: 'title', direction: 'ASC' } },
-        signal,
-      });
-      if (this.io.isAborted(signal)) return [];
-      return result.data?.findGalleries?.galleries ?? [];
+      // Paged (not per_page:-1) so a big library can't return thousands of rows in one response.
+      const galleries: Gallery[] = [];
+      for (let page = 1; page <= EntityApi.MAX_GALLERY_PAGES; page++) {
+        const result = await this.io.gql.query<FindGalleriesResponse>({
+          query: queries.FIND_GALLERIES,
+          variables: { filter: { page, per_page: EntityApi.GALLERIES_PER_PAGE, sort: 'title', direction: 'ASC' } },
+          signal,
+        });
+        if (this.io.isAborted(signal)) return [];
+        const batch = result.data?.findGalleries?.galleries ?? [];
+        galleries.push(...batch);
+        if (batch.length < EntityApi.GALLERIES_PER_PAGE) break;
+      }
+      return galleries;
     } catch (error: unknown) {
       if (isAbortError(error) || this.io.isAborted(signal)) return [];
       this.io.logError('findGalleries', error);
