@@ -90,6 +90,20 @@ export const SCENE_UPDATE = `
 `;
 
 /**
+ * Add/remove tags on scenes server-side (tag_ids mode ADD/REMOVE) — no read-modify-write.
+ */
+export const BULK_SCENE_UPDATE = `
+  mutation BulkSceneUpdate($input: BulkSceneUpdateInput!) {
+    bulkSceneUpdate(input: $input) {
+      id
+      tags {
+        id
+      }
+    }
+  }
+`;
+
+/**
  * Add O-count to a scene
  */
 export const SCENE_ADD_O = `

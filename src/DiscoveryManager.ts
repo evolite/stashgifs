@@ -264,15 +264,7 @@ export class DiscoveryManager {
       const allScenes = await this.fetchAllScenes(resolved, ac.signal);
       if (ac.signal.aborted) return;
 
-      await Promise.all(allScenes.map(async (item) => {
-        if (ac.signal.aborted) return;
-        const localId = await this.api.findLocalSceneIdByStashDbId(
-          item.scene.id,
-          ac.signal,
-          `${item.baseUrl}/scenes/${item.scene.id}`,
-        );
-        if (localId) item.localStashId = localId;
-      }));
+      await this.attachLocalIds(allScenes, ac.signal);
       if (ac.signal.aborted) return;
 
       this.showScenes(allScenes);
@@ -375,16 +367,20 @@ export class DiscoveryManager {
   }
 
   private async enrichAndShow(scenes: ScenePayloadItem[], signal?: AbortSignal): Promise<void> {
-    await Promise.all(scenes.map(async (item) => {
-      if (signal?.aborted) return;
-      const localId = await this.api.findLocalSceneIdByStashDbId(
-        item.scene.id,
-        signal,
-        `${item.baseUrl}/scenes/${item.scene.id}`,
-      );
-      if (localId) item.localStashId = localId;
-    }));
+    await this.attachLocalIds(scenes, signal);
     if (!signal?.aborted) this.showScenes(scenes);
+  }
+
+  /** Resolve every scene's local library id in one batched lookup. */
+  private async attachLocalIds(scenes: ScenePayloadItem[], signal?: AbortSignal): Promise<void> {
+    const localIds = await this.api.findLocalSceneIdsByStashDbIds(
+      scenes.map((item) => ({ stashId: item.scene.id, sceneUrl: `${item.baseUrl}/scenes/${item.scene.id}` })),
+      signal,
+    );
+    for (const item of scenes) {
+      const localId = localIds.get(item.scene.id);
+      if (localId) item.localStashId = localId;
+    }
   }
 
   private showScenes(scenes: ScenePayloadItem[]): void {

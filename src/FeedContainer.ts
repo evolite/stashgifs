@@ -175,6 +175,7 @@ export class FeedContainer {
   private savedFiltersCache: SavedFilter[] = [];
   private savedFiltersPromise?: Promise<void>;
   private activeSearchAbortController?: AbortController;
+  private suggestionAbortController?: AbortController;
   private activeLoadVideosAbortController?: AbortController;
   private skeletonLoaders: HTMLElement[] = [];
   private useHDMode: boolean = false;
@@ -1775,13 +1776,17 @@ export class FeedContainer {
     let freshPerformers: Array<{ id: string; name: string; image_path?: string }> = [];
 
     try {
-      [freshTags, freshPerformers] = await Promise.all([
-        this.api.searchMarkerTags('', 3),
-        this.api.searchPerformers('', 3)
-      ]);
-      if (!ensureLatest()) return;
-      this.preloadedTags = freshTags;
-      this.preloadedPerformers = freshPerformers;
+      if (this.preloadedTags.length > 0 && this.preloadedPerformers.length > 0) {
+        // Reuse the background-preloaded pool (reshuffled for variety) instead of two requests per open.
+        freshTags = this.shuffleArray([...this.preloadedTags]).slice(0, 3);
+        freshPerformers = this.shuffleArray([...this.preloadedPerformers]).slice(0, 3);
+      } else {
+        [freshTags, freshPerformers] = await Promise.all([
+          this.api.searchMarkerTags('', 3),
+          this.api.searchPerformers('', 3)
+        ]);
+        if (!ensureLatest()) return;
+      }
     } catch (error) {
       console.warn('Failed to fetch suggestions', error);
       if (!ensureLatest()) return;
@@ -1858,12 +1863,16 @@ export class FeedContainer {
 
     const searchMarkers = this.settings.searchMarkersByName === true;
 
+    // Cancel the previous keystroke's queries rather than letting 3-4 stale requests finish.
+    this.suggestionAbortController?.abort();
+    const suggestionSignal = (this.suggestionAbortController = new AbortController()).signal;
+
     try {
       [tagItems, performerItems, studioItems, markerItems] = await Promise.all([
-        this.api.searchMarkerTags(trimmedText, 20),
-        this.api.searchPerformers(trimmedText, 20),
-        this.api.searchStudios(trimmedText, 20),
-        searchMarkers ? this.api.searchMarkersByTitle(trimmedText, 20) : Promise.resolve([]),
+        this.api.searchMarkerTags(trimmedText, 20, suggestionSignal),
+        this.api.searchPerformers(trimmedText, 20, suggestionSignal),
+        this.api.searchStudios(trimmedText, 20, suggestionSignal),
+        searchMarkers ? this.api.searchMarkersByTitle(trimmedText, 20, suggestionSignal) : Promise.resolve([]),
       ]);
     } catch (error) {
       console.warn('Failed to fetch search suggestions', error);
@@ -5944,6 +5953,7 @@ export class FeedContainer {
   }
 
   destroy(): void {
+    this.suggestionAbortController?.abort();
     this.cancelAllPendingRequests(); // don't let an in-flight load keep building posts into a detached DOM
     if (this.settingsReloadTimeoutId) {
       clearTimeout(this.settingsReloadTimeoutId);

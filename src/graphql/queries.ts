@@ -198,6 +198,24 @@ export const FIND_PERFORMERS = `
 `;
 
 /**
+ * Tags only, for enrichment — avoids pulling the extended performer fragment (details, measurements, ...).
+ * per_page:-1 because findPerformers otherwise caps at 25 results.
+ */
+export const FIND_PERFORMER_TAGS = `
+  query FindPerformerTags($ids: [ID!]) {
+    findPerformers(ids: $ids, filter: { per_page: -1 }) {
+      performers {
+        id
+        tags {
+          id
+          name
+        }
+      }
+    }
+  }
+`;
+
+/**
  * Find a single performer by ID
  * Using findPerformers with ids parameter (similar to findTags)
  */
@@ -230,17 +248,18 @@ const FIND_SCENE = `
 /**
  * Find scene (minimal - for tag checking)
  */
-export const FIND_SCENE_MINIMAL = `
-  query FindScene($id: ID!) {
-    findScene(id: $id) {
-      id
-      tags {
+export const FIND_SCENES_TAG_IDS = `
+  query FindScenesTagIds($ids: [ID!], $filter: FindFilterType) {
+    findScenes(ids: $ids, filter: $filter) {
+      scenes {
         id
+        tags {
+          id
+        }
       }
     }
   }
 `;
-
 /**
  * Get saved filters (all modes; callers keep the ones they support)
  */

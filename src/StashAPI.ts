@@ -585,12 +585,13 @@ export class StashAPI {
   /** Batch-fetch performer tags for a list of performers, populating tags in-place. Results are cached. */
   async enrichPerformerTags(performers: Performer[]): Promise<void> {
     const uncachedIds = [...new Set(
-      performers.filter(p => p.id && !this._performerTagsCache.has(p.id)).map(p => p.id)
+      // Performers that already arrived with a tags array (SceneFields/SlimImageData include it) need no lookup.
+      performers.filter(p => p.id && !Array.isArray(p.tags) && !this._performerTagsCache.has(p.id)).map(p => p.id)
     )];
     if (uncachedIds.length > 0) {
       try {
         const result = await this.gqlClient.query<FindPerformerResponse>({
-          query: queries.FIND_PERFORMER,
+          query: queries.FIND_PERFORMER_TAGS,
           variables: { ids: uncachedIds },
         });
         for (const p of result.data?.findPerformers?.performers ?? []) {
@@ -1103,25 +1104,40 @@ export class StashAPI {
     const missing = [...new Set(ids)].filter((id) => id && !this._tagSourceCache.has(id));
     if (missing.length === 0) return;
     type Counts = { scene_count?: number; scene_marker_count?: number; performer_count?: number; image_count?: number };
-    await Promise.all(missing.map(async (id) => {
-      const eff = { marker: false, scene: false, performer: false, image: false };
-      try {
-        const result = await this.gqlClient.query<{ self?: { tags: Counts[] }; desc?: { tags: Counts[] } }>({
-          query: `query TagSources($id:ID!){
-            self:findTags(ids:[$id]){tags{scene_count scene_marker_count performer_count image_count}}
-            desc:findTags(tag_filter:{parents:{value:[$id],modifier:INCLUDES,depth:-1}},filter:{per_page:-1}){tags{scene_count scene_marker_count performer_count image_count}}
-          }`,
-          variables: { id },
+    // One request for every uncached tag. Descendants are asked as four count-only queries
+    // (> 0 per source) instead of downloading the whole subtree with per_page:-1.
+    const desc = (alias: string, field: string) =>
+      `${alias}:findTags(tag_filter:{parents:{value:[$id],modifier:INCLUDES,depth:-1},${field}:{value:0,modifier:GREATER_THAN}},filter:{per_page:1}){count}`;
+    const variables: Record<string, string> = {};
+    const defs: string[] = [];
+    const fields: string[] = [];
+    missing.forEach((id, i) => {
+      variables[`id${i}`] = id;
+      defs.push(`$id${i}:ID!`);
+      fields.push(
+        `self${i}:findTags(ids:[$id${i}]){tags{scene_count scene_marker_count performer_count image_count}}`,
+        desc(`dm${i}`, 'marker_count').replaceAll('$id', `$id${i}`),
+        desc(`ds${i}`, 'scene_count').replaceAll('$id', `$id${i}`),
+        desc(`dp${i}`, 'performer_count').replaceAll('$id', `$id${i}`),
+        desc(`di${i}`, 'image_count').replaceAll('$id', `$id${i}`),
+      );
+    });
+    try {
+      const result = await this.gqlClient.query<Record<string, { tags?: Counts[]; count?: number } | undefined>>({
+        query: `query TagSources(${defs.join(',')}){${fields.join('\n')}}`,
+        variables,
+      });
+      const data = result.data ?? {};
+      missing.forEach((id, i) => {
+        const own = data[`self${i}`]?.tags?.[0];
+        this._tagSourceCache.set(id, {
+          marker: (own?.scene_marker_count ?? 0) > 0 || (data[`dm${i}`]?.count ?? 0) > 0,
+          scene: (own?.scene_count ?? 0) > 0 || (data[`ds${i}`]?.count ?? 0) > 0,
+          performer: (own?.performer_count ?? 0) > 0 || (data[`dp${i}`]?.count ?? 0) > 0,
+          image: (own?.image_count ?? 0) > 0 || (data[`di${i}`]?.count ?? 0) > 0,
         });
-        for (const t of [...(result.data?.self?.tags ?? []), ...(result.data?.desc?.tags ?? [])]) {
-          eff.marker ||= (t.scene_marker_count ?? 0) > 0;
-          eff.scene ||= (t.scene_count ?? 0) > 0;
-          eff.performer ||= (t.performer_count ?? 0) > 0;
-          eff.image ||= (t.image_count ?? 0) > 0;
-        }
-        this._tagSourceCache.set(id, eff);
-      } catch { /* leave uncached — routing falls back to the primary enabled source */ }
-    }));
+      });
+    } catch { /* leave uncached — routing falls back to the primary enabled source */ }
   }
 
   /**
@@ -2069,22 +2085,60 @@ export class StashAPI {
       return tags.some((tag) => tag.id === tagId);
     }
     
-    // Otherwise, query for scene tags
-    const variables = { id: sceneId };
-
     try {
-      const result = await this.gqlClient.query<FindSceneResponse>({
-        query: queries.FIND_SCENE_MINIMAL,
-        variables,
-        signal,
-      });
-      
+      const sceneTagIds = await this.getSceneTagIdSet(sceneId);
       if (this.isAborted(signal)) return false;
-      
-      const sceneTags = result.data?.findScene?.tags || [];
-      return sceneTags.some((tag: { id: string }) => tag.id === tagId);
+      return sceneTagIds.has(tagId);
     } catch (error: unknown) {
       return this.handleError('sceneHasTag', error, signal, false);
+    }
+  }
+
+  /** Scene tag ids fetched so far, so repeat checks and toggles don't re-query. */
+  private readonly _sceneTagIdCache = new Map<string, { at: number; ids: Set<string> }>();
+  private static readonly SCENE_TAGS_TTL_MS = 60_000;
+  private _sceneTagBatch: Map<string, Array<{ resolve: (ids: Set<string>) => void; reject: (e: unknown) => void }>> | undefined;
+
+  /**
+   * Tag ids of a scene. Requests made within a few ms (one per post while a page renders)
+   * coalesce into a single findScenes(ids: [...]) instead of one findScene per post.
+   */
+  private getSceneTagIdSet(sceneId: string): Promise<Set<string>> {
+    const cached = this._sceneTagIdCache.get(sceneId);
+    if (cached && Date.now() - cached.at < StashAPI.SCENE_TAGS_TTL_MS) return Promise.resolve(cached.ids);
+
+    return new Promise((resolve, reject) => {
+      if (!this._sceneTagBatch) {
+        const batch = new Map<string, Array<{ resolve: (ids: Set<string>) => void; reject: (e: unknown) => void }>>();
+        this._sceneTagBatch = batch;
+        setTimeout(() => {
+          this._sceneTagBatch = undefined;
+          void this.flushSceneTagBatch(batch);
+        }, 10);
+      }
+      const waiters = this._sceneTagBatch.get(sceneId) ?? [];
+      waiters.push({ resolve, reject });
+      this._sceneTagBatch.set(sceneId, waiters);
+    });
+  }
+
+  private async flushSceneTagBatch(batch: Map<string, Array<{ resolve: (ids: Set<string>) => void; reject: (e: unknown) => void }>>): Promise<void> {
+    try {
+      const result = await this.gqlClient.query<{ findScenes?: { scenes?: Array<{ id: string; tags?: Array<{ id: string }> }> } }>({
+        query: queries.FIND_SCENES_TAG_IDS,
+        variables: { ids: [...batch.keys()], filter: { per_page: -1 } },
+      });
+      const found = new Map<string, Set<string>>();
+      for (const scene of result.data?.findScenes?.scenes ?? []) {
+        found.set(scene.id, new Set((scene.tags ?? []).map((t) => t.id)));
+      }
+      for (const [sceneId, waiters] of batch) {
+        const ids = found.get(sceneId) ?? new Set<string>();
+        this._sceneTagIdCache.set(sceneId, { at: Date.now(), ids });
+        for (const w of waiters) w.resolve(ids);
+      }
+    } catch (error) {
+      for (const waiters of batch.values()) for (const w of waiters) w.reject(error);
     }
   }
 
@@ -2259,28 +2313,6 @@ export class StashAPI {
   }
 
   /**
-   * Update tags on a scene
-   */
-  private async updateSceneTags(sceneId: string, tagIds: string[], signal?: AbortSignal): Promise<void> {
-    if (this.isAborted(signal)) return;
-    
-    const variables = {
-      input: {
-        id: sceneId,
-        tag_ids: tagIds
-      }
-    };
-
-    await this.gqlClient.mutate<SceneUpdateResponse>({
-      mutation: mutations.SCENE_UPDATE,
-      variables,
-      signal,
-    });
-    
-    if (this.isAborted(signal)) return;
-  }
-
-  /**
    * Update performer favorite flag
    */
   async updatePerformerFavorite(performerId: string, favorite: boolean, signal?: AbortSignal): Promise<void> {
@@ -2303,35 +2335,29 @@ export class StashAPI {
   }
 
   /**
-   * Get current tag IDs for a scene
+   * Add or remove one tag on a scene in a single server-side mutation (no read-modify-write,
+   * so concurrent toggles can't clobber each other's tag list). The response carries the
+   * scene's resulting tags, which refresh the local cache.
    */
-  private async getSceneTagIds(sceneId: string, signal?: AbortSignal): Promise<string[]> {
-    const result = await this.gqlClient.query<FindSceneResponse>({
-      query: queries.FIND_SCENE_MINIMAL,
-      variables: { id: sceneId },
-      signal,
-    });
-    if (this.isAborted(signal)) return [];
-    return (result.data?.findScene?.tags || []).map((t: { id: string }) => t.id);
-  }
-
-  /**
-   * Modify a scene's tags (add or remove) with shared fetch-modify-update pattern
-   */
-  private async modifySceneTags(
+  private async bulkModifySceneTag(
     methodName: string,
     sceneId: string,
     tagId: string,
-    modify: (currentTags: string[], tagId: string) => string[] | null,
+    mode: 'ADD' | 'REMOVE',
     signal?: AbortSignal
   ): Promise<void> {
     if (this.isAborted(signal)) return;
     try {
-      const currentTags = await this.getSceneTagIds(sceneId, signal);
-      if (this.isAborted(signal)) return;
-      const newTags = modify(currentTags, tagId);
-      if (newTags !== null) {
-        await this.updateSceneTags(sceneId, newTags, signal);
+      const result = await this.gqlClient.mutate<{ bulkSceneUpdate?: Array<{ id: string; tags?: Array<{ id: string }> }> }>({
+        mutation: mutations.BULK_SCENE_UPDATE,
+        variables: { input: { ids: [sceneId], tag_ids: { ids: [tagId], mode } } },
+        signal,
+      });
+      const updated = result.data?.bulkSceneUpdate?.find((sc) => sc.id === sceneId);
+      if (updated?.tags) {
+        this._sceneTagIdCache.set(sceneId, { at: Date.now(), ids: new Set(updated.tags.map((t) => t.id)) });
+      } else {
+        this._sceneTagIdCache.delete(sceneId);
       }
     } catch (error) {
       if (isAbortError(error) || this.isAborted(signal)) return;
@@ -2344,8 +2370,7 @@ export class StashAPI {
    * Add a tag to a scene
    */
   async addTagToScene(sceneId: string, tagId: string, signal?: AbortSignal): Promise<void> {
-    await this.modifySceneTags('addTagToScene', sceneId, tagId, (tags, id) =>
-      tags.includes(id) ? null : [...tags, id], signal);
+    await this.bulkModifySceneTag('addTagToScene', sceneId, tagId, 'ADD', signal);
   }
 
   /**
@@ -2374,8 +2399,7 @@ export class StashAPI {
    * Remove a tag from a scene
    */
   async removeTagFromScene(sceneId: string, tagId: string, signal?: AbortSignal): Promise<void> {
-    await this.modifySceneTags('removeTagFromScene', sceneId, tagId, (tags, id) =>
-      tags.filter(t => t !== id), signal);
+    await this.bulkModifySceneTag('removeTagFromScene', sceneId, tagId, 'REMOVE', signal);
   }
 
   /**
@@ -3002,57 +3026,91 @@ export class StashAPI {
     }
   }
 
-  // fallow-ignore-next-line unused-class-member
-  async findLocalSceneIdByStashDbId(stashId: string, signal?: AbortSignal, sceneUrl?: string): Promise<string | null> {
-    if (this.isAborted(signal)) return null;
+  /** stash-box scene id -> local scene id (null = not in library). Misses are cached too: they're the common case. */
+  private readonly _localSceneIdCache = new Map<string, { at: number; id: string | null }>();
+  private static readonly LOCAL_ID_TTL_MS = 5 * 60_000;
 
-    // First try by stash_id (matches regardless of endpoint value via NOT_NULL).
-    // Then fall back to URL lookup (covers scenes added without a stash_id link).
-    const QUERY = `
-      query FindSceneByStashId($scene_filter: SceneFilterType) {
-        findScenes(scene_filter: $scene_filter) {
-          scenes { id }
-        }
+  /**
+   * Resolve many stash-box scenes to local scene ids in at most two requests (stash_id lookups,
+   * then URL lookups for the misses) by aliasing one findScenes per scene into a single query,
+   * instead of one or two requests per scene.
+   */
+  // fallow-ignore-next-line unused-class-member
+  async findLocalSceneIdsByStashDbIds(
+    items: Array<{ stashId: string; sceneUrl?: string }>,
+    signal?: AbortSignal
+  ): Promise<Map<string, string>> {
+    const out = new Map<string, string>();
+    if (this.isAborted(signal)) return out;
+
+    const now = Date.now();
+    const todo = new Map<string, string | undefined>();
+    for (const { stashId, sceneUrl } of items) {
+      const cached = this._localSceneIdCache.get(stashId);
+      if (cached && now - cached.at < StashAPI.LOCAL_ID_TTL_MS) {
+        if (cached.id) out.set(stashId, cached.id);
+      } else {
+        todo.set(stashId, sceneUrl);
       }
-    `;
+    }
+    if (todo.size === 0) return out;
 
     try {
-      const byStashId = await this.gqlClient.query<{
-        findScenes?: { scenes: Array<{ id: string }> };
-      }>({
-        query: QUERY,
-        variables: {
-          scene_filter: {
-            stash_id_endpoint: { stash_id: stashId, modifier: 'EQUALS' },
-          },
-        },
-        signal,
+      // Stash matches stash_id regardless of endpoint; URL lookup covers scenes added without a stash_id link.
+      const ids = [...todo.keys()];
+      const byStashId = await this.lookupSceneIds(
+        ids.map((stashId) => ({ stash_id_endpoint: { stash_id: stashId, modifier: 'EQUALS' } })),
+        signal
+      );
+      if (this.isAborted(signal)) return out;
+
+      const misses: string[] = [];
+      ids.forEach((stashId, i) => {
+        const localId = byStashId[i];
+        if (localId) this.recordLocalSceneId(stashId, localId, out);
+        else if (todo.get(stashId)) misses.push(stashId);
+        else this._localSceneIdCache.set(stashId, { at: Date.now(), id: null });
       });
 
-      if (this.isAborted(signal)) return null;
-      const sceneById = byStashId.data?.findScenes?.scenes[0]?.id;
-      if (sceneById) return sceneById;
-
-      if (sceneUrl) {
-        const byUrl = await this.gqlClient.query<{
-          findScenes?: { scenes: Array<{ id: string }> };
-        }>({
-          query: QUERY,
-          variables: {
-            scene_filter: {
-              url: { modifier: 'EQUALS', value: sceneUrl },
-            },
-          },
-          signal,
+      if (misses.length > 0) {
+        const byUrl = await this.lookupSceneIds(
+          misses.map((stashId) => ({ url: { modifier: 'EQUALS', value: todo.get(stashId) } })),
+          signal
+        );
+        if (this.isAborted(signal)) return out;
+        misses.forEach((stashId, i) => {
+          const localId = byUrl[i];
+          if (localId) this.recordLocalSceneId(stashId, localId, out);
+          else this._localSceneIdCache.set(stashId, { at: Date.now(), id: null });
         });
-        if (this.isAborted(signal)) return null;
-        return byUrl.data?.findScenes?.scenes[0]?.id ?? null;
       }
-
-      return null;
     } catch (error: unknown) {
-      return this.handleError('findLocalSceneIdByStashDbId', error, signal, null);
+      this.handleError('findLocalSceneIdsByStashDbIds', error, signal, null);
     }
+    return out;
+  }
+
+  private recordLocalSceneId(stashId: string, localId: string, out: Map<string, string>): void {
+    out.set(stashId, localId);
+    this._localSceneIdCache.set(stashId, { at: Date.now(), id: localId });
+  }
+
+  /** One request, one aliased findScenes per filter; returns the first matching scene id (or null) per filter, in order. */
+  private async lookupSceneIds(filters: Array<Record<string, unknown>>, signal?: AbortSignal): Promise<Array<string | null>> {
+    const variables: Record<string, unknown> = {};
+    const defs: string[] = [];
+    const fields: string[] = [];
+    filters.forEach((filter, i) => {
+      variables[`f${i}`] = filter;
+      defs.push(`$f${i}: SceneFilterType`);
+      fields.push(`s${i}: findScenes(scene_filter: $f${i}, filter: { per_page: 1 }) { scenes { id } }`);
+    });
+    const result = await this.gqlClient.query<Record<string, { scenes: Array<{ id: string }> } | undefined>>({
+      query: `query FindLocalScenes(${defs.join(', ')}) { ${fields.join(' ')} }`,
+      variables,
+      signal,
+    });
+    return filters.map((_, i) => result.data?.[`s${i}`]?.scenes[0]?.id ?? null);
   }
 
   // fallow-ignore-next-line unused-class-member
