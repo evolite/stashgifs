@@ -64,14 +64,14 @@ for (const line of lines) {
 fs.writeFileSync(
   changelogTsPath,
   `/**
- * Release notes - auto-generated from RELEASE_NOTES.md during the build process
+ * Latest release notes - auto-generated from RELEASE_NOTES.md during the build process (the "What's new" dialog shows only the newest release)
  */
 export interface ChangelogEntry {
   version: string;
   date: string;
   sections: Array<{ title: string; items: string[] }>;
 }
-export const CHANGELOG: ChangelogEntry[] = ${JSON.stringify(entries, null, 2)};
+export const CHANGELOG: ChangelogEntry[] = ${JSON.stringify(entries.slice(0, 1), null, 2)};
 `
 );
-console.log(`Changelog file updated with ${entries.length} releases`);
+console.log(`Changelog file updated with the latest release (${entries[0]?.version ?? 'none'})`);

@@ -6,7 +6,7 @@ import type { ChangelogEntry } from './changelog.js';
 import { VERSION } from './version.js';
 
 const LAST_SEEN_KEY = 'stashgifs-last-seen-version';
-const EARLIER_COUNT = 5;
+const RELEASES_URL = 'https://github.com/evolite/stashgifs/releases';
 
 const SECTION_LABELS: Record<string, string> = {
   Features: 'New',
@@ -53,9 +53,11 @@ export async function maybeShowWhatsNew(): Promise<void> {
 
   // Lazy: the changelog is only needed on the first run after an upgrade.
   const { CHANGELOG } = await import('./changelog.js');
-  const entries = CHANGELOG.filter(
-    (e) => compareVersions(e.version, lastSeen) > 0 && compareVersions(e.version, VERSION) <= 0
-  );
+  // Only the newest release is announced; older ones live on the releases page.
+  const latest = CHANGELOG[0];
+  const entries = latest && compareVersions(latest.version, lastSeen) > 0 && compareVersions(latest.version, VERSION) <= 0
+    ? [latest]
+    : [];
   if (entries.length === 0) {
     remember();
     return;
@@ -77,8 +79,8 @@ export async function maybeShowWhatsNew(): Promise<void> {
   card.appendChild(header);
 
   const body = el('div', 'whats-new__body');
-  const renderEntry = (entry: ChangelogEntry, isEarlier = false): void => {
-    const block = el('section', isEarlier ? 'whats-new__entry whats-new__entry--earlier' : 'whats-new__entry');
+  const renderEntry = (entry: ChangelogEntry): void => {
+    const block = el('section', 'whats-new__entry');
     const head = el('div', 'whats-new__entry-head');
     head.appendChild(el('span', 'whats-new__version', `v${entry.version}`));
     if (entry.date) head.appendChild(el('span', 'whats-new__date', entry.date));
@@ -93,12 +95,11 @@ export async function maybeShowWhatsNew(): Promise<void> {
   };
   for (const entry of entries) renderEntry(entry);
 
-  // Context for what came before: the last few releases the user already had (CHANGELOG is newest first).
-  const earlier = CHANGELOG.filter((e) => compareVersions(e.version, lastSeen) <= 0).slice(0, EARLIER_COUNT);
-  if (earlier.length > 0) {
-    body.appendChild(el('div', 'whats-new__divider', 'Earlier releases'));
-    for (const entry of earlier) renderEntry(entry, true);
-  }
+  const history = el('a', 'whats-new__link', 'All releases') as HTMLAnchorElement;
+  history.href = RELEASES_URL;
+  history.target = '_blank';
+  history.rel = 'noopener noreferrer';
+  body.appendChild(history);
   card.appendChild(body);
 
   const close = (): void => {
