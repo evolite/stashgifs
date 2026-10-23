@@ -6,6 +6,7 @@
 import { SceneMarker, FilterOptions, FeedSettings, VideoPostData, ImagePostData, ImageVideoPostData, Image, SavedSearch, DateRangeFilter } from './types.js';
 import { FilterState, type FilterSnapshot, type SavedFilter } from './FilterState.js';
 import { SeenHistory } from './SeenHistory.js';
+import { AutoplayUnlock } from './AutoplayUnlock.js';
 import { FilterHistory } from './FilterHistory.js';
 import { SavedSearches } from './SavedSearches.js';
 
@@ -157,16 +158,7 @@ export class FeedContainer {
   private updatePlaceholderVisibilityRef?: () => void; // Reference to updatePlaceholderVisibility function
   // Reel scrolling: JS-driven, one-card-per-gesture (replaces CSS scroll-snap)
   private reelScroller?: ReelScroller;
-  private mobileAutoplayUnlockHandler?: (event: Event) => void;
-  private autoplayUnlockHandler?: (event: Event) => void;
-  private visibilityResumeHandler?: () => void;
-  private readonly mobileAutoplayUnlockEvents: ReadonlyArray<string> = [
-    'touchstart',
-    'touchend',
-    'click',
-    'scroll',
-    'touchmove',
-  ];
+  private readonly autoplayUnlock = new AutoplayUnlock(() => this.playback?.retryActive());
 
   constructor(container: HTMLElement, api?: StashAPI, settings?: Partial<FeedSettings>, settingsManager?: PluginSettingsManager) {
     this.container = container;
@@ -208,9 +200,7 @@ export class FeedContainer {
     // Setup JS reel scroller if reel mode is enabled
     this.setupReelScroller();
     
-    // Unlock autoplay on mobile after first user interaction
-    this.unlockMobileAutoplay();
-    this.setupAutoplayUnlockHandlers();
+    this.autoplayUnlock.start();
     document.addEventListener('keydown', this.onRatingHotkey);
 
     // Defer suggestion preload until after initial videos load to avoid competing for bandwidth
@@ -896,122 +886,6 @@ export class FeedContainer {
     }
   }
   
-  /**
-   * Unlock autoplay on mobile by playing a dummy video on first user interaction
-   * This allows subsequent videos to autoplay
-   */
-  private unlockMobileAutoplay(): void {
-    const isMobile = isMobileDevice();
-    if (!isMobile) return;
-
-    let unlocked = false;
-    const unlock = () => {
-      void (async () => {
-        if (unlocked) return;
-        unlocked = true;
-        this.removeMobileAutoplayUnlockListeners();
-
-        // Create a dummy video element to unlock autoplay
-        const dummyVideo = document.createElement('video');
-        dummyVideo.muted = true;
-        dummyVideo.playsInline = true;
-        dummyVideo.setAttribute('playsinline', 'true');
-        dummyVideo.setAttribute('webkit-playsinline', 'true');
-        dummyVideo.style.display = 'none';
-        dummyVideo.style.width = '1px';
-        dummyVideo.style.height = '1px';
-        dummyVideo.style.position = 'absolute';
-        dummyVideo.style.opacity = '0';
-        dummyVideo.style.pointerEvents = 'none';
-
-        // Use a data URL for a minimal video (1x1 transparent pixel)
-        // This is just to unlock autoplay capability
-        dummyVideo.src = 'data:video/mp4;base64,AAAAIGZ0eXBpc29tAAACAGlzb21pc28yYXZjMW1wNDEAAAAIZnJlZQAAAbxtZGF0AAACrgYF//+q3EXpvebZSLeWLNgg2SPu73gyNjQgLSBjb3JlIDE1MiByMjg1NCBlOWE1OTAzIC0gSC4yNjQvTVBFRy00IEFWQyBjb2RlYyAtIENvcHlsZWZ0IDIwMDMtMjAxNyAtIGh0dHA6Ly93d3cudmlkZW9sYW4ub3JnL3gyNjQuaHRtbCAtIG9wdGlvbnM6IGNhYmFjPTEgcmVmPTMgZGVibG9jaz0xOjA6MCBhbmFseXNlPTB4MzoweDExMyBtZT1oZXggc3VibWU9NyBwc3k9MSBwc3lfcmQ9MS4wMDowLjAwIG1peGVkX3JlZj0xIG1lX3JhbmdlPTE2IGNocm9tYV9tZT0xIHRyZWxsaXM9MSA4eDhkY3Q9MSBjcW09MCBkZWFkem9uZT0yMSwxMSBmYXN0X3Bza2lwPTEgY2hyb21hX3FwX29mZnNldD0tMiB0aHJlYWRzPTEgbG9va2FoZWFkX3RocmVhZHM9MSBzbGljZWRfdGhyZWFkcz0wIG5yPTAgZGVjaW1hdGU9MSBpbnRlcmxhY2VkPTAgYmx1cmF5X2NvbXBhdD0wIGNvbnN0cmFpbmVkX2ludHJhPTAgYmZyYW1lcz0zIGJfcHlyYW1pZD0yIGJfYWRhcHQ9MSBiX2JpYXM9MCBkaXJlY3Q9MSB3ZWlnaHRiPTEgb3Blbl9nb3A9MCB3ZWlnaHRwPTIga2V5aW50PTI1MCBrZXlpbnRfbWluPTI1IHNjZW5lY3V0PTQwIGludHJhX3JlZnJlc2g9MCByY19sb29rYWhlYWQ9NDAgcmM9Y3JmIG1idHJlZT0xIGNyZj0yMy4wIHFjb21wPTAuNjAgcXBtaW49MCBxcG1heD02OSBxcHN0ZXA9NCBpcF9yYXRpbz0xLjQwIGFxPTA6';
-
-        document.body.appendChild(dummyVideo);
-
-        try {
-          // Try to play the dummy video to unlock autoplay
-          await dummyVideo.play();
-
-          // Try to play the active card now that autoplay is unlocked
-          setTimeout(() => {
-            this.playback.retryActive();
-          }, 100);
-        } catch (e) {
-          // Autoplay unlock failed, user will need to interact
-          console.debug('Autoplay unlock failed, user will need to interact', e);
-        } finally {
-          // Clean up after a short delay
-          setTimeout(() => {
-            dummyVideo.remove();
-          }, 1000);
-        }
-      })();
-    };
-
-    // Unlock on any user interaction
-    this.mobileAutoplayUnlockHandler = unlock;
-    for (const event of this.mobileAutoplayUnlockEvents) {
-      document.addEventListener(event, unlock, { once: true, passive: true });
-    }
-  }
-
-  private setupAutoplayUnlockHandlers(): void {
-    if (this.autoplayUnlockHandler) {
-      return;
-    }
-
-    // A real user gesture lifts the browser's autoplay restrictions. Re-run the
-    // play decision on gesture so any video the browser refused to autoplay starts.
-    const handler = () => {
-      this.playback?.retryActive();
-    };
-
-    this.autoplayUnlockHandler = handler;
-    for (const event of this.mobileAutoplayUnlockEvents) {
-      document.addEventListener(event, handler, { passive: true });
-    }
-
-    // Resume the active card when the page comes back to the foreground.
-    // Mobile browsers (especially iOS Safari) pause all media when backgrounded,
-    // but never auto-resume — we need to call play() ourselves.
-    if (!this.visibilityResumeHandler) {
-      const visibilityHandler = () => {
-        if (document.visibilityState === 'visible') {
-          this.playback?.retryActive();
-        }
-      };
-      this.visibilityResumeHandler = visibilityHandler;
-      document.addEventListener('visibilitychange', visibilityHandler);
-    }
-  }
-
-  private removeAutoplayUnlockHandlers(): void {
-    if (!this.autoplayUnlockHandler) {
-      return;
-    }
-    for (const event of this.mobileAutoplayUnlockEvents) {
-      document.removeEventListener(event, this.autoplayUnlockHandler);
-    }
-    this.autoplayUnlockHandler = undefined;
-
-    if (this.visibilityResumeHandler) {
-      document.removeEventListener('visibilitychange', this.visibilityResumeHandler);
-      this.visibilityResumeHandler = undefined;
-    }
-  }
-
-  private removeMobileAutoplayUnlockListeners(): void {
-    if (!this.mobileAutoplayUnlockHandler) {
-      return;
-    }
-    for (const event of this.mobileAutoplayUnlockEvents) {
-      document.removeEventListener(event, this.mobileAutoplayUnlockHandler);
-    }
-    this.mobileAutoplayUnlockHandler = undefined;
-  }
-
   /**
    * Close suggestions overlay and unlock body scroll
    */
@@ -5498,8 +5372,7 @@ export class FeedContainer {
   private teardownListeners(): void {
     document.removeEventListener('keydown', this.onRatingHotkey);
     this.filterHistory.stop();
-    this.removeMobileAutoplayUnlockListeners();
-    this.removeAutoplayUnlockHandlers();
+    this.autoplayUnlock.stop();
 
     if (this.scrollHandler && this.scrollEventTarget) {
       this.scrollEventTarget.removeEventListener('scroll', this.scrollHandler);
