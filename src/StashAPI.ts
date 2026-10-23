@@ -2123,6 +2123,7 @@ export class StashAPI {
   }
 
   private async flushSceneTagBatch(batch: Map<string, Array<{ resolve: (ids: Set<string>) => void; reject: (e: unknown) => void }>>): Promise<void> {
+    const startedAt = Date.now();
     try {
       const result = await this.gqlClient.query<{ findScenes?: { scenes?: Array<{ id: string; tags?: Array<{ id: string }> }> } }>({
         query: queries.FIND_SCENES_TAG_IDS,
@@ -2133,8 +2134,10 @@ export class StashAPI {
         found.set(scene.id, new Set((scene.tags ?? []).map((t) => t.id)));
       }
       for (const [sceneId, waiters] of batch) {
-        const ids = found.get(sceneId) ?? new Set<string>();
-        this._sceneTagIdCache.set(sceneId, { at: Date.now(), ids });
+        // A tag mutation that landed while this read was in flight is newer than the snapshot: keep it.
+        const newer = this._sceneTagIdCache.get(sceneId);
+        const ids = newer && newer.at >= startedAt ? newer.ids : (found.get(sceneId) ?? new Set<string>());
+        if (ids !== newer?.ids) this._sceneTagIdCache.set(sceneId, { at: Date.now(), ids });
         for (const w of waiters) w.resolve(ids);
       }
     } catch (error) {

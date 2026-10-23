@@ -120,6 +120,7 @@ export class FeedContainer {
   private postOrder: string[];
   private settings: FeedSettings;
   private settingsPage?: SettingsPage;
+  private isOpeningSettings = false;
   private settingsContainer?: HTMLElement;
   private ratingConfigReady: Promise<void> = Promise.resolve();
   private ratingSystemConfig: { type?: string; starPrecision?: string } | null | undefined;
@@ -2297,14 +2298,25 @@ export class FeedContainer {
    * Open settings page
    */
   private async openSettings(): Promise<void> {
-    // Lazy: SettingsPage is large and only needed when the modal opens.
-    const { SettingsPage } = await import('./SettingsPage.js');
+    if (this.isOpeningSettings) return; // a second click while the chunk loads must not build a second modal
+    this.isOpeningSettings = true;
+    let SettingsPageCtor: typeof SettingsPage;
+    try {
+      // Lazy: SettingsPage is large and only needed when the modal opens.
+      ({ SettingsPage: SettingsPageCtor } = await import('./SettingsPage.js'));
+    } catch (error) {
+      console.error('Failed to load settings', error);
+      showToast('Failed to open settings. Please reload the page.');
+      return;
+    } finally {
+      this.isOpeningSettings = false;
+    }
     if (!this.settingsContainer) {
       this.settingsContainer = document.createElement('div');
       document.body.appendChild(this.settingsContainer);
     }
 
-    this.settingsPage = new SettingsPage(
+    this.settingsPage = new SettingsPageCtor(
       this.settingsContainer,
       this.settings,
       (signal) => this.api.findGalleries(signal),
