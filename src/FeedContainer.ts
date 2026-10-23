@@ -7,6 +7,8 @@ import { SceneMarker, FilterOptions, FeedSettings, VideoPostData, ImagePostData,
 import { FilterState, type SavedFilter } from './FilterState.js';
 import { SeenHistory } from './SeenHistory.js';
 import { AutoplayUnlock } from './AutoplayUnlock.js';
+import { mixContent, shuffle } from './content/mix.js';
+import { computeHasMore } from './content/hasMore.js';
 import { FilterHistory } from './FilterHistory.js';
 import { SavedSearches } from './SavedSearches.js';
 
@@ -75,7 +77,6 @@ function isVideoPlayer(player: IVideoPlayer | ImagePlayer | undefined): player i
 /**
  * Content type for unified mixing
  */
-type ContentType = 'marker' | 'shortform' | 'image';
 
 /**
  * Union type for all post types
@@ -1507,8 +1508,8 @@ export class FeedContainer {
     try {
       if (this.preloadedTags.length > 0 && this.preloadedPerformers.length > 0) {
         // Reuse the background-preloaded pool (reshuffled for variety) instead of two requests per open.
-        freshTags = this.shuffleArray([...this.preloadedTags]).slice(0, 3);
-        freshPerformers = this.shuffleArray([...this.preloadedPerformers]).slice(0, 3);
+        freshTags = shuffle([...this.preloadedTags]).slice(0, 3);
+        freshPerformers = shuffle([...this.preloadedPerformers]).slice(0, 3);
       } else {
         [freshTags, freshPerformers] = await Promise.all([
           this.api.searchMarkerTags('', 3),
@@ -4035,7 +4036,7 @@ export class FeedContainer {
     const { markerCount, shortFormCount, imageCount } = counts;
 
     // Merge regular markers, short-form markers, scene previews, and images, then filter seen items
-    const mergedContent = this.seenHistory.filter(this.mergeMarkersShortFormAndImages(markers, shortFormMarkers, images, scenePreviewMarkers), append, !!currentFilters.savedFilterId);
+    const mergedContent = this.seenHistory.filter(mixContent(markers, shortFormMarkers, images, scenePreviewMarkers), append, !!currentFilters.savedFilterId);
 
     const expectedLimit = currentFilters.limit || FeedContainer.CONTENT_LOAD_LIMIT;
 
@@ -4196,7 +4197,7 @@ export class FeedContainer {
         return;
       }
 
-      const allMarkersForContent = this.shuffleArray([...markers, ...shortFormMarkers, ...randomMarkers]);
+      const allMarkersForContent = shuffle([...markers, ...shortFormMarkers, ...randomMarkers]);
       const mergedContent = await this.processFetchedContent({
         content: {
           markers: allMarkersForContent,
@@ -4250,79 +4251,6 @@ export class FeedContainer {
   }
 
   /**
-   * Calculate hasMore for images-only mode
-   */
-  private calculateHasMoreForImagesOnly(
-    images: Image[],
-    append: boolean,
-    offset: number,
-    imageCount: number,
-    expectedLimit: number
-  ): void {
-    const totalLoaded = offset + images.length;
-    this.hasMore = totalLoaded < imageCount && imageCount > 0;
-    
-    // Fallback: if count is unavailable (0), use length-based check
-    if (imageCount === 0) {
-      this.hasMore = images.length >= expectedLimit;
-    }
-    
-    // Special case: if we got 0 results and it's not the first load, we've definitely reached the end
-    if (append && images.length === 0) {
-      this.hasMore = false;
-    }
-  }
-
-  /**
-   * Calculate hasMore for mixed content mode
-   */
-  private calculateHasMoreForMixedContent(
-    append: boolean,
-    offset: number,
-    totalContentLength: number,
-    expectedLimit: number,
-    counts: { markerCount: number; shortFormCount: number; imageCount: number },
-    shouldLoadRandom: boolean = false
-  ): void {
-    const { markerCount, shortFormCount, imageCount } = counts;
-    // Calculate total available content count
-    const totalAvailable = markerCount + shortFormCount + imageCount;
-
-    // Calculate total loaded so far
-    const totalLoaded = offset + totalContentLength;
-
-    // Use count-based calculation if counts are available
-    if (totalAvailable > 0) {
-      this.hasMore = totalLoaded < totalAvailable;
-      console.log(`[hasMore] Total loaded: ${totalLoaded}, Total available: ${totalAvailable}, hasMore: ${this.hasMore}`);
-    } else if (!append && totalContentLength === 0) {
-      // Fresh load returned nothing AND no count — could be a transient/raced fetch rather
-      // than a truly empty feed. Don't latch hasMore=false (which bricks the feed until a
-      // manual refresh); leave it true so the append path retries once. If the feed really
-      // is empty, that retry hits the `append && 0 results` guard below and stops cleanly.
-      this.hasMore = true;
-      console.log('[hasMore] Fresh load returned 0 with no count — keeping hasMore true to retry');
-    } else {
-      // Fallback: if counts are unavailable (e.g., shuffle mode), use length-based check
-      this.hasMore = totalContentLength >= expectedLimit;
-      console.log(`[hasMore] Count unavailable, using length-based check: ${totalContentLength} >= ${expectedLimit}`);
-    }
-
-    // Random content is re-queryable at new positions on every fetch — treat as infinite
-    // as long as this fetch returned something. The 0-results guard below is the real stop.
-    if (shouldLoadRandom && !this.hasMore && totalContentLength > 0) {
-      this.hasMore = true;
-      console.log(`[hasMore] Random mode active with results — keeping hasMore true`);
-    }
-
-    // Special case: if we got 0 results and it's not the first load, we've definitely reached the end
-    if (append && totalContentLength === 0) {
-      this.hasMore = false;
-      console.log(`[hasMore] Got 0 results on append, setting hasMore to false`);
-    }
-  }
-
-  /**
    * Process loaded markers and images
    */
   private processLoadedContent(options: {
@@ -4355,59 +4283,17 @@ export class FeedContainer {
 
     // (A fresh load already cleared the feed and showed skeletons in initializeLoadState.)
 
-    // Calculate hasMore using API counts to determine if there's more content available
-    // This keeps paging correct when filters are applied
-    this.calculateHasMore({
-      pagination: {
-        append,
-        offset,
-        totalContentLength,
-        expectedLimit
-      },
-      counts: {
-        markerCount,
-        shortFormCount,
-        imageCount
-      },
-      images,
-      shouldLoadRandom
+    // hasMore comes from the server totals when available (see content/hasMore.ts).
+    this.hasMore = computeHasMore({
+      append,
+      offset,
+      expectedLimit,
+      totalContentLength,
+      counts: { markerCount, shortFormCount, imageCount },
+      imagesOnly: !!this.settings.imagesOnly,
+      imagesLoaded: images.length,
+      shouldLoadRandom: shouldLoadRandom ?? false,
     });
-  }
-
-  /**
-   * Calculate hasMore flag based on content type and pagination
-   */
-  private calculateHasMore(options: {
-    pagination: {
-      append: boolean;
-      offset: number;
-      totalContentLength: number;
-      expectedLimit: number;
-    };
-    counts: {
-      markerCount: number;
-      shortFormCount: number;
-      imageCount: number;
-    };
-    images: Image[];
-    shouldLoadRandom?: boolean;
-  }): void {
-    const { pagination, counts, images, shouldLoadRandom } = options;
-    const { append, offset, totalContentLength, expectedLimit } = pagination;
-    const { markerCount, shortFormCount, imageCount } = counts;
-
-    if (this.settings.imagesOnly) {
-      this.calculateHasMoreForImagesOnly(images, append, offset, imageCount, expectedLimit);
-    } else {
-      this.calculateHasMoreForMixedContent(
-        append,
-        offset,
-        totalContentLength,
-        expectedLimit,
-        { markerCount, shortFormCount, imageCount },
-        shouldLoadRandom ?? false
-      );
-    }
   }
 
   /**
@@ -4566,249 +4452,6 @@ export class FeedContainer {
         height: (vf as { height?: number }).height,
       })),
     };
-  }
-
-  private shuffleArray<T>(arr: T[]): T[] {
-    for (let i = arr.length - 1; i > 0; i--) {
-      const j = Math.floor(Math.random() * (i + 1));
-      [arr[i], arr[j]] = [arr[j], arr[i]];
-    }
-    return arr;
-  }
-
-  /**
-   * Check if only a single content type is present
-   */
-  private getSingleContentTypeResult(
-    markers: SceneMarker[],
-    shortFormMarkers: SceneMarker[],
-    images: Image[],
-    scenePreviewMarkers: SceneMarker[]
-  ): Array<{ type: 'marker' | 'image'; data: SceneMarker | Image; date?: string }> | null {
-    const videoMarkers = [...markers, ...shortFormMarkers, ...scenePreviewMarkers];
-
-    // If only images
-    if (videoMarkers.length === 0) {
-      return this.createImageContentArray(images);
-    }
-
-    // If only video-shaped content (markers/shortform/scene previews, no images)
-    if (images.length === 0) {
-      return this.createMarkerContentArray(videoMarkers);
-    }
-
-    return null;
-  }
-
-  /**
-   * Merge regular markers, short-form markers, images, and scene previews in a unified mix.
-   * Interleaves markers/shortform and images as before; scene previews get their own
-   * lower-frequency slot in the cycle.
-   */
-  private mergeMarkersShortFormAndImages(
-    markers: SceneMarker[],
-    shortFormMarkers: SceneMarker[],
-    images: Image[],
-    scenePreviewMarkers: SceneMarker[] = []
-  ): Array<{ type: 'marker' | 'image'; data: SceneMarker | Image; date?: string }> {
-    // If only one type, return it in original order
-    const singleTypeResult = this.getSingleContentTypeResult(markers, shortFormMarkers, images, scenePreviewMarkers);
-    if (singleTypeResult !== null) {
-      return singleTypeResult;
-    }
-
-    // Multiple types present - mix all together proportionally
-    return this.unifiedMixContent(markers, shortFormMarkers, images, scenePreviewMarkers);
-  }
-
-  /**
-   * Create content array from images
-   */
-  private createImageContentArray(images: Image[]): Array<{ type: 'image'; data: Image; date?: string }> {
-    return images.map(image => ({
-      type: 'image' as const,
-      data: image,
-      date: image.date,
-    }));
-  }
-
-  /**
-   * Create content array from markers
-   */
-  private createMarkerContentArray(markers: SceneMarker[]): Array<{ type: 'marker'; data: SceneMarker; date?: string }> {
-    return markers.map(marker => ({
-      type: 'marker' as const,
-      data: marker,
-      date: marker.scene.date,
-    }));
-  }
-
-  /**
-   * Calculate proportions for content types
-   */
-  /**
-   * Simple interleaving algorithm that mixes markers, shortform, images, and scene previews.
-   * Shows 3-5 video items (markers/shortform), then up to 1 scene-preview clip (its own
-   * lower-frequency slot), then 1-2 images, repeat. Prevents more than 3 consecutive
-   * items of the same type for videos/images.
-   */
-  private unifiedMixContent(
-    markers: SceneMarker[],
-    shortFormMarkers: SceneMarker[],
-    images: Image[],
-    scenePreviewMarkers: SceneMarker[] = []
-  ): Array<{ type: 'marker' | 'image'; data: SceneMarker | Image; date?: string }> {
-    const content: Array<{ type: 'marker' | 'image'; data: SceneMarker | Image; date?: string }> = [];
-
-    // Combine markers and shortform into single video array for simpler logic
-    const allVideos = [...markers.map(m => ({ type: 'marker' as const, data: m })), ...shortFormMarkers.map(m => ({ type: 'marker' as const, data: m }))];
-
-    const state = {
-      videoIdx: 0,
-      imageIdx: 0,
-      scenePreviewIdx: 0,
-      consecutiveCount: 0,
-      lastType: null as ContentType | null,
-      maxConsecutive: 3,
-    };
-
-    while (state.videoIdx < allVideos.length || state.imageIdx < images.length || state.scenePreviewIdx < scenePreviewMarkers.length) {
-      // Determine chunk sizes: 3-5 videos, then up to 1 scene preview, then 1-2 images
-      const videoChunkSize = 3 + Math.floor(Math.random() * 3); // 3-5
-      const imageChunkSize = 1 + Math.floor(Math.random() * 2); // 1-2
-
-      // Add video chunk
-      this.addVideoChunk(content, allVideos, videoChunkSize, state);
-
-      // Add scene-preview chunk (own, lower-frequency slot)
-      this.addScenePreviewChunk(content, scenePreviewMarkers, 1, state);
-
-      // Add image chunk
-      this.addImageChunk(content, images, imageChunkSize, state);
-
-      // If we've run out of one type, add remaining of the other
-      this.addRemainingItems(content, allVideos, images, state);
-    }
-
-    return content;
-  }
-
-  /**
-   * Add a chunk of video items to the content array
-   */
-  private addVideoChunk(
-    content: Array<{ type: 'marker' | 'image'; data: SceneMarker | Image; date?: string }>,
-    allVideos: Array<{ type: 'marker'; data: SceneMarker }>,
-    chunkSize: number,
-    state: { videoIdx: number; consecutiveCount: number; lastType: ContentType | null; maxConsecutive: number }
-  ): void {
-    for (let i = 0; i < chunkSize && state.videoIdx < allVideos.length; i++) {
-      const video = allVideos[state.videoIdx++];
-      if (!video) continue;
-
-      content.push({
-        type: 'marker',
-        data: video.data,
-        date: video.data.scene.date,
-      });
-      
-      // Track consecutive count
-      if (state.lastType === 'marker') {
-        state.consecutiveCount++;
-        if (state.consecutiveCount >= state.maxConsecutive) {
-          break; // Switch to images
-        }
-      } else {
-        state.consecutiveCount = 1;
-        state.lastType = 'marker';
-      }
-    }
-  }
-
-  /**
-   * Add a chunk of image items to the content array
-   */
-  private addImageChunk(
-    content: Array<{ type: 'marker' | 'image'; data: SceneMarker | Image; date?: string }>,
-    images: Image[],
-    chunkSize: number,
-    state: { imageIdx: number; consecutiveCount: number; lastType: ContentType | null }
-  ): void {
-    for (let i = 0; i < chunkSize && state.imageIdx < images.length; i++) {
-      const image = images[state.imageIdx++];
-      if (!image) continue;
-
-      content.push({
-        type: 'image',
-        data: image,
-        date: image.date,
-      });
-      
-      if (state.lastType === 'image') {
-        state.consecutiveCount++;
-      } else {
-        state.consecutiveCount = 1;
-        state.lastType = 'image';
-      }
-    }
-  }
-
-  /**
-   * Add a chunk of scene-preview items to the content array (its own, lower-frequency slot)
-   */
-  private addScenePreviewChunk(
-    content: Array<{ type: 'marker' | 'image'; data: SceneMarker | Image; date?: string }>,
-    scenePreviewMarkers: SceneMarker[],
-    chunkSize: number,
-    state: { scenePreviewIdx: number }
-  ): void {
-    for (let i = 0; i < chunkSize && state.scenePreviewIdx < scenePreviewMarkers.length; i++) {
-      const marker = scenePreviewMarkers[state.scenePreviewIdx++];
-      if (!marker) continue;
-
-      content.push({
-        type: 'marker',
-        data: marker,
-        date: marker.scene.date,
-      });
-    }
-  }
-
-  /**
-   * Add remaining video/image items once the other has been exhausted. Scene previews are
-   * drained separately, at most one per cycle, by addScenePreviewChunk — the loop in
-   * unifiedMixContent keeps running (even after videos/images are empty) until they're gone,
-   * which preserves their own lower-frequency pacing instead of dumping them all at once.
-   */
-  private addRemainingItems(
-    content: Array<{ type: 'marker' | 'image'; data: SceneMarker | Image; date?: string }>,
-    allVideos: Array<{ type: 'marker'; data: SceneMarker }>,
-    images: Image[],
-    state: { videoIdx: number; imageIdx: number }
-  ): void {
-    if (state.videoIdx >= allVideos.length && state.imageIdx < images.length) {
-      while (state.imageIdx < images.length) {
-        const image = images[state.imageIdx++];
-        if (image) {
-          content.push({
-            type: 'image',
-            data: image,
-            date: image.date,
-          });
-        }
-      }
-    } else if (state.imageIdx >= images.length && state.videoIdx < allVideos.length) {
-      while (state.videoIdx < allVideos.length) {
-        const video = allVideos[state.videoIdx++];
-        if (video) {
-          content.push({
-            type: 'marker',
-            data: video.data,
-            date: video.data.scene.date,
-          });
-        }
-      }
-    }
   }
 
   /**
