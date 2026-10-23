@@ -453,37 +453,6 @@ export interface SceneMarkerUpdateInput {
   tag_ids: string[];
 }
 
-/**
- * SceneMarkerCreateInput
- */
-interface SceneMarkerCreateInput {
-  title: string;
-  seconds: number;
-  end_seconds?: number | null;
-  scene_id: string;
-  primary_tag_id: string;
-  tag_ids?: string[];
-}
-
-/**
- * SceneUpdateInput
- */
-interface SceneUpdateInput {
-  id: string;
-  tag_ids?: string[];
-  performer_ids?: string[];
-  rating100?: number | null;
-  [key: string]: unknown; // Allow additional fields
-}
-
-/**
- * SceneAddOInput
- */
-interface SceneAddOInput {
-  id: string;
-  times?: Array<string>; // Timestamp format
-}
-
 // ============================================================================
 // Mutation Response Types
 // ============================================================================
@@ -574,17 +543,6 @@ export interface SceneIncrementPlayCountResponse {
  */
 export interface SceneSaveActivityResponse {
   sceneSaveActivity: boolean | null;
-}
-
-/**
- * ImageUpdate input
- */
-interface ImageUpdateInput {
-  id: string;
-  tag_ids?: string[];
-  performer_ids?: string[];
-  o_counter?: number;
-  rating100?: number;
 }
 
 /**

@@ -11,7 +11,6 @@ interface ImageVideoPostOptions extends BaseVideoPostOptions {}
 export class ImageVideoPost extends VideoPostBase {
   protected readonly data: ImageVideoPostData;
   private player?: IVideoPlayer;
-  private readonly onCancelRequests?: () => void;
 
   constructor(
     container: HTMLElement,
@@ -20,7 +19,6 @@ export class ImageVideoPost extends VideoPostBase {
   ) {
     super(container, options);
     this.data = data;
-    this.onCancelRequests = options?.onCancelRequests;
     this.onMuteToggle = options?.onMuteToggle;
     this.getGlobalMuteState = options?.getGlobalMuteState;
     this.hdModeFromSettings = options?.hdModeFromSettings === true;

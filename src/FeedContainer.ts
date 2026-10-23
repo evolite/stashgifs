@@ -100,7 +100,6 @@ export class FeedContainer {
   private posts: Map<string, PostType>;
   private postOrder: string[];
   private settings: FeedSettings;
-  private settingsPage?: SettingsPage;
   private isOpeningSettings = false;
   private settingsContainer?: HTMLElement;
   private ratingConfigReady: Promise<void> = Promise.resolve();
@@ -2042,7 +2041,7 @@ export class FeedContainer {
       document.body.appendChild(this.settingsContainer);
     }
 
-    this.settingsPage = new SettingsPageCtor(
+    new SettingsPageCtor(
       this.settingsContainer,
       this.settings,
       (signal) => this.api.findGalleries(signal),
@@ -2059,8 +2058,6 @@ export class FeedContainer {
    */
   private createHeaderBar(): void {
     // Saved filters will be loaded lazily when filter dropdown opens
-    let savedFiltersCache: Array<{ id: string; name: string }> = [];
-
     const header = this.createHeaderElement();
     const headerInner = this.createHeaderInnerContainer();
 
@@ -2185,7 +2182,6 @@ export class FeedContainer {
 
     // Suggestions with proper debouncing
     let suggestionsRequestId = 0;
-    let suggestTerm = '';
     let pendingSuggestionsFetch: Promise<void> | null = null;
 
     const triggerFetchSuggestions = (text: string, forceShow: boolean): Promise<void> => {
@@ -4027,11 +4023,10 @@ export class FeedContainer {
     currentFilters: FilterOptions;
     offset: number;
     append: boolean;
-    shouldLoadMarkers: boolean;
     shouldLoadRandom?: boolean;
     realMarkersCount?: number;
   }): Promise<Array<{ type: 'marker' | 'image'; data: SceneMarker | Image; date?: string }>> {
-    const { content, counts, currentFilters, offset, append, shouldLoadMarkers, shouldLoadRandom, realMarkersCount } = options;
+    const { content, counts, currentFilters, offset, append, shouldLoadRandom, realMarkersCount } = options;
     const { markers, shortFormMarkers, scenePreviewMarkers, images } = content;
     const { markerCount, shortFormCount, imageCount } = counts;
 
@@ -4054,12 +4049,8 @@ export class FeedContainer {
       this.imagesLoadedCount = images.length;
     }
 
-    const allMarkers = [...markers, ...shortFormMarkers, ...scenePreviewMarkers];
     this.processLoadedContent({
-      content: {
-        markers: allMarkers,
-        images
-      },
+      images,
       counts: {
         markerCount,
         shortFormCount,
@@ -4070,7 +4061,6 @@ export class FeedContainer {
         expectedLimit,
         totalContentLength: markers.length + shortFormMarkers.length + scenePreviewMarkers.length + images.length
       },
-      shouldLoadMarkers,
       shouldLoadRandom,
       append
     });
@@ -4216,7 +4206,6 @@ export class FeedContainer {
         currentFilters,
         offset,
         append,
-        shouldLoadMarkers: shouldLoadMarkers || shouldLoadRandom,
         shouldLoadRandom
       });
 
@@ -4254,10 +4243,7 @@ export class FeedContainer {
    * Process loaded markers and images
    */
   private processLoadedContent(options: {
-    content: {
-      markers: SceneMarker[];
-      images: Image[];
-    };
+    images: Image[];
     counts: {
       markerCount: number;
       shortFormCount: number;
@@ -4268,15 +4254,13 @@ export class FeedContainer {
       expectedLimit: number;
       totalContentLength: number;
     };
-    shouldLoadMarkers: boolean;
     shouldLoadRandom?: boolean;
     append: boolean;
   }): void {
     const {
-      content: { markers, images },
+      images,
       counts: { markerCount, shortFormCount, imageCount },
       pagination: { offset, expectedLimit, totalContentLength },
-      shouldLoadMarkers,
       shouldLoadRandom,
       append
     } = options;

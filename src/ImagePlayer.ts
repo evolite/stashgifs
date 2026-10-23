@@ -13,7 +13,6 @@ export class ImagePlayer {
   private readonly isGif: boolean;
   private readonly isVideo: boolean;
   private readonly objectFit: 'cover' | 'contain' = 'cover';
-  private isLoaded: boolean = false;
   private hasRetried: boolean = false;
   private loadingIndicator?: HTMLElement;
   private wrapper?: HTMLElement;
@@ -74,7 +73,6 @@ export class ImagePlayer {
 
     // Handle image load
     const handleLoad = () => {
-      this.isLoaded = true;
       this.hideLoadingIndicator();
     };
 
@@ -127,7 +125,6 @@ export class ImagePlayer {
       
       try {
         await this.videoElement.play();
-        this.isLoaded = true;
         this.hideLoadingIndicator();
       } catch (error) {
         // Autoplay blocked - will try again when visible or on user interaction
@@ -138,7 +135,6 @@ export class ImagePlayer {
 
     // Handle video load events - try to play when ready
     const handleVideoReady = () => {
-      this.isLoaded = true;
       this.hideLoadingIndicator();
       tryPlay();
     };
@@ -381,6 +377,5 @@ export class ImagePlayer {
     this.imageElement = undefined;
     this.loadingIndicator = undefined;
     this.errorMessage = undefined;
-    this.isLoaded = false;
   }
 }

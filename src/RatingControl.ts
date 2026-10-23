@@ -52,7 +52,6 @@ export class RatingControl {
   private ratingStarButtons: HTMLButtonElement[] = [];
   private isRatingDialogOpen = false;
   private isSavingRating = false;
-  private hoveredStarIndex?: number;
   private hoveredPreviewValue?: number;
   private lastPointerSelectionTs = 0;
   private lastPointerHoverTs = 0;
@@ -373,7 +372,6 @@ export class RatingControl {
     if (this.hasRating && this.ratingValue > 0) {
       const maxStars = this.getMaxStars();
       const starIndex = Math.min(Math.max(Math.ceil(this.ratingValue), 1), maxStars);
-      this.hoveredStarIndex = starIndex;
       this.hoveredPreviewValue = this.ratingValue;
       this.updateRatingStarButtons(true);
 
@@ -382,7 +380,6 @@ export class RatingControl {
         this.focusRatingButton(targetButton);
       }
     } else {
-      this.hoveredStarIndex = undefined;
       this.hoveredPreviewValue = undefined;
       this.updateRatingStarButtons();
 
@@ -401,7 +398,6 @@ export class RatingControl {
     this.ratingDialog.hidden = true;
     this.ratingDisplayButton?.setAttribute('aria-expanded', 'false');
     this.ratingWrapper?.classList.remove('rating-control--open');
-    this.hoveredStarIndex = undefined;
     this.hoveredPreviewValue = undefined;
     this.detachRatingGlobalListeners();
   }
@@ -508,13 +504,11 @@ export class RatingControl {
   }
 
   private onStarHover(starIndex: number, hoverValue?: number): void {
-    this.hoveredStarIndex = starIndex;
     this.hoveredPreviewValue = hoverValue ?? starIndex;
     this.updateRatingStarButtons(true);
   }
 
   private onStarHoverLeave(): void {
-    this.hoveredStarIndex = undefined;
     this.hoveredPreviewValue = undefined;
     this.updateRatingStarButtons(false);
   }

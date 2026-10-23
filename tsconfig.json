@@ -13,7 +13,7 @@
     "resolveJsonModule": true,
     "declaration": false,
     "sourceMap": true,
-    "noUnusedLocals": false,
+    "noUnusedLocals": true,
     "noUnusedParameters": false,
     "noUncheckedIndexedAccess": false,
     "exactOptionalPropertyTypes": false

@@ -112,32 +112,3 @@ export function createGraphQLError(
   );
 }
 
-/**
- * Helper to handle GraphQL errors consistently
- */
-function handleGraphQLError(
-  error: unknown,
-  context?: string
-): never {
-  if (isAbortError(error)) {
-    throw new GraphQLAbortError();
-  }
-
-  if (error instanceof GraphQLRequestError || 
-      error instanceof GraphQLResponseError || 
-      error instanceof GraphQLNetworkError) {
-    throw error;
-  }
-
-  // Wrap unknown errors
-  let message: string;
-  if (context) {
-    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-    message = `${context}: ${errorMessage}`;
-  } else {
-    message = error instanceof Error ? error.message : 'Unknown error';
-  }
-  
-  throw new GraphQLRequestError(message);
-}
-
