@@ -15,7 +15,7 @@ export class SettingsPage {
   private readonly findGalleries?: (signal?: AbortSignal) => Promise<Array<{ id: string; title?: string; folder?: { path?: string } }>>;
   private readonly onSave?: (settings: Partial<FeedSettings>) => void;
   private readonly onClose?: () => void;
-  private shortFormTag: Tag | null;
+  private shortFormTags: Tag[];
   private shortFormTagSearch?: AbortController;
 
   constructor(
@@ -31,7 +31,7 @@ export class SettingsPage {
     this.findGalleries = findGalleries;
     this.onSave = onSave;
     this.onClose = onClose;
-    this.shortFormTag = settings.shortFormTag ?? null;
+    this.shortFormTags = settings.shortFormTags ?? [];
     this.render();
   }
 
@@ -1051,7 +1051,7 @@ export class SettingsPage {
     shortFormScope.style.background = THEME.colors.backgroundSecondary;
     shortFormScope.style.borderRadius = THEME.radius.card;
     const scopeHelp = document.createElement('span');
-    scopeHelp.textContent = 'Optional. A scene under the duration limit can match either the tag or the folder.';
+    scopeHelp.textContent = 'When set, these filters keep videos that match any selected tag or the folder. The duration limit still applies.';
     scopeHelp.style.color = THEME.colors.textSecondary;
     scopeHelp.style.fontSize = THEME.typography.sizeMeta;
     const shortFormFolderLabel = document.createElement('label');
@@ -1981,8 +1981,8 @@ export class SettingsPage {
     const picker = document.createElement('div');
     picker.style.cssText = 'display: grid; gap: 6px; min-width: 0;';
     const label = document.createElement('label');
-    label.textContent = 'Short video tag';
-    label.htmlFor = 'stashgifs-short-form-tag';
+    label.textContent = 'Short video tags';
+    label.htmlFor = 'stashgifs-short-form-tags';
     const search = document.createElement('input');
     search.type = 'search';
     search.placeholder = 'Search tags';
@@ -1991,16 +1991,46 @@ export class SettingsPage {
     select.id = label.htmlFor;
     this.applyContentScopeInputStyle(search);
     this.applyContentScopeInputStyle(select);
+    const selectedTags = document.createElement('ul');
+    selectedTags.setAttribute('aria-label', 'Selected short video tags');
+    selectedTags.style.cssText = 'flex-wrap: wrap; gap: 6px; padding: 0; margin: 0; list-style: none;';
     const status = document.createElement('span');
     status.setAttribute('role', 'status');
     status.style.fontSize = THEME.typography.sizeMeta;
     let choices: Tag[] = [];
 
     const renderChoices = () => {
-      const selected = this.shortFormTag;
-      const options = selected && !choices.some(tag => tag.id === selected.id) ? [selected, ...choices] : choices;
-      select.replaceChildren(new Option('Any tag', ''), ...options.map(tag => new Option(tag.name, tag.id)));
-      select.value = selected?.id ?? '';
+      const selectedIds = new Set(this.shortFormTags.map(tag => tag.id));
+      const available = choices.filter(tag => !selectedIds.has(tag.id));
+      select.replaceChildren(new Option('Add a tag', ''), ...available.map(tag => new Option(tag.name, tag.id)));
+      select.disabled = available.length === 0;
+    };
+
+    const renderSelectedTags = () => {
+      selectedTags.replaceChildren();
+      selectedTags.style.display = this.shortFormTags.length > 0 ? 'flex' : 'none';
+      for (const tag of this.shortFormTags) {
+        const item = document.createElement('li');
+        item.style.minWidth = '0';
+        const remove = document.createElement('button');
+        remove.type = 'button';
+        remove.textContent = tag.name + ' ×';
+        remove.setAttribute('aria-label', 'Remove tag ' + tag.name);
+        remove.style.cssText = 'max-width: 100%; overflow-wrap: anywhere; padding: 4px 8px; cursor: pointer;';
+        remove.style.background = THEME.colors.surface;
+        remove.style.color = THEME.colors.textPrimary;
+        remove.style.border = '1px solid ' + THEME.colors.border;
+        remove.style.borderRadius = THEME.radius.button;
+        remove.addEventListener('click', () => {
+          this.shortFormTags = this.shortFormTags.filter(selected => selected.id !== tag.id);
+          search.focus();
+          renderSelectedTags();
+          renderChoices();
+          this.saveSettings();
+        });
+        item.appendChild(remove);
+        selectedTags.appendChild(item);
+      }
     };
 
     const searchTags = () => {
@@ -2029,11 +2059,16 @@ export class SettingsPage {
     search.addEventListener('input', searchTags);
     select.addEventListener('change', () => {
       const tag = choices.find(option => option.id === select.value);
-      this.shortFormTag = tag ? { id: tag.id, name: tag.name } : null;
+      if (!tag) return;
+      this.shortFormTags = [...this.shortFormTags, { id: tag.id, name: tag.name }];
+      renderSelectedTags();
+      renderChoices();
+      if (select.disabled) search.focus();
       this.saveSettings();
     });
+    renderSelectedTags();
     renderChoices();
-    picker.append(label, search, select, status);
+    picker.append(label, search, select, selectedTags, status);
     return picker;
   }
 
@@ -2109,7 +2144,7 @@ export class SettingsPage {
       enabledFileTypes: extensions.length > 0 ? extensions : ['.jpg', '.png', '.gif', '.mp4', '.m4v', '.webm'],
       includeShortForm: inputs.shortFormIncludeToggle.checked,
       shortFormMaxDuration: validMaxDuration,
-      shortFormTag: this.shortFormTag,
+      shortFormTags: this.shortFormTags,
       shortFormFolder: inputs.shortFormFolderInput.value.trim(),
       includeScenePreviews: inputs.includeScenePreviewsToggle.checked,
       reelAutoScroll: inputs.reelAutoScrollToggle.checked,

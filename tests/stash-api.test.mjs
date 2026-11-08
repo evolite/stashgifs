@@ -140,13 +140,13 @@ describe('short-form paging', () => {
     all[2].tags.push({ id: '7' });
     all[26].files[0].path = '/shorts/sub/video.mp4';
     all[27].files[0].path = '/shorts-archive/video.mp4';
-    all[28].tags.push({ id: '7' });
+    all[28].tags.push({ id: '9' });
     const api = await newStashApi((_op, variables) => {
       const start = (variables.filter.page - 1) * variables.filter.per_page;
       return { findScenes: { count: all.length, scenes: all.slice(start, start + variables.filter.per_page) } };
     });
     const filters = { tags: ['8'], sortSeed: 'random_12345678' };
-    const scope = { tagId: '7', folder: '/shorts' };
+    const scope = { tagIds: ['7', '9'], folder: '/shorts' };
     const first = await api.fetchShortFormVideos(filters, 120, 2, 0, undefined, scope);
     assert.deepEqual(first.markers.map(marker => marker.scene.id), ['2', '26']);
     assert.equal(first.nextOffset, 27);

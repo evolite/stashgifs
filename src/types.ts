@@ -123,7 +123,7 @@ export interface FeedSettings {
   orientationFilter?: ('landscape' | 'portrait' | 'square')[]; // Filter content by orientation
   includeShortForm?: boolean; // Include short-form content (videos < shortFormMaxDuration), default: true
   shortFormMaxDuration?: number; // Maximum duration in seconds for short-form content, default: 120
-  shortFormTag?: Tag | null;
+  shortFormTags?: Tag[];
   shortFormFolder?: string;
   randomSnippetDuration?: number; // Seconds of a random scene played before it's treated as ended, default: 20
   includeScenePreviews?: boolean; // Include scene hover-preview clips, default: false

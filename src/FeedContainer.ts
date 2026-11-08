@@ -43,7 +43,7 @@ const DEFAULT_SETTINGS: FeedSettings = {
   includeShortForm: true, // Include short-form content
   shortFormMaxDuration: 120, // Maximum duration in seconds for short-form content
   shortFormFolder: '',
-  shortFormTag: null,
+  shortFormTags: [],
   randomLongScenesOnly: false,
   playMarkersToEnd: false,
   includeScenePreviews: false, // Include scene hover-preview clips
@@ -637,6 +637,11 @@ export class FeedContainer {
       && !this.areStringListsEqual(newSettings.enabledFileTypes, previousSettings.enabledFileTypes ?? []);
     const galleryIdsChanged = newSettings.galleryIds !== undefined
       && !this.areStringListsEqual(newSettings.galleryIds, previousSettings.galleryIds ?? []);
+    const shortFormTagsChanged = newSettings.shortFormTags !== undefined
+      && !this.areStringListsEqual(
+        newSettings.shortFormTags.map(tag => tag.id),
+        (previousSettings.shortFormTags ?? []).map(tag => tag.id),
+      );
 
     return !!(
       changed('hdMode') ||
@@ -651,7 +656,7 @@ export class FeedContainer {
       changed('includeShortForm') ||
       changed('shortFormMaxDuration') ||
       changed('shortFormFolder') ||
-      (newSettings.shortFormTag !== undefined && newSettings.shortFormTag?.id !== previousSettings.shortFormTag?.id) ||
+      shortFormTagsChanged ||
       changed('includeScenePreviews') ||
       changed('imagesInGalleryOnly') ||
       galleryIdsChanged ||
@@ -4300,7 +4305,7 @@ export class FeedContainer {
       limit,
       offset,
       signal,
-      { tagId: this.settings.shortFormTag?.id, folder: this.settings.shortFormFolder }
+      { tagIds: this.settings.shortFormTags?.map(tag => tag.id), folder: this.settings.shortFormFolder }
     );
 
     return this.finalizeMarkersResult(result, currentFilters);

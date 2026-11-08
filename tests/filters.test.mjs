@@ -12,17 +12,18 @@ describe('short-form source', () => {
   const scene = (path, duration, ...tags) => ({ files: [{ path, duration }], tags: tags.map(id => ({ id })) });
   const inside = scene('/media/shorts [HD]/sub/video.mp4', 119);
   const tagged = scene('/media/other/video.mp4', 119, '7');
-  const scope = { tagId: '7', folder: '/media/shorts [HD]/' };
+  const scope = { tagIds: ['7', '9'], folder: '/media/shorts [HD]/' };
 
-  it('requires duration and lets either source criterion match', () => {
+  it('requires duration and lets any selected tag or the folder match', () => {
     const matches = filters.shortFormSceneMatcher(120, scope);
     assert.equal(matches(inside), true);
     assert.equal(matches(tagged), true);
+    assert.equal(matches(scene('/media/other/second.mp4', 119, '9')), true);
     assert.equal(matches(scene('/media/shorts [HD]-old/video.mp4', 119, '70')), false);
     assert.equal(matches(scene(inside.files[0].path, 120, '7')), false);
     assert.equal(matches(scene(inside.files[0].path, undefined, '7')), false);
     assert.equal(filters.shortFormSceneMatcher(120)(tagged), true);
-    assert.equal(filters.shortFormSceneMatcher(120, { tagId: '7' })(inside), false);
+    assert.equal(filters.shortFormSceneMatcher(120, { tagIds: ['7', '9'] })(inside), false);
     assert.equal(filters.shortFormSceneMatcher(120, { folder: scope.folder })(tagged), false);
   });
 
@@ -30,10 +31,11 @@ describe('short-form source', () => {
     const combined = filters.buildShortFormSceneFilter({ performers: ['2'] }, 120, scope);
     assert.deepEqual(combined.duration, { value: 120, modifier: 'LESS_THAN' });
     assert.deepEqual(combined.performers.value, [2]);
-    assert.deepEqual(combined.AND.tags, { value: ['7'], modifier: 'INCLUDES', depth: 0 });
+    assert.deepEqual(combined.AND.tags, { value: ['7', '9'], modifier: 'INCLUDES', depth: 0 });
     assert.equal(combined.AND.OR.path.value, '^/media/shorts \\[HD\\]/');
     assert.equal(filters.buildShortFormSceneFilter(undefined, 120, { folder: scope.folder }).path.modifier, 'MATCHES_REGEX');
-    assert.equal(filters.buildShortFormSceneFilter(undefined, 120, { tagId: '7' }).AND.OR, undefined);
+    assert.equal(filters.buildShortFormSceneFilter(undefined, 120, { tagIds: ['7', '9'] }).AND.OR, undefined);
+    assert.equal(filters.buildShortFormSceneFilter(undefined, 120, { tagIds: [] }).AND, undefined);
     const ordinary = filters.buildShortFormSceneFilter({ tags: ['8'] }, 120, scope);
     assert.deepEqual(ordinary.tags.value, ['8']);
     assert.equal(ordinary.AND, undefined);

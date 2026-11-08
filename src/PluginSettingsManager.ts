@@ -6,7 +6,7 @@
  */
 
 import { StashAPI } from './StashAPI.js';
-import { FeedSettings } from './types.js';
+import { FeedSettings, Tag } from './types.js';
 
 const PLUGIN_ID = 'stashgifs';
 const LOCAL_SETTINGS_KEY = 'stashgifs-settings';
@@ -15,6 +15,8 @@ const LOCAL_SHUFFLE_KEY = 'stashgifs-shuffleMode';
 const LOCAL_MUTE_KEY = 'stashgifs-globalMuteState';
 const SETTINGS_VERSION = 1;
 const SAVE_DEBOUNCE_MS = 1000;
+
+type StoredFeedSettings = Partial<FeedSettings> & { shortFormTag?: Tag | null };
 
 export interface PluginSettingsData {
   settings: Partial<FeedSettings>;
@@ -53,7 +55,8 @@ export class PluginSettingsManager {
    * Synchronous read from localStorage. Safe for constructors and early theme loading.
    */
   static getLocalSettings(): PluginSettingsData {
-    const settings = PluginSettingsManager.readLocalJSON<Partial<FeedSettings>>(LOCAL_SETTINGS_KEY, {});
+    const storedSettings = PluginSettingsManager.readLocalJSON<StoredFeedSettings>(LOCAL_SETTINGS_KEY, {});
+    const settings = PluginSettingsManager.migrateSettings(storedSettings ?? {});
     const hdMode = PluginSettingsManager.readLocalString(LOCAL_HD_KEY, 'true') === 'true';
     const shuffleMode = PluginSettingsManager.readLocalInt(LOCAL_SHUFFLE_KEY, 0, 0, 2);
     const globalMuteState = PluginSettingsManager.readLocalString(LOCAL_MUTE_KEY, 'true') === 'true';
@@ -203,7 +206,7 @@ export class PluginSettingsManager {
 
   private parseServerConfig(config: Record<string, unknown>): PluginSettingsData {
     const settings = (config.settings && typeof config.settings === 'object')
-      ? config.settings as Partial<FeedSettings>
+      ? PluginSettingsManager.migrateSettings(config.settings as StoredFeedSettings)
       : {};
     const hdMode = typeof config.hdMode === 'boolean' ? config.hdMode : true;
     const shuffleMode = typeof config.shuffleMode === 'number' && config.shuffleMode >= 0 && config.shuffleMode <= 2
@@ -212,6 +215,14 @@ export class PluginSettingsManager {
     const globalMuteState = typeof config.globalMuteState === 'boolean' ? config.globalMuteState : true;
 
     return { settings, hdMode, shuffleMode, globalMuteState, _version: SETTINGS_VERSION };
+  }
+
+  private static migrateSettings(storedSettings: StoredFeedSettings): Partial<FeedSettings> {
+    const { shortFormTag, ...settings } = storedSettings;
+    if (settings.shortFormTags === undefined && shortFormTag !== undefined) {
+      settings.shortFormTags = shortFormTag ? [shortFormTag] : [];
+    }
+    return settings;
   }
 
   // --- Static localStorage readers ---

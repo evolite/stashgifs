@@ -39,7 +39,7 @@ export type ImageFilterOptions = {
 export type TagSource = { marker: boolean; scene: boolean; performer: boolean; image: boolean };
 
 export interface ShortFormScope {
-  tagId?: string;
+  tagIds?: string[];
   folder?: string;
 }
 
@@ -449,15 +449,16 @@ export class FeedFilters {
 
     // Stash reuses the same SQL join for positive scene tag criteria. When the feed already
     // uses that join, the short-form tag/folder union is checked on the returned scenes.
-    if (scope?.tagId && sceneFilter.tags?.value.length) return sceneFilter;
+    const tagIds = scope?.tagIds ?? [];
+    if (tagIds.length > 0 && sceneFilter.tags?.value.length) return sceneFilter;
 
     const folder = shortFormFolderPattern(scope?.folder);
     const path: SceneFilterInput['path'] = folder && {
       value: (folder.ignoreCase ? '(?i)' : '') + folder.source,
       modifier: 'MATCHES_REGEX',
     };
-    if (scope?.tagId) {
-      sceneFilter.AND = { tags: { value: [scope.tagId], modifier: 'INCLUDES', depth: 0 } };
+    if (tagIds.length > 0) {
+      sceneFilter.AND = { tags: { value: tagIds, modifier: 'INCLUDES', depth: 0 } };
       if (path) sceneFilter.AND.OR = { path };
     } else if (path) {
       sceneFilter.path = path;
@@ -471,12 +472,12 @@ export class FeedFilters {
   shortFormSceneMatcher(maxDuration: number, scope?: ShortFormScope): (scene: Scene) => boolean {
     const folder = shortFormFolderPattern(scope?.folder);
     const path = folder && new RegExp(folder.source, folder.ignoreCase ? 'i' : '');
-    const tagId = scope?.tagId;
+    const tagIds = new Set(scope?.tagIds);
     return (scene) => {
       const duration = scene.files?.[0]?.duration ?? 0;
       if (!Number.isFinite(duration) || duration <= 0 || duration >= maxDuration) return false;
-      return (!tagId && !path)
-        || !!(tagId && scene.tags?.some(tag => tag.id === tagId))
+      return (tagIds.size === 0 && !path)
+        || !!scene.tags?.some(tag => tagIds.has(tag.id))
         || !!(path && scene.files?.some(file => path.test(file.path)));
     };
   }
