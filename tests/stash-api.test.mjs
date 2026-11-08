@@ -130,7 +130,48 @@ describe('short-form paging', () => {
     const result = await api.fetchShortFormVideos({ limit: 8 }, 120, 8, 24 * 9);
     assert.deepEqual(api.calls.map((c) => c.variables.filter.page), [10, 2]);
     assert.equal(result.totalCount, 30);
+    assert.deepEqual(result.markers, []);
+    assert.equal(result.nextOffset, null);
   });
+
+  it('fills a page across rejected scenes and resumes at the next raw row', async () => {
+    const all = scenes(30);
+    for (const scene of all) scene.tags = [{ id: '8' }];
+    all[2].tags.push({ id: '7' });
+    all[26].files[0].path = '/shorts/sub/video.mp4';
+    all[27].files[0].path = '/shorts-archive/video.mp4';
+    all[28].tags.push({ id: '7' });
+    const api = await newStashApi((_op, variables) => {
+      const start = (variables.filter.page - 1) * variables.filter.per_page;
+      return { findScenes: { count: all.length, scenes: all.slice(start, start + variables.filter.per_page) } };
+    });
+    const filters = { tags: ['8'], sortSeed: 'random_12345678' };
+    const scope = { tagId: '7', folder: '/shorts' };
+    const first = await api.fetchShortFormVideos(filters, 120, 2, 0, undefined, scope);
+    assert.deepEqual(first.markers.map(marker => marker.scene.id), ['2', '26']);
+    assert.equal(first.nextOffset, 27);
+    const second = await api.fetchShortFormVideos(filters, 120, 2, first.nextOffset, undefined, scope);
+    assert.deepEqual(second.markers.map(marker => marker.scene.id), ['28']);
+    assert.equal(second.nextOffset, null);
+    assert.deepEqual(api.calls.map(call => call.variables.filter.page), [1, 2, 2]);
+    assert.ok(api.calls.every(call => call.variables.filter.sort === filters.sortSeed));
+  });
+});
+
+it('offers Random markers only for verified long primary files when enabled', async () => {
+  const scenes = [
+    { id: 'short-primary', files: [{ duration: 119.9 }, { duration: 300 }] },
+    { id: 'exact-limit', files: [{ duration: 120 }] },
+    { id: 'unknown', files: [{ duration: undefined }, { duration: 300 }] },
+    { id: 'long', files: [{ duration: 400 }] },
+  ];
+  const api = await newStashApi(() => ({ findScenes: { count: scenes.length, scenes } }));
+  const result = await api.fetchSceneMarkers({ shuffleMode: true, randomMinSceneDuration: 120, limit: 2 });
+  assert.deepEqual(result.markers.map(marker => marker.scene.id), ['exact-limit', 'long']);
+  assert.deepEqual(api.calls[0].variables.scene_filter.duration, { value: 119, modifier: 'GREATER_THAN' });
+  const unfiltered = await api.fetchSceneMarkers({ shuffleMode: true, limit: 4 });
+  assert.equal(unfiltered.markers.length, 4);
+  assert.equal(api.calls[1].variables.scene_filter, undefined);
 });
 
 describe('tag source routing', () => {

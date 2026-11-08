@@ -82,8 +82,8 @@ export class VideoPost extends VideoPostBase {
     this.getGlobalMuteState = options.getGlobalMuteState;
     this.oCount = this.data.marker.scene.o_counter || 0;
     this.ratingSystemConfig = options.ratingSystemConfig;
-    // Short form content is always HD by default
-    if (this.isShortFormContent()) {
+    // Both modes play from the scene stream.
+    if (this.isShortFormContent() || this.data.playMarkerToEnd) {
       this.isHQMode = true;
     }
     
@@ -391,7 +391,7 @@ export class VideoPost extends VideoPostBase {
     buttonGroup.appendChild(ratingControl);
 
     // Scene previews stay preview-only — there's no full-scene upgrade to offer.
-    if (this.api && !this.hdModeFromSettings && !this.isScenePreviewContent()) {
+    if (this.api && !this.hdModeFromSettings && !this.isScenePreviewContent() && !this.data.playMarkerToEnd) {
       const hqBtn = this.createHQButton();
       buttonGroup.appendChild(hqBtn);
     }
@@ -830,7 +830,7 @@ export class VideoPost extends VideoPostBase {
       this.player = this.createVideoPlayer(playerContainer, sceneVideoUrl, {
         muted: true,
         startTime: startTime,
-        endTime: this.data.endTime ?? this.data.marker.end_seconds,
+        endTime: this.resolvePlaybackEndTime(),
         sources,
       });
 
@@ -947,6 +947,11 @@ export class VideoPost extends VideoPostBase {
   }
 
 
+  private resolvePlaybackEndTime(endTime?: number): number | undefined {
+    if (this.data.playMarkerToEnd) return undefined;
+    return endTime ?? this.data.endTime ?? this.data.marker.end_seconds;
+  }
+
   /**
    * Load the video player
    */
@@ -985,7 +990,7 @@ export class VideoPost extends VideoPostBase {
       // absolute scene-timeline end_seconds would break progress/seek — let the
       // player fall back to the real video.duration. HQ/full-scene keeps the bound.
       const finalEndTime = (this.isHQMode || !hasPrerenderedClip)
-        ? (endTime ?? this.data.endTime ?? this.data.marker.end_seconds)
+        ? this.resolvePlaybackEndTime(endTime)
         : undefined;
 
       // Respect global mute state when creating player
@@ -1051,8 +1056,7 @@ export class VideoPost extends VideoPostBase {
 
     return this.loadPlayer(
       this.data.videoUrl!,
-      this.data.startTime ?? this.data.marker.seconds,
-      this.data.endTime ?? this.data.marker.end_seconds
+      this.data.startTime ?? this.data.marker.seconds
     );
   }
 
@@ -1618,7 +1622,7 @@ export class VideoPost extends VideoPostBase {
 
       const createdMarker = await this.api.createSceneMarker(
         String(sceneIdRaw),
-        this.data.startTime ?? 0,
+        this.data.startTime ?? this.data.marker.seconds,
         String(this.selectedTagId),
         '',
         null,

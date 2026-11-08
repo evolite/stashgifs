@@ -38,6 +38,23 @@ export type ImageFilterOptions = {
 
 export type TagSource = { marker: boolean; scene: boolean; performer: boolean; image: boolean };
 
+export interface ShortFormScope {
+  tagId?: string;
+  folder?: string;
+}
+
+function shortFormFolderPattern(folder?: string): { source: string; ignoreCase: boolean } | undefined {
+  const path = folder?.trim();
+  if (!path) return undefined;
+
+  const windows = /^(?:[a-z]:[\\/]|[\\/]{2})/i.test(path);
+  const separator = windows ? '[/\\\\]' : '/';
+  const segments = windows ? path.split(/[\\/]/) : path.split('/');
+  while (segments.at(-1) === '') segments.pop();
+  const prefix = segments.map(segment => segment.replace(/[.*+?^()|[\]\\{}$]/g, '\\$&')).join(separator);
+  return { source: '^' + prefix + separator, ignoreCase: windows };
+}
+
 export class FeedFilters {
   private static readonly DATE_RANGE_DAYS: Record<DateRangeFilter, number> = {
     week: 7,
@@ -396,6 +413,10 @@ export class FeedFilters {
     if (filters?.includeScenesWithoutMarkers) {
       sceneFilter.has_markers = 'false';
     }
+    if (filters?.randomMinSceneDuration !== undefined) {
+      // Stash's scene duration criterion compares integer seconds.
+      sceneFilter.duration = { value: Math.ceil(filters.randomMinSceneDuration) - 1, modifier: 'GREATER_THAN' };
+    }
     this.applyTagAndPerformerFilters(filters, sceneFilter, { isMarkerFilter: false });
     this.applyOrientationToSceneFilter(sceneFilter, filters);
 
@@ -406,7 +427,7 @@ export class FeedFilters {
   /**
    * Build scene filter for short-form content
    */
-  buildShortFormSceneFilter(filters?: FilterOptions, maxDuration?: number): SceneFilterInput | null {
+  buildShortFormSceneFilter(filters?: FilterOptions, maxDuration?: number, scope?: ShortFormScope): SceneFilterInput {
     const sceneFilter: SceneFilterInput = {
       file_count: {
         value: 0,
@@ -426,27 +447,38 @@ export class FeedFilters {
     const createdAt = this.resolveCreatedAtCriterion(filters?.dateRangeFilter);
     if (createdAt) sceneFilter.created_at = createdAt;
 
-    return Object.keys(sceneFilter).length > 0 ? sceneFilter : null;
+    // Stash reuses the same SQL join for positive scene tag criteria. When the feed already
+    // uses that join, the short-form tag/folder union is checked on the returned scenes.
+    if (scope?.tagId && sceneFilter.tags?.value.length) return sceneFilter;
+
+    const folder = shortFormFolderPattern(scope?.folder);
+    const path: SceneFilterInput['path'] = folder && {
+      value: (folder.ignoreCase ? '(?i)' : '') + folder.source,
+      modifier: 'MATCHES_REGEX',
+    };
+    if (scope?.tagId) {
+      sceneFilter.AND = { tags: { value: [scope.tagId], modifier: 'INCLUDES', depth: 0 } };
+      if (path) sceneFilter.AND.OR = { path };
+    } else if (path) {
+      sceneFilter.path = path;
+    }
+    return sceneFilter;
   }
 
   /**
    * Filter scenes for short-form content (duration < maxDuration)
    */
-  filterShortFormScenes(scenes: Scene[], maxDuration: number): Scene[] {
-    return scenes.filter((scene) => {
-      const file = scene.files?.[0];
-      if (!file) return false;
-
-      const duration = file.duration;
-
-      // Must have valid duration
-      if (!duration) return false;
-
-      // Must be shorter than max duration
-      if (duration >= maxDuration) return false;
-
-      return true;
-    });
+  shortFormSceneMatcher(maxDuration: number, scope?: ShortFormScope): (scene: Scene) => boolean {
+    const folder = shortFormFolderPattern(scope?.folder);
+    const path = folder && new RegExp(folder.source, folder.ignoreCase ? 'i' : '');
+    const tagId = scope?.tagId;
+    return (scene) => {
+      const duration = scene.files?.[0]?.duration ?? 0;
+      if (!Number.isFinite(duration) || duration <= 0 || duration >= maxDuration) return false;
+      return (!tagId && !path)
+        || !!(tagId && scene.tags?.some(tag => tag.id === tagId))
+        || !!(path && scene.files?.some(file => path.test(file.path)));
+    };
   }
 
   /**

@@ -29,7 +29,7 @@ import { SearchApi } from './api/SearchApi.js';
 import { ConfigApi } from './api/ConfigApi.js';
 import { EntityApi } from './api/EntityApi.js';
 import { TagsApi, type MarkerTagUpdateData } from './api/TagsApi.js';
-import { FeedFilters, type ImageFilterOptions } from './api/FeedFilters.js';
+import { FeedFilters, type ImageFilterOptions, type ShortFormScope } from './api/FeedFilters.js';
 import { generateRandomSortSeed } from './api/sortSeed.js';
 
 interface StashPluginApi {
@@ -43,6 +43,13 @@ interface StashPluginApi {
 
 
 export { generateRandomSortSeed };
+
+interface ShortFormPage {
+  markers: SceneMarker[];
+  totalCount: number;
+  nextOffset: number | null;
+  sortSeed: string;
+}
 
 export class StashAPI {
   private readonly baseUrl: string;
@@ -256,7 +263,13 @@ export class StashAPI {
 
       if (this.io.isAborted(signal)) return { markers: [], sortSeed, totalCount: 0 };
 
-      return { markers: this.createSyntheticMarkers(scenes, 'synthetic', limit), sortSeed, totalCount };
+      const minDuration = filters?.randomMinSceneDuration;
+      const eligibleScenes = minDuration === undefined ? scenes : scenes.filter((scene) => {
+        // The scene stream and the marker's random start both use the primary file.
+        const duration = scene.files?.[0]?.duration ?? 0;
+        return Number.isFinite(duration) && duration >= minDuration;
+      });
+      return { markers: this.createSyntheticMarkers(eligibleScenes, 'synthetic', limit), sortSeed, totalCount };
     } catch (error: unknown) {
       const emptyResult = { markers: [] as SceneMarker[], sortSeed: generateRandomSortSeed(), totalCount: 0 };
       return this.io.handleError('fetchScenesForShuffle', error, signal, emptyResult);
@@ -323,6 +336,7 @@ export class StashAPI {
    * @param limit Maximum number of scenes to return
    * @param offset Offset for pagination
    * @param signal Abort signal
+   * @param scope Optional short-form scene tag and folder
    * @returns Array of synthetic scene markers for short-form content
    */
   async fetchShortFormVideos(
@@ -330,39 +344,44 @@ export class StashAPI {
     maxDuration: number = 120,
     limit: number = 20,
     offset: number = 0,
-    signal?: AbortSignal
-  ): Promise<{ markers: SceneMarker[]; totalCount: number; unfilteredOffsetConsumed: number; sortSeed: string }> {
-    if (this.io.isAborted(signal)) return { markers: [], totalCount: 0, unfilteredOffsetConsumed: 0, sortSeed: generateRandomSortSeed() };
+    signal?: AbortSignal,
+    scope?: ShortFormScope
+  ): Promise<ShortFormPage> {
+    const sortSeed = filters?.sortSeed || generateRandomSortSeed();
+    const retry: ShortFormPage = { markers: [], totalCount: 0, nextOffset: offset, sortSeed };
+    if (this.io.isAborted(signal)) return retry;
 
     try {
+      const sceneFilter = this.filters.buildShortFormSceneFilter(filters, maxDuration, scope);
+      const matches = this.filters.shortFormSceneMatcher(maxDuration, scope);
+      const selected: Scene[] = [];
+      let cursor = offset;
+      let totalCount = 0;
 
-      
-      const sceneFilter = this.filters.buildShortFormSceneFilter(filters, maxDuration);
-      
-      // Reuse existing sort seed for pagination, or generate new one for first page
-      const sortSeed = filters?.sortSeed || generateRandomSortSeed();
+      while (selected.length < limit) {
+        const page = await this.fetchSceneListPage(sceneFilter, cursor, sortSeed, signal);
+        if (this.io.isAborted(signal)) return retry;
+        totalCount = page?.totalCount ?? 0;
+        if (!page || cursor >= totalCount) break;
 
-      const page = await this.fetchSceneListPage(sceneFilter, offset, sortSeed, signal);
-      if (!page || this.io.isAborted(signal)) {
-        return { markers: [], totalCount: 0, unfilteredOffsetConsumed: 0, sortSeed: generateRandomSortSeed() };
+        const first = cursor;
+        for (const scene of page.scenes.slice(page.offsetInPage)) {
+          cursor++;
+          if (matches(scene)) selected.push(scene);
+          if (selected.length === limit || cursor >= totalCount) break;
+        }
+        if (cursor === first || cursor >= totalCount) break;
+        if (selected.length < limit && page.scenes.length < StashAPI.SHORT_FORM_SCENES_PER_PAGE) break;
       }
-      const { scenes, totalCount, offsetInPage } = page;
-      
-      // Filter by duration (GraphQL filter should handle this, but filter client-side as backup)
-      const shortFormScenes = this.filters.filterShortFormScenes(scenes, maxDuration);
-      
-      // Apply offset within page and limit to results
-      const limitedScenes = shortFormScenes.slice(offsetInPage, offsetInPage + limit);
-      
-      const markers = this.createShortFormMarkers(limitedScenes);
-      
-      // Calculate unfiltered offset consumed: offsetInPage + number of scenes we actually processed
-      // Since we slice from offsetInPage and take up to limit, we process at most offsetInPage + limit scenes
-      const unfilteredOffsetConsumed = offsetInPage + limitedScenes.length;
-      
-      return { markers, totalCount, unfilteredOffsetConsumed, sortSeed };
+
+      return {
+        markers: this.createShortFormMarkers(selected),
+        totalCount,
+        nextOffset: selected.length === limit && cursor > offset && cursor < totalCount ? cursor : null,
+        sortSeed,
+      };
     } catch (error: unknown) {
-      return this.io.handleError('fetchShortFormVideos', error, signal, { markers: [], totalCount: 0, unfilteredOffsetConsumed: 0, sortSeed: generateRandomSortSeed() });
+      return this.io.handleError('fetchShortFormVideos', error, signal, retry);
     }
   }
 

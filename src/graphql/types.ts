@@ -69,6 +69,10 @@ export interface SceneMarkerFilterInput {
  * SceneFilterType - Filter for scenes
  */
 export interface SceneFilterInput {
+  AND?: SceneFilterInput;
+  OR?: SceneFilterInput;
+  path?: ImageFilterInput['path'];
+  duration?: { value: number; modifier: ComparisonModifier };
   created_at?: TimestampCriterionInput;
   has_markers?: string; // 'true' | 'false'
   orientation?: {
