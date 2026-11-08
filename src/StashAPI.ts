@@ -70,6 +70,7 @@ export class StashAPI {
 
   // Magic numbers as constants
   private static readonly SHORT_FORM_SCENES_PER_PAGE = 24; // Number of scenes to fetch per page for short-form content
+  private static readonly SHORT_FORM_MAX_PAGES_PER_LOAD = 5;
   private static readonly DEFAULT_CONTENT_LIMIT = 5000; // Default cap for users with extreme amounts
   private _maxContentLimit = StashAPI.DEFAULT_CONTENT_LIMIT;
 
@@ -355,29 +356,32 @@ export class StashAPI {
       const sceneFilter = this.filters.buildShortFormSceneFilter(filters, maxDuration, scope);
       const matches = this.filters.shortFormSceneMatcher(maxDuration, scope);
       const selected: Scene[] = [];
-      let cursor = offset;
+      let nextOffset: number | null = offset;
       let totalCount = 0;
 
-      while (selected.length < limit) {
-        const page = await this.fetchSceneListPage(sceneFilter, cursor, sortSeed, signal);
+      for (let pages = 0; pages < StashAPI.SHORT_FORM_MAX_PAGES_PER_LOAD && selected.length < limit && nextOffset !== null; pages++) {
+        let cursor: number = nextOffset;
+        nextOffset = null;
+        const page = await this.fetchSceneListPage(sceneFilter, cursor, sortSeed, signal, false);
         if (this.io.isAborted(signal)) return retry;
         totalCount = page?.totalCount ?? 0;
         if (!page || cursor >= totalCount) break;
 
-        const first = cursor;
         for (const scene of page.scenes.slice(page.offsetInPage)) {
           cursor++;
           if (matches(scene)) selected.push(scene);
           if (selected.length === limit || cursor >= totalCount) break;
         }
-        if (cursor === first || cursor >= totalCount) break;
-        if (selected.length < limit && page.scenes.length < StashAPI.SHORT_FORM_SCENES_PER_PAGE) break;
+        // A full server page can be followed by more candidates even when none matched.
+        if (cursor < totalCount && (selected.length === limit || page.scenes.length === StashAPI.SHORT_FORM_SCENES_PER_PAGE)) {
+          nextOffset = cursor;
+        }
       }
 
       return {
         markers: this.createShortFormMarkers(selected),
         totalCount,
-        nextOffset: selected.length === limit && cursor > offset && cursor < totalCount ? cursor : null,
+        nextOffset: totalCount > 0 ? nextOffset : null,
         sortSeed,
       };
     } catch (error: unknown) {
@@ -387,13 +391,14 @@ export class StashAPI {
 
   /**
    * One page of a short-form/scene-preview scene list. The total comes back with the page itself;
-   * an offset past the (capped) end is clamped to the last page. Null when there are no scenes.
+   * scene previews may clamp an offset past the (capped) end to the last page.
    */
   private async fetchSceneListPage(
     sceneFilter: SceneFilterInput | null,
     offset: number,
     sortSeed: string,
-    signal?: AbortSignal
+    signal?: AbortSignal,
+    clampToLastPage = true
   ): Promise<{ scenes: Scene[]; totalCount: number; offsetInPage: number } | null> {
     const perPage = StashAPI.SHORT_FORM_SCENES_PER_PAGE;
     const wantedPage = Math.floor(offset / perPage) + 1;
@@ -406,7 +411,7 @@ export class StashAPI {
     if (totalCount === 0) return null;
 
     const maxPage = Math.max(1, Math.ceil(totalCount / perPage));
-    if (wantedPage > maxPage) {
+    if (clampToLastPage && wantedPage > maxPage) {
       ({ scenes } = await query(maxPage));
       if (this.io.isAborted(signal)) return null;
     }

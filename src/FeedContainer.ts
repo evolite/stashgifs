@@ -111,6 +111,7 @@ export class FeedContainer {
   private imagesLoadedCount: number = 0; // Track how many images we've loaded
   private markersLoadedCount: number = 0; // Track how many markers we've loaded
   private shortFormOffset: number | null = 0;
+  private shortFormScanPaused = false;
   private scenePreviewUnfilteredOffset: number = 0; // Track offset in UNFILTERED scene list for scene-preview pagination
   private markerPageSize: number = 0; // Track the page size used for markers (for consistent pagination)
   private imagePageSize: number = 0; // Track the page size used for images (for consistent pagination)
@@ -3474,6 +3475,7 @@ export class FeedContainer {
       this.markersLoadedCount = 0;
       this.imagesLoadedCount = 0;
       this.shortFormOffset = 0;
+      this.shortFormScanPaused = false;
       this.markerPageSize = 0;
       this.imagePageSize = 0;
       if (this.appendRetryTimeoutId) {
@@ -3545,7 +3547,7 @@ export class FeedContainer {
   /**
    * Finalize load state after rendering
    */
-  private finalizeLoadState(append: boolean, page: number): void {
+  private finalizeLoadState(append: boolean, page: number, firstCards: boolean): void {
     this.appendRetryCount = 0;
     if (append) {
       this.currentPage = page;
@@ -3560,7 +3562,7 @@ export class FeedContainer {
     // actually grew, so an empty page can't loop.
     setTimeout(() => this.prefetchIfNearEnd(), 0);
 
-    if (!append) {
+    if (firstCards) {
       // First batch rendered: align to the first card and start it playing.
       requestAnimationFrame(() => {
         this.reelScroller?.realign();
@@ -4084,6 +4086,7 @@ export class FeedContainer {
 
     const renderChunkSize = 6;
     const renderDelay = 8;
+    const firstCards = this.postOrder.length === 0;
     await this.renderPostsProgressively(mergedContent, append, signal, renderChunkSize, renderDelay);
 
     if (this.checkAbortAndCleanup(signal)) {
@@ -4094,7 +4097,7 @@ export class FeedContainer {
     // user stops scrolling). Pruning synchronously here — right after appending to the
     // bottom while the user is scrolling toward those new cards — risked removing cards and
     // shifting layout mid-gesture; the debounced path runs only once the reel has settled.
-    this.finalizeLoadState(append, page);
+    this.finalizeLoadState(append, page, firstCards);
   }
 
   async loadVideos(filters?: FilterOptions, append: boolean = false, signal?: AbortSignal, force: boolean = false): Promise<void> {
@@ -4196,7 +4199,22 @@ export class FeedContainer {
         append,
         shouldLoadRandom
       });
-      if (shortFormMarkers.length > 0 && shortFormNextOffset !== null) this.hasMore = true;
+      const hasMoreShortForm = shortFormNextOffset !== null;
+      const wasPaused = this.shortFormScanPaused;
+      const pauseShortForm = mergedContent.length === 0 && hasMoreShortForm;
+      if (wasPaused !== pauseShortForm) {
+        this.shortFormScanPaused = pauseShortForm;
+        this.endCard?.remove();
+        this.endCard = undefined;
+      }
+      if (mergedContent.length === 0 && (wasPaused || pauseShortForm)) {
+        // Leave the cursor in place for the next user request, even on an empty first batch.
+        this.hasMore = false;
+        this.currentPage = page;
+        this.hideSkeletonLoaders();
+        return;
+      }
+      if (hasMoreShortForm) this.hasMore = true;
 
       const totalUnfiltered = markers.length + shortFormMarkers.length + randomMarkers.length + scenePreviewMarkers.length + images.length;
       if (totalUnfiltered > 0 && mergedContent.length === 0 && append && this.seenSkipCount < 10) {
@@ -4675,7 +4693,7 @@ export class FeedContainer {
   /**
    * Reconcile the synthetic end-of-feed card with the current hasMore state:
    * show it (as a full-viewport snap card at the end of the feed)
-   * once there's content but nothing more to load, hide it otherwise.
+   * when the feed ends or is waiting for the user to continue a short-form search.
    */
   private updateEndCard(): void {
     const container = this.postsContainer;
@@ -4683,7 +4701,8 @@ export class FeedContainer {
     const shouldShow = !this.hasMore;
     const present = this.endCard?.parentNode === container;
     if (shouldShow && !present) {
-      this.endCard = buildEndOfFeedCard(() => this.openSearchFromEndCard());
+      const onContinue = this.shortFormScanPaused ? () => this.loadVideos(undefined, true) : undefined;
+      this.endCard = buildEndOfFeedCard(() => this.openSearchFromEndCard(), onContinue);
       container.appendChild(this.endCard);
     } else if (!shouldShow && this.endCard) {
       this.endCard.remove();

@@ -1,12 +1,12 @@
 /**
- * Synthetic "end of content" card shown when the feed has no more content to
- * load. The reel scroller snaps onto it like a real post (it carries
+ * Synthetic card shown when the feed ends or a short-form search is paused.
+ * The reel scroller snaps onto it like a real post (it carries
  * data-post-id), so reaching the bottom gives feedback instead of silently
  * clamping on the last card.
  *
- * There's no separate "search" button — the card points an arrow up at the
- * header search bar (which FeedContainer force-shows when this card settles)
- * and focuses it on tap. The footer mirrors the Settings feedback/support links.
+ * At the end, the card points to the header search bar and focuses it on tap.
+ * A paused search can continue from the last scanned page. The footer mirrors
+ * the Settings feedback/support links.
  */
 
 import { THEME, toRgba } from './utils.js';
@@ -78,7 +78,7 @@ function createFooterLink(label: string, href: string): HTMLAnchorElement {
  * Build a full-viewport end-of-feed card. `onSearch` runs when the user taps the
  * arrow/hint pointing at the search bar.
  */
-export function buildEndOfFeedCard(onSearch: () => void): HTMLElement {
+export function buildEndOfFeedCard(onSearch: () => void, onContinue?: () => Promise<void>): HTMLElement {
   ensureKeyframes();
 
   const card = document.createElement('div');
@@ -101,11 +101,12 @@ export function buildEndOfFeedCard(onSearch: () => void): HTMLElement {
     fontFamily: THEME.typography.fontFamily,
   });
 
-  // Top — arrow + hint pointing up at the (force-shown) header search bar.
+  // Top — continue a paused search or point up at the header search bar.
   const hint = document.createElement('button');
   hint.type = 'button';
-  hint.setAttribute('aria-label', 'Search for more content');
-  hint.title = 'Search for more content';
+  const actionLabel = onContinue ? 'Continue searching' : 'Search for more content';
+  hint.setAttribute('aria-label', actionLabel);
+  hint.title = actionLabel;
   Object.assign(hint.style, {
     display: 'flex',
     flexDirection: 'column',
@@ -122,19 +123,30 @@ export function buildEndOfFeedCard(onSearch: () => void): HTMLElement {
     fontFamily: THEME.typography.fontFamily,
   });
   const arrow = document.createElement('div');
-  arrow.textContent = '↑';
+  arrow.textContent = onContinue ? '↓' : '↑';
   Object.assign(arrow.style, {
     fontSize: '52px',
     lineHeight: '1',
     color: THEME.colors.accentPrimary,
-    animation: 'stashgifs-endcard-bounce 1.6s ease-in-out infinite',
+    animation: onContinue ? 'none' : 'stashgifs-endcard-bounce 1.6s ease-in-out infinite',
   });
   const hintText = document.createElement('span');
-  hintText.textContent = 'Search up top for more';
+  hintText.textContent = onContinue ? actionLabel : 'Search up top for more';
   hintText.style.fontSize = THEME.typography.sizeTitle;
   hintText.style.fontWeight = THEME.typography.weightBodyStrong;
   hint.append(arrow, hintText);
-  hint.addEventListener('click', onSearch);
+  if (onContinue) {
+    hint.addEventListener('click', async () => {
+      hint.disabled = true;
+      try {
+        await onContinue();
+      } finally {
+        hint.disabled = false;
+      }
+    });
+  } else {
+    hint.addEventListener('click', onSearch);
+  }
 
   // Center — feedback/support links, front and centre in the body.
   const footer = document.createElement('div');
