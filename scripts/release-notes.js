@@ -17,8 +17,7 @@ const FALLBACK = 'Maintenance and internal improvements.';
 /** Body (without the "## [x.y.z]" heading) of `version`'s section, or the fallback. */
 function notesFor(version, markdown) {
   const lines = markdown.split('\n');
-  const heading = new RegExp(`^## \\[${version.replaceAll('.', '\\.')}\\]`);
-  const start = lines.findIndex((line) => heading.test(line));
+  const start = lines.findIndex((line) => line.startsWith(`## [${version}]`));
   if (start === -1) return FALLBACK;
   const end = lines.findIndex((line, i) => i > start && line.startsWith('## ['));
   const body = lines.slice(start + 1, end === -1 ? undefined : end).join('\n').trim();
