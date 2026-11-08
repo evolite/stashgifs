@@ -83,5 +83,6 @@ it('sends the expected filters for every content type and filter combination', a
     writeFileSync(FIXTURE, actual);
     return;
   }
-  assert.equal(actual, readFileSync(FIXTURE, 'utf8'), 'filter building changed; rerun with UPDATE_GOLDEN=1 if intentional');
+  const expected = readFileSync(FIXTURE, 'utf8').replace(/\r\n/g, '\n');
+  assert.equal(actual, expected, 'filter building changed; rerun with UPDATE_GOLDEN=1 if intentional');
 });

@@ -42,6 +42,10 @@ const DEFAULT_SETTINGS: FeedSettings = {
   imagesOnly: false,
   includeShortForm: true, // Include short-form content
   shortFormMaxDuration: 120, // Maximum duration in seconds for short-form content
+  shortFormFolder: '',
+  shortFormTags: [],
+  randomLongScenesOnly: false,
+  playMarkersToEnd: false,
   includeScenePreviews: false, // Include scene hover-preview clips
   autoHideSearchBar: true,
   themeBackground: THEME_DEFAULTS.backgroundPrimary,
@@ -106,7 +110,8 @@ export class FeedContainer {
   private ratingSystemConfig: { type?: string; starPrecision?: string } | null | undefined;
   private imagesLoadedCount: number = 0; // Track how many images we've loaded
   private markersLoadedCount: number = 0; // Track how many markers we've loaded
-  private shortFormUnfilteredOffset: number = 0; // Track offset in UNFILTERED scene list for short-form pagination
+  private shortFormOffset: number | null = 0;
+  private shortFormScanPaused = false;
   private scenePreviewUnfilteredOffset: number = 0; // Track offset in UNFILTERED scene list for scene-preview pagination
   private markerPageSize: number = 0; // Track the page size used for markers (for consistent pagination)
   private imagePageSize: number = 0; // Track the page size used for images (for consistent pagination)
@@ -633,17 +638,26 @@ export class FeedContainer {
       && !this.areStringListsEqual(newSettings.enabledFileTypes, previousSettings.enabledFileTypes ?? []);
     const galleryIdsChanged = newSettings.galleryIds !== undefined
       && !this.areStringListsEqual(newSettings.galleryIds, previousSettings.galleryIds ?? []);
+    const shortFormTagsChanged = newSettings.shortFormTags !== undefined
+      && !this.areStringListsEqual(
+        newSettings.shortFormTags.map(tag => tag.id),
+        (previousSettings.shortFormTags ?? []).map(tag => tag.id),
+      );
 
     return !!(
       changed('hdMode') ||
       changed('includeMarkersInFeed') ||
+      changed('playMarkersToEnd') ||
       changed('includeImagesInFeed') ||
       changed('includeRandomInFeed') ||
       changed('randomIncludeScenesWithMarkers') ||
+      changed('randomLongScenesOnly') ||
       enabledFileTypesChanged ||
       changed('imagesOnly') ||
       changed('includeShortForm') ||
       changed('shortFormMaxDuration') ||
+      changed('shortFormFolder') ||
+      shortFormTagsChanged ||
       changed('includeScenePreviews') ||
       changed('imagesInGalleryOnly') ||
       galleryIdsChanged ||
@@ -2049,7 +2063,8 @@ export class FeedContainer {
       () => {
         this.settingsContainer?.remove();
         this.settingsContainer = undefined;
-      }
+      },
+      (query, signal) => this.api.findTagsForSelect(query, 30, signal),
     );
   }
 
@@ -3459,7 +3474,8 @@ export class FeedContainer {
       // Reset loaded counts when starting fresh
       this.markersLoadedCount = 0;
       this.imagesLoadedCount = 0;
-      this.shortFormUnfilteredOffset = 0;
+      this.shortFormOffset = 0;
+      this.shortFormScanPaused = false;
       this.markerPageSize = 0;
       this.imagePageSize = 0;
       if (this.appendRetryTimeoutId) {
@@ -3531,7 +3547,7 @@ export class FeedContainer {
   /**
    * Finalize load state after rendering
    */
-  private finalizeLoadState(append: boolean, page: number): void {
+  private finalizeLoadState(append: boolean, page: number, firstCards: boolean): void {
     this.appendRetryCount = 0;
     if (append) {
       this.currentPage = page;
@@ -3546,7 +3562,7 @@ export class FeedContainer {
     // actually grew, so an empty page can't loop.
     setTimeout(() => this.prefetchIfNearEnd(), 0);
 
-    if (!append) {
+    if (firstCards) {
       // First batch rendered: align to the first card and start it playing.
       requestAnimationFrame(() => {
         this.reelScroller?.realign();
@@ -3604,7 +3620,7 @@ export class FeedContainer {
     this.hasMore = true;
     this.markersLoadedCount = 0;
     this.imagesLoadedCount = 0;
-    this.shortFormUnfilteredOffset = 0;
+    this.shortFormOffset = 0;
     this.markerPageSize = 0;
     this.imagePageSize = 0;
     this.appendRetryCount = 0;
@@ -3729,6 +3745,7 @@ export class FeedContainer {
     markerCount: number;
     imageCount: number;
     shortFormCount: number;
+    shortFormNextOffset: number | null;
     randomCount: number;
     scenePreviewCount: number;
   }> {
@@ -3764,7 +3781,6 @@ export class FeedContainer {
       fetchDuration
     });
 
-    this.updateShortFormOffsetIfNeeded(shouldLoadShortForm, append, shortFormResult);
     this.updateScenePreviewOffsetIfNeeded(shouldLoadScenePreviews, append, scenePreviewResult);
 
     return {
@@ -3776,6 +3792,7 @@ export class FeedContainer {
       markerCount: markersResult.totalCount,
       imageCount: imagesResult.totalCount,
       shortFormCount: shortFormResult.totalCount,
+      shortFormNextOffset: shortFormResult.nextOffset,
       randomCount: randomResult.totalCount,
       scenePreviewCount: scenePreviewResult.totalCount,
     };
@@ -3790,13 +3807,13 @@ export class FeedContainer {
   private getLoadOffsets(append: boolean): {
     markerOffset: number;
     imageOffset: number;
-    shortFormOffset: number;
+    shortFormOffset: number | null;
     scenePreviewOffset: number;
   } {
     return {
       markerOffset: append ? this.markersLoadedCount : 0,
       imageOffset: append ? this.imagesLoadedCount : 0,
-      shortFormOffset: append ? this.shortFormUnfilteredOffset : 0,
+      shortFormOffset: append ? this.shortFormOffset : 0,
       scenePreviewOffset: append ? this.scenePreviewUnfilteredOffset : 0
     };
   }
@@ -3832,13 +3849,13 @@ export class FeedContainer {
   private async fetchShortFormIfNeeded(options: {
     currentFilters: FilterOptions;
     shortFormLimit: number;
-    shortFormOffset: number;
+    shortFormOffset: number | null;
     signal: AbortSignal | undefined;
     shouldLoadShortForm: boolean;
-  }): Promise<{ markers: SceneMarker[]; totalCount: number; unfilteredOffsetConsumed?: number }> {
+  }): Promise<{ markers: SceneMarker[]; totalCount: number; nextOffset: number | null }> {
     const { currentFilters, shortFormLimit, shortFormOffset, signal, shouldLoadShortForm } = options;
-    if (!shouldLoadShortForm) {
-      return { markers: [], totalCount: 0, unfilteredOffsetConsumed: 0 };
+    if (!shouldLoadShortForm || shortFormOffset === null) {
+      return { markers: [], totalCount: 0, nextOffset: null };
     }
     return this.fetchShortFormVideosForLoad(currentFilters, shortFormLimit, shortFormOffset, signal);
   }
@@ -3868,24 +3885,14 @@ export class FeedContainer {
       ...currentFilters,
       limit,
       shuffleMode: true,
-      includeScenesWithoutMarkers: !this.settings.randomIncludeScenesWithMarkers
+      includeScenesWithoutMarkers: !this.settings.randomIncludeScenesWithMarkers,
+      randomMinSceneDuration: this.settings.randomLongScenesOnly ? this.settings.shortFormMaxDuration || 120 : undefined,
     };
     const result = await this.api.fetchSceneMarkers(filters, signal);
     return {
       markers: this.filterMarkersByName(result.markers),
       totalCount: result.totalCount
     };
-  }
-
-  private updateShortFormOffsetIfNeeded(
-    shouldLoadShortForm: boolean,
-    append: boolean,
-    shortFormResult: { unfilteredOffsetConsumed?: number }
-  ): void {
-    if (!shouldLoadShortForm) {
-      return;
-    }
-    this.updateShortFormUnfilteredOffset(append, shortFormResult);
   }
 
   private async fetchScenePreviewsIfNeeded(options: {
@@ -3986,25 +3993,6 @@ export class FeedContainer {
     }
   }
 
-  private updateShortFormUnfilteredOffset(
-    append: boolean,
-    shortFormResult: { unfilteredOffsetConsumed?: number }
-  ): void {
-    const unfilteredOffsetConsumed = shortFormResult.unfilteredOffsetConsumed;
-    if (typeof unfilteredOffsetConsumed !== 'number') {
-      return;
-    }
-
-    const scenesPerPage = 24;
-    if (append) {
-      const page = Math.floor(this.shortFormUnfilteredOffset / scenesPerPage) + 1;
-      this.shortFormUnfilteredOffset = (page - 1) * scenesPerPage + unfilteredOffsetConsumed;
-      return;
-    }
-
-    this.shortFormUnfilteredOffset = unfilteredOffsetConsumed;
-  }
-
   /**
    * Process and merge fetched content
    */
@@ -4098,6 +4086,7 @@ export class FeedContainer {
 
     const renderChunkSize = 6;
     const renderDelay = 8;
+    const firstCards = this.postOrder.length === 0;
     await this.renderPostsProgressively(mergedContent, append, signal, renderChunkSize, renderDelay);
 
     if (this.checkAbortAndCleanup(signal)) {
@@ -4108,7 +4097,7 @@ export class FeedContainer {
     // user stops scrolling). Pruning synchronously here — right after appending to the
     // bottom while the user is scrolling toward those new cards — risked removing cards and
     // shifting layout mid-gesture; the debounced path runs only once the reel has settled.
-    this.finalizeLoadState(append, page);
+    this.finalizeLoadState(append, page, firstCards);
   }
 
   async loadVideos(filters?: FilterOptions, append: boolean = false, signal?: AbortSignal, force: boolean = false): Promise<void> {
@@ -4158,6 +4147,7 @@ export class FeedContainer {
         markerCount,
         imageCount,
         shortFormCount,
+        shortFormNextOffset,
         randomCount,
         scenePreviewCount,
       } = await this.fetchAllContent({
@@ -4186,6 +4176,7 @@ export class FeedContainer {
       if (reqId !== this.latestLoadId || this.checkAbortAndCleanup(signal)) {
         return;
       }
+      this.shortFormOffset = shortFormNextOffset;
 
       const allMarkersForContent = shuffle([...markers, ...shortFormMarkers, ...randomMarkers]);
       const mergedContent = await this.processFetchedContent({
@@ -4208,6 +4199,22 @@ export class FeedContainer {
         append,
         shouldLoadRandom
       });
+      const hasMoreShortForm = shortFormNextOffset !== null;
+      const wasPaused = this.shortFormScanPaused;
+      const pauseShortForm = mergedContent.length === 0 && hasMoreShortForm;
+      if (wasPaused !== pauseShortForm) {
+        this.shortFormScanPaused = pauseShortForm;
+        this.endCard?.remove();
+        this.endCard = undefined;
+      }
+      if (mergedContent.length === 0 && (wasPaused || pauseShortForm)) {
+        // Leave the cursor in place for the next user request, even on an empty first batch.
+        this.hasMore = false;
+        this.currentPage = page;
+        this.hideSkeletonLoaders();
+        return;
+      }
+      if (hasMoreShortForm) this.hasMore = true;
 
       const totalUnfiltered = markers.length + shortFormMarkers.length + randomMarkers.length + scenePreviewMarkers.length + images.length;
       if (totalUnfiltered > 0 && mergedContent.length === 0 && append && this.seenSkipCount < 10) {
@@ -4304,9 +4311,9 @@ export class FeedContainer {
     limit: number,
     offset: number,
     signal?: AbortSignal
-  ): Promise<{ markers: SceneMarker[]; totalCount: number; unfilteredOffsetConsumed: number }> {
+  ): Promise<{ markers: SceneMarker[]; totalCount: number; nextOffset: number | null }> {
     if (!this.api) {
-      return { markers: [], totalCount: 0, unfilteredOffsetConsumed: 0 };
+      return { markers: [], totalCount: 0, nextOffset: null };
     }
 
     const maxDuration = this.settings.shortFormMaxDuration || 120;
@@ -4315,7 +4322,8 @@ export class FeedContainer {
       maxDuration,
       limit,
       offset,
-      signal
+      signal,
+      { tagIds: this.settings.shortFormTags?.map(tag => tag.id), folder: this.settings.shortFormFolder }
     );
 
     return this.finalizeMarkersResult(result, currentFilters);
@@ -4537,14 +4545,17 @@ export class FeedContainer {
    * Returns the post container element for batch DOM insertion
    */
   private async createPost(marker: SceneMarker, signal?: AbortSignal): Promise<HTMLElement | null> {
-    const safeVideoUrl = this.getVideoUrlForPost(marker);
-    if (!safeVideoUrl || !this.isVideoCodecSupported(marker, safeVideoUrl)) {
+    const playMarkerToEnd = this.settings.playMarkersToEnd === true
+      && !/^(synthetic|shortform|scenepreview|image)-/.test(marker.id);
+    const safeVideoUrl = playMarkerToEnd
+      ? this.api.getSceneSources(marker.scene)[0]?.src
+      : this.getVideoUrlForPost(marker);
+    if (!safeVideoUrl || (!playMarkerToEnd && !this.isVideoCodecSupported(marker, safeVideoUrl))) {
       return null;
     }
 
     const postContainer = this.createPostContainer();
-    const startTime = this.calculateStartTime(marker);
-    const post = this.createVideoPostInstance(postContainer, marker, safeVideoUrl, startTime);
+    const post = this.createVideoPostInstance(postContainer, marker, safeVideoUrl, playMarkerToEnd);
     
     this.posts.set(marker.id, post);
     this.postOrder.push(marker.id);
@@ -4607,7 +4618,7 @@ export class FeedContainer {
     postContainer: HTMLElement,
     marker: SceneMarker,
     safeVideoUrl: string,
-    startTime: number | undefined
+    playMarkerToEnd: boolean
   ): VideoPost {
     // Shortform and scene previews play the whole scene (seconds=0, no end); other
     // synthetic markers default to a randomSnippetDuration-second clip from their random start position.
@@ -4616,8 +4627,10 @@ export class FeedContainer {
     const postData: VideoPostData = {
       marker,
       videoUrl: safeVideoUrl,
-      startTime: startTime,
-      endTime: (isShortForm || isScenePreview) ? marker.end_seconds : (marker.end_seconds ?? (marker.seconds + (this.settings.randomSnippetDuration ?? 20))),
+      startTime: playMarkerToEnd ? marker.seconds : this.calculateStartTime(marker),
+      endTime: playMarkerToEnd ? undefined : marker.end_seconds
+        ?? ((isShortForm || isScenePreview) ? undefined : marker.seconds + (this.settings.randomSnippetDuration ?? 20)),
+      playMarkerToEnd,
     };
 
     const post = new VideoPost(
@@ -4680,7 +4693,7 @@ export class FeedContainer {
   /**
    * Reconcile the synthetic end-of-feed card with the current hasMore state:
    * show it (as a full-viewport snap card at the end of the feed)
-   * once there's content but nothing more to load, hide it otherwise.
+   * when the feed ends or is waiting for the user to continue a short-form search.
    */
   private updateEndCard(): void {
     const container = this.postsContainer;
@@ -4688,7 +4701,8 @@ export class FeedContainer {
     const shouldShow = !this.hasMore;
     const present = this.endCard?.parentNode === container;
     if (shouldShow && !present) {
-      this.endCard = buildEndOfFeedCard(() => this.openSearchFromEndCard());
+      const onContinue = this.shortFormScanPaused ? () => this.loadVideos(undefined, true) : undefined;
+      this.endCard = buildEndOfFeedCard(() => this.openSearchFromEndCard(), onContinue);
       container.appendChild(this.endCard);
     } else if (!shouldShow && this.endCard) {
       this.endCard.remove();

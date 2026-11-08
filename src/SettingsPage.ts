@@ -4,7 +4,7 @@
  */
 
 
-import { FeedSettings } from './types.js';
+import { FeedSettings, Tag } from './types.js';
 import * as version from './version.js';
 import { THEME, THEME_DEFAULTS, normalizeHexColor } from './utils.js';
 import { WhisparrClient } from './WhisparrClient.js';
@@ -15,19 +15,23 @@ export class SettingsPage {
   private readonly findGalleries?: (signal?: AbortSignal) => Promise<Array<{ id: string; title?: string; folder?: { path?: string } }>>;
   private readonly onSave?: (settings: Partial<FeedSettings>) => void;
   private readonly onClose?: () => void;
+  private shortFormTags: Tag[];
+  private shortFormTagSearch?: AbortController;
 
   constructor(
     container: HTMLElement,
     settings: FeedSettings,
     findGalleries?: (signal?: AbortSignal) => Promise<Array<{ id: string; title?: string; folder?: { path?: string } }>>,
     onSave?: (settings: Partial<FeedSettings>) => void,
-    onClose?: () => void
+    onClose?: () => void,
+    private readonly findShortFormTags?: (query: string, signal: AbortSignal) => Promise<Tag[]>
   ) {
     this.container = container;
     this.settings = settings;
     this.findGalleries = findGalleries;
     this.onSave = onSave;
     this.onClose = onClose;
+    this.shortFormTags = settings.shortFormTags ?? [];
     this.render();
   }
 
@@ -984,10 +988,29 @@ export class SettingsPage {
     markersRow.style.display = 'flex';
     markersRow.style.justifyContent = 'space-between';
     markersRow.style.alignItems = 'center';
-    markersRow.style.marginBottom = '12px';
     markersRow.appendChild(buildInfoLabel('Markers', 'Scene marker clips from your Stash library.'));
     markersRow.appendChild(markersToggleContainer);
-    contentTypesSection.appendChild(markersRow);
+    const markersWrapper = document.createElement('div');
+    markersWrapper.style.marginBottom = '12px';
+    markersWrapper.appendChild(markersRow);
+    contentTypesSection.appendChild(markersWrapper);
+
+    const buildContentOptionToggle = (label: string, help: string, checked: boolean) => {
+      const row = document.createElement('div');
+      row.style.cssText = 'margin-top: 6px; padding: 6px 8px 6px 12px; display: flex; justify-content: space-between; align-items: center;';
+      row.style.background = THEME.colors.backgroundSecondary;
+      row.style.borderRadius = THEME.radius.card;
+      const toggle = this.createToggleSwitch(checked, () => this.saveSettings());
+      toggle.input.setAttribute('aria-label', label);
+      row.append(buildInfoLabel(label, help), toggle.container);
+      return { row, input: toggle.input };
+    };
+    const markerPlayback = buildContentOptionToggle(
+      'Play from marker to end',
+      'Play the scene from the marker timestamp until the scene ends, even when HD Video is off.',
+      this.settings.playMarkersToEnd === true,
+    );
+    markersWrapper.appendChild(markerPlayback.row);
 
     // Short-Form toggle
     const { container: shortFormIncludeToggleContainer, input: shortFormIncludeToggle } = this.createToggleSwitch(
@@ -1023,6 +1046,30 @@ export class SettingsPage {
     shortFormWrapper.style.marginBottom = '12px';
     shortFormWrapper.appendChild(shortFormRow);
     shortFormWrapper.appendChild(shortFormMaxDurationRow);
+    const shortFormScope = document.createElement('div');
+    shortFormScope.style.cssText = 'display: grid; gap: 8px; padding: 8px 12px; margin-top: 6px;';
+    shortFormScope.style.background = THEME.colors.backgroundSecondary;
+    shortFormScope.style.borderRadius = THEME.radius.card;
+    const scopeHelp = document.createElement('span');
+    scopeHelp.textContent = 'When set, these filters keep videos that match any selected tag or the folder. The duration limit still applies.';
+    scopeHelp.style.color = THEME.colors.textSecondary;
+    scopeHelp.style.fontSize = THEME.typography.sizeMeta;
+    const shortFormFolderLabel = document.createElement('label');
+    shortFormFolderLabel.htmlFor = 'stashgifs-short-form-folder';
+    shortFormFolderLabel.textContent = 'Short video folder';
+    const shortFormFolderInput = document.createElement('input');
+    shortFormFolderInput.id = shortFormFolderLabel.htmlFor;
+    shortFormFolderInput.type = 'text';
+    shortFormFolderInput.placeholder = '/media/shorts';
+    shortFormFolderInput.value = this.settings.shortFormFolder ?? '';
+    shortFormFolderInput.spellcheck = false;
+    this.applyContentScopeInputStyle(shortFormFolderInput);
+    shortFormFolderInput.addEventListener('change', () => this.saveSettings());
+    shortFormFolderInput.addEventListener('keydown', event => {
+      if (event.key === 'Enter') shortFormFolderInput.blur();
+    });
+    shortFormScope.append(scopeHelp, this.buildShortFormTagPicker(), shortFormFolderLabel, shortFormFolderInput);
+    shortFormWrapper.appendChild(shortFormScope);
     contentTypesSection.appendChild(shortFormWrapper);
 
     // Images toggle
@@ -1086,6 +1133,12 @@ export class SettingsPage {
 
     randomWrapper.appendChild(randomRow);
     randomWrapper.appendChild(randomMarkersRow);
+    const randomLongScenes = buildContentOptionToggle(
+      'Long scenes only',
+      'Offer scenes at or above the Short-Form duration limit for marker creation.',
+      this.settings.randomLongScenesOnly === true,
+    );
+    randomWrapper.appendChild(randomLongScenes.row);
     randomWrapper.appendChild(randomSnippetDurationRow);
     contentTypesSection.appendChild(randomWrapper);
 
@@ -1656,10 +1709,13 @@ export class SettingsPage {
     // Store references to inputs for saveSettings method
     (this as any).maxDurationInput = maxDurationInput;
     (this as any).includeMarkersToggle = includeMarkersToggle;
+    (this as any).playMarkersToEndToggle = markerPlayback.input;
     (this as any).includeRandomToggle = includeRandomToggle;
+    (this as any).randomLongScenesOnlyToggle = randomLongScenes.input;
     (this as any).includeImagesToggle = includeImagesToggle;
     (this as any).searchMarkersByNameToggle = searchMarkersByNameToggle;
     (this as any).shortFormIncludeToggle = shortFormIncludeToggle;
+    (this as any).shortFormFolderInput = shortFormFolderInput;
     (this as any).includeScenePreviewsToggle = includeScenePreviewsToggle;
 
     this.container.appendChild(modal);
@@ -1913,17 +1969,118 @@ export class SettingsPage {
     return section;
   }
 
-  /**
-   * Save settings automatically when toggles/inputs change
-   */
+  private applyContentScopeInputStyle(input: HTMLInputElement | HTMLSelectElement): void {
+    input.style.cssText = 'width: 100%; min-width: 0; box-sizing: border-box; padding: 6px 8px;';
+    input.style.background = THEME.colors.surface;
+    input.style.color = THEME.colors.textPrimary;
+    input.style.border = '1px solid ' + THEME.colors.border;
+    input.style.borderRadius = THEME.radius.button;
+  }
+
+  private buildShortFormTagPicker(): HTMLElement {
+    const picker = document.createElement('div');
+    picker.style.cssText = 'display: grid; gap: 6px; min-width: 0;';
+    const label = document.createElement('label');
+    label.textContent = 'Short video tags';
+    label.htmlFor = 'stashgifs-short-form-tags';
+    const search = document.createElement('input');
+    search.type = 'search';
+    search.placeholder = 'Search tags';
+    search.setAttribute('aria-label', 'Search short video tags');
+    const select = document.createElement('select');
+    select.id = label.htmlFor;
+    this.applyContentScopeInputStyle(search);
+    this.applyContentScopeInputStyle(select);
+    const selectedTags = document.createElement('ul');
+    selectedTags.setAttribute('aria-label', 'Selected short video tags');
+    selectedTags.style.cssText = 'flex-wrap: wrap; gap: 6px; padding: 0; margin: 0; list-style: none;';
+    const status = document.createElement('span');
+    status.setAttribute('role', 'status');
+    status.style.fontSize = THEME.typography.sizeMeta;
+    let choices: Tag[] = [];
+
+    const renderChoices = () => {
+      const selectedIds = new Set(this.shortFormTags.map(tag => tag.id));
+      const available = choices.filter(tag => !selectedIds.has(tag.id));
+      select.replaceChildren(new Option('Add a tag', ''), ...available.map(tag => new Option(tag.name, tag.id)));
+      select.disabled = available.length === 0;
+    };
+
+    const renderSelectedTags = () => {
+      selectedTags.replaceChildren();
+      selectedTags.style.display = this.shortFormTags.length > 0 ? 'flex' : 'none';
+      for (const tag of this.shortFormTags) {
+        const item = document.createElement('li');
+        item.style.minWidth = '0';
+        const remove = document.createElement('button');
+        remove.type = 'button';
+        remove.textContent = tag.name + ' ×';
+        remove.setAttribute('aria-label', 'Remove tag ' + tag.name);
+        remove.style.cssText = 'max-width: 100%; overflow-wrap: anywhere; padding: 4px 8px; cursor: pointer;';
+        remove.style.background = THEME.colors.surface;
+        remove.style.color = THEME.colors.textPrimary;
+        remove.style.border = '1px solid ' + THEME.colors.border;
+        remove.style.borderRadius = THEME.radius.button;
+        remove.addEventListener('click', () => {
+          this.shortFormTags = this.shortFormTags.filter(selected => selected.id !== tag.id);
+          search.focus();
+          renderSelectedTags();
+          renderChoices();
+          this.saveSettings();
+        });
+        item.appendChild(remove);
+        selectedTags.appendChild(item);
+      }
+    };
+
+    const searchTags = () => {
+      this.shortFormTagSearch?.abort();
+      const request = new AbortController();
+      this.shortFormTagSearch = request;
+      const query = search.value.trim();
+      choices = [];
+      renderChoices();
+      status.textContent = 'Searching tags…';
+      const timeout = setTimeout(async () => {
+        try {
+          const results = await this.findShortFormTags?.(query, request.signal) ?? [];
+          if (request.signal.aborted) return;
+          choices = results;
+          renderChoices();
+          status.textContent = results.length === 0 ? 'No matching tags' : '';
+        } catch {
+          if (!request.signal.aborted) status.textContent = 'Could not load tags. Change the search to retry.';
+        }
+      }, 250);
+      request.signal.addEventListener('abort', () => clearTimeout(timeout), { once: true });
+    };
+
+    search.addEventListener('focus', searchTags, { once: true });
+    search.addEventListener('input', searchTags);
+    select.addEventListener('change', () => {
+      const tag = choices.find(option => option.id === select.value);
+      if (!tag) return;
+      this.shortFormTags = [...this.shortFormTags, { id: tag.id, name: tag.name }];
+      renderSelectedTags();
+      renderChoices();
+      if (select.disabled) search.focus();
+      this.saveSettings();
+    });
+    renderSelectedTags();
+    renderChoices();
+    picker.append(label, search, select, selectedTags, status);
+    return picker;
+  }
+
   private getFormInput(name: string): HTMLInputElement | undefined {
     return (this as any)[name] as HTMLInputElement | undefined;
   }
 
   private collectFormInputs(): Record<string, HTMLInputElement> | undefined {
     const inputNames = [
-      'fileTypesInput', 'maxDurationInput', 'includeMarkersToggle', 'includeRandomToggle', 'randomIncludeScenesWithMarkersToggle', 'randomSnippetDurationInput', 'includeImagesToggle', 'searchMarkersByNameToggle',
-      'shortFormIncludeToggle', 'includeScenePreviewsToggle', 'reelAutoScrollToggle', 'autoHideSearchBarToggle', 'hdVideoToggle',
+      'fileTypesInput', 'maxDurationInput', 'includeMarkersToggle', 'playMarkersToEndToggle', 'includeRandomToggle', 'randomLongScenesOnlyToggle',
+      'randomIncludeScenesWithMarkersToggle', 'randomSnippetDurationInput', 'includeImagesToggle', 'searchMarkersByNameToggle',
+      'shortFormIncludeToggle', 'shortFormFolderInput', 'includeScenePreviewsToggle', 'reelAutoScrollToggle', 'autoHideSearchBarToggle', 'hdVideoToggle',
       'portraitToggle', 'landscapeToggle',
       'themeBackgroundInput', 'themePrimaryInput', 'themeSecondaryInput', 'themeAccentInput',
       'showVerifiedCheckmarksToggle', 'showProductionAgeToggle', 'showStudioChipsToggle', 'showPerformerEmbellishmentToggle', 'sceneTitleToggle', 'showSceneTagsToggle', 'showPerformerTagsToggle',
@@ -1977,7 +2134,9 @@ export class SettingsPage {
       hdMode: inputs.hdVideoToggle.checked,
       maxResolution: Number(((this as any).maxResolutionSelect as HTMLSelectElement)?.value) || 0,
       includeMarkersInFeed: inputs.includeMarkersToggle.checked,
+      playMarkersToEnd: inputs.playMarkersToEndToggle.checked,
       includeRandomInFeed: inputs.includeRandomToggle.checked,
+      randomLongScenesOnly: inputs.randomLongScenesOnlyToggle.checked,
       randomIncludeScenesWithMarkers: inputs.randomIncludeScenesWithMarkersToggle.checked,
       randomSnippetDuration: validRandomSnippetDuration,
       includeImagesInFeed: inputs.includeImagesToggle.checked,
@@ -1985,6 +2144,8 @@ export class SettingsPage {
       enabledFileTypes: extensions.length > 0 ? extensions : ['.jpg', '.png', '.gif', '.mp4', '.m4v', '.webm'],
       includeShortForm: inputs.shortFormIncludeToggle.checked,
       shortFormMaxDuration: validMaxDuration,
+      shortFormTags: this.shortFormTags,
+      shortFormFolder: inputs.shortFormFolderInput.value.trim(),
       includeScenePreviews: inputs.includeScenePreviewsToggle.checked,
       reelAutoScroll: inputs.reelAutoScrollToggle.checked,
       autoHideSearchBar: inputs.autoHideSearchBarToggle.checked,
@@ -2028,6 +2189,7 @@ export class SettingsPage {
   }
 
   private close(): void {
+    this.shortFormTagSearch?.abort();
     if (this.onClose) {
       this.onClose();
     }

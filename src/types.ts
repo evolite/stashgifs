@@ -95,6 +95,7 @@ export interface FilterOptions {
   savedFilterMode?: SavedFilterMode; // Mode of savedFilterId (defaults to SCENE_MARKERS)
   shuffleMode?: boolean; // When true, use shuffle mode (query scenes directly)
   includeScenesWithoutMarkers?: boolean; // When true in shuffle mode, include scenes with 0 markers
+  randomMinSceneDuration?: number;
   orientationFilter?: ('landscape' | 'portrait' | 'square')[]; // Filter content by orientation
   dateRangeFilter?: DateRangeFilter; // Restrict to content created within a rolling window
   sortSeed?: string; // Sort seed for consistent pagination (reused across pages)
@@ -112,14 +113,18 @@ export interface FeedSettings {
   aspectRatio: 'preserve' | '16:9' | '9:16' | '1:1';
   enabledFileTypes?: string[]; // File extensions to include (e.g., ['.gif', '.webm']), default: ['.gif']
   includeMarkersInFeed?: boolean; // Whether to include scene markers in feed, default: true
+  playMarkersToEnd?: boolean;
   searchMarkersByName?: boolean; // Show a Markers section in search suggestions, default: false
   includeRandomInFeed?: boolean; // Include random scenes played from a random timeframe, default: false
   randomIncludeScenesWithMarkers?: boolean; // Random mode includes scenes that have existing markers, default: false
+  randomLongScenesOnly?: boolean;
   includeImagesInFeed?: boolean; // Whether to include images in feed, default: true
   imagesOnly?: boolean; // When true, only load images and skip videos
   orientationFilter?: ('landscape' | 'portrait' | 'square')[]; // Filter content by orientation
   includeShortForm?: boolean; // Include short-form content (videos < shortFormMaxDuration), default: true
   shortFormMaxDuration?: number; // Maximum duration in seconds for short-form content, default: 120
+  shortFormTags?: Tag[];
+  shortFormFolder?: string;
   randomSnippetDuration?: number; // Seconds of a random scene played before it's treated as ended, default: 20
   includeScenePreviews?: boolean; // Include scene hover-preview clips, default: false
   reelAutoScroll?: boolean; // Auto-advance to next post when video loops
@@ -178,6 +183,7 @@ export interface VideoPostData {
   aspectRatio?: number; // width/height
   startTime?: number; // Start time in seconds for markers
   endTime?: number; // End time in seconds for markers
+  playMarkerToEnd?: boolean;
 }
 
 export interface VideoPlayerState {
