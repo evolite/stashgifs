@@ -1056,7 +1056,7 @@ export class SettingsPage {
     scopeHelp.style.fontSize = THEME.typography.sizeMeta;
     const shortFormFolderLabel = document.createElement('label');
     shortFormFolderLabel.htmlFor = 'stashgifs-short-form-folder';
-    shortFormFolderLabel.textContent = 'Stash folder';
+    shortFormFolderLabel.textContent = 'Short video folder';
     const shortFormFolderInput = document.createElement('input');
     shortFormFolderInput.id = shortFormFolderLabel.htmlFor;
     shortFormFolderInput.type = 'text';
@@ -1981,12 +1981,12 @@ export class SettingsPage {
     const picker = document.createElement('div');
     picker.style.cssText = 'display: grid; gap: 6px; min-width: 0;';
     const label = document.createElement('label');
-    label.textContent = 'Scene tag';
+    label.textContent = 'Short video tag';
     label.htmlFor = 'stashgifs-short-form-tag';
     const search = document.createElement('input');
     search.type = 'search';
     search.placeholder = 'Search tags';
-    search.setAttribute('aria-label', 'Search short-form scene tags');
+    search.setAttribute('aria-label', 'Search short video tags');
     const select = document.createElement('select');
     select.id = label.htmlFor;
     this.applyContentScopeInputStyle(search);
