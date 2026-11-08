@@ -822,7 +822,7 @@ export abstract class BasePost {
       if (this.onPerformerChipClick) {
         const performerId = Number.parseInt(performer.id, 10);
         if (!Number.isNaN(performerId)) {
-          this.onPerformerChipClick(performerId, performer.name);
+          void this.onPerformerChipClick(performerId, performer.name);
         }
       }
     };
@@ -869,7 +869,7 @@ export abstract class BasePost {
       if (this.onStudioChipClick) {
         const studioId = Number.parseInt(studio.id, 10);
         if (!Number.isNaN(studioId)) {
-          this.onStudioChipClick(studioId, studio.name);
+          void this.onStudioChipClick(studioId, studio.name);
         }
       }
     });
@@ -1975,7 +1975,7 @@ export abstract class BasePost {
       if (this.onTagChipClick) {
         const tagId = Number.parseInt(tag.id, 10);
         if (!Number.isNaN(tagId)) {
-          this.onTagChipClick(tagId, tag.name);
+          void this.onTagChipClick(tagId, tag.name);
         }
       }
     };
@@ -2861,8 +2861,8 @@ export abstract class BasePost {
     return this.isFavorite;
   }
 
-  public async initialize(): Promise<void> {
-    await this.checkFavoriteStatus();
+  public initialize(): void {
+    this.checkFavoriteStatus();
   }
 
   protected async incrementOCountAction(): Promise<void> {
@@ -3612,7 +3612,7 @@ export abstract class BasePost {
   /**
    * Check favorite status - shared implementation
    */
-  protected async checkFavoriteStatus(): Promise<void> {
+  protected checkFavoriteStatus(): void {
     const tags = this.getFavoriteTagSource();
     this.isFavorite = tags?.some((tag) => tag.name === FAVORITE_TAG_NAME) ?? false;
     

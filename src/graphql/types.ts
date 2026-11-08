@@ -71,7 +71,7 @@ export interface SceneMarkerFilterInput {
 export interface SceneFilterInput {
   AND?: SceneFilterInput;
   OR?: SceneFilterInput;
-  path?: ImageFilterInput['path'];
+  path?: NonNullable<ImageFilterInput['path']>;
   duration?: { value: number; modifier: ComparisonModifier };
   created_at?: TimestampCriterionInput;
   has_markers?: string; // 'true' | 'false'

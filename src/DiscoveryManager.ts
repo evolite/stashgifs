@@ -199,13 +199,14 @@ export class DiscoveryManager {
       }
 
       const perPage = this.sceneOrder === 'random' ? 20 : SCENES_PER_PERFORMER;
-      for (const { box, items } of byEndpoint.values()) {
+      // Different stash-boxes, so query them in parallel.
+      await Promise.all([...byEndpoint.values()].map(async ({ box, items }) => {
         const batchResult = await this.fetchBatchedScenes(box, items.map(e => e.item.stashId), perPage);
         for (const { item } of items) {
           const scenes = batchResult.get(item.stashId) ?? [];
           this.lruSet(`${box.endpoint}::${item.stashId}`, { scenes, endpoint: box.endpoint });
         }
-      }
+      }));
 
       this.prefetchQueue.splice(0, batch.length);
     } catch {

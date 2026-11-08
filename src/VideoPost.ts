@@ -689,10 +689,10 @@ export class VideoPost extends VideoPostBase {
     return 'Load HD marker';
   }
 
-  protected async performHQUpgrade(): Promise<void> {
+  protected performHQUpgrade(): void {
     // Scene previews never upgrade to the full scene — stay preview-only.
     if (this.isScenePreviewContent()) return;
-    await this.upgradeToSceneVideo();
+    this.upgradeToSceneVideo();
   }
 
   /**
@@ -814,7 +814,7 @@ export class VideoPost extends VideoPostBase {
   /**
    * Create new scene video player
    */
-  private async createSceneVideoPlayer(playerContainer: HTMLElement, sceneVideoUrl: string): Promise<void> {
+  private createSceneVideoPlayer(playerContainer: HTMLElement, sceneVideoUrl: string): void {
     try {
       const startTime = this.data.startTime ?? this.data.marker.seconds;
 
@@ -903,7 +903,7 @@ export class VideoPost extends VideoPostBase {
   /**
    * Upgrade from marker video to full scene video with audio
    */
-  private async upgradeToSceneVideo(): Promise<void> {
+  private upgradeToSceneVideo(): void {
     const { sceneVideoUrl, playerContainer } = this.validateAndPrepareUpgrade();
 
     // Unload and destroy current marker player to free memory before creating new one
@@ -913,7 +913,7 @@ export class VideoPost extends VideoPostBase {
     this.cleanupPlayerElements(playerContainer);
 
     // Create new player with full scene video
-    await this.createSceneVideoPlayer(playerContainer, sceneVideoUrl);
+    this.createSceneVideoPlayer(playerContainer, sceneVideoUrl);
 
     // The playback controller plays the active card via onPlayerReady.
     this.notifyPlayerReady();
@@ -1637,7 +1637,7 @@ export class VideoPost extends VideoPostBase {
       this.hasCreatedMarker = true;
       this.refreshHeader();
       this.replaceMarkerButtonWithHeart();
-      await this.checkFavoriteStatus();
+      this.checkFavoriteStatus();
       this.closeMarkerDialog();
     } catch (error) {
       console.error('Failed to create marker', error);

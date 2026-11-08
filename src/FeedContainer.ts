@@ -101,7 +101,7 @@ export class FeedContainer {
   private bookmarkManager: BookmarkManager;
   private discoveryPanel?: DiscoveryPanel;
   private discoveryManager?: DiscoveryManager;
-  private posts: Map<string, PostType>;
+  private readonly posts: Map<string, PostType>;
   private postOrder: string[];
   private settings: FeedSettings;
   private isOpeningSettings = false;
@@ -136,7 +136,7 @@ export class FeedContainer {
   private readonly filterHistory = new FilterHistory(this.filterState, () => {
     this.updateActivePills();
     this.updateQueryInputDisplay();
-    this.applyFilters().catch((e) => console.error('Restore filters failed', e));
+    this.applyFilters();
   });
   private readonly savedSearches: SavedSearches;
   private preloadedTags: Array<{ id: string; name: string }> = [];
@@ -192,7 +192,7 @@ export class FeedContainer {
     // Create header bar with unified search
     this.createHeaderBar();
     this.debouncedApplyFilters = debounce(() => {
-      this.applyFilters().catch((e) => console.error('Apply filters failed', e));
+      this.applyFilters();
     }, 300);
     
     this.initializePostsContainer();
@@ -2202,13 +2202,13 @@ export class FeedContainer {
     const triggerFetchSuggestions = (text: string, forceShow: boolean): Promise<void> => {
       const p = fetchAndShowSuggestions(text, forceShow);
       pendingSuggestionsFetch = p;
-      p.finally(() => { if (pendingSuggestionsFetch === p) pendingSuggestionsFetch = null; });
+      void p.finally(() => { if (pendingSuggestionsFetch === p) pendingSuggestionsFetch = null; });
       return p;
     };
 
     // Debounced suggestion fetcher (150ms delay)
     const debouncedFetchSuggestions = debounce((text: string, forceShow: boolean) => {
-      triggerFetchSuggestions(text, forceShow);
+      void triggerFetchSuggestions(text, forceShow);
     }, 150);
     
     const prepareSuggestionsPanel = (panel: HTMLElement, ensureLatest: () => boolean): boolean => {
@@ -2334,13 +2334,13 @@ export class FeedContainer {
       const text = queryInput.value.trim();
 
       if (!text) {
-        apply();
+        void apply();
         return;
       }
 
       e.preventDefault();
 
-      triggerFetchSuggestions(text, false).then(() => {
+      void triggerFetchSuggestions(text, false).then(() => {
         if (queryInput.value.trim() !== text) return;
         const firstResult = suggestions.querySelector(
           'button.feed-list-button:not(.feed-list-button--selected):not([data-saved-filter]), button.feed-suggestion-chip:not(.feed-suggestion-chip--selected)'
@@ -2371,7 +2371,7 @@ export class FeedContainer {
       queryInput.style.borderColor = THEME.colors.border;
       clearSearchSelection();
       queryInput.value = '';
-      triggerFetchSuggestions('', true);
+      void triggerFetchSuggestions('', true);
     };
 
     const handleFocus = () => {
@@ -2654,7 +2654,7 @@ export class FeedContainer {
   /**
    * Apply current filters and update UI
    */
-  private async applyFilters(): Promise<void> {
+  private applyFilters(): void {
     this.updateQueryInputDisplay();
 
     const newFilters = this.buildCurrentFilterOptions();
@@ -3049,7 +3049,7 @@ export class FeedContainer {
    * Shared helper: create a post container and append it to a fragment
    */
   private async processItemForRender(
-    createContainer: () => Promise<HTMLElement | null>,
+    createContainer: () => HTMLElement | null | Promise<HTMLElement | null>,
     fragment: DocumentFragment | null
   ): Promise<{ fragment: DocumentFragment; postContainer: HTMLElement | null }> {
     const postContainer = await createContainer();
@@ -3141,7 +3141,7 @@ export class FeedContainer {
         return;
       }
 
-      const result = await this.renderItemForRender(items[i], fragment, signal);
+      const result = await this.renderItemForRender(items[i], fragment, signal); // NOSONAR: in-order progressive render
       fragment = result.fragment;
       
       if (result.postContainer) {
@@ -3155,7 +3155,7 @@ export class FeedContainer {
         fragment = flushed.fragment;
         fragmentPostCount = flushed.fragmentPostCount;
 
-        await this.waitForRenderDelay(i, items.length, renderDelay);
+        await this.waitForRenderDelay(i, items.length, renderDelay); // NOSONAR: deliberate yield between chunks
       }
     }
   }
@@ -3207,7 +3207,7 @@ export class FeedContainer {
   /**
    * Create a post from an image (can be either ImagePost or VideoPost depending on file type and settings)
    */
-  private async createPostFromImage(image: Image, signal?: AbortSignal): Promise<HTMLElement | null> {
+  private createPostFromImage(image: Image, signal?: AbortSignal): HTMLElement | null {
     // Use centralized utility to detect video
     const { isVideo, videoFile } = detectVideoFromVisualFiles(image.visualFiles);
     
@@ -3243,7 +3243,7 @@ export class FeedContainer {
   /**
    * Create a VideoPost from an Image (for .m4v/.mp4 files)
    */
-  private async createVideoPostFromImage(image: Image, signal?: AbortSignal): Promise<HTMLElement | null> {
+  private createVideoPostFromImage(image: Image, signal?: AbortSignal): HTMLElement | null {
     const videoUrl = this.getImageUrlForPost(image);
     if (!videoUrl) {
       return null;
@@ -3996,7 +3996,7 @@ export class FeedContainer {
   /**
    * Process and merge fetched content
    */
-  private async processFetchedContent(options: {
+  private processFetchedContent(options: {
     content: {
       markers: SceneMarker[];
       shortFormMarkers: SceneMarker[];
@@ -4013,7 +4013,7 @@ export class FeedContainer {
     append: boolean;
     shouldLoadRandom?: boolean;
     realMarkersCount?: number;
-  }): Promise<Array<{ type: 'marker' | 'image'; data: SceneMarker | Image; date?: string }>> {
+  }): Array<{ type: 'marker' | 'image'; data: SceneMarker | Image; date?: string }> {
     const { content, counts, currentFilters, offset, append, shouldLoadRandom, realMarkersCount } = options;
     const { markers, shortFormMarkers, scenePreviewMarkers, images } = content;
     const { markerCount, shortFormCount, imageCount } = counts;
@@ -4100,6 +4100,29 @@ export class FeedContainer {
     this.finalizeLoadState(append, page, firstCards);
   }
 
+  /**
+   * Track a paused short-form scan. Returns true when this empty batch should stop and
+   * wait for the user to tap "Continue searching" instead of rendering.
+   */
+  private holdForShortFormScan(contentCount: number, hasMoreShortForm: boolean, page: number): boolean {
+    const wasPaused = this.shortFormScanPaused;
+    const pauseShortForm = contentCount === 0 && hasMoreShortForm;
+    if (wasPaused !== pauseShortForm) {
+      this.shortFormScanPaused = pauseShortForm;
+      this.endCard?.remove();
+      this.endCard = undefined;
+    }
+    if (contentCount === 0 && (wasPaused || pauseShortForm)) {
+      // Leave the cursor in place for the next user request, even on an empty first batch.
+      this.hasMore = false;
+      this.currentPage = page;
+      this.hideSkeletonLoaders();
+      return true;
+    }
+    if (hasMoreShortForm) this.hasMore = true;
+    return false;
+  }
+
   async loadVideos(filters?: FilterOptions, append: boolean = false, signal?: AbortSignal, force: boolean = false): Promise<void> {
     if (!force && this.isLoading) {
       return;
@@ -4179,7 +4202,7 @@ export class FeedContainer {
       this.shortFormOffset = shortFormNextOffset;
 
       const allMarkersForContent = shuffle([...markers, ...shortFormMarkers, ...randomMarkers]);
-      const mergedContent = await this.processFetchedContent({
+      const mergedContent = this.processFetchedContent({
         content: {
           markers: allMarkersForContent,
           shortFormMarkers: [],
@@ -4199,22 +4222,9 @@ export class FeedContainer {
         append,
         shouldLoadRandom
       });
-      const hasMoreShortForm = shortFormNextOffset !== null;
-      const wasPaused = this.shortFormScanPaused;
-      const pauseShortForm = mergedContent.length === 0 && hasMoreShortForm;
-      if (wasPaused !== pauseShortForm) {
-        this.shortFormScanPaused = pauseShortForm;
-        this.endCard?.remove();
-        this.endCard = undefined;
-      }
-      if (mergedContent.length === 0 && (wasPaused || pauseShortForm)) {
-        // Leave the cursor in place for the next user request, even on an empty first batch.
-        this.hasMore = false;
-        this.currentPage = page;
-        this.hideSkeletonLoaders();
+      if (this.holdForShortFormScan(mergedContent.length, shortFormNextOffset !== null, page)) {
         return;
       }
-      if (hasMoreShortForm) this.hasMore = true;
 
       const totalUnfiltered = markers.length + shortFormMarkers.length + randomMarkers.length + scenePreviewMarkers.length + images.length;
       if (totalUnfiltered > 0 && mergedContent.length === 0 && append && this.seenSkipCount < 10) {
@@ -4544,7 +4554,7 @@ export class FeedContainer {
    * Create a video post from a scene marker
    * Returns the post container element for batch DOM insertion
    */
-  private async createPost(marker: SceneMarker, signal?: AbortSignal): Promise<HTMLElement | null> {
+  private createPost(marker: SceneMarker, signal?: AbortSignal): HTMLElement | null {
     const playMarkerToEnd = this.settings.playMarkersToEnd === true
       && !/^(synthetic|shortform|scenepreview|image)-/.test(marker.id);
     const safeVideoUrl = playMarkerToEnd
@@ -4624,12 +4634,13 @@ export class FeedContainer {
     // synthetic markers default to a randomSnippetDuration-second clip from their random start position.
     const isShortForm = typeof marker.id === 'string' && marker.id.startsWith('shortform-');
     const isScenePreview = typeof marker.id === 'string' && marker.id.startsWith('scenepreview-');
+    const wholeScene = playMarkerToEnd || isShortForm || isScenePreview;
+    const snippetEnd = wholeScene ? undefined : marker.seconds + (this.settings.randomSnippetDuration ?? 20);
     const postData: VideoPostData = {
       marker,
       videoUrl: safeVideoUrl,
       startTime: playMarkerToEnd ? marker.seconds : this.calculateStartTime(marker),
-      endTime: playMarkerToEnd ? undefined : marker.end_seconds
-        ?? ((isShortForm || isScenePreview) ? undefined : marker.seconds + (this.settings.randomSnippetDuration ?? 20)),
+      endTime: playMarkerToEnd ? undefined : marker.end_seconds ?? snippetEnd,
       playMarkerToEnd,
     };
 

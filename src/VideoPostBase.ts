@@ -272,7 +272,7 @@ export abstract class VideoPostBase extends BasePost {
 
   protected abstract getHQAriaLabel(): string;
   protected abstract getHQTitle(): string;
-  protected abstract performHQUpgrade(): Promise<void>;
+  protected abstract performHQUpgrade(): void;
 
   protected createHQButton(): HTMLElement {
     const hqBtn = document.createElement('button');
@@ -286,7 +286,7 @@ export abstract class VideoPostBase extends BasePost {
     this.updateHQButton(hqBtn);
     this.hqButton = hqBtn;
 
-    const clickHandler = async (e: Event) => {
+    const clickHandler = (e: Event) => {
       e.preventDefault();
       e.stopPropagation();
 
@@ -296,7 +296,7 @@ export abstract class VideoPostBase extends BasePost {
       hqBtn.style.opacity = '0.5';
 
       try {
-        await this.performHQUpgrade();
+        this.performHQUpgrade();
         this.isHQMode = true;
         this.updateHQButton(hqBtn);
         this.updateMuteOverlayButton();

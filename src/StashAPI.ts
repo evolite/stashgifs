@@ -360,22 +360,12 @@ export class StashAPI {
       let totalCount = 0;
 
       for (let pages = 0; pages < StashAPI.SHORT_FORM_MAX_PAGES_PER_LOAD && selected.length < limit && nextOffset !== null; pages++) {
-        let cursor: number = nextOffset;
-        nextOffset = null;
-        const page = await this.fetchSceneListPage(sceneFilter, cursor, sortSeed, signal, false);
+        const page = await this.fetchSceneListPage(sceneFilter, nextOffset, sortSeed, signal, false);
         if (this.io.isAborted(signal)) return retry;
         totalCount = page?.totalCount ?? 0;
-        if (!page || cursor >= totalCount) break;
-
-        for (const scene of page.scenes.slice(page.offsetInPage)) {
-          cursor++;
-          if (matches(scene)) selected.push(scene);
-          if (selected.length === limit || cursor >= totalCount) break;
-        }
-        // A full server page can be followed by more candidates even when none matched.
-        if (cursor < totalCount && (selected.length === limit || page.scenes.length === StashAPI.SHORT_FORM_SCENES_PER_PAGE)) {
-          nextOffset = cursor;
-        }
+        nextOffset = page && nextOffset < totalCount
+          ? StashAPI.scanShortFormPage(page, nextOffset, totalCount, limit, matches, selected)
+          : null;
       }
 
       return {
@@ -387,6 +377,29 @@ export class StashAPI {
     } catch (error: unknown) {
       return this.io.handleError('fetchShortFormVideos', error, signal, retry);
     }
+  }
+
+  /**
+   * Walk one scene page from `cursor`, pushing matches into `selected`.
+   * Returns where the next scan should start, or null when the list is exhausted.
+   */
+  private static scanShortFormPage(
+    page: { scenes: Scene[]; offsetInPage: number },
+    cursor: number,
+    totalCount: number,
+    limit: number,
+    matches: (scene: Scene) => boolean,
+    selected: Scene[],
+  ): number | null {
+    for (const scene of page.scenes.slice(page.offsetInPage)) {
+      cursor++;
+      if (matches(scene)) selected.push(scene);
+      if (selected.length === limit || cursor >= totalCount) break;
+    }
+    // A full server page can be followed by more candidates even when none matched.
+    const more = cursor < totalCount
+      && (selected.length === limit || page.scenes.length === StashAPI.SHORT_FORM_SCENES_PER_PAGE);
+    return more ? cursor : null;
   }
 
   /**

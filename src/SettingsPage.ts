@@ -1444,8 +1444,7 @@ export class SettingsPage {
 
     gallerySearchInput.addEventListener('keydown', (e) => {
       if (e.key === 'Backspace' && gallerySearchInput.value === '' && selectedGalleryIds.size > 0) {
-        const arr = [...selectedGalleryIds];
-        const last = arr[arr.length - 1];
+        const last = [...selectedGalleryIds].at(-1)!; // size > 0 checked above
         selectedGalleryIds.delete(last);
         renderChips();
         renderDropdown('');

@@ -136,7 +136,7 @@ export class ImagePlayer {
     // Handle video load events - try to play when ready
     const handleVideoReady = () => {
       this.hideLoadingIndicator();
-      tryPlay();
+      void tryPlay();
     };
 
     this.videoElement.addEventListener('loadeddata', handleVideoReady, { once: true });
@@ -154,7 +154,7 @@ export class ImagePlayer {
           this.hasRetried = true;
           this.showLoadingIndicator();
           this.setVideoSource(retryUrl);
-          tryPlay();
+          void tryPlay();
           return;
         }
       }

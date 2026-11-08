@@ -48,10 +48,10 @@ function shortFormFolderPattern(folder?: string): { source: string; ignoreCase: 
   if (!path) return undefined;
 
   const windows = /^(?:[a-z]:[\\/]|[\\/]{2})/i.test(path);
-  const separator = windows ? '[/\\\\]' : '/';
+  const separator = windows ? String.raw`[/\\]` : '/';
   const segments = windows ? path.split(/[\\/]/) : path.split('/');
   while (segments.at(-1) === '') segments.pop();
-  const prefix = segments.map(segment => segment.replace(/[.*+?^()|[\]\\{}$]/g, '\\$&')).join(separator);
+  const prefix = segments.map(segment => segment.replace(/[.*+?^()|[\]\\{}$]/g, String.raw`\$&`)).join(separator);
   return { source: '^' + prefix + separator, ignoreCase: windows };
 }
 

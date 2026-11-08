@@ -84,8 +84,8 @@ export class ImageVideoPost extends VideoPostBase {
     return 'Load HD video';
   }
 
-  protected async performHQUpgrade(): Promise<void> {
-    await this.upgradeToHDVideo();
+  protected performHQUpgrade(): void {
+    this.upgradeToHDVideo();
   }
 
   /**
@@ -102,7 +102,7 @@ export class ImageVideoPost extends VideoPostBase {
   /**
    * Upgrade from preview video to full HD video with audio
    */
-  private async upgradeToHDVideo(): Promise<void> {
+  private upgradeToHDVideo(): void {
     if (!this.api) {
       throw new Error('API not available');
     }
@@ -130,7 +130,7 @@ export class ImageVideoPost extends VideoPostBase {
     this.cleanupPlayerElements(playerContainer);
 
     // Create new player with full HD video
-    await this.createHDVideoPlayer(playerContainer, hdVideoUrl);
+    this.createHDVideoPlayer(playerContainer, hdVideoUrl);
 
     // The playback controller plays the active card via onPlayerReady.
     this.notifyPlayerReady();
@@ -139,7 +139,7 @@ export class ImageVideoPost extends VideoPostBase {
   /**
    * Create HD video player
    */
-  private async createHDVideoPlayer(playerContainer: HTMLElement, hdVideoUrl: string): Promise<void> {
+  private createHDVideoPlayer(playerContainer: HTMLElement, hdVideoUrl: string): void {
     try {
       // Respect global mute state when creating HD player
       const shouldBeMuted = this.getGlobalMuteState ? this.getGlobalMuteState() : true;
