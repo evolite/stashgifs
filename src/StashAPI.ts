@@ -19,7 +19,6 @@ import {
   GetSavedFilterResponse,
   TypedGraphQLClient,
   GQLImage,
-  StashBox,
 } from './graphql/types.js';
 import { isAbortError } from './graphql/errors.js';
 import { GraphQLClient } from './graphql/client.js';
@@ -627,7 +626,7 @@ export class StashAPI {
     return this.search.findTagsForSelect(searchTerm, limit, signal);
   }
 
-  // ---- configuration, saved filters, discovery lookups (see api/ConfigApi.ts) ----
+  // ---- configuration and saved filters (see api/ConfigApi.ts) ----
 
   getUIConfiguration(signal?: AbortSignal): Promise<{ type?: string; starPrecision?: string } | null> {
     return this.config.getUIConfiguration(signal);
@@ -641,23 +640,12 @@ export class StashAPI {
     return this.config.savePluginSettings(pluginId, input, signal);
   }
 
-  getStashBoxes(signal?: AbortSignal): Promise<StashBox[]> {
-    return this.config.getStashBoxes(signal);
-  }
-
   fetchSavedFilters(signal?: AbortSignal): Promise<Array<{ id: string; name: string; mode: SavedFilterMode }>> {
     return this.config.fetchSavedFilters(signal);
   }
 
   getSavedFilter(id: string, signal?: AbortSignal): Promise<GetSavedFilterResponse['findSavedFilter']> {
     return this.config.getSavedFilter(id, signal);
-  }
-
-  findLocalSceneIdsByStashDbIds(
-    items: Array<{ stashId: string; sceneUrl?: string }>,
-    signal?: AbortSignal
-  ): Promise<Map<string, string>> {
-    return this.config.findLocalSceneIdsByStashDbIds(items, signal);
   }
 
   // ---- tags (see api/TagsApi.ts) ----

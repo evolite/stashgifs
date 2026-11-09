@@ -28,9 +28,6 @@ import { debounce, isTypingTarget, showToast, normalizeMediaUrl, isStandaloneNav
 import { GQLImage } from './graphql/types.js';
 import { getStashBaseUrl } from './utils/baseUrl.js';
 import { SETTINGS_SVG, STASHGIFS_LOGO_SVG, IMAGE_SVG, MARKER_SVG, HEART_SVG_OUTLINE } from './icons.js';
-import { DiscoveryPanel } from './DiscoveryPanel.js';
-import { WhisparrClient } from './WhisparrClient.js';
-import { DiscoveryManager } from './DiscoveryManager.js';
 import { buildEndOfFeedCard, END_CARD_POST_ID } from './EndOfFeedCard.js';
 
 const DEFAULT_SETTINGS: FeedSettings = {
@@ -65,7 +62,6 @@ const DEFAULT_SETTINGS: FeedSettings = {
   galleryIds: [],
   seenHistorySize: 500,
   contentLimit: 5000,
-  enableDiscoveryPanel: true,
   hdMode: true,
   showPerformerTags: false,
   showSceneTags: false,
@@ -99,8 +95,6 @@ export class FeedContainer {
   private playback: ReelPlaybackController;
   private favoritesManager: FavoritesManager;
   private bookmarkManager: BookmarkManager;
-  private discoveryPanel?: DiscoveryPanel;
-  private discoveryManager?: DiscoveryManager;
   private readonly posts: Map<string, PostType>;
   private postOrder: string[];
   private settings: FeedSettings;
@@ -483,35 +477,8 @@ export class FeedContainer {
       if (headerInner) headerInner.style.maxWidth = `${w}px`;
     }
 
-    this.handleDiscoverySettingsChange(newSettings, updatedSettings);
-
     if (this.shouldReloadFeed(newSettings, previousSettings, excludedTagsChanged, orientationFilterChanged)) {
       this.scheduleSettingsReload();
-    }
-  }
-
-  private handleDiscoverySettingsChange(newSettings: Partial<FeedSettings>, updatedSettings: FeedSettings): void {
-    if (newSettings.enableDiscoveryPanel !== undefined) {
-      if (updatedSettings.enableDiscoveryPanel === true) {
-        this.mountDiscoveryPanel();
-      } else {
-        this.unmountDiscoveryPanel();
-      }
-    }
-    if (newSettings.discoveryPanelSize !== undefined && this.discoveryPanel) {
-      this.discoveryPanel.setSize(updatedSettings.discoveryPanelSize ?? 260);
-    }
-    if (newSettings.discoverySceneOrder !== undefined && this.discoveryManager) {
-      this.discoveryManager.setSceneOrder(updatedSettings.discoverySceneOrder ?? 'latest');
-    }
-    if (
-      this.discoveryPanel
-      && (newSettings.whisparrBaseUrl !== undefined
-        || newSettings.whisparrApiKey !== undefined
-        || newSettings.whisparrRootFolderPath !== undefined
-        || newSettings.whisparrQualityProfileId !== undefined)
-    ) {
-      this.discoveryPanel.setWhisparrClient(WhisparrClient.fromSettings(updatedSettings));
     }
   }
 
@@ -532,29 +499,6 @@ export class FeedContainer {
         console.error('Failed to reload feed after settings change', e);
       });
     }, 250);
-  }
-
-  private mountDiscoveryPanel(): void {
-    if (this.discoveryPanel || isMobileDevice()) return;
-    this.createDiscoveryPanel();
-  }
-
-  /** Construct the discovery panel + manager. Callers gate on platform/settings. */
-  private createDiscoveryPanel(): void {
-    this.discoveryPanel = new DiscoveryPanel(
-      this.container,
-      this.settings.discoveryPanelSize ?? 260,
-      WhisparrClient.fromSettings(this.settings),
-    );
-    this.discoveryManager = new DiscoveryManager(this.api, this.discoveryPanel, this.settings.discoverySceneOrder ?? 'latest');
-  }
-
-  private unmountDiscoveryPanel(): void {
-    if (!this.discoveryPanel) return;
-    this.discoveryManager?.destroy();
-    this.discoveryPanel.destroy();
-    this.discoveryManager = undefined;
-    this.discoveryPanel = undefined;
   }
 
   /** Footer button visibility is a class on the feed root, so it costs nothing per post and works for cards built while hidden. */
@@ -893,11 +837,6 @@ export class FeedContainer {
     // Initialize favorites and bookmark managers
     this.favoritesManager = new FavoritesManager(this.api);
     this.bookmarkManager = new BookmarkManager(this.api);
-
-    // Initialize discovery panel (opt-out via setting; hidden on mobile)
-    if (this.settings.enableDiscoveryPanel === true && !isMobileDevice()) {
-      this.createDiscoveryPanel();
-    }
   }
   
   /**
@@ -3298,7 +3237,6 @@ export class FeedContainer {
       showViewCountBadge: this.settings.showViewCountBadge !== false,
       ratingSystemConfig: this.ratingSystemConfig,
       hdModeFromSettings: this.useHDMode,
-      discoveryPanel: this.discoveryPanel,
       reelAutoScroll: this.settings.reelAutoScroll === true,
       onReelAdvance: () => this.reelScroller?.next(),
     };
@@ -4075,15 +4013,6 @@ export class FeedContainer {
 
     this.hideError();
 
-    // Pre-warm discovery cache with performers from this batch
-    if (this.discoveryManager) {
-      const performers = mergedContent.flatMap(item => {
-        if (item.type === 'marker') return (item.data as SceneMarker).scene.performers ?? [];
-        return (item.data as Image).performers ?? [];
-      });
-      this.discoveryManager.prefetch(performers);
-    }
-
     const renderChunkSize = 6;
     const renderDelay = 8;
     const firstCards = this.postOrder.length === 0;
@@ -4688,11 +4617,6 @@ export class FeedContainer {
     this.cleanupLoadObservers();
   }
 
-  private getPerformersForPost(postId: string) {
-    const post = this.posts.get(postId);
-    return post?.getPerformers() ?? [];
-  }
-
   private applyCustomSavedSearch(search: SavedSearch): void {
     this.filterState.replace(search);
     this.closeSuggestions();
@@ -4979,7 +4903,6 @@ export class FeedContainer {
       return;
     }
     this.playback.setActive(postId);
-    this.discoveryManager?.onPrimaryPostChanged(postId, this.getPerformersForPost(postId));
   }
 
   /**
@@ -5069,8 +4992,6 @@ export class FeedContainer {
     }
     this.teardownListeners();
     this.clearPosts();
-    this.discoveryManager?.destroy();
-    this.discoveryPanel?.destroy();
     this.api.destroy();
   }
 
@@ -5107,7 +5028,6 @@ export class FeedContainer {
     const postId = this.reelScroller?.getCurrentPostId();
     if (!postId) return;
     this.playback.setActive(postId);
-    this.discoveryManager?.onPrimaryPostChanged(postId, this.getPerformersForPost(postId));
   }
 
   /**

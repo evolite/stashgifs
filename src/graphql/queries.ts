@@ -18,23 +18,6 @@ export const GET_CONFIGURATION = `
 `;
 
 /**
- * Get stash-box (StashDB, ThePornDB, etc.) configuration
- */
-export const GET_STASH_BOX_CONFIG = `
-  query GetStashBoxConfig {
-    configuration {
-      general {
-        stashBoxes {
-          endpoint
-          api_key
-          name
-        }
-      }
-    }
-  }
-`;
-
-/**
  * Find scene markers with full scene data
  */
 export const FIND_SCENE_MARKERS = `

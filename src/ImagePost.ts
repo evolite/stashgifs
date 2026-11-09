@@ -154,7 +154,7 @@ export class ImagePost extends BasePost {
     this.buttonGroup = buttonGroup;
 
     this.appendCommonImageFooterButtons(buttonGroup, this.data.image.id);
-    this.appendDiscoveryAndImageButtons(buttonGroup, this.data.image.id);
+    this.appendImageButtons(buttonGroup, this.data.image.id);
 
     return footer;
   }

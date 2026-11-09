@@ -151,19 +151,12 @@ export interface FeedSettings {
   showMalePerformers?: boolean; // Show male performer chips, default: true
   showFemalePerformers?: boolean; // Show female performer chips, default: true
   showOtherGenderPerformers?: boolean; // Show non-male/female performer chips, default: true
-  enableDiscoveryPanel?: boolean; // Show StashDB discovery sidebar panel, default: true
-  discoveryPanelSize?: number; // Panel width in px (1–1000), default 260
-  discoverySceneOrder?: 'latest' | 'random' | 'trending'; // Scene selection: latest (default), random, or trending
   showSceneTitle?: boolean; // Show scene/image title above performers in each post, default: false
   showOCountButton?: boolean; // Show O-count button in button group, default: true
   showRatingButton?: boolean; // Show rating control in button group, default: true
   enableRatingHotkeys?: boolean; // Digit keys rate the current post (0 = 10), Backspace clears, default: true
   showViewCountBadge?: boolean; // Show view-count badge in button group, default: true
   showBookmarkButton?: boolean; // Show bookmark button in button group, default: false
-  whisparrBaseUrl?: string; // Whisparr base URL, e.g. http://localhost:6969
-  whisparrApiKey?: string; // Whisparr API key (X-Api-Key header)
-  whisparrRootFolderPath?: string; // Selected Whisparr root folder path
-  whisparrQualityProfileId?: number; // Selected Whisparr quality profile id
   savedSearches?: SavedSearch[]; // User-saved filter chip sets
 }
 

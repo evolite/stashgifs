@@ -93,27 +93,6 @@ describe('ensureTag', () => {
   });
 });
 
-describe('discovery lookups', () => {
-  it('resolves many stash-box scenes in two requests (stash id, then url for misses) and caches the answers', async () => {
-    const api = await newStashApi((op, variables) => ({
-      s0: { scenes: variables.v0?.stash_id_endpoint ? [{ id: '100' }] : [] },
-      s1: { scenes: [] },
-      s2: { scenes: [] },
-    }));
-    const items = [
-      { stashId: 'a', sceneUrl: 'https://box/scenes/a' },
-      { stashId: 'b', sceneUrl: 'https://box/scenes/b' },
-      { stashId: 'c' },
-    ];
-    const found = await api.findLocalSceneIdsByStashDbIds(items);
-    assert.deepEqual([...found], [['a', '100']]);
-    assert.equal(api.calls.length, 2, 'one stash_id request + one url request for the misses that have a url');
-
-    await api.findLocalSceneIdsByStashDbIds(items);
-    assert.equal(api.calls.length, 2, 'repeat is served from cache, including the misses');
-  });
-});
-
 describe('short-form paging', () => {
   const scenes = (n) => Array.from({ length: n }, (_, i) => ({ id: String(i), files: [{ duration: 30 }], paths: { preview: 'p', stream: 's' }, sceneStreams: [], tags: [], performers: [] }));
 

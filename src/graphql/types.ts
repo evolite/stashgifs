@@ -605,32 +605,6 @@ export interface GraphQLMutationOptions<TVariables = Record<string, unknown>, _T
 }
 
 
-// ============================================================================
-// StashBox / Discovery Types
-// ============================================================================
-
-export interface StashBox {
-  endpoint: string;
-  api_key: string;
-  name: string;
-}
-
-export interface GetStashBoxConfigResponse {
-  configuration: {
-    general: {
-      stashBoxes: StashBox[];
-    };
-  };
-}
-
-export interface StashBoxScene {
-  id: string;
-  title?: string;
-  date?: string;
-  images?: Array<{ url: string }>;
-  studio?: { name: string };
-}
-
 /**
  * Typed GraphQL client interface
  */

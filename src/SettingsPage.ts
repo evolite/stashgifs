@@ -7,7 +7,6 @@
 import { FeedSettings, Tag } from './types.js';
 import * as version from './version.js';
 import { THEME, THEME_DEFAULTS, normalizeHexColor } from './utils.js';
-import { WhisparrClient } from './WhisparrClient.js';
 
 // Fixed widths for right-aligned settings fields, so every row's control lines up.
 const FIELD_WIDTH = '160px';
@@ -288,12 +287,10 @@ export class SettingsPage {
     const filtersTabButton = createTabButton('Filters');
     const contentTabButton = createTabButton('Appearance');
     const postTabButton = createTabButton('Post');
-    const whisparrTabButton = createTabButton('Discovery');
     tabBar.appendChild(layoutTabButton);
     tabBar.appendChild(filtersTabButton);
     tabBar.appendChild(contentTabButton);
     tabBar.appendChild(postTabButton);
-    tabBar.appendChild(whisparrTabButton);
     modal.appendChild(tabBar);
 
     const contentWrapper = document.createElement('div');
@@ -309,22 +306,18 @@ export class SettingsPage {
     contentTabContent.style.display = 'none';
     const postContent = document.createElement('div');
     postContent.style.display = 'none';
-    const whisparrContent = document.createElement('div');
-    whisparrContent.style.display = 'none';
 
-    const setActiveTab = (active: 'layout' | 'filters' | 'content' | 'post' | 'whisparr') => {
+    const setActiveTab = (active: 'layout' | 'filters' | 'content' | 'post') => {
       layoutContent.style.display     = active === 'layout'   ? 'block' : 'none';
       filtersContent.style.display    = active === 'filters'  ? 'block' : 'none';
       contentTabContent.style.display = active === 'content'  ? 'block' : 'none';
       postContent.style.display       = active === 'post'     ? 'block' : 'none';
-      whisparrContent.style.display   = active === 'whisparr' ? 'block' : 'none';
 
       const tabs = [
         { btn: layoutTabButton,   key: 'layout'   },
         { btn: filtersTabButton,  key: 'filters'  },
         { btn: contentTabButton,  key: 'content'  },
         { btn: postTabButton,     key: 'post'     },
-        { btn: whisparrTabButton, key: 'whisparr' },
       ];
       for (const { btn, key } of tabs) {
         const on = active === key;
@@ -338,14 +331,12 @@ export class SettingsPage {
     filtersTabButton.addEventListener('click',  () => setActiveTab('filters'));
     contentTabButton.addEventListener('click',  () => setActiveTab('content'));
     postTabButton.addEventListener('click',     () => setActiveTab('post'));
-    whisparrTabButton.addEventListener('click', () => setActiveTab('whisparr'));
     setActiveTab('layout');
 
     contentWrapper.appendChild(layoutContent);
     contentWrapper.appendChild(filtersContent);
     contentWrapper.appendChild(contentTabContent);
     contentWrapper.appendChild(postContent);
-    contentWrapper.appendChild(whisparrContent);
     modal.appendChild(contentWrapper);
 
     // Theme Section
@@ -603,7 +594,7 @@ export class SettingsPage {
     const resetButton = document.createElement('button');
     resetButton.type = 'button';
     resetButton.textContent = 'Reset to default';
-    this.applyButtonStyle(resetButton, false);
+    this.applyButtonStyle(resetButton);
 
     resetButton.addEventListener('mouseenter', () => {
       resetButton.style.background = THEME.colors.surfaceHover;
@@ -1253,65 +1244,6 @@ export class SettingsPage {
     layoutContent.appendChild(behaviorSection);
     layoutContent.appendChild(contentTypesSection);
 
-    // ── StashDB Discovery Section ──────────────────────────────────────────
-    const discoverySection = document.createElement('div');
-    discoverySection.classList.add('sg-settings-section');
-    discoverySection.style.cssText = `margin-bottom: 24px; border: 1px solid ${THEME.colors.border}; border-radius: ${THEME.radius.card}; padding: 16px;`;
-
-    const discoverySectionTitle = document.createElement('h3');
-    discoverySectionTitle.textContent = 'StashDB Discovery';
-    discoverySectionTitle.style.cssText = `margin: 0 0 16px 0; color: ${THEME.colors.textPrimary}; font-size: ${THEME.typography.sizeTitle}; font-weight: ${THEME.typography.weightTitle};`;
-    discoverySection.appendChild(discoverySectionTitle);
-
-    const discoveryPanelContainer = document.createElement('div');
-    discoveryPanelContainer.style.cssText = 'display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;';
-    discoveryPanelContainer.appendChild(buildInfoLabel(
-      'Enable Discovery Panel',
-      'Shows a pull-out sidebar with new scenes from StashDB for the performer currently in view. Requires a StashDB stash-box configured in Stash settings.'
-    ));
-    const { container: discoveryPanelToggleContainer, input: discoveryPanelToggle } = this.createToggleSwitch(
-      this.settings.enableDiscoveryPanel === true,
-      () => this.saveSettings()
-    );
-    discoveryPanelContainer.appendChild(discoveryPanelToggleContainer);
-    discoverySection.appendChild(discoveryPanelContainer);
-    (this as any).discoveryPanelToggle = discoveryPanelToggle;
-
-    const discoverySizeContainer = document.createElement('div');
-    discoverySizeContainer.style.cssText = 'margin-bottom: 16px;';
-    discoverySizeContainer.appendChild(buildInfoLabel('Panel Width', 'Width of the discovery sidebar.'));
-    const currentSize = this.settings.discoveryPanelSize ?? 260;
-    const discoverySizeSlider = document.createElement('input');
-    discoverySizeSlider.type = 'range';
-    discoverySizeSlider.min = '40';
-    discoverySizeSlider.max = '440';
-    discoverySizeSlider.value = String(Math.min(440, Math.max(40, currentSize)));
-    discoverySizeSlider.style.cssText = 'width: 100%; cursor: pointer; margin-top: 6px;';
-    discoverySizeSlider.addEventListener('input', () => this.saveSettings());
-    discoverySizeContainer.appendChild(discoverySizeSlider);
-    discoverySection.appendChild(discoverySizeContainer);
-    (this as any).discoverySizeSlider = discoverySizeSlider;
-
-    const discoveryOrderContainer = document.createElement('div');
-    discoveryOrderContainer.style.cssText = 'display: flex; justify-content: space-between; align-items: center;';
-    discoveryOrderContainer.appendChild(buildInfoLabel('Scene Order', 'Show the latest scenes from StashDB, or pick randomly.'));
-    const discoveryOrderSelect = document.createElement('select');
-    this.applyFieldStyle(discoveryOrderSelect, FIELD_WIDTH);
-    for (const [val, label] of [['latest', 'Latest'], ['random', 'Random'], ['trending', 'Trending']] as const) {
-      const opt = document.createElement('option');
-      opt.value = val;
-      opt.textContent = label;
-      if ((this.settings.discoverySceneOrder ?? 'latest') === val) opt.selected = true;
-      discoveryOrderSelect.appendChild(opt);
-    }
-    discoveryOrderSelect.addEventListener('change', () => this.saveSettings());
-    discoveryOrderContainer.appendChild(discoveryOrderSelect);
-    discoverySection.appendChild(discoveryOrderContainer);
-    (this as any).discoveryOrderSelect = discoveryOrderSelect;
-
-    whisparrContent.appendChild(discoverySection);
-
-
     // ── Images ──────────────────────────────────────────────────────
     // File types sub-row (under Images toggle)
     const fileTypesSubRow = document.createElement('div');
@@ -1558,9 +1490,6 @@ export class SettingsPage {
     searchMarkersByNameRow.style.marginBottom = '0';
     behaviorSection.appendChild(searchMarkersByNameRow);
 
-    // Whisparr tab content
-    whisparrContent.appendChild(this.buildWhisparrSection(buildInfoLabel));
-
     // Version footer
     const versionFooter = document.createElement('div');
     versionFooter.style.marginTop = '32px';
@@ -1672,10 +1601,6 @@ export class SettingsPage {
     document.addEventListener('keydown', escapeHandler);
   }
 
-  private saveWhisparrPartial(partial: Partial<FeedSettings>): void {
-    if (this.onSave) this.onSave(partial);
-  }
-
   /**
    * One look for every settings field. 44px touch target; 16px text stops iOS zooming on focus.
    * Widths: FIELD_WIDTH for text/selects, NUMBER_WIDTH for numbers, '100%' for stacked fields.
@@ -1701,7 +1626,7 @@ export class SettingsPage {
     back.type = 'button';
     back.textContent = '‹ Back';
     back.setAttribute('aria-label', 'Back to settings');
-    this.applyButtonStyle(back, false);
+    this.applyButtonStyle(back);
     const heading = document.createElement('h3');
     heading.textContent = title;
     heading.style.cssText = `margin: 0; color: ${THEME.colors.textPrimary}; font-size: ${THEME.typography.sizeTitle}; font-weight: ${THEME.typography.weightTitle};`;
@@ -1834,196 +1759,11 @@ export class SettingsPage {
     });
   }
 
-  private applyButtonStyle(button: HTMLButtonElement, primary: boolean): void {
+  private applyButtonStyle(button: HTMLButtonElement): void {
     button.style.cssText = `min-height: 44px; padding: 0 16px; border-radius: ${THEME.radius.button}; cursor: pointer; font-size: ${THEME.typography.sizeBody}; font-weight: ${THEME.typography.weightBodyStrong}; transition: background 0.2s ease, color 0.2s ease, border-color 0.2s ease;`;
-    button.style.border = `1px solid ${primary ? THEME.colors.accentPrimary : THEME.colors.border}`;
-    button.style.background = primary ? THEME.colors.accentPrimary : THEME.colors.backgroundSecondary;
-    button.style.color = primary ? THEME.colors.textPrimary : THEME.colors.textSecondary;
-  }
-
-  private buildWhisparrSection(
-    buildInfoLabel: (labelText: string, tooltipText: string) => HTMLElement
-  ): HTMLElement {
-    const section = document.createElement('div');
-    section.classList.add('sg-settings-section');
-    section.style.marginTop = '24px';
-    section.style.marginBottom = '24px';
-    section.style.border = `1px solid ${THEME.colors.border}`;
-    section.style.borderRadius = THEME.radius.card;
-    section.style.padding = '16px';
-
-    const title = document.createElement('h3');
-    title.textContent = 'Whisparr';
-    title.style.margin = '0 0 8px 0';
-    title.style.color = THEME.colors.textPrimary;
-    title.style.fontSize = THEME.typography.sizeTitle;
-    title.style.fontWeight = THEME.typography.weightTitle;
-    section.appendChild(title);
-
-    const description = document.createElement('p');
-    description.textContent = 'Configure Whisparr to enable an "Add to Whisparr" button on each StashDB discovery card. Test the connection to populate root folder and quality profile.';
-    description.style.margin = '0 0 16px 0';
-    description.style.color = THEME.colors.textMuted;
-    description.style.fontSize = THEME.typography.sizeMeta;
-    section.appendChild(description);
-
-    // URL
-    const urlContainer = document.createElement('div');
-    urlContainer.style.cssText = 'display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;';
-    urlContainer.appendChild(buildInfoLabel('Whisparr URL', 'Base URL of your Whisparr instance, e.g. http://localhost:6969'));
-    const urlInput = document.createElement('input');
-    urlInput.type = 'url';
-    urlInput.placeholder = 'http://localhost:6969';
-    urlInput.value = this.settings.whisparrBaseUrl ?? '';
-    this.applyFieldStyle(urlInput, FIELD_WIDTH);
-    urlInput.addEventListener('input', () => {
-      clearTimeout((urlInput as any).saveTimeout);
-      (urlInput as any).saveTimeout = setTimeout(() => {
-        this.saveWhisparrPartial({ whisparrBaseUrl: urlInput.value.trim() || undefined });
-      }, 500);
-    });
-    urlContainer.appendChild(urlInput);
-    section.appendChild(urlContainer);
-
-    // API Key
-    const apiKeyContainer = document.createElement('div');
-    apiKeyContainer.style.cssText = 'display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;';
-    apiKeyContainer.appendChild(buildInfoLabel('API Key', 'Whisparr API key. Found in Whisparr → Settings → General.'));
-    const apiKeyInput = document.createElement('input');
-    apiKeyInput.type = 'password';
-    apiKeyInput.autocomplete = 'off';
-    apiKeyInput.value = this.settings.whisparrApiKey ?? '';
-    this.applyFieldStyle(apiKeyInput, FIELD_WIDTH);
-    apiKeyInput.addEventListener('input', () => {
-      clearTimeout((apiKeyInput as any).saveTimeout);
-      (apiKeyInput as any).saveTimeout = setTimeout(() => {
-        this.saveWhisparrPartial({ whisparrApiKey: apiKeyInput.value.trim() || undefined });
-      }, 500);
-    });
-    apiKeyContainer.appendChild(apiKeyInput);
-    section.appendChild(apiKeyContainer);
-
-    // Test connection button + status
-    const testRow = document.createElement('div');
-    testRow.style.display = 'flex';
-    testRow.style.alignItems = 'center';
-    testRow.style.gap = '12px';
-    testRow.style.marginBottom = '16px';
-
-    const testButton = document.createElement('button');
-    testButton.type = 'button';
-    testButton.textContent = 'Test Connection';
-    this.applyButtonStyle(testButton, true);
-
-    const testStatus = document.createElement('span');
-    testStatus.style.color = THEME.colors.textMuted;
-    testStatus.style.fontSize = THEME.typography.sizeMeta;
-
-    testRow.appendChild(testButton);
-    testRow.appendChild(testStatus);
-    section.appendChild(testRow);
-
-    // Root folder select
-    const rootFolderContainer = document.createElement('div');
-    rootFolderContainer.style.cssText = 'display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;';
-    rootFolderContainer.appendChild(buildInfoLabel('Root Folder', 'Where Whisparr should download scenes added from StashGifs.'));
-    const rootFolderSelect = document.createElement('select');
-    this.applyFieldStyle(rootFolderSelect, FIELD_WIDTH);
-    rootFolderSelect.disabled = true;
-    const placeholderRoot = document.createElement('option');
-    placeholderRoot.value = '';
-    placeholderRoot.textContent = this.settings.whisparrRootFolderPath
-      ? this.settings.whisparrRootFolderPath
-      : '— Test connection to populate —';
-    rootFolderSelect.appendChild(placeholderRoot);
-    rootFolderContainer.appendChild(rootFolderSelect);
-    section.appendChild(rootFolderContainer);
-
-    // Quality profile select
-    const qualityContainer = document.createElement('div');
-    qualityContainer.style.cssText = 'display: flex; justify-content: space-between; align-items: center;';
-    qualityContainer.appendChild(buildInfoLabel('Quality Profile', 'Whisparr quality profile to use for scenes added from StashGifs.'));
-    const qualitySelect = document.createElement('select');
-    this.applyFieldStyle(qualitySelect, FIELD_WIDTH);
-    qualitySelect.disabled = true;
-    const placeholderQuality = document.createElement('option');
-    placeholderQuality.value = '';
-    placeholderQuality.textContent = typeof this.settings.whisparrQualityProfileId === 'number'
-      ? `Profile #${this.settings.whisparrQualityProfileId}`
-      : '— Test connection to populate —';
-    qualitySelect.appendChild(placeholderQuality);
-    qualityContainer.appendChild(qualitySelect);
-    section.appendChild(qualityContainer);
-
-    rootFolderSelect.addEventListener('change', () => {
-      this.saveWhisparrPartial({ whisparrRootFolderPath: rootFolderSelect.value || undefined });
-    });
-    qualitySelect.addEventListener('change', () => {
-      const v = Number.parseInt(qualitySelect.value, 10);
-      this.saveWhisparrPartial({ whisparrQualityProfileId: Number.isNaN(v) ? undefined : v });
-    });
-
-    testButton.addEventListener('click', async () => {
-      const baseUrl = urlInput.value.trim();
-      const apiKey = apiKeyInput.value.trim();
-      if (!baseUrl || !apiKey) {
-        testStatus.textContent = 'Enter URL and API key first.';
-        testStatus.style.color = '#e57373';
-        return;
-      }
-      testButton.disabled = true;
-      testStatus.textContent = 'Testing…';
-      testStatus.style.color = THEME.colors.textMuted;
-      try {
-        const client = new WhisparrClient({ baseUrl, apiKey });
-        const [folders, profiles] = await Promise.all([
-          client.getRootFolders(),
-          client.getQualityProfiles(),
-        ]);
-        rootFolderSelect.innerHTML = '';
-        for (const folder of folders) {
-          const opt = document.createElement('option');
-          opt.value = folder.path;
-          opt.textContent = folder.path;
-          rootFolderSelect.appendChild(opt);
-        }
-        rootFolderSelect.disabled = folders.length === 0;
-        if (this.settings.whisparrRootFolderPath
-            && folders.some((f) => f.path === this.settings.whisparrRootFolderPath)) {
-          rootFolderSelect.value = this.settings.whisparrRootFolderPath;
-        } else if (folders.length > 0) {
-          rootFolderSelect.value = folders[0].path;
-          this.saveWhisparrPartial({ whisparrRootFolderPath: folders[0].path });
-        }
-
-        qualitySelect.innerHTML = '';
-        for (const profile of profiles) {
-          const opt = document.createElement('option');
-          opt.value = String(profile.id);
-          opt.textContent = profile.name;
-          qualitySelect.appendChild(opt);
-        }
-        qualitySelect.disabled = profiles.length === 0;
-        const existingId = this.settings.whisparrQualityProfileId;
-        if (typeof existingId === 'number' && profiles.some((p) => p.id === existingId)) {
-          qualitySelect.value = String(existingId);
-        } else if (profiles.length > 0) {
-          qualitySelect.value = String(profiles[0].id);
-          this.saveWhisparrPartial({ whisparrQualityProfileId: profiles[0].id });
-        }
-
-        testStatus.textContent = `Connected · ${folders.length} folder(s), ${profiles.length} profile(s)`;
-        testStatus.style.color = THEME.colors.accentPrimary;
-      } catch (err) {
-        const message = err instanceof Error ? err.message : String(err);
-        testStatus.textContent = `Failed: ${message}`;
-        testStatus.style.color = '#e57373';
-      } finally {
-        testButton.disabled = false;
-      }
-    });
-
-    return section;
+    button.style.border = `1px solid ${THEME.colors.border}`;
+    button.style.background = THEME.colors.backgroundSecondary;
+    button.style.color = THEME.colors.textSecondary;
   }
 
   private getFormInput(name: string): HTMLInputElement | undefined {
@@ -2040,7 +1780,7 @@ export class SettingsPage {
       'showVerifiedCheckmarksToggle', 'showProductionAgeToggle', 'showStudioChipsToggle', 'showPerformerEmbellishmentToggle', 'sceneTitleToggle', 'showSceneTagsToggle', 'showPerformerTagsToggle',
       'showMalePerformersToggle', 'showFemalePerformersToggle', 'showOtherGenderPerformersToggle',
       'showBookmarkToggle', 'showOCountToggle', 'showRatingToggle', 'ratingHotkeysToggle', 'showViewCountToggle',
-      'discoveryPanelToggle', 'excludedTagsInput',
+      'excludedTagsInput',
       'includeSubtagsToggle', 'trackWatchHistoryToggle', 'seenHistorySizeInput', 'contentLimitInput', 'tagDisplayLimitInput',
       'performerDisplayLimitInput',
     ];
@@ -2123,9 +1863,6 @@ export class SettingsPage {
       showRatingButton: inputs.showRatingToggle.checked,
       enableRatingHotkeys: inputs.ratingHotkeysToggle.checked,
       showViewCountBadge: inputs.showViewCountToggle.checked,
-      enableDiscoveryPanel: inputs.discoveryPanelToggle.checked,
-      discoveryPanelSize: Number(((this as any).discoverySizeSlider as HTMLInputElement)?.value ?? 260),
-      discoverySceneOrder: ((this as any).discoveryOrderSelect as HTMLSelectElement)?.value as 'latest' | 'random' | 'trending' ?? 'latest',
       excludedTagNames,
       includeSubtags: inputs.includeSubtagsToggle.checked,
       imagesInGalleryOnly: galleryOnlyToggle?.checked ?? false,

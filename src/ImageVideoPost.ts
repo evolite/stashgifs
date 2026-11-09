@@ -71,7 +71,7 @@ export class ImageVideoPost extends VideoPostBase {
     const muteBtn = this.createMuteOverlayButton();
     buttonGroup.appendChild(muteBtn);
 
-    this.appendDiscoveryAndImageButtons(buttonGroup, this.data.image.id);
+    this.appendImageButtons(buttonGroup, this.data.image.id);
 
     return footer;
   }

@@ -1,6 +1,5 @@
 /**
- * Server configuration and the things stored in it: UI/plugin settings, stash-box endpoints,
- * saved filters, and resolving stash-box scenes to local ones.
+ * Server configuration and the things stored in it: UI/plugin settings and saved filters.
  */
 
 import * as queries from '../graphql/queries.js';
@@ -8,15 +7,12 @@ import * as mutations from '../graphql/mutations.js';
 import type {
   ConfigurationResponse,
   ConfigurePluginResponse,
-  StashBox,
-  GetStashBoxConfigResponse,
   GetSavedFiltersResponse,
   GetSavedFilterResponse,
 } from '../graphql/types.js';
 import type { SavedFilterMode } from '../types.js';
 import type { ApiIO } from './ApiIO.js';
 import { TtlCache } from './TtlCache.js';
-import { runAliased } from './aliased.js';
 
 export class ConfigApi {
   constructor(private readonly io: ApiIO) {}
@@ -92,23 +88,6 @@ export class ConfigApi {
     }
   }
 
-  async getStashBoxes(signal?: AbortSignal): Promise<StashBox[]> {
-    if (this.io.isAborted(signal)) return [];
-
-    try {
-      const result = await this.io.gql.query<GetStashBoxConfigResponse>({
-        query: queries.GET_STASH_BOX_CONFIG,
-        signal,
-      });
-
-      if (this.io.isAborted(signal)) return [];
-
-      return result.data?.configuration?.general?.stashBoxes ?? [];
-    } catch (error: unknown) {
-      return this.io.rethrowUnlessAbort('getStashBoxes', error, signal, []);
-    }
-  }
-
   /**
    * Fetch saved filters the feed can apply (scene markers and images) from Stash
    */
@@ -150,77 +129,5 @@ export class ConfigApi {
     } catch (error: unknown) {
       return this.io.rethrowUnlessAbort('getSavedFilter', error, signal, null);
     }
-  }
-
-  /** stash-box scene id -> local scene id (null = not in library). Misses are cached too: they're the common case. */
-  private readonly _localSceneIds = new TtlCache<string | null>(5 * 60_000, 1000);
-
-  /**
-   * Resolve many stash-box scenes to local scene ids in at most two requests (stash_id lookups,
-   * then URL lookups for the misses), instead of one or two requests per scene.
-   */
-  async findLocalSceneIdsByStashDbIds(
-    items: Array<{ stashId: string; sceneUrl?: string }>,
-    signal?: AbortSignal
-  ): Promise<Map<string, string>> {
-    const out = new Map<string, string>();
-    if (this.io.isAborted(signal)) return out;
-
-    const todo = new Map<string, string | undefined>();
-    for (const { stashId, sceneUrl } of items) {
-      if (!this._localSceneIds.has(stashId)) todo.set(stashId, sceneUrl);
-    }
-
-    if (todo.size > 0) {
-      // One shared lookup for everything missing; each id's cache entry resolves from it.
-      // No caller signal: the entries are shared with other callers.
-      const lookup = this.lookupLocalSceneIds(todo);
-      for (const stashId of todo.keys()) {
-        this._localSceneIds.set(stashId, lookup.then((found) => found.get(stashId) ?? null));
-      }
-    }
-
-    try {
-      await Promise.all(items.map(async ({ stashId }) => {
-        const localId = await this._localSceneIds.peek(stashId);
-        if (localId) out.set(stashId, localId);
-      }));
-    } catch (error: unknown) {
-      this.io.handleError('findLocalSceneIdsByStashDbIds', error, signal, null);
-    }
-    return out;
-  }
-
-  private async lookupLocalSceneIds(todo: Map<string, string | undefined>): Promise<Map<string, string>> {
-    const found = new Map<string, string>();
-    const stashIds = [...todo.keys()];
-    // Stash matches stash_id regardless of endpoint; URL lookup covers scenes added without a stash_id link.
-    const byStashId = await this.lookupSceneIds(
-      stashIds.map((stashId) => ({ stash_id_endpoint: { stash_id: stashId, modifier: 'EQUALS' } }))
-    );
-    const misses: string[] = [];
-    stashIds.forEach((stashId, i) => {
-      const localId = byStashId[i];
-      if (localId) found.set(stashId, localId);
-      else if (todo.get(stashId)) misses.push(stashId);
-    });
-    if (misses.length > 0) {
-      const byUrl = await this.lookupSceneIds(
-        misses.map((stashId) => ({ url: { modifier: 'EQUALS', value: todo.get(stashId) } }))
-      );
-      misses.forEach((stashId, i) => {
-        const localId = byUrl[i];
-        if (localId) found.set(stashId, localId);
-      });
-    }
-    return found;
-  }
-
-  /** First matching scene id (or null) per scene filter, in order, in one request. */
-  private async lookupSceneIds(filters: Array<Record<string, unknown>>): Promise<Array<string | null>> {
-    const rows = await runAliased(this.io.aliasedExec, 'FindLocalScenes', 'SceneFilterType', filters, {
-      s: 'findScenes(scene_filter: $v, filter: { per_page: 1 }) { scenes { id } }',
-    });
-    return rows.map((row) => (row.s as { scenes: Array<{ id: string }> } | undefined)?.scenes[0]?.id ?? null);
   }
 }

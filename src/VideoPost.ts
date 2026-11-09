@@ -399,9 +399,6 @@ export class VideoPost extends VideoPostBase {
     const muteBtn = this.createMuteOverlayButton();
     buttonGroup.appendChild(muteBtn);
 
-    const discoveryBtn = this.createDiscoveryButton();
-    if (discoveryBtn) buttonGroup.appendChild(discoveryBtn);
-
     const playBtn = this.createPlayButton();
     buttonGroup.appendChild(playBtn);
 

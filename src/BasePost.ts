@@ -8,7 +8,6 @@ import { StashAPI } from './StashAPI.js';
 import { normalizeMediaUrl, showToast, isMobileDevice, THEME, applyMenuItemHover, extractValidPerformerIds, initPopoverDialog, formatViewCount, setIcon } from './utils.js';
 import { RatingControl } from './RatingControl.js';
 import { ADD_TAG_SVG, HEART_SVG_OUTLINE, HEART_SVG_FILLED, OCOUNT_SVG, EXTERNAL_LINK_SVG, STAR_SVG, STAR_SVG_OUTLINE, VERIFIED_SVG, EYE_SVG, CLAPPERBOARD_SVG } from './icons.js';
-import { DISCOVERY_ICON_SVG, type DiscoveryPanelControl } from './DiscoveryPanel.js';
 import { getStashBaseUrl } from './utils/baseUrl.js';
 import { setupTouchHandlers, preventClickAfterTouch } from './utils/touchHandlers.js';
 import { adjustImageDialogPosition, toggleImageFavorite } from './utils/imagePostUtils.js';
@@ -38,7 +37,6 @@ export interface BasePostOptions {
   tagDisplayLimit?: number;
   performerDisplayLimit?: number;
   showViewCountBadge?: boolean;
-  discoveryPanel?: DiscoveryPanelControl;
   reelAutoScroll?: boolean;
   onReelAdvance?: () => void; // Reel mode: advance one card via the JS scroller
 }
@@ -141,10 +139,6 @@ export abstract class BasePost {
   protected showViewCountBadge: boolean = true;
   protected tagDisplayLimit: number = 10;
   protected performerDisplayLimit: number = 3;
-  protected discoveryPanel?: DiscoveryPanelControl;
-  private discoveryCollapseUnsubscribe?: () => void;
-  private static discoveryJigglePlayed = false;
-  private discoveryJiggleTimerId?: ReturnType<typeof setTimeout>;
   protected readonly touchCleanups: Array<() => void> = [];
   protected reelAutoScroll: boolean = false;
   private readonly onReelAdvance?: () => void;
@@ -197,7 +191,6 @@ export abstract class BasePost {
     this.showViewCountBadge = options?.showViewCountBadge !== false;
     this.tagDisplayLimit = options?.tagDisplayLimit ?? 10;
     this.performerDisplayLimit = options?.performerDisplayLimit ?? 3;
-    this.discoveryPanel = options?.discoveryPanel;
     this.reelAutoScroll = options?.reelAutoScroll === true;
     this.onReelAdvance = options?.onReelAdvance;
 
@@ -283,14 +276,6 @@ export abstract class BasePost {
     this.tagOverlayMgr.destroy();
     this.studioOverlayMgr.destroy();
 
-    if (this.discoveryCollapseUnsubscribe) {
-      this.discoveryCollapseUnsubscribe();
-      this.discoveryCollapseUnsubscribe = undefined;
-    }
-    if (this.discoveryJiggleTimerId) {
-      clearTimeout(this.discoveryJiggleTimerId);
-      this.discoveryJiggleTimerId = undefined;
-    }
     for (const cleanup of this.touchCleanups) cleanup();
     this.touchCleanups.length = 0;
     this.detachReelAutoAdvance();
@@ -728,10 +713,8 @@ export abstract class BasePost {
     buttonGroup.appendChild(ratingControl);
   }
 
-  /** Trailing footer buttons shared by image-type posts: discovery + open-in-Stash. */
-  protected appendDiscoveryAndImageButtons(buttonGroup: HTMLElement, imageId: string): void {
-    const discoveryBtn = this.createDiscoveryButton();
-    if (discoveryBtn) buttonGroup.appendChild(discoveryBtn);
+  /** Trailing open-in-Stash footer button shared by image-type posts. */
+  protected appendImageButtons(buttonGroup: HTMLElement, imageId: string): void {
     const imageBtn = this.createImageButton(imageId);
     buttonGroup.appendChild(imageBtn);
   }
@@ -3425,45 +3408,6 @@ export abstract class BasePost {
 
   private scrollToNextPost(): void {
     this.onReelAdvance?.();
-  }
-
-  /**
-   * Create the StashDB Discovery panel toggle button. Returns undefined if no panel is wired.
-   * Default neutral; turns accent while the panel is open. Plays a one-shot jiggle on
-   * the first instance created per page load.
-   */
-  protected createDiscoveryButton(): HTMLElement | undefined {
-    const panel = this.discoveryPanel;
-    if (!panel || isMobileDevice()) return undefined;
-
-    const btn = document.createElement('button');
-    btn.type = 'button';
-    btn.className = 'icon-btn icon-btn--discovery';
-    btn.setAttribute('aria-label', 'Toggle StashDB discovery panel');
-    btn.title = 'StashDB Discovery';
-    this.applyIconButtonStyles(btn);
-    setIcon(btn, DISCOVERY_ICON_SVG);
-
-    const applyState = (collapsed: boolean) => {
-      btn.style.color = collapsed ? THEME.colors.iconInactive : THEME.colors.accentPrimary;
-      btn.setAttribute('aria-pressed', collapsed ? 'false' : 'true');
-    };
-    applyState(panel.isCollapsed());
-
-    btn.addEventListener('click', () => panel.toggle());
-    this.discoveryCollapseUnsubscribe = panel.onCollapseChange(applyState);
-
-    // One-shot hint: only the first discovery button created per page load jiggles.
-    if (!BasePost.discoveryJigglePlayed) {
-      BasePost.discoveryJigglePlayed = true;
-      this.discoveryJiggleTimerId = setTimeout(() => {
-        this.discoveryJiggleTimerId = undefined;
-        btn.style.animation = 'stashgifs-jiggle 1.1s ease-in-out, stashgifs-discovery-pulse 1.1s ease-in-out';
-        btn.addEventListener('animationend', () => { btn.style.animation = ''; }, { once: true });
-      }, 3000);
-    }
-
-    return btn;
   }
 
   /**

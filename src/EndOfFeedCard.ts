@@ -47,7 +47,7 @@ const FEEDBACK_LINKS: ReadonlyArray<readonly [string, string]> = [
 
 const STYLE_ID = 'stashgifs-endcard-style';
 
-/** Inject the arrow-bounce keyframe once (mirrors the DiscoveryPanel pattern). */
+/** Inject the arrow-bounce keyframe once. */
 function ensureKeyframes(): void {
   if (document.getElementById(STYLE_ID)) return;
   const style = document.createElement('style');
