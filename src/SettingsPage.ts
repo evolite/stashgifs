@@ -9,6 +9,10 @@ import * as version from './version.js';
 import { THEME, THEME_DEFAULTS, normalizeHexColor } from './utils.js';
 import { WhisparrClient } from './WhisparrClient.js';
 
+// Fixed widths for right-aligned settings fields, so every row's control lines up.
+const FIELD_WIDTH = '160px';
+const NUMBER_WIDTH = '80px';
+
 export class SettingsPage {
   private readonly container: HTMLElement;
   private readonly settings: FeedSettings;
@@ -16,7 +20,11 @@ export class SettingsPage {
   private readonly onSave?: (settings: Partial<FeedSettings>) => void;
   private readonly onClose?: () => void;
   private shortFormTags: Tag[];
-  private shortFormTagSearch?: AbortController;
+  private modal!: HTMLElement;
+  /** Close functions of open sub-pages, top-most last. */
+  private pageStack: Array<() => void> = [];
+  /** Re-render the "Options · …" summaries after any change. */
+  private summaryRefreshers: Array<() => void> = [];
 
   constructor(
     container: HTMLElement,
@@ -89,7 +97,8 @@ export class SettingsPage {
     container.style.position = 'relative';
     container.style.display = 'inline-block';
     container.style.width = '50px';
-    container.style.height = '28px';
+    container.style.height = '44px'; // touch target; the visible track is 28px
+    container.style.flexShrink = '0';
     container.style.cursor = 'pointer';
 
     const input = document.createElement('input');
@@ -102,10 +111,10 @@ export class SettingsPage {
 
     const slider = document.createElement('span');
     slider.style.position = 'absolute';
-    slider.style.top = '0';
+    slider.style.top = '8px';
     slider.style.left = '0';
     slider.style.right = '0';
-    slider.style.bottom = '0';
+    slider.style.bottom = '8px';
     slider.style.backgroundColor = checked ? THEME.colors.accentPrimary : THEME.colors.border;
     slider.style.transition = 'background-color 0.3s ease';
     slider.style.borderRadius = '28px';
@@ -174,8 +183,28 @@ export class SettingsPage {
     this.container.style.padding = '20px';
     this.container.style.boxSizing = 'border-box';
     this.container.style.fontFamily = THEME.typography.fontFamily;
+    this.container.classList.add('sg-settings-overlay');
+    this.pageStack = [];
+    this.summaryRefreshers = [];
+
+    // Inline styles can't hold media queries, so the mobile overrides live here (hence !important).
+    const responsiveStyle = document.createElement('style');
+    responsiveStyle.textContent = `
+      @media (max-width: 600px) {
+        .sg-settings-overlay { padding: 0 !important; }
+        .sg-settings-modal { max-width: none !important; height: 100% !important; max-height: none !important; border-radius: 0 !important; box-shadow: none !important; }
+        .sg-settings-section { border: none !important; border-radius: 0 !important; border-bottom: 1px solid ${THEME.colors.border} !important; padding: 0 0 16px !important; margin: 0 0 16px !important; }
+      }
+      @media (max-width: 400px) {
+        .sg-settings-modal div:has(> .sg-field-wide) { flex-wrap: wrap !important; row-gap: 6px; }
+        .sg-field-wide { width: 100% !important; }
+      }`;
+    this.container.appendChild(responsiveStyle);
 
     const modal = document.createElement('div');
+    this.modal = modal;
+    modal.classList.add('sg-settings-modal');
+    modal.style.position = 'relative';
     modal.style.backgroundColor = THEME.colors.backgroundSecondary;
     modal.style.borderRadius = THEME.radius.card;
     modal.style.padding = THEME.spacing.cardPadding;
@@ -321,6 +350,7 @@ export class SettingsPage {
 
     // Theme Section
     const themeSection = document.createElement('div');
+    themeSection.classList.add('sg-settings-section');
     themeSection.style.marginBottom = '24px';
     themeSection.style.border = `1px solid ${THEME.colors.border}`;
     themeSection.style.borderRadius = THEME.radius.card;
@@ -421,11 +451,7 @@ export class SettingsPage {
       const row = createLabelledRow(labelText, tooltipText);
 
       const select = document.createElement('select');
-      select.style.minWidth = '200px';
-      select.style.padding = '8px 12px';
-      this.applySelectBaseStyle(select);
-      select.style.fontWeight = THEME.typography.weightBodyStrong;
-      select.style.cursor = 'pointer';
+      this.applyFieldStyle(select, FIELD_WIDTH);
 
       themePresets.forEach((preset) => {
         const option = document.createElement('option');
@@ -465,7 +491,7 @@ export class SettingsPage {
       input.type = 'color';
       input.value = value;
       input.style.width = '44px';
-      input.style.height = '32px';
+      input.style.height = '44px';
       input.style.padding = '0';
       input.style.borderRadius = THEME.radius.button;
       input.style.border = `1px solid ${THEME.colors.border}`;
@@ -577,17 +603,7 @@ export class SettingsPage {
     const resetButton = document.createElement('button');
     resetButton.type = 'button';
     resetButton.textContent = 'Reset to default';
-    resetButton.style.marginTop = '8px';
-    resetButton.style.padding = '8px 14px';
-    resetButton.style.borderRadius = THEME.radius.button;
-    resetButton.style.border = `1px solid ${THEME.colors.border}`;
-    resetButton.style.background = THEME.colors.backgroundSecondary;
-    resetButton.style.color = THEME.colors.textSecondary;
-    resetButton.style.cursor = 'pointer';
-    resetButton.style.fontSize = THEME.typography.sizeBody;
-    resetButton.style.fontWeight = THEME.typography.weightBodyStrong;
-    resetButton.style.alignSelf = 'flex-start';
-    resetButton.style.transition = 'background 0.2s ease, color 0.2s ease, border-color 0.2s ease';
+    this.applyButtonStyle(resetButton, false);
 
     resetButton.addEventListener('mouseenter', () => {
       resetButton.style.background = THEME.colors.surfaceHover;
@@ -644,6 +660,7 @@ export class SettingsPage {
     // ── Post tab: each group is its own bordered box ───────────────────────
     const createPostBox = (title: string): HTMLElement => {
       const box = document.createElement('div');
+      box.classList.add('sg-settings-section');
       box.style.marginBottom = '24px';
       box.style.border = `1px solid ${THEME.colors.border}`;
       box.style.borderRadius = THEME.radius.card;
@@ -656,6 +673,7 @@ export class SettingsPage {
       heading.style.fontWeight = THEME.typography.weightTitle;
       box.appendChild(heading);
       const body = document.createElement('div');
+      body.style.marginBottom = '-16px'; // ponytail: cancels the last row's 16px gap so boxes end flush like the other sections
       box.appendChild(body);
       postContent.appendChild(box);
       return body;
@@ -880,7 +898,7 @@ export class SettingsPage {
     tagDisplayLimitInput.value = String(this.settings.tagDisplayLimit ?? 10);
     tagDisplayLimitInput.min = '1';
     tagDisplayLimitInput.max = '100';
-    tagDisplayLimitInput.style.cssText = `width: 64px; padding: 4px 8px; border-radius: ${THEME.radius.button}; border: 1px solid ${THEME.colors.border}; background: ${THEME.colors.surface}; color: ${THEME.colors.textPrimary}; font-size: ${THEME.typography.sizeBody}; text-align: right; box-sizing: border-box;`;
+    this.applyFieldStyle(tagDisplayLimitInput, NUMBER_WIDTH);
     tagDisplayLimitInput.addEventListener('input', () => {
       clearTimeout((tagDisplayLimitInput as any).saveTimeout);
       (tagDisplayLimitInput as any).saveTimeout = setTimeout(() => { this.saveSettings(); }, 500);
@@ -897,7 +915,7 @@ export class SettingsPage {
     performerDisplayLimitInput.value = String(this.settings.performerDisplayLimit ?? 3);
     performerDisplayLimitInput.min = '1';
     performerDisplayLimitInput.max = '100';
-    performerDisplayLimitInput.style.cssText = `width: 64px; padding: 4px 8px; border-radius: ${THEME.radius.button}; border: 1px solid ${THEME.colors.border}; background: ${THEME.colors.surface}; color: ${THEME.colors.textPrimary}; font-size: ${THEME.typography.sizeBody}; text-align: right; box-sizing: border-box;`;
+    this.applyFieldStyle(performerDisplayLimitInput, NUMBER_WIDTH);
     performerDisplayLimitInput.addEventListener('input', () => {
       clearTimeout((performerDisplayLimitInput as any).saveTimeout);
       (performerDisplayLimitInput as any).saveTimeout = setTimeout(() => { this.saveSettings(); }, 500);
@@ -951,6 +969,7 @@ export class SettingsPage {
 
     // ── Content Types Section ──────────────────────────────────────────────
     const contentTypesSection = document.createElement('div');
+    contentTypesSection.classList.add('sg-settings-section');
     contentTypesSection.style.marginBottom = '24px';
     contentTypesSection.style.border = `1px solid ${THEME.colors.border}`;
     contentTypesSection.style.borderRadius = THEME.radius.card;
@@ -991,15 +1010,43 @@ export class SettingsPage {
     markersRow.appendChild(buildInfoLabel('Markers', 'Scene marker clips from your Stash library.'));
     markersRow.appendChild(markersToggleContainer);
     const markersWrapper = document.createElement('div');
-    markersWrapper.style.marginBottom = '12px';
+    markersWrapper.style.marginBottom = '16px';
     markersWrapper.appendChild(markersRow);
     contentTypesSection.appendChild(markersWrapper);
 
+    // Sub-options sit in a collapsible panel; rows inside share one right edge with the top-level toggles.
+    const subRowStyle = 'padding: 4px 0; display: flex; justify-content: space-between; align-items: center; gap: 12px;';
+    // ponytail: breakpoint is read once per open; resizing across it needs a reopen of settings.
+    const isMobile = window.matchMedia('(max-width: 600px)').matches;
+    const buildOptionsGroup = (title: string, open: boolean, summarize: () => string, ...children: HTMLElement[]) => {
+      const label = document.createElement('span');
+      const refresh = () => {
+        const summary = summarize();
+        label.textContent = summary ? `Options · ${summary}` : 'Options';
+      };
+      this.summaryRefreshers.push(refresh);
+      refresh();
+      if (isMobile) {
+        const page = this.createPage(title);
+        page.body.append(...children);
+        const button = this.buildDrillButton(label, page.open);
+        button.style.marginTop = '6px';
+        return button;
+      }
+      const details = document.createElement('details');
+      details.open = open;
+      details.style.cssText = `margin-top: 6px; padding: 0 0 4px 12px; background: ${THEME.colors.backgroundSecondary}; border-radius: ${THEME.radius.card};`;
+      const summary = document.createElement('summary');
+      summary.style.cssText = `min-height: 44px; box-sizing: border-box; padding: 13px 0; cursor: pointer; color: ${THEME.colors.textSecondary}; font-size: ${THEME.typography.sizeBody};`;
+      summary.appendChild(label);
+      details.append(summary, ...children);
+      return details;
+    };
+    const plural = (n: number, one: string, many = one + 's') => n === 0 ? '' : `${n} ${n === 1 ? one : many}`;
+    const summaryOf = (...parts: Array<string | false>) => parts.filter(Boolean).join(' · ');
     const buildContentOptionToggle = (label: string, help: string, checked: boolean) => {
       const row = document.createElement('div');
-      row.style.cssText = 'margin-top: 6px; padding: 6px 8px 6px 12px; display: flex; justify-content: space-between; align-items: center;';
-      row.style.background = THEME.colors.backgroundSecondary;
-      row.style.borderRadius = THEME.radius.card;
+      row.style.cssText = subRowStyle;
       const toggle = this.createToggleSwitch(checked, () => this.saveSettings());
       toggle.input.setAttribute('aria-label', label);
       row.append(buildInfoLabel(label, help), toggle.container);
@@ -1010,7 +1057,9 @@ export class SettingsPage {
       'Play the scene from the marker timestamp until the scene ends, even when HD Video is off.',
       this.settings.playMarkersToEnd === true,
     );
-    markersWrapper.appendChild(markerPlayback.row);
+    markersWrapper.appendChild(buildOptionsGroup('Marker options', this.settings.playMarkersToEnd === true,
+      () => summaryOf(markerPlayback.input.checked && 'play to end'),
+      markerPlayback.row));
 
     // Short-Form toggle
     const { container: shortFormIncludeToggleContainer, input: shortFormIncludeToggle } = this.createToggleSwitch(
@@ -1025,7 +1074,7 @@ export class SettingsPage {
     shortFormRow.appendChild(shortFormIncludeToggleContainer);
 
     const shortFormMaxDurationRow = document.createElement('div');
-    shortFormMaxDurationRow.style.cssText = `margin-top: 6px; padding: 6px 8px 6px 12px; background: ${THEME.colors.backgroundSecondary}; border-radius: ${THEME.radius.card}; display: flex; justify-content: space-between; align-items: center;`;
+    shortFormMaxDurationRow.style.cssText = subRowStyle;
     const maxDurationLabel = document.createElement('span');
     maxDurationLabel.textContent = 'Max duration (seconds)';
     maxDurationLabel.style.cssText = `color: ${THEME.colors.textSecondary}; font-size: ${THEME.typography.sizeBody};`;
@@ -1035,7 +1084,7 @@ export class SettingsPage {
     maxDurationInput.value = String(this.settings.shortFormMaxDuration || 120);
     maxDurationInput.min = '1';
     maxDurationInput.max = '600';
-    maxDurationInput.style.cssText = `width: 72px; padding: 4px 8px; border-radius: ${THEME.radius.button}; border: 1px solid ${THEME.colors.border}; background: ${THEME.colors.surface}; color: ${THEME.colors.textPrimary}; font-size: ${THEME.typography.sizeBody}; text-align: right; box-sizing: border-box;`;
+    this.applyFieldStyle(maxDurationInput, NUMBER_WIDTH);
     maxDurationInput.addEventListener('input', () => {
       clearTimeout((maxDurationInput as any).saveTimeout);
       (maxDurationInput as any).saveTimeout = setTimeout(() => { this.saveSettings(); }, 500);
@@ -1043,33 +1092,49 @@ export class SettingsPage {
     shortFormMaxDurationRow.appendChild(maxDurationInput);
 
     const shortFormWrapper = document.createElement('div');
-    shortFormWrapper.style.marginBottom = '12px';
+    shortFormWrapper.style.marginBottom = '16px';
     shortFormWrapper.appendChild(shortFormRow);
-    shortFormWrapper.appendChild(shortFormMaxDurationRow);
     const shortFormScope = document.createElement('div');
-    shortFormScope.style.cssText = 'display: grid; gap: 8px; padding: 8px 12px; margin-top: 6px;';
-    shortFormScope.style.background = THEME.colors.backgroundSecondary;
-    shortFormScope.style.borderRadius = THEME.radius.card;
+    shortFormScope.style.cssText = 'display: grid; gap: 8px; padding: 4px 0;';
     const scopeHelp = document.createElement('span');
     scopeHelp.textContent = 'When set, these filters keep videos that match any selected tag or the folder. The duration limit still applies.';
-    scopeHelp.style.color = THEME.colors.textSecondary;
+    scopeHelp.style.color = THEME.colors.textMuted;
     scopeHelp.style.fontSize = THEME.typography.sizeMeta;
     const shortFormFolderLabel = document.createElement('label');
     shortFormFolderLabel.htmlFor = 'stashgifs-short-form-folder';
     shortFormFolderLabel.textContent = 'Short video folder';
+    shortFormFolderLabel.style.cssText = `color: ${THEME.colors.textSecondary}; font-size: ${THEME.typography.sizeBody};`;
     const shortFormFolderInput = document.createElement('input');
     shortFormFolderInput.id = shortFormFolderLabel.htmlFor;
     shortFormFolderInput.type = 'text';
     shortFormFolderInput.placeholder = '/media/shorts';
     shortFormFolderInput.value = this.settings.shortFormFolder ?? '';
     shortFormFolderInput.spellcheck = false;
-    this.applyContentScopeInputStyle(shortFormFolderInput);
+    this.applyFieldStyle(shortFormFolderInput, '100%');
     shortFormFolderInput.addEventListener('change', () => this.saveSettings());
     shortFormFolderInput.addEventListener('keydown', event => {
       if (event.key === 'Enter') shortFormFolderInput.blur();
     });
-    shortFormScope.append(scopeHelp, this.buildShortFormTagPicker(), shortFormFolderLabel, shortFormFolderInput);
-    shortFormWrapper.appendChild(shortFormScope);
+    const shortFormTagPicker = this.buildPicker({
+      label: 'Short video tags',
+      title: 'Short video tags',
+      emptyText: 'None',
+      getSelected: () => this.shortFormTags,
+      setSelected: (tags) => {
+        this.shortFormTags = tags.map(({ id, name }) => ({ id, name }));
+        this.saveSettings();
+      },
+      search: async (query, signal) => await this.findShortFormTags?.(query, signal) ?? [],
+    });
+    shortFormScope.append(scopeHelp, shortFormTagPicker, shortFormFolderLabel, shortFormFolderInput);
+    const shortFormScoped = (this.settings.shortFormTags?.length ?? 0) > 0 || !!this.settings.shortFormFolder;
+    shortFormWrapper.appendChild(buildOptionsGroup('Short-Form options', shortFormScoped,
+      () => summaryOf(
+        `max ${maxDurationInput.value || 120}s`,
+        plural(this.shortFormTags.length, 'tag'),
+        shortFormFolderInput.value.trim() !== '' && 'folder',
+      ),
+      shortFormMaxDurationRow, shortFormScope));
     contentTypesSection.appendChild(shortFormWrapper);
 
     // Images toggle
@@ -1088,6 +1153,7 @@ export class SettingsPage {
       () => this.saveSettings()
     );
     const randomWrapper = document.createElement('div');
+    randomWrapper.style.marginBottom = '16px';
 
     const randomRow = document.createElement('div');
     randomRow.style.display = 'flex';
@@ -1097,13 +1163,7 @@ export class SettingsPage {
     randomRow.appendChild(includeRandomToggleContainer);
 
     const randomMarkersRow = document.createElement('div');
-    randomMarkersRow.style.display = 'flex';
-    randomMarkersRow.style.justifyContent = 'space-between';
-    randomMarkersRow.style.alignItems = 'center';
-    randomMarkersRow.style.marginTop = '6px';
-    randomMarkersRow.style.padding = '8px 0 8px 12px';
-    randomMarkersRow.style.background = THEME.colors.backgroundSecondary;
-    randomMarkersRow.style.borderRadius = THEME.radius.card;
+    randomMarkersRow.style.cssText = subRowStyle;
     const { container: randomIncludeScenesWithMarkersContainer, input: randomIncludeScenesWithMarkersToggle } = this.createToggleSwitch(
       this.settings.randomIncludeScenesWithMarkers === true,
       () => this.saveSettings()
@@ -1113,7 +1173,7 @@ export class SettingsPage {
     (this as any).randomIncludeScenesWithMarkersToggle = randomIncludeScenesWithMarkersToggle;
 
     const randomSnippetDurationRow = document.createElement('div');
-    randomSnippetDurationRow.style.cssText = `margin-top: 6px; padding: 6px 8px 6px 12px; background: ${THEME.colors.backgroundSecondary}; border-radius: ${THEME.radius.card}; display: flex; justify-content: space-between; align-items: center;`;
+    randomSnippetDurationRow.style.cssText = subRowStyle;
     const randomSnippetDurationLabel = document.createElement('span');
     randomSnippetDurationLabel.textContent = 'Snippet duration (seconds)';
     randomSnippetDurationLabel.style.cssText = `color: ${THEME.colors.textSecondary}; font-size: ${THEME.typography.sizeBody};`;
@@ -1123,7 +1183,7 @@ export class SettingsPage {
     randomSnippetDurationInput.value = String(this.settings.randomSnippetDuration || 20);
     randomSnippetDurationInput.min = '1';
     randomSnippetDurationInput.max = '600';
-    randomSnippetDurationInput.style.cssText = `width: 72px; padding: 4px 8px; border-radius: ${THEME.radius.button}; border: 1px solid ${THEME.colors.border}; background: ${THEME.colors.surface}; color: ${THEME.colors.textPrimary}; font-size: ${THEME.typography.sizeBody}; text-align: right; box-sizing: border-box;`;
+    this.applyFieldStyle(randomSnippetDurationInput, NUMBER_WIDTH);
     randomSnippetDurationInput.addEventListener('input', () => {
       clearTimeout((randomSnippetDurationInput as any).saveTimeout);
       (randomSnippetDurationInput as any).saveTimeout = setTimeout(() => { this.saveSettings(); }, 500);
@@ -1132,14 +1192,19 @@ export class SettingsPage {
     (this as any).randomSnippetDurationInput = randomSnippetDurationInput;
 
     randomWrapper.appendChild(randomRow);
-    randomWrapper.appendChild(randomMarkersRow);
     const randomLongScenes = buildContentOptionToggle(
       'Long scenes only',
       'Offer scenes at or above the Short-Form duration limit for marker creation.',
       this.settings.randomLongScenesOnly === true,
     );
-    randomWrapper.appendChild(randomLongScenes.row);
-    randomWrapper.appendChild(randomSnippetDurationRow);
+    const randomCustomised = this.settings.randomIncludeScenesWithMarkers === true || this.settings.randomLongScenesOnly === true;
+    randomWrapper.appendChild(buildOptionsGroup('Random options', randomCustomised,
+      () => summaryOf(
+        `${randomSnippetDurationInput.value || 20}s clips`,
+        randomIncludeScenesWithMarkersToggle.checked && 'marked scenes',
+        randomLongScenes.input.checked && 'long only',
+      ),
+      randomMarkersRow, randomLongScenes.row, randomSnippetDurationRow));
     contentTypesSection.appendChild(randomWrapper);
 
     // Scene Previews toggle
@@ -1151,12 +1216,12 @@ export class SettingsPage {
     scenePreviewsRow.style.display = 'flex';
     scenePreviewsRow.style.justifyContent = 'space-between';
     scenePreviewsRow.style.alignItems = 'center';
-    scenePreviewsRow.style.marginTop = '12px';
     scenePreviewsRow.appendChild(buildInfoLabel('Scene Previews', 'Short hover-preview clips generated for each scene.'));
     scenePreviewsRow.appendChild(includeScenePreviewsToggleContainer);
     contentTypesSection.appendChild(scenePreviewsRow);
 
     const behaviorSection = document.createElement('div');
+    behaviorSection.classList.add('sg-settings-section');
     behaviorSection.style.cssText = `margin-bottom: 24px; border: 1px solid ${THEME.colors.border}; border-radius: ${THEME.radius.card}; padding: 16px;`;
     const behaviorTitle = document.createElement('h3');
     behaviorTitle.textContent = 'Behavior';
@@ -1166,13 +1231,13 @@ export class SettingsPage {
     behaviorSection.appendChild(hdVideoContainer);
 
     const maxResolutionContainer = document.createElement('div');
-    maxResolutionContainer.style.cssText = 'display: flex; justify-content: space-between; align-items: center;';
+    maxResolutionContainer.style.cssText = 'display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;';
     maxResolutionContainer.appendChild(buildInfoLabel(
       'Maximum Resolution',
       'Caps HD playback: scenes taller than this are streamed from Stash at the capped resolution (transcoded) instead of full 2K/4K/6K. Reduces buffering on high-res scenes. Does not affect preview clips.'
     ));
     const maxResolutionSelect = document.createElement('select');
-    maxResolutionSelect.style.cssText = `padding: 6px 10px; border-radius: ${THEME.radius.button}; border: 1px solid ${THEME.colors.border}; background: ${THEME.colors.surface}; color: ${THEME.colors.textPrimary}; font-size: ${THEME.typography.sizeBody}; cursor: pointer;`;
+    this.applyFieldStyle(maxResolutionSelect, FIELD_WIDTH);
     for (const [val, label] of [['0', 'Off'], ['2160', '2160p (4K)'], ['1080', '1080p'], ['720', '720p'], ['480', '480p'], ['240', '240p']] as const) {
       const opt = document.createElement('option');
       opt.value = val;
@@ -1190,6 +1255,7 @@ export class SettingsPage {
 
     // ── StashDB Discovery Section ──────────────────────────────────────────
     const discoverySection = document.createElement('div');
+    discoverySection.classList.add('sg-settings-section');
     discoverySection.style.cssText = `margin-bottom: 24px; border: 1px solid ${THEME.colors.border}; border-radius: ${THEME.radius.card}; padding: 16px;`;
 
     const discoverySectionTitle = document.createElement('h3');
@@ -1230,7 +1296,7 @@ export class SettingsPage {
     discoveryOrderContainer.style.cssText = 'display: flex; justify-content: space-between; align-items: center;';
     discoveryOrderContainer.appendChild(buildInfoLabel('Scene Order', 'Show the latest scenes from StashDB, or pick randomly.'));
     const discoveryOrderSelect = document.createElement('select');
-    discoveryOrderSelect.style.cssText = `padding: 6px 10px; border-radius: ${THEME.radius.button}; border: 1px solid ${THEME.colors.border}; background: ${THEME.colors.surface}; color: ${THEME.colors.textPrimary}; font-size: ${THEME.typography.sizeBody}; cursor: pointer;`;
+    this.applyFieldStyle(discoveryOrderSelect, FIELD_WIDTH);
     for (const [val, label] of [['latest', 'Latest'], ['random', 'Random'], ['trending', 'Trending']] as const) {
       const opt = document.createElement('option');
       opt.value = val;
@@ -1249,7 +1315,7 @@ export class SettingsPage {
     // ── Images ──────────────────────────────────────────────────────
     // File types sub-row (under Images toggle)
     const fileTypesSubRow = document.createElement('div');
-    fileTypesSubRow.style.cssText = `margin-top: 6px; padding: 6px 8px 6px 12px; background: ${THEME.colors.backgroundSecondary}; border-radius: ${THEME.radius.card}; display: flex; justify-content: space-between; align-items: center;`;
+    fileTypesSubRow.style.cssText = subRowStyle;
     const fileTypesLabel = document.createElement('span');
     fileTypesLabel.textContent = 'File types';
     fileTypesLabel.style.cssText = `color: ${THEME.colors.textSecondary}; font-size: ${THEME.typography.sizeBody}; cursor: help;`;
@@ -1260,7 +1326,7 @@ export class SettingsPage {
     fileTypesInput.value = (this.settings.enabledFileTypes || ['.jpg', '.png', '.gif', '.mp4', '.m4v', '.webm'])
       .map(ext => ext.replace(/^\./, '')).join(', ');
     fileTypesInput.placeholder = 'jpg, png, gif, mp4';
-    fileTypesInput.style.cssText = `width: 160px; padding: 4px 8px; border-radius: ${THEME.radius.button}; border: 1px solid ${THEME.colors.border}; background: ${THEME.colors.surface}; color: ${THEME.colors.textPrimary}; font-size: ${THEME.typography.sizeBody}; box-sizing: border-box;`;
+    this.applyFieldStyle(fileTypesInput, FIELD_WIDTH);
     fileTypesInput.addEventListener('input', () => {
       clearTimeout((fileTypesInput as any).saveTimeout);
       (fileTypesInput as any).saveTimeout = setTimeout(() => { this.saveSettings(); }, 500);
@@ -1269,7 +1335,7 @@ export class SettingsPage {
 
     // Gallery only sub-row
     const galleryOnlySubRow = document.createElement('div');
-    galleryOnlySubRow.style.cssText = `margin-top: 6px; padding: 8px 0 8px 12px; background: ${THEME.colors.backgroundSecondary}; border-radius: ${THEME.radius.card}; display: flex; justify-content: space-between; align-items: center;`;
+    galleryOnlySubRow.style.cssText = subRowStyle;
     galleryOnlySubRow.appendChild(buildInfoLabel('Gallery only', 'Only show images that belong to a Stash gallery.'));
     const { container: galleryOnlyToggleContainer, input: galleryOnlyToggle } = this.createToggleSwitch(
       this.settings.imagesInGalleryOnly === true,
@@ -1282,194 +1348,53 @@ export class SettingsPage {
 
     // Gallery selector (shown when toggle is on)
     const gallerySelectorWrapper = document.createElement('div');
-    gallerySelectorWrapper.style.cssText = `margin-top: 6px; padding: 6px 8px 6px 12px; background: ${THEME.colors.backgroundSecondary}; border-radius: ${THEME.radius.card};`;
+    gallerySelectorWrapper.style.cssText = 'padding: 4px 0;';
     gallerySelectorWrapper.style.display = this.settings.imagesInGalleryOnly ? 'block' : 'none';
 
-    // Chip container — styled like a text input
-    const galleryChipContainer = document.createElement('div');
-    galleryChipContainer.style.display = 'flex';
-    galleryChipContainer.style.flexWrap = 'wrap';
-    galleryChipContainer.style.gap = '4px';
-    galleryChipContainer.style.padding = '6px 8px';
-    galleryChipContainer.style.border = `1px solid ${THEME.colors.border}`;
-    galleryChipContainer.style.borderRadius = THEME.radius.button;
-    galleryChipContainer.style.backgroundColor = THEME.colors.surface;
-    galleryChipContainer.style.cursor = 'text';
-    galleryChipContainer.style.minHeight = '38px';
-    galleryChipContainer.style.alignItems = 'center';
-    galleryChipContainer.style.boxSizing = 'border-box';
-    galleryChipContainer.style.width = '100%';
-
-    // Search input inside chip container
-    const gallerySearchInput = document.createElement('input');
-    gallerySearchInput.type = 'text';
-    gallerySearchInput.placeholder = 'Add gallery...';
-    gallerySearchInput.style.border = 'none';
-    gallerySearchInput.style.outline = 'none';
-    gallerySearchInput.style.background = 'transparent';
-    gallerySearchInput.style.color = THEME.colors.textPrimary;
-    gallerySearchInput.style.fontSize = THEME.typography.sizeBody;
-    gallerySearchInput.style.flex = '1';
-    gallerySearchInput.style.minWidth = '120px';
-    gallerySearchInput.style.padding = '2px 4px';
-    galleryChipContainer.appendChild(gallerySearchInput);
-
-    gallerySelectorWrapper.appendChild(galleryChipContainer);
-
-    // Dropdown — fixed positioned, appended to modal overlay to escape overflow clipping
-    const galleryDropdown = document.createElement('div');
-    galleryDropdown.style.position = 'fixed';
-    galleryDropdown.style.zIndex = '10002';
-    galleryDropdown.style.backgroundColor = THEME.colors.surface;
-    galleryDropdown.style.border = `1px solid ${THEME.colors.border}`;
-    galleryDropdown.style.borderRadius = THEME.radius.button;
-    galleryDropdown.style.maxHeight = '200px';
-    galleryDropdown.style.overflowY = 'auto';
-    galleryDropdown.style.display = 'none';
-    galleryDropdown.style.boxShadow = '0 4px 12px rgba(0,0,0,0.3)';
-    this.container.appendChild(galleryDropdown);
-
-    // State
     const selectedGalleryIds = new Set<string>(this.settings.galleryIds ?? []);
     let allGalleries: Array<{ id: string; title?: string; folder?: { path?: string } }> = [];
-
-    const getLabel = (id: string): string => {
-      const g = allGalleries.find(g => g.id === id);
-      return g ? (g.title || g.folder?.path || g.id) : id;
+    const galleryName = (g: { id: string; title?: string; folder?: { path?: string } }) => g.title || g.folder?.path || g.id;
+    let galleriesLoad: Promise<void> | undefined;
+    const loadGalleries = () => {
+      galleriesLoad ??= (this.findGalleries?.() ?? Promise.resolve([]))
+        .then((galleries) => { allGalleries = galleries; })
+        .catch((error: unknown) => { galleriesLoad = undefined; throw error; });
+      return galleriesLoad;
     };
+    void loadGalleries().catch(() => { /* retried when the picker searches */ });
 
-    const renderChips = () => {
-      [...galleryChipContainer.children].forEach(child => {
-        if (child !== gallerySearchInput) child.remove();
-      });
-      for (const id of selectedGalleryIds) {
-        const chip = document.createElement('span');
-        chip.style.display = 'inline-flex';
-        chip.style.alignItems = 'center';
-        chip.style.gap = '4px';
-        chip.style.padding = '2px 8px';
-        chip.style.borderRadius = THEME.radius.tag;
-        chip.style.backgroundColor = THEME.colors.accentPrimary;
-        chip.style.color = THEME.colors.textPrimary;
-        chip.style.fontSize = THEME.typography.sizeMeta;
-        chip.style.fontWeight = THEME.typography.weightBodyStrong;
-        chip.style.whiteSpace = 'nowrap';
-
-        const label = document.createElement('span');
-        label.textContent = getLabel(id);
-        chip.appendChild(label);
-
-        const removeBtn = document.createElement('span');
-        removeBtn.textContent = '×';
-        removeBtn.style.cursor = 'pointer';
-        removeBtn.style.lineHeight = '1';
-        removeBtn.style.fontWeight = 'bold';
-        removeBtn.addEventListener('mousedown', (e) => {
-          e.preventDefault();
-          selectedGalleryIds.delete(id);
-          renderChips();
-          renderDropdown(gallerySearchInput.value);
-          this.saveSettings();
-        });
-        chip.appendChild(removeBtn);
-
-        gallerySearchInput.before(chip);
-      }
-    };
-
-    const positionDropdown = () => {
-      const rect = galleryChipContainer.getBoundingClientRect();
-      galleryDropdown.style.top = `${rect.bottom + 4}px`;
-      galleryDropdown.style.left = `${rect.left}px`;
-      galleryDropdown.style.width = `${rect.width}px`;
-    };
-
-    const renderDropdown = (filter: string) => {
-      galleryDropdown.innerHTML = '';
-      const filtered = allGalleries.filter(g => {
-        if (selectedGalleryIds.has(g.id)) return false;
-        if (!filter) return true;
-        const label = g.title || g.folder?.path || g.id;
-        return label.toLowerCase().includes(filter.toLowerCase());
-      });
-
-      if (filtered.length === 0) {
-        const empty = document.createElement('div');
-        empty.textContent = allGalleries.length === 0 ? 'Loading...' : 'No matching galleries';
-        empty.style.padding = '8px 12px';
-        empty.style.color = THEME.colors.textMuted;
-        empty.style.fontSize = THEME.typography.sizeBody;
-        galleryDropdown.appendChild(empty);
-        return;
-      }
-
-      for (const gallery of filtered) {
-        const item = document.createElement('div');
-        item.textContent = gallery.title || gallery.folder?.path || gallery.id;
-        item.style.padding = '8px 12px';
-        item.style.cursor = 'pointer';
-        item.style.fontSize = THEME.typography.sizeBody;
-        item.style.color = THEME.colors.textPrimary;
-        item.addEventListener('mouseenter', () => { item.style.backgroundColor = THEME.colors.surfaceHover; });
-        item.addEventListener('mouseleave', () => { item.style.backgroundColor = ''; });
-        item.addEventListener('mousedown', (e) => {
-          e.preventDefault();
-          selectedGalleryIds.add(gallery.id);
-          gallerySearchInput.value = '';
-          renderChips();
-          renderDropdown('');
-          positionDropdown();
-          this.saveSettings();
-        });
-        galleryDropdown.appendChild(item);
-      }
-    };
-
-    galleryChipContainer.addEventListener('click', () => gallerySearchInput.focus());
-
-    gallerySearchInput.addEventListener('focus', () => {
-      positionDropdown();
-      galleryDropdown.style.display = 'block';
-      renderDropdown(gallerySearchInput.value);
-    });
-
-    gallerySearchInput.addEventListener('blur', () => {
-      setTimeout(() => { galleryDropdown.style.display = 'none'; }, 150);
-    });
-
-    gallerySearchInput.addEventListener('input', () => {
-      renderDropdown(gallerySearchInput.value);
-      positionDropdown();
-    });
-
-    gallerySearchInput.addEventListener('keydown', (e) => {
-      if (e.key === 'Backspace' && gallerySearchInput.value === '' && selectedGalleryIds.size > 0) {
-        const last = [...selectedGalleryIds].at(-1)!; // size > 0 checked above
-        selectedGalleryIds.delete(last);
-        renderChips();
-        renderDropdown('');
+    gallerySelectorWrapper.appendChild(this.buildPicker({
+      label: 'Galleries',
+      title: 'Galleries',
+      emptyText: 'Any gallery',
+      getSelected: () => [...selectedGalleryIds].map((id) => {
+        const gallery = allGalleries.find((g) => g.id === id);
+        return { id, name: gallery ? galleryName(gallery) : id };
+      }),
+      setSelected: (items) => {
+        selectedGalleryIds.clear();
+        for (const item of items) selectedGalleryIds.add(item.id);
         this.saveSettings();
-      }
-    });
-
-    renderChips();
-
-    if (this.findGalleries) {
-      this.findGalleries().then((galleries) => {
-        allGalleries = galleries;
-        renderChips();
-      }).catch(() => {
-        // allGalleries stays empty; search will show "No matching galleries"
-      });
-    }
+      },
+      search: async (query) => {
+        await loadGalleries();
+        const needle = query.toLowerCase();
+        return allGalleries
+          .map((g) => ({ id: g.id, name: galleryName(g) }))
+          .filter((item) => !needle || item.name.toLowerCase().includes(needle));
+      },
+    }));
 
     // Assemble images wrapper and insert before random in Content Types
     const imagesWrapper = document.createElement('div');
-    imagesWrapper.style.marginBottom = '12px';
+    imagesWrapper.style.marginBottom = '16px';
     imagesWrapper.appendChild(imagesRow);
-    imagesWrapper.appendChild(fileTypesSubRow);
-    imagesWrapper.appendChild(galleryOnlySubRow);
-    imagesWrapper.appendChild(gallerySelectorWrapper);
+    imagesWrapper.appendChild(buildOptionsGroup('Image options', this.settings.imagesInGalleryOnly === true,
+      () => summaryOf(
+        plural(fileTypesInput.value.split(',').filter((ext) => ext.trim()).length, 'type'),
+        galleryOnlyToggle.checked && (plural(selectedGalleryIds.size, 'gallery', 'galleries') || 'gallery only'),
+      ),
+      fileTypesSubRow, galleryOnlySubRow, gallerySelectorWrapper));
     randomWrapper.before(imagesWrapper);
 
     (this as any).fileTypesInput = fileTypesInput;
@@ -1478,6 +1403,7 @@ export class SettingsPage {
 
     // ── Filters Section ────────────────────────────────────────────────────
     const filtersSection = document.createElement('div');
+    filtersSection.classList.add('sg-settings-section');
     filtersSection.style.marginBottom = '24px';
     filtersSection.style.border = `1px solid ${THEME.colors.border}`;
     filtersSection.style.borderRadius = THEME.radius.card;
@@ -1493,7 +1419,7 @@ export class SettingsPage {
     portraitContainer.style.display = 'flex';
     portraitContainer.style.justifyContent = 'space-between';
     portraitContainer.style.alignItems = 'center';
-    portraitContainer.style.marginBottom = '12px';
+    portraitContainer.style.marginBottom = '16px';
     portraitContainer.appendChild(buildInfoLabel('Portrait', 'Include portrait-oriented content in the feed.'));
     const { container: portraitToggleContainer, input: portraitToggle } = this.createToggleSwitch(
       portraitEnabled, () => this.saveSettings()
@@ -1520,7 +1446,7 @@ export class SettingsPage {
     const excludedTagsInput = document.createElement('input');
     excludedTagsInput.type = 'text';
     excludedTagsInput.value = (this.settings.excludedTagNames || []).join(', ');
-    excludedTagsInput.style.cssText = `width: 160px; padding: 4px 8px; border-radius: ${THEME.radius.button}; border: 1px solid ${THEME.colors.border}; background: ${THEME.colors.surface}; color: ${THEME.colors.textPrimary}; font-size: ${THEME.typography.sizeBody}; box-sizing: border-box;`;
+    this.applyFieldStyle(excludedTagsInput, FIELD_WIDTH);
     excludedTagsInput.placeholder = 'VR, POV';
     excludedTagsContainer.appendChild(excludedTagsInput);
     excludedTagsInput.addEventListener('input', () => {
@@ -1591,7 +1517,7 @@ export class SettingsPage {
     seenHistorySizeInput.value = String(this.settings.seenHistorySize ?? 500);
     seenHistorySizeInput.min = '0';
     seenHistorySizeInput.max = '2000';
-    seenHistorySizeInput.style.cssText = `width: 80px; padding: 4px 8px; border-radius: ${THEME.radius.button}; border: 1px solid ${THEME.colors.border}; background: ${THEME.colors.surface}; color: ${THEME.colors.textPrimary}; font-size: ${THEME.typography.sizeBody}; text-align: right; box-sizing: border-box;`;
+    this.applyFieldStyle(seenHistorySizeInput, NUMBER_WIDTH);
     seenHistorySizeInput.addEventListener('input', () => {
       clearTimeout((seenHistorySizeInput as any).saveTimeout);
       (seenHistorySizeInput as any).saveTimeout = setTimeout(() => { this.saveSettings(); }, 500);
@@ -1612,7 +1538,7 @@ export class SettingsPage {
     contentLimitInput.value = String(this.settings.contentLimit ?? 5000);
     contentLimitInput.min = '100';
     contentLimitInput.max = '50000';
-    contentLimitInput.style.cssText = `width: 80px; padding: 4px 8px; border-radius: ${THEME.radius.button}; border: 1px solid ${THEME.colors.border}; background: ${THEME.colors.surface}; color: ${THEME.colors.textPrimary}; font-size: ${THEME.typography.sizeBody}; text-align: right; box-sizing: border-box;`;
+    this.applyFieldStyle(contentLimitInput, NUMBER_WIDTH);
     contentLimitInput.addEventListener('input', () => {
       clearTimeout((contentLimitInput as any).saveTimeout);
       (contentLimitInput as any).saveTimeout = setTimeout(() => { this.saveSettings(); }, 500);
@@ -1734,6 +1660,11 @@ export class SettingsPage {
     // Close on Escape key
     const escapeHandler = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
+        const closeTopPage = this.pageStack.at(-1);
+        if (closeTopPage) {
+          closeTopPage();
+          return;
+        }
         this.close();
         document.removeEventListener('keydown', escapeHandler);
       }
@@ -1745,37 +1676,176 @@ export class SettingsPage {
     if (this.onSave) this.onSave(partial);
   }
 
-  private styleTextInput(input: HTMLInputElement): void {
-    input.style.width = '100%';
-    input.style.padding = '12px';
-    input.style.borderRadius = THEME.radius.button;
-    input.style.border = `1px solid ${THEME.colors.border}`;
-    input.style.backgroundColor = THEME.colors.surface;
-    input.style.color = THEME.colors.textPrimary;
-    input.style.fontSize = THEME.typography.sizeBody;
-    input.style.boxSizing = 'border-box';
+  /**
+   * One look for every settings field. 44px touch target; 16px text stops iOS zooming on focus.
+   * Widths: FIELD_WIDTH for text/selects, NUMBER_WIDTH for numbers, '100%' for stacked fields.
+   */
+  private applyFieldStyle(field: HTMLInputElement | HTMLSelectElement, width: string): void {
+    field.style.cssText = `width: ${width}; min-width: 0; min-height: 44px; box-sizing: border-box; padding: 6px 10px; border-radius: ${THEME.radius.button}; border: 1px solid ${THEME.colors.border}; background: ${THEME.colors.surface}; color: ${THEME.colors.textPrimary}; font-size: 16px;`;
+    field.classList.toggle('sg-field-wide', width === FIELD_WIDTH);
+    if (field instanceof HTMLSelectElement) field.style.cursor = 'pointer';
+    else if (field.type === 'number') field.style.textAlign = 'right';
   }
 
-  private styleSelect(select: HTMLSelectElement): void {
-    select.style.width = '100%';
-    select.style.padding = '10px 12px';
-    this.applySelectBaseStyle(select);
-    select.style.boxSizing = 'border-box';
+  /** Full-modal sub-page (drill-down options, pickers). Back or Escape closes the top-most one. */
+  private createPage(title: string, onClose?: () => void): { body: HTMLElement; open: () => void } {
+    const page = document.createElement('div');
+    page.setAttribute('role', 'dialog');
+    page.setAttribute('aria-modal', 'true');
+    page.setAttribute('aria-label', title);
+    page.style.cssText = `position: absolute; inset: 0; z-index: 1; display: none; flex-direction: column; box-sizing: border-box; padding: ${THEME.spacing.cardPadding}; background: ${THEME.colors.backgroundSecondary};`;
+
+    const header = document.createElement('div');
+    header.style.cssText = 'display: flex; align-items: center; gap: 12px; margin-bottom: 16px;';
+    const back = document.createElement('button');
+    back.type = 'button';
+    back.textContent = '‹ Back';
+    back.setAttribute('aria-label', 'Back to settings');
+    this.applyButtonStyle(back, false);
+    const heading = document.createElement('h3');
+    heading.textContent = title;
+    heading.style.cssText = `margin: 0; color: ${THEME.colors.textPrimary}; font-size: ${THEME.typography.sizeTitle}; font-weight: ${THEME.typography.weightTitle};`;
+    header.append(back, heading);
+
+    const body = document.createElement('div');
+    body.style.cssText = 'flex: 1 1 auto; min-height: 0; overflow-y: auto;';
+    page.append(header, body);
+    this.modal.appendChild(page);
+
+    const close = () => {
+      page.style.display = 'none';
+      this.pageStack = this.pageStack.filter((entry) => entry !== close);
+      onClose?.();
+    };
+    back.addEventListener('click', close);
+    return {
+      body,
+      open: () => {
+        page.style.display = 'flex';
+        this.pageStack.push(close);
+        back.focus();
+      },
+    };
   }
 
-  /** The border/background/color/size styling common to all settings selects. */
-  private applySelectBaseStyle(select: HTMLSelectElement): void {
-    select.style.borderRadius = THEME.radius.button;
-    select.style.border = `1px solid ${THEME.colors.border}`;
-    select.style.backgroundColor = THEME.colors.surface;
-    select.style.color = THEME.colors.textPrimary;
-    select.style.fontSize = THEME.typography.sizeBody;
+  /** Full-width 44px row that opens a sub-page: "<content> ›". */
+  private buildDrillButton(content: HTMLElement, onClick: () => void): HTMLButtonElement {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.style.cssText = `width: 100%; min-height: 44px; display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 0 12px; box-sizing: border-box; cursor: pointer; text-align: left; border: none; border-radius: ${THEME.radius.card}; background: ${THEME.colors.surface}; color: ${THEME.colors.textSecondary}; font-size: ${THEME.typography.sizeBody};`;
+    const chevron = document.createElement('span');
+    chevron.textContent = '›';
+    chevron.setAttribute('aria-hidden', 'true');
+    chevron.style.fontSize = '20px';
+    button.append(content, chevron);
+    button.addEventListener('click', onClick);
+    return button;
+  }
+
+  /** Multi-select row ("Galleries  3 selected ›") that opens a searchable checkbox list. */
+  private buildPicker(opts: {
+    label: string;
+    title: string;
+    emptyText: string;
+    getSelected: () => Tag[];
+    setSelected: (items: Tag[]) => void;
+    search: (query: string, signal: AbortSignal) => Promise<Tag[]>;
+  }): HTMLButtonElement {
+    let request: AbortController | undefined;
+    const page = this.createPage(opts.title, () => request?.abort());
+
+    const search = document.createElement('input');
+    search.type = 'search';
+    search.placeholder = 'Search';
+    search.setAttribute('aria-label', 'Search ' + opts.title.toLowerCase());
+    this.applyFieldStyle(search, '100%');
+    const status = document.createElement('span');
+    status.setAttribute('role', 'status');
+    status.style.cssText = `display: block; margin: 8px 0; color: ${THEME.colors.textMuted}; font-size: ${THEME.typography.sizeMeta};`;
+    const list = document.createElement('ul');
+    list.setAttribute('aria-label', opts.title);
+    list.style.cssText = 'list-style: none; margin: 0; padding: 0;';
+    page.body.append(search, status, list);
+
+    const rowText = document.createElement('span');
+    rowText.style.cssText = 'display: flex; justify-content: space-between; gap: 12px; flex: 1; min-width: 0;';
+    const rowLabel = document.createElement('span');
+    rowLabel.textContent = opts.label;
+    const rowValue = document.createElement('span');
+    rowValue.style.color = THEME.colors.textMuted;
+    rowText.append(rowLabel, rowValue);
+    const refreshRow = () => {
+      const count = opts.getSelected().length;
+      rowValue.textContent = count > 0 ? `${count} selected` : opts.emptyText;
+    };
+    refreshRow();
+
+    let results: Tag[] = [];
+    // Selected items first, then the search results; toggling doesn't re-sort so rows don't jump under the finger.
+    const renderList = () => {
+      const selected = opts.getSelected();
+      const selectedIds = new Set(selected.map((item) => item.id));
+      const items = [...selected, ...results.filter((item) => !selectedIds.has(item.id))];
+      list.replaceChildren(...items.map((item) => {
+        const entry = document.createElement('li');
+        const label = document.createElement('label');
+        label.style.cssText = `display: flex; align-items: center; gap: 12px; min-height: 44px; cursor: pointer; color: ${THEME.colors.textPrimary}; font-size: ${THEME.typography.sizeBody}; border-bottom: 1px solid ${THEME.colors.border};`;
+        const checkbox = document.createElement('input');
+        checkbox.type = 'checkbox';
+        checkbox.checked = selectedIds.has(item.id);
+        checkbox.style.cssText = `width: 20px; height: 20px; flex-shrink: 0; margin: 0; accent-color: ${THEME.colors.accentPrimary};`;
+        checkbox.addEventListener('change', () => {
+          const current = opts.getSelected();
+          opts.setSelected(checkbox.checked ? [...current, item] : current.filter((other) => other.id !== item.id));
+          refreshRow();
+        });
+        const name = document.createElement('span');
+        name.textContent = item.name;
+        name.style.overflowWrap = 'anywhere';
+        label.append(checkbox, name);
+        entry.appendChild(label);
+        return entry;
+      }));
+    };
+
+    const runSearch = () => {
+      request?.abort();
+      const current = new AbortController();
+      request = current;
+      status.textContent = 'Searching…';
+      const timer = setTimeout(async () => {
+        try {
+          results = await opts.search(search.value.trim(), current.signal);
+          if (current.signal.aborted) return;
+          renderList();
+          status.textContent = results.length === 0 ? 'No matches' : '';
+        } catch {
+          if (!current.signal.aborted) status.textContent = 'Could not load. Change the search to retry.';
+        }
+      }, 250);
+      current.signal.addEventListener('abort', () => clearTimeout(timer), { once: true });
+    };
+    search.addEventListener('input', runSearch);
+
+    return this.buildDrillButton(rowText, () => {
+      page.open();
+      renderList();
+      runSearch();
+    });
+  }
+
+  private applyButtonStyle(button: HTMLButtonElement, primary: boolean): void {
+    button.style.cssText = `min-height: 44px; padding: 0 16px; border-radius: ${THEME.radius.button}; cursor: pointer; font-size: ${THEME.typography.sizeBody}; font-weight: ${THEME.typography.weightBodyStrong}; transition: background 0.2s ease, color 0.2s ease, border-color 0.2s ease;`;
+    button.style.border = `1px solid ${primary ? THEME.colors.accentPrimary : THEME.colors.border}`;
+    button.style.background = primary ? THEME.colors.accentPrimary : THEME.colors.backgroundSecondary;
+    button.style.color = primary ? THEME.colors.textPrimary : THEME.colors.textSecondary;
   }
 
   private buildWhisparrSection(
     buildInfoLabel: (labelText: string, tooltipText: string) => HTMLElement
   ): HTMLElement {
     const section = document.createElement('div');
+    section.classList.add('sg-settings-section');
     section.style.marginTop = '24px';
     section.style.marginBottom = '24px';
     section.style.border = `1px solid ${THEME.colors.border}`;
@@ -1799,15 +1869,13 @@ export class SettingsPage {
 
     // URL
     const urlContainer = document.createElement('div');
-    urlContainer.style.cssText = 'display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;';
+    urlContainer.style.cssText = 'display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;';
     urlContainer.appendChild(buildInfoLabel('Whisparr URL', 'Base URL of your Whisparr instance, e.g. http://localhost:6969'));
     const urlInput = document.createElement('input');
     urlInput.type = 'url';
     urlInput.placeholder = 'http://localhost:6969';
     urlInput.value = this.settings.whisparrBaseUrl ?? '';
-    this.styleTextInput(urlInput);
-    urlInput.style.width = '200px';
-    urlInput.style.padding = '4px 8px';
+    this.applyFieldStyle(urlInput, FIELD_WIDTH);
     urlInput.addEventListener('input', () => {
       clearTimeout((urlInput as any).saveTimeout);
       (urlInput as any).saveTimeout = setTimeout(() => {
@@ -1819,15 +1887,13 @@ export class SettingsPage {
 
     // API Key
     const apiKeyContainer = document.createElement('div');
-    apiKeyContainer.style.cssText = 'display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;';
+    apiKeyContainer.style.cssText = 'display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;';
     apiKeyContainer.appendChild(buildInfoLabel('API Key', 'Whisparr API key. Found in Whisparr → Settings → General.'));
     const apiKeyInput = document.createElement('input');
     apiKeyInput.type = 'password';
     apiKeyInput.autocomplete = 'off';
     apiKeyInput.value = this.settings.whisparrApiKey ?? '';
-    this.styleTextInput(apiKeyInput);
-    apiKeyInput.style.width = '200px';
-    apiKeyInput.style.padding = '4px 8px';
+    this.applyFieldStyle(apiKeyInput, FIELD_WIDTH);
     apiKeyInput.addEventListener('input', () => {
       clearTimeout((apiKeyInput as any).saveTimeout);
       (apiKeyInput as any).saveTimeout = setTimeout(() => {
@@ -1842,19 +1908,12 @@ export class SettingsPage {
     testRow.style.display = 'flex';
     testRow.style.alignItems = 'center';
     testRow.style.gap = '12px';
-    testRow.style.marginBottom = '12px';
+    testRow.style.marginBottom = '16px';
 
     const testButton = document.createElement('button');
     testButton.type = 'button';
     testButton.textContent = 'Test Connection';
-    testButton.style.padding = '10px 16px';
-    testButton.style.borderRadius = THEME.radius.button;
-    testButton.style.border = `1px solid ${THEME.colors.accentPrimary}`;
-    testButton.style.background = THEME.colors.accentPrimary;
-    testButton.style.color = THEME.colors.textPrimary;
-    testButton.style.cursor = 'pointer';
-    testButton.style.fontSize = THEME.typography.sizeBody;
-    testButton.style.fontWeight = THEME.typography.weightBodyStrong;
+    this.applyButtonStyle(testButton, true);
 
     const testStatus = document.createElement('span');
     testStatus.style.color = THEME.colors.textMuted;
@@ -1866,11 +1925,10 @@ export class SettingsPage {
 
     // Root folder select
     const rootFolderContainer = document.createElement('div');
-    rootFolderContainer.style.cssText = 'display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;';
+    rootFolderContainer.style.cssText = 'display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;';
     rootFolderContainer.appendChild(buildInfoLabel('Root Folder', 'Where Whisparr should download scenes added from StashGifs.'));
     const rootFolderSelect = document.createElement('select');
-    this.styleSelect(rootFolderSelect);
-    rootFolderSelect.style.width = '200px';
+    this.applyFieldStyle(rootFolderSelect, FIELD_WIDTH);
     rootFolderSelect.disabled = true;
     const placeholderRoot = document.createElement('option');
     placeholderRoot.value = '';
@@ -1883,10 +1941,10 @@ export class SettingsPage {
 
     // Quality profile select
     const qualityContainer = document.createElement('div');
+    qualityContainer.style.cssText = 'display: flex; justify-content: space-between; align-items: center;';
     qualityContainer.appendChild(buildInfoLabel('Quality Profile', 'Whisparr quality profile to use for scenes added from StashGifs.'));
     const qualitySelect = document.createElement('select');
-    this.styleSelect(qualitySelect);
-    qualitySelect.style.width = '200px';
+    this.applyFieldStyle(qualitySelect, FIELD_WIDTH);
     qualitySelect.disabled = true;
     const placeholderQuality = document.createElement('option');
     placeholderQuality.value = '';
@@ -1966,109 +2024,6 @@ export class SettingsPage {
     });
 
     return section;
-  }
-
-  private applyContentScopeInputStyle(input: HTMLInputElement | HTMLSelectElement): void {
-    input.style.cssText = 'width: 100%; min-width: 0; box-sizing: border-box; padding: 6px 8px;';
-    input.style.background = THEME.colors.surface;
-    input.style.color = THEME.colors.textPrimary;
-    input.style.border = '1px solid ' + THEME.colors.border;
-    input.style.borderRadius = THEME.radius.button;
-  }
-
-  private buildShortFormTagPicker(): HTMLElement {
-    const picker = document.createElement('div');
-    picker.style.cssText = 'display: grid; gap: 6px; min-width: 0;';
-    const label = document.createElement('label');
-    label.textContent = 'Short video tags';
-    label.htmlFor = 'stashgifs-short-form-tags';
-    const search = document.createElement('input');
-    search.type = 'search';
-    search.placeholder = 'Search tags';
-    search.setAttribute('aria-label', 'Search short video tags');
-    const select = document.createElement('select');
-    select.id = label.htmlFor;
-    this.applyContentScopeInputStyle(search);
-    this.applyContentScopeInputStyle(select);
-    const selectedTags = document.createElement('ul');
-    selectedTags.setAttribute('aria-label', 'Selected short video tags');
-    selectedTags.style.cssText = 'flex-wrap: wrap; gap: 6px; padding: 0; margin: 0; list-style: none;';
-    const status = document.createElement('span');
-    status.setAttribute('role', 'status');
-    status.style.fontSize = THEME.typography.sizeMeta;
-    let choices: Tag[] = [];
-
-    const renderChoices = () => {
-      const selectedIds = new Set(this.shortFormTags.map(tag => tag.id));
-      const available = choices.filter(tag => !selectedIds.has(tag.id));
-      select.replaceChildren(new Option('Add a tag', ''), ...available.map(tag => new Option(tag.name, tag.id)));
-      select.disabled = available.length === 0;
-    };
-
-    const renderSelectedTags = () => {
-      selectedTags.replaceChildren();
-      selectedTags.style.display = this.shortFormTags.length > 0 ? 'flex' : 'none';
-      for (const tag of this.shortFormTags) {
-        const item = document.createElement('li');
-        item.style.minWidth = '0';
-        const remove = document.createElement('button');
-        remove.type = 'button';
-        remove.textContent = tag.name + ' ×';
-        remove.setAttribute('aria-label', 'Remove tag ' + tag.name);
-        remove.style.cssText = 'max-width: 100%; overflow-wrap: anywhere; padding: 4px 8px; cursor: pointer;';
-        remove.style.background = THEME.colors.surface;
-        remove.style.color = THEME.colors.textPrimary;
-        remove.style.border = '1px solid ' + THEME.colors.border;
-        remove.style.borderRadius = THEME.radius.button;
-        remove.addEventListener('click', () => {
-          this.shortFormTags = this.shortFormTags.filter(selected => selected.id !== tag.id);
-          search.focus();
-          renderSelectedTags();
-          renderChoices();
-          this.saveSettings();
-        });
-        item.appendChild(remove);
-        selectedTags.appendChild(item);
-      }
-    };
-
-    const searchTags = () => {
-      this.shortFormTagSearch?.abort();
-      const request = new AbortController();
-      this.shortFormTagSearch = request;
-      const query = search.value.trim();
-      choices = [];
-      renderChoices();
-      status.textContent = 'Searching tags…';
-      const timeout = setTimeout(async () => {
-        try {
-          const results = await this.findShortFormTags?.(query, request.signal) ?? [];
-          if (request.signal.aborted) return;
-          choices = results;
-          renderChoices();
-          status.textContent = results.length === 0 ? 'No matching tags' : '';
-        } catch {
-          if (!request.signal.aborted) status.textContent = 'Could not load tags. Change the search to retry.';
-        }
-      }, 250);
-      request.signal.addEventListener('abort', () => clearTimeout(timeout), { once: true });
-    };
-
-    search.addEventListener('focus', searchTags, { once: true });
-    search.addEventListener('input', searchTags);
-    select.addEventListener('change', () => {
-      const tag = choices.find(option => option.id === select.value);
-      if (!tag) return;
-      this.shortFormTags = [...this.shortFormTags, { id: tag.id, name: tag.name }];
-      renderSelectedTags();
-      renderChoices();
-      if (select.disabled) search.focus();
-      this.saveSettings();
-    });
-    renderSelectedTags();
-    renderChoices();
-    picker.append(label, search, select, selectedTags, status);
-    return picker;
   }
 
   private getFormInput(name: string): HTMLInputElement | undefined {
@@ -2185,10 +2140,11 @@ export class SettingsPage {
     if (this.onSave) {
       this.onSave(newSettings);
     }
+    for (const refresh of this.summaryRefreshers) refresh();
   }
 
   private close(): void {
-    this.shortFormTagSearch?.abort();
+    for (const closePage of [...this.pageStack]) closePage();
     if (this.onClose) {
       this.onClose();
     }
