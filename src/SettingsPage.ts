@@ -1033,7 +1033,10 @@ export class SettingsPage {
       details.append(summary, ...children);
       return details;
     };
-    const plural = (n: number, one: string, many = one + 's') => n === 0 ? '' : `${n} ${n === 1 ? one : many}`;
+    const plural = (n: number, one: string, many = one + 's') => {
+      if (n === 0) return '';
+      return `${n} ${n === 1 ? one : many}`;
+    };
     const summaryOf = (...parts: Array<string | false>) => parts.filter(Boolean).join(' · ');
     const buildContentOptionToggle = (label: string, help: string, checked: boolean) => {
       const row = document.createElement('div');
@@ -1881,7 +1884,7 @@ export class SettingsPage {
   }
 
   private close(): void {
-    for (const closePage of [...this.pageStack]) closePage();
+    for (const closePage of this.pageStack) closePage();
     if (this.onClose) {
       this.onClose();
     }
