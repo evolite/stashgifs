@@ -958,6 +958,23 @@ export class SettingsPage {
       'ratingHotkeysToggle',
     );
 
+    const arrowSeekRow = document.createElement('div');
+    arrowSeekRow.style.cssText = 'display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;';
+    arrowSeekRow.appendChild(buildInfoLabel('Arrow-Key Seek (seconds)', 'How far the left/right arrow keys jump back or forward in the current video.'));
+    const arrowSeekInput = document.createElement('input');
+    arrowSeekInput.type = 'number';
+    arrowSeekInput.value = String(this.settings.arrowSeekSeconds ?? 5);
+    arrowSeekInput.min = '1';
+    arrowSeekInput.max = '600';
+    this.applyFieldStyle(arrowSeekInput, NUMBER_WIDTH);
+    arrowSeekInput.addEventListener('input', () => {
+      clearTimeout((arrowSeekInput as any).saveTimeout);
+      (arrowSeekInput as any).saveTimeout = setTimeout(() => { this.saveSettings(); }, 500);
+    });
+    arrowSeekRow.appendChild(arrowSeekInput);
+    buttonsGroup.appendChild(arrowSeekRow);
+    (this as any).arrowSeekInput = arrowSeekInput;
+
     // ── Content Types Section ──────────────────────────────────────────────
     const contentTypesSection = document.createElement('div');
     contentTypesSection.classList.add('sg-settings-section');
@@ -1782,7 +1799,7 @@ export class SettingsPage {
       'themeBackgroundInput', 'themePrimaryInput', 'themeSecondaryInput', 'themeAccentInput',
       'showVerifiedCheckmarksToggle', 'showProductionAgeToggle', 'showStudioChipsToggle', 'showPerformerEmbellishmentToggle', 'sceneTitleToggle', 'showSceneTagsToggle', 'showPerformerTagsToggle',
       'showMalePerformersToggle', 'showFemalePerformersToggle', 'showOtherGenderPerformersToggle',
-      'showBookmarkToggle', 'showOCountToggle', 'showRatingToggle', 'ratingHotkeysToggle', 'showViewCountToggle',
+      'showBookmarkToggle', 'showOCountToggle', 'showRatingToggle', 'ratingHotkeysToggle', 'arrowSeekInput', 'showViewCountToggle',
       'excludedTagsInput',
       'includeSubtagsToggle', 'trackWatchHistoryToggle', 'seenHistorySizeInput', 'contentLimitInput', 'tagDisplayLimitInput',
       'performerDisplayLimitInput',
@@ -1818,6 +1835,9 @@ export class SettingsPage {
 
     const randomSnippetDuration = Number.parseInt(inputs.randomSnippetDurationInput.value, 10);
     const validRandomSnippetDuration = !Number.isNaN(randomSnippetDuration) && randomSnippetDuration > 0 ? randomSnippetDuration : 20;
+
+    const arrowSeekSeconds = Number.parseInt(inputs.arrowSeekInput.value, 10);
+    const validArrowSeekSeconds = !Number.isNaN(arrowSeekSeconds) && arrowSeekSeconds > 0 ? Math.min(arrowSeekSeconds, 600) : 5;
 
     const excludedTagNames = inputs.excludedTagsInput.value
       .split(',')
@@ -1865,6 +1885,7 @@ export class SettingsPage {
       showOCountButton: inputs.showOCountToggle.checked,
       showRatingButton: inputs.showRatingToggle.checked,
       enableRatingHotkeys: inputs.ratingHotkeysToggle.checked,
+      arrowSeekSeconds: validArrowSeekSeconds,
       showViewCountBadge: inputs.showViewCountToggle.checked,
       excludedTagNames,
       includeSubtags: inputs.includeSubtagsToggle.checked,

@@ -393,6 +393,14 @@ export class VideoJsPlayer implements IVideoPlayer {
     this.seekTo(start + clamped * span);
   }
 
+  seekBy(seconds: number): void {
+    if (!this.isUsable()) return;
+    const { start, span } = this.clipWindow();
+    if (span <= 0) return;
+    const current = this.safeNumber(() => this.player!.currentTime());
+    this.seekTo(Math.max(start, Math.min(start + span, current + seconds)));
+  }
+
   setMuted(isMuted: boolean): void {
     if (!this.isUsable()) return;
     try {

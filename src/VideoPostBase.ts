@@ -41,6 +41,11 @@ export abstract class VideoPostBase extends BasePost {
   protected abstract getPlayer(): IVideoPlayer | undefined;
   protected abstract getHQButtonOffLabel(): string;
 
+  /** Seek the video by `seconds` (negative = back); used by the arrow-key hotkey. */
+  seekBy(seconds: number): void {
+    this.getPlayer()?.seekBy(seconds);
+  }
+
   protected getAutoAdvancePlayer(): IVideoPlayer | undefined {
     return this.getPlayer();
   }
@@ -422,17 +427,6 @@ export abstract class VideoPostBase extends BasePost {
     track.addEventListener('pointermove', onMove);
     track.addEventListener('pointerup', onUp);
     track.addEventListener('pointercancel', onUp);
-
-    // Keyboard seek: left/right arrow ±5 %.
-    track.addEventListener('keydown', (e: KeyboardEvent) => {
-      const p = this.getPlayer();
-      if (!p) return;
-      if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
-        e.preventDefault();
-        const delta = e.key === 'ArrowRight' ? 0.05 : -0.05;
-        p.seekToProgress(Math.max(0, Math.min(1, p.getProgress() + delta)));
-      }
-    });
 
     this.progressBar = {
       track,

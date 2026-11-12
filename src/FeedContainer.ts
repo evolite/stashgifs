@@ -15,6 +15,7 @@ import { SavedSearches } from './SavedSearches.js';
 import { StashAPI, generateRandomSortSeed } from './StashAPI.js';
 import { PluginSettingsManager } from './PluginSettingsManager.js';
 import { VideoPost } from './VideoPost.js';
+import { VideoPostBase } from './VideoPostBase.js';
 import { ImagePost } from './ImagePost.js';
 import { ImageVideoPost } from './ImageVideoPost.js';
 import type { IVideoPlayer } from './types.js';
@@ -201,6 +202,7 @@ export class FeedContainer {
     
     this.autoplayUnlock.start();
     document.addEventListener('keydown', this.onRatingHotkey);
+    document.addEventListener('keydown', this.onSeekHotkey);
 
     // Defer suggestion preload until after initial videos load to avoid competing for bandwidth
     // Will be triggered lazily when user opens filter dropdown or after initial load completes
@@ -4945,8 +4947,22 @@ export class FeedContainer {
     if (message) showToast(message);
   };
 
+  /** Left/right arrows seek the current video by the configured number of seconds. */
+  private readonly onSeekHotkey = (event: KeyboardEvent): void => {
+    if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return;
+    if (event.defaultPrevented || event.ctrlKey || event.metaKey || event.altKey) return;
+    if (isTypingTarget(event.target)) return;
+    const postId = this.reelScroller?.getCurrentPostId() ?? this.getTopMostCardPostId();
+    const post = postId ? this.posts.get(postId) : undefined;
+    if (!(post instanceof VideoPostBase)) return;
+    event.preventDefault();
+    const seconds = this.settings.arrowSeekSeconds ?? 5;
+    post.seekBy(event.key === 'ArrowRight' ? seconds : -seconds);
+  };
+
   private teardownListeners(): void {
     document.removeEventListener('keydown', this.onRatingHotkey);
+    document.removeEventListener('keydown', this.onSeekHotkey);
     this.filterHistory.stop();
     this.autoplayUnlock.stop();
 

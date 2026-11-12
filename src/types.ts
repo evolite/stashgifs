@@ -155,6 +155,7 @@ export interface FeedSettings {
   showOCountButton?: boolean; // Show O-count button in button group, default: true
   showRatingButton?: boolean; // Show rating control in button group, default: true
   enableRatingHotkeys?: boolean; // Digit keys rate the current post (0 = 10), Backspace clears, default: true
+  arrowSeekSeconds?: number; // Seconds the left/right arrow keys seek the current video, default: 5
   showViewCountBadge?: boolean; // Show view-count badge in button group, default: true
   showBookmarkButton?: boolean; // Show bookmark button in button group, default: false
   savedSearches?: SavedSearch[]; // User-saved filter chip sets
@@ -213,6 +214,8 @@ export interface IVideoPlayer {
   getProgress(): number;
   /** Seek to a 0–1 position within the clip window. */
   seekToProgress(ratio: number): void;
+  /** Seek relative to the current position by `seconds`, clamped to the clip window. */
+  seekBy(seconds: number): void;
   setMuted(isMuted: boolean): void;
   setVolume(volume: number): void;
   unload(): void;
