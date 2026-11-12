@@ -104,7 +104,7 @@ export class VideoJsPlayer implements IVideoPlayer {
     if (el.muted) el.setAttribute('muted', '');
     el.style.width = '100%';
     el.style.height = '100%';
-    el.style.objectFit = options?.objectFit ?? 'cover';
+    el.style.objectFit = options?.objectFit ?? 'contain';
     this.container.appendChild(el);
     return el;
   }
@@ -140,7 +140,7 @@ export class VideoJsPlayer implements IVideoPlayer {
       const techEl = player.tech(true)?.el();
       if (techEl instanceof HTMLVideoElement) {
         this.videoEl = techEl;
-        techEl.style.objectFit = options?.objectFit ?? 'cover';
+        techEl.style.objectFit = options?.objectFit ?? 'contain';
       }
     });
 

@@ -419,15 +419,19 @@ export abstract class BasePost {
       : 'landscape');
     const isPortrait = resolvedOrientation === 'portrait';
 
-    if (isPortrait && Number.isFinite(aspectRatioValue) && aspectRatioValue > 0) {
-      playerContainer.style.width = `min(100%, ${aspectRatioValue * 100}vh)`;
-      playerContainer.style.margin = '0 auto';
-      playerContainer.style.backgroundColor = THEME.colors.backgroundPrimary;
-      playerContainer.style.backgroundImage = 'linear-gradient(90deg, var(--color-accent-weak) 0%, transparent 22%, transparent 78%, var(--color-accent-weak) 100%)';
-    } else {
-      playerContainer.style.backgroundColor = '';
-      playerContainer.style.backgroundImage = '';
+    // Size the box to the media's own shape for every orientation so nothing can stretch;
+    // the card (black) shows around it as letter/pillar bars.
+    if (Number.isFinite(aspectRatioValue) && aspectRatioValue > 0) {
+      const viewportHeight = CSS.supports('height', '100svh') ? 'svh' : 'vh';
+      playerContainer.style.aspectRatio = `${aspectRatioValue}`;
+      playerContainer.style.width = `min(100%, ${aspectRatioValue * 100}${viewportHeight})`;
+      playerContainer.style.height = 'auto';
+      playerContainer.style.flex = '0 0 auto';
+      playerContainer.style.margin = 'auto';
     }
+    playerContainer.style.backgroundColor = '';
+    playerContainer.style.backgroundImage = '';
+    this.container.style.backgroundColor = '#000';
 
     this.removeAspectClasses(playerContainer);
     return isPortrait;

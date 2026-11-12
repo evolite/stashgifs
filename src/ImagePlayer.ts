@@ -12,7 +12,7 @@ export class ImagePlayer {
   private readonly imageUrl: string;
   private readonly isGif: boolean;
   private readonly isVideo: boolean;
-  private readonly objectFit: 'cover' | 'contain' = 'cover';
+  private readonly objectFit: 'cover' | 'contain' = 'contain';
   private hasRetried: boolean = false;
   private loadingIndicator?: HTMLElement;
   private wrapper?: HTMLElement;

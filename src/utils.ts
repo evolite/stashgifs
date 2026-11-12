@@ -585,7 +585,7 @@ export function setupLoopingVideoElement(
   videoElement.muted = true;
   videoElement.autoplay = true;
   videoElement.playsInline = true;
-  videoElement.style.objectFit = options?.objectFit ?? 'cover';
+  videoElement.style.objectFit = options?.objectFit ?? 'contain';
   videoElement.style.width = '100%';
   videoElement.style.height = '100%';
   videoElement.style.display = 'block';
