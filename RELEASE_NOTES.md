@@ -9,6 +9,12 @@ the commit-derived history is in CHANGELOG.md.
 To release: add a `## [x.y.z] - YYYY-MM-DD` section at the top (use `### Features` and `### Bug Fixes`), then tag.
 A version without a section gets a one-line "maintenance release" note.
 
+## [7.28.0] - 2026-11-16
+
+### Features
+
+- On phones, your first swipe slides the browser's address bar and toolbar away so posts fill the screen (Settings → Hide Browser Bars, on by default)
+
 ## [7.27.0] - 2026-11-16
 
 ### Features
