@@ -697,6 +697,19 @@ export class SettingsPage {
     autoHideSearchBarContainer.appendChild(autoHideSearchBarToggleContainer);
     (this as any).autoHideSearchBarToggle = autoHideSearchBarToggle;
 
+    const hideBrowserBarsContainer = document.createElement('div');
+    hideBrowserBarsContainer.style.cssText = 'display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;';
+    hideBrowserBarsContainer.appendChild(buildInfoLabel(
+      'Hide Browser Bars (Mobile)',
+      "Experimental. On phones, your first swipe slides the browser's address bar and toolbar away for more room. Not needed in the home-screen app."
+    ));
+    const { container: hideBrowserBarsToggleContainer, input: hideBrowserBarsToggle } = this.createToggleSwitch(
+      this.settings.hideBrowserBars !== false,
+      () => this.saveSettings()
+    );
+    hideBrowserBarsContainer.appendChild(hideBrowserBarsToggleContainer);
+    (this as any).hideBrowserBarsToggle = hideBrowserBarsToggle;
+
     const { container: searchMarkersByNameToggleContainer, input: searchMarkersByNameToggle } = this.createToggleSwitch(
       this.settings.searchMarkersByName === true,
       () => this.saveSettings()
@@ -1458,6 +1471,7 @@ export class SettingsPage {
     filtersContent.appendChild(filtersSection);
     behaviorSection.appendChild(reelAutoScrollContainer);
     behaviorSection.appendChild(autoHideSearchBarContainer);
+    behaviorSection.appendChild(hideBrowserBarsContainer);
     searchMarkersByNameRow.style.marginBottom = '0';
     behaviorSection.appendChild(searchMarkersByNameRow);
 
@@ -1732,7 +1746,7 @@ export class SettingsPage {
     const inputNames = [
       'fileTypesInput', 'maxDurationInput', 'includeMarkersToggle', 'playMarkersToEndToggle', 'includeRandomToggle', 'randomLongScenesOnlyToggle',
       'randomIncludeScenesWithMarkersToggle', 'randomSnippetDurationInput', 'includeImagesToggle', 'searchMarkersByNameToggle',
-      'shortFormIncludeToggle', 'shortFormFolderInput', 'includeScenePreviewsToggle', 'reelAutoScrollToggle', 'autoHideSearchBarToggle', 'hdVideoToggle',
+      'shortFormIncludeToggle', 'shortFormFolderInput', 'includeScenePreviewsToggle', 'reelAutoScrollToggle', 'autoHideSearchBarToggle', 'hideBrowserBarsToggle', 'hdVideoToggle',
       'portraitToggle', 'landscapeToggle',
       'themeBackgroundInput', 'themePrimaryInput', 'themeSecondaryInput', 'themeAccentInput',
       'showVerifiedCheckmarksToggle', 'showProductionAgeToggle', 'showStudioChipsToggle', 'showPerformerEmbellishmentToggle', 'sceneTitleToggle', 'showSceneTagsToggle', 'showPerformerTagsToggle',
@@ -1804,6 +1818,7 @@ export class SettingsPage {
       includeScenePreviews: inputs.includeScenePreviewsToggle.checked,
       reelAutoScroll: inputs.reelAutoScrollToggle.checked,
       autoHideSearchBar: inputs.autoHideSearchBarToggle.checked,
+      hideBrowserBars: inputs.hideBrowserBarsToggle.checked,
       orientationFilter: this.parseOrientationFilter(inputs.portraitToggle.checked, inputs.landscapeToggle.checked),
       themeBackground: inputs.themeBackgroundInput.value,
       themePrimary: inputs.themePrimaryInput.value,

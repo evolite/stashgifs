@@ -356,9 +356,8 @@ export abstract class BasePost {
     this.container.style.borderRadius = '0';
     this.container.style.backgroundColor = 'transparent';
     this.container.style.width = '100%';
-    const reelHeight = CSS.supports('height', '100svh') ? '100svh' : '100vh';
-    this.container.style.height = reelHeight;
-    this.container.style.minHeight = reelHeight;
+    this.container.style.height = 'var(--reel-h)';
+    this.container.style.minHeight = 'var(--reel-h)';
     this.container.style.display = 'flex';
     this.container.style.flexDirection = 'column';
     this.container.style.justifyContent = 'center';
@@ -399,9 +398,8 @@ export abstract class BasePost {
     const isPortrait = resolvedOrientation === 'portrait';
 
     if (Number.isFinite(aspectRatioValue) && aspectRatioValue > 0) {
-      const viewportHeight = CSS.supports('height', '100svh') ? 'svh' : 'vh';
       playerContainer.style.aspectRatio = `${aspectRatioValue}`;
-      playerContainer.style.width = `min(100%, ${aspectRatioValue * 100}${viewportHeight})`;
+      playerContainer.style.width = `min(100%, calc(${aspectRatioValue} * var(--reel-h)))`;
       playerContainer.style.height = 'auto';
       playerContainer.style.flex = '0 0 auto';
       playerContainer.style.margin = 'auto';

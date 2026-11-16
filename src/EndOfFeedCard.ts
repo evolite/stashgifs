@@ -65,11 +65,10 @@ export function buildEndOfFeedCard(onSearch: () => void, onContinue?: () => Prom
   const card = document.createElement('div');
   card.className = 'end-of-feed-card';
   card.dataset.postId = END_CARD_POST_ID;
-  const reelHeight = CSS.supports('height', '100svh') ? '100svh' : '100vh';
   Object.assign(card.style, {
     position: 'relative',
     width: '100%',
-    height: reelHeight,
+    height: 'var(--reel-h)',
     display: 'flex',
     flexDirection: 'column',
     alignItems: 'center',

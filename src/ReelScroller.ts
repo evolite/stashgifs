@@ -4,6 +4,7 @@ interface ReelScrollerOptions {
   getPostId: (card: HTMLElement) => string | null;
   onSettle: (postId: string, index: number) => void;
   onAdvance?: (index: number) => void;
+  yieldToPage?: () => boolean;
 }
 
 const ANIMATION_MS = 360;
@@ -22,6 +23,7 @@ export class ReelScroller {
   private readonly getPostId: (card: HTMLElement) => string | null;
   private readonly onSettle: (postId: string, index: number) => void;
   private readonly onAdvance?: (index: number) => void;
+  private readonly yieldToPage?: () => boolean;
 
   private enabled = false;
   private isAnimating = false;
@@ -54,6 +56,7 @@ export class ReelScroller {
     this.getPostId = options.getPostId;
     this.onSettle = options.onSettle;
     this.onAdvance = options.onAdvance;
+    this.yieldToPage = options.yieldToPage;
   }
 
   isBusy(): boolean {
@@ -248,6 +251,10 @@ export class ReelScroller {
 
   private handleTouchStart(e: TouchEvent): void {
     if (e.touches.length !== 1) return;
+    if (this.yieldToPage?.()) {
+      this.touchActive = false;
+      return;
+    }
     const touch = e.touches[0];
     const cards = this.getCards();
     const baseIndex = this.animationTarget ? cards.indexOf(this.animationTarget.card) : this.getCurrentIndex();

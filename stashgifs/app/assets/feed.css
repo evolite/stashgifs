@@ -1426,6 +1426,26 @@ body {
   overflow: hidden;
 }
 
+:root { --reel-h: 100vh; }
+@supports (height: 100svh) { :root { --reel-h: 100svh; } }
+html.reel-hide-bars,
+html.reel-hide-bars body {
+  height: auto !important;
+  overflow: visible !important;
+  overscroll-behavior: none;
+}
+html.reel-hide-bars .feed-container {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+}
+html.reel-hide-bars body::after {
+  content: '';
+  display: block;
+  height: calc(var(--reel-h) + 50vh);
+}
+
 html,
 body,
 .feed-scroll-container,

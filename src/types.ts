@@ -125,6 +125,7 @@ export interface FeedSettings {
   includeScenePreviews?: boolean;
   reelAutoScroll?: boolean;
   autoHideSearchBar?: boolean;
+  hideBrowserBars?: boolean;
   themeBackground?: string;
   themePrimary?: string;
   themeSecondary?: string;

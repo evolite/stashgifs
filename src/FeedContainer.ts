@@ -292,6 +292,54 @@ export class FeedContainer {
     const body = document.body;
     root.style.overflow = 'hidden';
     body.style.overflow = 'hidden';
+    this.applyBarHideMode();
+  }
+
+  private isStandaloneDisplay(): boolean {
+    const nav = globalThis.navigator;
+    return (isStandaloneNavigator(nav) && nav.standalone) || globalThis.matchMedia('(display-mode: standalone)').matches;
+  }
+
+  private isBarHideMode(): boolean {
+    return this.settings.hideBrowserBars !== false && isMobileDevice() && !this.isStandaloneDisplay();
+  }
+
+  private applyBarHideMode(): void {
+    const on = this.isBarHideMode();
+    document.documentElement.classList.toggle('reel-hide-bars', on);
+    if (this.scrollContainer) {
+      this.scrollContainer.style.overflowY = on ? 'hidden' : 'auto';
+      this.scrollContainer.style.overscrollBehavior = on ? 'auto' : 'contain';
+    }
+    globalThis.visualViewport?.removeEventListener('resize', this.syncReelHeight);
+    globalThis.removeEventListener('resize', this.syncReelHeight);
+    if (on) {
+      globalThis.visualViewport?.addEventListener('resize', this.syncReelHeight);
+      globalThis.addEventListener('resize', this.syncReelHeight);
+      this.syncReelHeight();
+    } else {
+      document.documentElement.style.removeProperty('--reel-h');
+      globalThis.scrollTo(0, 0);
+    }
+  }
+
+  private readonly syncReelHeight = (): void => {
+    const height = globalThis.visualViewport?.height ?? globalThis.innerHeight;
+    document.documentElement.style.setProperty('--reel-h', `${Math.round(height)}px`);
+  };
+
+  private pageYieldStreak = 0;
+
+  private pageCanStillScroll(): boolean {
+    if (!this.isBarHideMode()) return false;
+    const page = document.scrollingElement ?? document.documentElement;
+    if (page.scrollTop >= page.scrollHeight - page.clientHeight - 1) {
+      this.pageYieldStreak = 0;
+      return false;
+    }
+    if (this.pageYieldStreak >= 3) return false;
+    this.pageYieldStreak++;
+    return true;
   }
 
   private applyReelContainerStyles(): void {
@@ -304,18 +352,15 @@ export class FeedContainer {
       this.container.style.padding = '0';
     }
 
-    const reelHeight = CSS.supports('height', '100svh') ? '100svh' : '100vh';
     this.scrollContainer.style.width = '100vw';
     this.scrollContainer.style.maxWidth = '100vw';
     this.scrollContainer.style.margin = '0';
     this.scrollContainer.style.marginLeft = 'calc(50% - 50vw)';
     this.scrollContainer.style.marginRight = 'calc(50% - 50vw)';
     this.scrollContainer.style.padding = '0';
-    this.scrollContainer.style.height = reelHeight;
-    this.scrollContainer.style.minHeight = reelHeight;
-    this.scrollContainer.style.overflowY = 'auto';
+    this.scrollContainer.style.height = 'var(--reel-h)';
+    this.scrollContainer.style.minHeight = 'var(--reel-h)';
     this.scrollContainer.style.overflowX = 'hidden';
-    this.scrollContainer.style.overscrollBehavior = 'contain';
     this.scrollContainer.style.overflowAnchor = 'none';
 
     if (this.postsContainer) {
@@ -415,6 +460,11 @@ export class FeedContainer {
         previousOrientation,
         this.normalizeOrientationFilter(updatedSettings.orientationFilter ?? [])
       );
+
+    if (newSettings.hideBrowserBars !== undefined && newSettings.hideBrowserBars !== previousSettings.hideBrowserBars) {
+      this.applyBarHideMode();
+      requestAnimationFrame(() => this.reelScroller?.realign());
+    }
 
     if (newSettings.autoHideSearchBar !== undefined && newSettings.autoHideSearchBar === false) {
       this.showHeader();
@@ -1445,9 +1495,7 @@ export class FeedContainer {
     header.style.top = '0';
     header.style.transform = 'translateY(0)';
     
-    const nav = globalThis.navigator;
-    const isStandalone = (isStandaloneNavigator(nav) && nav.standalone) || 
-                         globalThis.matchMedia('(display-mode: standalone)').matches;
+    const isStandalone = this.isStandaloneDisplay();
     const isIOS = /iPhone|iPad|iPod/i.test(navigator.userAgent);
     
     if (isStandalone && isIOS) {
@@ -4277,6 +4325,7 @@ export class FeedContainer {
       getPostId: (card) => this.getPostIdFromCard(card),
       onSettle: (postId, index) => this.handleReelSettle(postId, index),
       onAdvance: (index) => this.maybePrefetchMore(index),
+      yieldToPage: () => this.pageCanStillScroll(),
     });
     this.reelScroller.enable();
   }
@@ -4356,6 +4405,8 @@ export class FeedContainer {
 
   private teardownListeners(): void {
     document.removeEventListener('keydown', this.onHotkey);
+    globalThis.visualViewport?.removeEventListener('resize', this.syncReelHeight);
+    globalThis.removeEventListener('resize', this.syncReelHeight);
     this.filterHistory.stop();
     this.autoplayUnlock.stop();
 
