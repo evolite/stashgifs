@@ -54,10 +54,14 @@ export class ReelScroller {
   private isAnimating = false;
   private pendingAdvance = false;
   private animationFrameId?: number;
+  private animationTarget?: { card: HTMLElement; index: number };
   private wheelCooldownUntil = 0;
+  /** The card the reel is on. Geometry alone can't recover it once a resize changes every card's height. */
+  private anchorCard?: HTMLElement;
 
   // Touch-gesture state
   private touchActive = false;
+  private touchId = 0;
   private touchStartY = 0;
   private touchStartScrollTop = 0;
   private touchStartIndex = 0;
@@ -70,7 +74,8 @@ export class ReelScroller {
   private readonly onWheel = (e: WheelEvent) => this.handleWheel(e);
   private readonly onTouchStart = (e: TouchEvent) => this.handleTouchStart(e);
   private readonly onTouchMove = (e: TouchEvent) => this.handleTouchMove(e);
-  private readonly onTouchEnd = () => this.handleTouchEnd();
+  private readonly onTouchEnd = (e: TouchEvent) => this.handleTouchEnd(e);
+  private readonly resizeObserver = new ResizeObserver(() => this.handleResize());
 
   constructor(options: ReelScrollerOptions) {
     this.scrollContainer = options.scrollContainer;
@@ -95,6 +100,7 @@ export class ReelScroller {
    * with native scroll-anchoring disabled, this is the single source of that compensation.
    */
   snapToCard(card: HTMLElement): void {
+    this.anchorCard = card;
     this.scrollContainer.scrollTop = this.targetScrollTopFor(card);
   }
 
@@ -102,10 +108,12 @@ export class ReelScroller {
     if (this.enabled) return;
     this.enabled = true;
     this.scrollContainer.addEventListener('wheel', this.onWheel, { passive: false });
-    this.scrollContainer.addEventListener('touchstart', this.onTouchStart, { passive: true });
-    this.scrollContainer.addEventListener('touchmove', this.onTouchMove, { passive: false });
-    this.scrollContainer.addEventListener('touchend', this.onTouchEnd, { passive: true });
-    this.scrollContainer.addEventListener('touchcancel', this.onTouchEnd, { passive: true });
+    // Capture phase: card buttons stop their touchend from propagating, which must not leave a gesture open.
+    this.scrollContainer.addEventListener('touchstart', this.onTouchStart, { passive: true, capture: true });
+    this.scrollContainer.addEventListener('touchmove', this.onTouchMove, { passive: false, capture: true });
+    this.scrollContainer.addEventListener('touchend', this.onTouchEnd, { passive: true, capture: true });
+    this.scrollContainer.addEventListener('touchcancel', this.onTouchEnd, { passive: true, capture: true });
+    this.resizeObserver.observe(this.scrollContainer);
   }
 
   disable(): void {
@@ -113,11 +121,13 @@ export class ReelScroller {
     this.enabled = false;
     this.cancelAnimation();
     this.pendingAdvance = false;
+    this.touchActive = false;
     this.scrollContainer.removeEventListener('wheel', this.onWheel);
-    this.scrollContainer.removeEventListener('touchstart', this.onTouchStart);
-    this.scrollContainer.removeEventListener('touchmove', this.onTouchMove);
-    this.scrollContainer.removeEventListener('touchend', this.onTouchEnd);
-    this.scrollContainer.removeEventListener('touchcancel', this.onTouchEnd);
+    this.scrollContainer.removeEventListener('touchstart', this.onTouchStart, { capture: true });
+    this.scrollContainer.removeEventListener('touchmove', this.onTouchMove, { capture: true });
+    this.scrollContainer.removeEventListener('touchend', this.onTouchEnd, { capture: true });
+    this.scrollContainer.removeEventListener('touchcancel', this.onTouchEnd, { capture: true });
+    this.resizeObserver.disconnect();
   }
 
   destroy(): void {
@@ -157,7 +167,7 @@ export class ReelScroller {
     const cards = this.getCards();
     const card = cards[this.getCurrentIndex()];
     if (card) {
-      this.scrollContainer.scrollTop = this.targetScrollTopFor(card);
+      this.snapToCard(card);
     }
   }
 
@@ -228,6 +238,7 @@ export class ReelScroller {
     const distance = target - start;
     const startTime = performance.now();
     this.isAnimating = true;
+    this.animationTarget = { card, index };
 
     const step = (now: number) => {
       const elapsed = now - startTime;
@@ -238,6 +249,7 @@ export class ReelScroller {
       } else {
         this.animationFrameId = undefined;
         this.isAnimating = false;
+        this.animationTarget = undefined;
         this.wheelCooldownUntil = performance.now() + WHEEL_COOLDOWN_MS;
         this.settle(card, index);
       }
@@ -251,10 +263,12 @@ export class ReelScroller {
       this.animationFrameId = undefined;
     }
     this.isAnimating = false;
+    this.animationTarget = undefined;
     this.pendingAdvance = false;
   }
 
   private settle(card: HTMLElement, index: number): void {
+    this.anchorCard = card;
     const postId = this.getPostId(card);
     if (postId) {
       this.onSettle(postId, index);
@@ -308,27 +322,41 @@ export class ReelScroller {
     return false;
   }
 
+  /**
+   * Every gesture belongs to the reel, including one that lands mid-animation: it takes over
+   * from the animation's target card, so a tap completes the snap and a swipe moves on from it.
+   * Any touch the scroller ignored would scroll natively and could stop between two cards.
+   */
   private handleTouchStart(e: TouchEvent): void {
-    if (this.isAnimating || e.touches.length !== 1) return;
-    const y = e.touches[0].clientY;
+    if (e.touches.length !== 1) return; // an extra finger joins the gesture already in progress
+    const touch = e.touches[0];
+    const cards = this.getCards();
+    const baseIndex = this.animationTarget ? cards.indexOf(this.animationTarget.card) : this.getCurrentIndex();
+    this.cancelAnimation();
     this.touchActive = true;
-    this.touchStartY = y;
-    this.touchLastY = y;
+    this.touchId = touch.identifier;
+    this.touchStartY = touch.clientY;
+    this.touchLastY = touch.clientY;
     this.touchLastTime = performance.now();
     this.touchVelocity = 0;
     this.touchStartScrollTop = this.scrollContainer.scrollTop;
-    this.touchStartIndex = this.getCurrentIndex();
+    this.touchStartIndex = Math.max(0, baseIndex);
     // Geometry is fixed for the gesture (pruning is blocked while touchActive), so read
     // the ±1 card bounds once here instead of forcing layout on every touchmove.
-    const cards = this.getCards();
     this.touchLowerBound = this.boundScrollTop(cards, this.touchStartIndex - 1);
     this.touchUpperBound = this.boundScrollTop(cards, this.touchStartIndex + 1);
   }
 
+  private trackedTouch(list: TouchList): Touch | undefined {
+    return Array.from(list).find((t) => t.identifier === this.touchId);
+  }
+
   private handleTouchMove(e: TouchEvent): void {
-    if (!this.touchActive || e.touches.length !== 1) return;
-    e.preventDefault(); // Block native momentum scrolling; we follow the finger.
-    const y = e.touches[0].clientY;
+    if (!this.touchActive) return;
+    e.preventDefault(); // We own scrolling for the whole gesture, whatever the finger count.
+    const touch = this.trackedTouch(e.touches);
+    if (!touch) return;
+    const y = touch.clientY;
     const now = performance.now();
     const dt = now - this.touchLastTime;
     if (dt > 0) {
@@ -350,8 +378,8 @@ export class ReelScroller {
     return card ? this.targetScrollTopFor(card) : this.scrollContainer.scrollTop;
   }
 
-  private handleTouchEnd(): void {
-    if (!this.touchActive) return;
+  private handleTouchEnd(e: TouchEvent): void {
+    if (!this.touchActive || e.touches.length > 0) return;
     this.touchActive = false;
 
     const moved = this.scrollContainer.scrollTop - this.touchStartScrollTop;
@@ -365,5 +393,22 @@ export class ReelScroller {
       targetIndex = this.touchStartIndex - 1;
     }
     this.goToIndex(targetIndex, true);
+  }
+
+  /**
+   * Rotation or a browser-bar change resizes every card, so the old scrollTop now points into
+   * a different card. Re-align to the card the reel was on, or finish the snap it was making.
+   */
+  private handleResize(): void {
+    const target = this.animationTarget;
+    this.touchActive = false;
+    this.cancelAnimation();
+    if (target?.card.isConnected) {
+      this.scrollContainer.scrollTop = this.targetScrollTopFor(target.card);
+      this.settle(target.card, target.index);
+      return;
+    }
+    const card = this.anchorCard?.isConnected ? this.anchorCard : this.getCards()[this.getCurrentIndex()];
+    if (card) this.scrollContainer.scrollTop = this.targetScrollTopFor(card);
   }
 }
