@@ -9,6 +9,18 @@ the commit-derived history is in CHANGELOG.md.
 To release: add a `## [x.y.z] - YYYY-MM-DD` section at the top (use `### Features` and `### Bug Fixes`), then tag.
 A version without a section gets a one-line "maintenance release" note.
 
+## [7.27.0] - 2026-11-16
+
+### Features
+
+- Keyboard shortcuts: K play/pause, M mute, F favorite, O o-count and B bookmark, alongside the arrow and rating keys
+- A keyboard button in the header (desktop) and the ? key show every shortcut
+
+### Bug Fixes
+
+- Swiping on mobile no longer gets stuck between two posts
+- Rotating your phone keeps you on the same post, lined up with the screen
+
 ## [7.23.2] - 2026-10-23
 
 ### Features
