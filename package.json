@@ -10,9 +10,11 @@
     "release": "pnpm run build",
     "clean": "rm -rf stashgifs/app/assets/*.js stashgifs/app/assets/*.js.map stashgifs/app/assets/chunks",
     "type-check": "tsc --noEmit",
-    "test": "node --test tests/*.test.mjs"
+    "test": "node --test tests/*.test.mjs",
+    "lint:comments": "node scripts/comments.mjs"
   },
   "devDependencies": {
+    "@babel/parser": "7.28.5",
     "esbuild": "^0.28.2",
     "typescript": "^7.0.2",
     "video.js": "^8.24.1",
