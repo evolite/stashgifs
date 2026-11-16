@@ -27,11 +27,8 @@ jobs:
       - name: Install deps
         run: pnpm install --frozen-lockfile --ignore-scripts
 
-      - name: Type-check
-        run: pnpm run type-check
-
       - name: Test
         run: pnpm test
 
-      - name: Build
+      - name: Type-check and build
         run: pnpm run build
