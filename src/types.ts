@@ -1,16 +1,12 @@
-/**
- * Type definitions for Stashgifs Feed UI
- */
-
 export interface Scene {
   id: string;
   title?: string;
   date?: string;
   details?: string;
   url?: string;
-  rating100?: number; // Stash uses rating100 (0-100) instead of rating
-  o_counter?: number; // Orgasm count
-  play_count?: number; // Number of times the scene has been played
+  rating100?: number;
+  o_counter?: number;
+  play_count?: number;
   studio?: Studio;
   performers?: Performer[];
   tags?: Tag[];
@@ -26,13 +22,13 @@ export interface Scene {
 export interface SceneMarker {
   id: string;
   title: string;
-  seconds: number; // Start time in seconds
-  end_seconds?: number; // End time in seconds
-  stream?: string; // Stream URL for the marker
-  preview?: string; // Marker-specific preview image
+  seconds: number;
+  end_seconds?: number;
+  stream?: string;
+  preview?: string;
   primary_tag?: Tag;
   tags?: Tag[];
-  scene: Scene; // Parent scene
+  scene: Scene;
 }
 
 interface Studio {
@@ -85,80 +81,80 @@ export interface FilterOptions {
   studios?: string[];
   performers?: string[];
   tags?: string[];
-  primary_tags?: string[]; // For scene markers
-  rating?: number; // User-facing, will be converted to rating100 in query
-  rating100?: number; // Direct rating100 filter (0-100)
+  primary_tags?: string[];
+  rating?: number;
+  rating100?: number;
   query?: string;
   limit?: number;
   offset?: number;
-  savedFilterId?: string; // Saved filter id from Stash
-  savedFilterMode?: SavedFilterMode; // Mode of savedFilterId (defaults to SCENE_MARKERS)
-  shuffleMode?: boolean; // When true, use shuffle mode (query scenes directly)
-  includeScenesWithoutMarkers?: boolean; // When true in shuffle mode, include scenes with 0 markers
+  savedFilterId?: string;
+  savedFilterMode?: SavedFilterMode;
+  shuffleMode?: boolean;
+  includeScenesWithoutMarkers?: boolean;
   randomMinSceneDuration?: number;
-  orientationFilter?: ('landscape' | 'portrait' | 'square')[]; // Filter content by orientation
-  dateRangeFilter?: DateRangeFilter; // Restrict to content created within a rolling window
-  sortSeed?: string; // Sort seed for consistent pagination (reused across pages)
-  excludedTagIds?: string[]; // Tags to exclude (resolved IDs)
-  tagDepth?: number; // Depth for tag hierarchy traversal (-1 = all subtags, 0 = exact match only)
-  studioDepth?: number; // Depth for studio hierarchy traversal (-1 = all child studios, 0 = exact match only)
-  includeSceneTagsInMarkerFilter?: boolean; // When true, filter markers by scene tags instead of marker tags
-  showPerformerTags?: boolean; // When true, enrich and display performer tags on posts
+  orientationFilter?: ('landscape' | 'portrait' | 'square')[];
+  dateRangeFilter?: DateRangeFilter;
+  sortSeed?: string;
+  excludedTagIds?: string[];
+  tagDepth?: number;
+  studioDepth?: number;
+  includeSceneTagsInMarkerFilter?: boolean;
+  showPerformerTags?: boolean;
 }
 
 export interface FeedSettings {
-  hdMode?: boolean; // Whether to load full HD scene videos instead of preview clips
-  maxResolution?: number; // Cap playback height in px for scenes above it (0/undefined = off, e.g. 1080)
-  cardMaxWidth: number; // pixels
+  hdMode?: boolean;
+  maxResolution?: number;
+  cardMaxWidth: number;
   aspectRatio: 'preserve' | '16:9' | '9:16' | '1:1';
-  enabledFileTypes?: string[]; // File extensions to include (e.g., ['.gif', '.webm']), default: ['.gif']
-  includeMarkersInFeed?: boolean; // Whether to include scene markers in feed, default: true
+  enabledFileTypes?: string[];
+  includeMarkersInFeed?: boolean;
   playMarkersToEnd?: boolean;
-  searchMarkersByName?: boolean; // Show a Markers section in search suggestions, default: false
-  includeRandomInFeed?: boolean; // Include random scenes played from a random timeframe, default: false
-  randomIncludeScenesWithMarkers?: boolean; // Random mode includes scenes that have existing markers, default: false
+  searchMarkersByName?: boolean;
+  includeRandomInFeed?: boolean;
+  randomIncludeScenesWithMarkers?: boolean;
   randomLongScenesOnly?: boolean;
-  includeImagesInFeed?: boolean; // Whether to include images in feed, default: true
-  imagesOnly?: boolean; // When true, only load images and skip videos
-  orientationFilter?: ('landscape' | 'portrait' | 'square')[]; // Filter content by orientation
-  includeShortForm?: boolean; // Include short-form content (videos < shortFormMaxDuration), default: true
-  shortFormMaxDuration?: number; // Maximum duration in seconds for short-form content, default: 120
+  includeImagesInFeed?: boolean;
+  imagesOnly?: boolean;
+  orientationFilter?: ('landscape' | 'portrait' | 'square')[];
+  includeShortForm?: boolean;
+  shortFormMaxDuration?: number;
   shortFormTags?: Tag[];
   shortFormFolder?: string;
-  randomSnippetDuration?: number; // Seconds of a random scene played before it's treated as ended, default: 20
-  includeScenePreviews?: boolean; // Include scene hover-preview clips, default: false
-  reelAutoScroll?: boolean; // Auto-advance to next post when video loops
-  autoHideSearchBar?: boolean; // Hide search bar on scroll-down, default: true
-  themeBackground?: string; // Background color for app + search overlay
-  themePrimary?: string; // Primary surface color for cards
-  themeSecondary?: string; // Secondary surface color for inputs/panels
-  themeAccent?: string; // Accent color for highlights
-  showVerifiedCheckmarks?: boolean; // Toggle verified checkmark badges
-  showProductionAge?: boolean; // Show performer age at production next to name
-  excludedTagNames?: string[]; // Tags to exclude from feed (names)
-  imagesInGalleryOnly?: boolean; // When true, only show images that belong to a gallery
-  galleryIds?: string[]; // Gallery IDs to filter to; empty = any gallery (NOT_NULL)
-  seenHistorySize?: number; // Max IDs tracked in seen ring buffer (0 = disabled, default 500)
-  trackWatchHistory?: boolean; // Report watch progress to Stash (updates play count / resume time), default true
-  contentLimit?: number; // Max items per content type to paginate through (default 5000)
-  includeSubtags?: boolean; // When true, tag and studio search includes all descendants
-  showPerformerTags?: boolean; // Show tags from each performer on their posts, default: false
-  showSceneTags?: boolean; // Show parent scene tags on marker posts AND match scene tags when filtering, default: false
-  tagDisplayLimit?: number; // Max tags shown before ... collapse (default 10)
-  performerDisplayLimit?: number; // Max performers shown with full name before collapsing into a • • • button that expands to portrait-only chips (default 3)
-  showStudioChips?: boolean; // Show studio logo + name chips alongside performer chips, default: true
-  showPerformerEmbellishment?: boolean; // Show laurel-wreath tier badge (from performer rating) on avatars, default: false
-  showMalePerformers?: boolean; // Show male performer chips, default: true
-  showFemalePerformers?: boolean; // Show female performer chips, default: true
-  showOtherGenderPerformers?: boolean; // Show non-male/female performer chips, default: true
-  showSceneTitle?: boolean; // Show scene/image title above performers in each post, default: false
-  showOCountButton?: boolean; // Show O-count button in button group, default: true
-  showRatingButton?: boolean; // Show rating control in button group, default: true
-  enableRatingHotkeys?: boolean; // Digit keys rate the current post (0 = 10), Backspace clears, default: true
-  arrowSeekSeconds?: number; // Seconds the left/right arrow keys seek the current video, default: 5
-  showViewCountBadge?: boolean; // Show view-count badge in button group, default: true
-  showBookmarkButton?: boolean; // Show bookmark button in button group, default: false
-  savedSearches?: SavedSearch[]; // User-saved filter chip sets
+  randomSnippetDuration?: number;
+  includeScenePreviews?: boolean;
+  reelAutoScroll?: boolean;
+  autoHideSearchBar?: boolean;
+  themeBackground?: string;
+  themePrimary?: string;
+  themeSecondary?: string;
+  themeAccent?: string;
+  showVerifiedCheckmarks?: boolean;
+  showProductionAge?: boolean;
+  excludedTagNames?: string[];
+  imagesInGalleryOnly?: boolean;
+  galleryIds?: string[];
+  seenHistorySize?: number;
+  trackWatchHistory?: boolean;
+  contentLimit?: number;
+  includeSubtags?: boolean;
+  showPerformerTags?: boolean;
+  showSceneTags?: boolean;
+  tagDisplayLimit?: number;
+  performerDisplayLimit?: number;
+  showStudioChips?: boolean;
+  showPerformerEmbellishment?: boolean;
+  showMalePerformers?: boolean;
+  showFemalePerformers?: boolean;
+  showOtherGenderPerformers?: boolean;
+  showSceneTitle?: boolean;
+  showOCountButton?: boolean;
+  showRatingButton?: boolean;
+  enableRatingHotkeys?: boolean;
+  arrowSeekSeconds?: number;
+  showViewCountBadge?: boolean;
+  showBookmarkButton?: boolean;
+  savedSearches?: SavedSearch[];
 }
 
 export interface SavedSearch {
@@ -174,9 +170,9 @@ export interface SavedSearch {
 export interface VideoPostData {
   marker: SceneMarker;
   videoUrl?: string;
-  aspectRatio?: number; // width/height
-  startTime?: number; // Start time in seconds for markers
-  endTime?: number; // End time in seconds for markers
+  aspectRatio?: number;
+  startTime?: number;
+  endTime?: number;
   playMarkerToEnd?: boolean;
 }
 
@@ -189,17 +185,11 @@ export interface VideoPlayerState {
   isFullscreen: boolean;
 }
 
-/** A playable media source (URL + optional MIME type for player source selection). */
 export interface VideoSource {
   src: string;
   type?: string;
 }
 
-/**
- * The video-player surface that the rest of the app depends on. Both the legacy
- * NativeVideoPlayer and the video.js-backed VideoJsPlayer implement this, so the
- * post/visibility/audio layers stay player-agnostic.
- */
 export interface IVideoPlayer {
   play(): Promise<void>;
   pause(): void;
@@ -210,11 +200,8 @@ export interface IVideoPlayer {
   getVideoElement(): HTMLVideoElement;
   getState(): VideoPlayerState;
   seekTo(time: number): void;
-  /** Playback position as 0–1 within the clip window (respects startAt/endAt). */
   getProgress(): number;
-  /** Seek to a 0–1 position within the clip window. */
   seekToProgress(ratio: number): void;
-  /** Seek relative to the current position by `seconds`, clamped to the clip window. */
   seekBy(seconds: number): void;
   setMuted(isMuted: boolean): void;
   setVolume(volume: number): void;
@@ -222,24 +209,15 @@ export interface IVideoPlayer {
   reload(): void;
   getIsUnloaded(): boolean;
   hasLoadError(): boolean;
-  /** Register a callback fired once every candidate source has failed to load. */
   onSourcesExhausted(callback: () => void): void;
-  /** Remove the registered sources-exhausted callback. */
   offSourcesExhausted(): void;
-  /** Register a callback fired once each time the media loops back to its start. */
   onLoop(callback: () => void): void;
-  /** Remove the registered loop callback. */
   offLoop(): void;
-  /** Register a callback fired on each playback time update. */
   onTimeUpdate(callback: () => void): void;
-  /** Remove the registered time-update callback. */
   offTimeUpdate(): void;
   destroy(): void;
 }
 
-/**
- * Image type (simplified for feed display)
- */
 export interface Image {
   id: string;
   title?: string;
@@ -266,26 +244,15 @@ export interface Image {
   }>;
 }
 
-/**
- * Shared base for image-backed post types (ImagePost, ImageVideoPost).
- * BasePost's default method implementations operate on this shape.
- * VideoPost does NOT extend this — it overrides those methods entirely.
- */
 export interface ImageBasedPostData {
   image: Image;
-  aspectRatio?: number; // width/height
+  aspectRatio?: number;
 }
 
-/**
- * ImagePostData - Data structure for image posts in feed
- */
 export interface ImagePostData extends ImageBasedPostData {
   imageUrl?: string;
 }
 
-/**
- * ImageVideoPostData - Data structure for image videos (MP4/M4V images treated as videos)
- */
 export interface ImageVideoPostData extends ImageBasedPostData {
   videoUrl?: string;
 }

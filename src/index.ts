@@ -1,7 +1,3 @@
-/**
- * Main entry point for Stashgifs Feed UI
- */
-
 import { FeedContainer } from './FeedContainer.js';
 import { StashAPI } from './StashAPI.js';
 import { PluginSettingsManager } from './PluginSettingsManager.js';
@@ -9,10 +5,6 @@ import { FeedSettings } from './types.js';
 import { maybeShowWhatsNew } from './WhatsNew.js';
 import { toRgba, normalizeHexColor, applyThemeColors } from './utils.js';
 
-/**
- * Load theme colors early to prevent color flash before UI renders
- * Applies user-selected color palette to CSS custom properties immediately
- */
 function loadFonts(): void {
   const existing = document.querySelector('link[data-stashgifs-fonts="true"]');
   if (existing) return;
@@ -66,7 +58,6 @@ function applyReelModeEarly(container?: HTMLElement | null): void {
   }
 }
 
-// Initialize when DOM is ready
 function init(): void {
   const handleMediaError = (event: Event): void => {
     const target = event.target as HTMLElement | null;
@@ -102,20 +93,14 @@ function init(): void {
     return;
   }
 
-  // Create feed container
   appContainer.className = 'feed-container';
   applyReelModeEarly(appContainer);
 
-  // Don't clear content - let browser handle cleanup naturally
-
   try {
-    // Initialize API (will use window.stash if available)
     const api = new StashAPI();
 
-    // Create settings manager (reads from localStorage synchronously)
     const settingsManager = new PluginSettingsManager(api);
 
-    // Get settings from localStorage or use defaults
     const settings = savedSettings;
 
     const existingFeed = (globalThis.window as WindowWithStashgifs).stashgifsFeed;
@@ -124,10 +109,8 @@ function init(): void {
       (globalThis.window as WindowWithStashgifs).stashgifsFeed = undefined;
     }
 
-    // Create feed
     const feed = new FeedContainer(appContainer, api, settings, settingsManager);
 
-    // When server settings arrive and differ from local cache, update feed
     settingsManager.setOnSettingsUpdated((data) => {
       if (data.settings && Object.keys(data.settings).length > 0) {
         loadThemeEarly(data.settings);
@@ -135,7 +118,6 @@ function init(): void {
       }
     });
 
-    // Initialize feed
     feed.init().catch((error: unknown) => {
       console.error('Failed to initialize feed:', error);
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
@@ -148,13 +130,11 @@ function init(): void {
        `;
     });
 
-    // Background: sync settings from server (handles migration + cross-device sync)
     settingsManager.loadFromServer().catch((error: unknown) => {
       console.warn('Failed to sync settings from server:', error);
     });
 
     (globalThis.window as WindowWithStashgifs).stashgifsFeed = feed;
-    // Idle: don't compete with first paint for a once-per-upgrade dialog.
     const showWhatsNew = () => maybeShowWhatsNew().catch((e: unknown) => console.warn('What\'s new failed:', e));
     if ('requestIdleCallback' in globalThis) requestIdleCallback(showWhatsNew);
     else setTimeout(showWhatsNew, 1000);
@@ -171,11 +151,8 @@ function init(): void {
   }
 }
 
-// Apply theme immediately at script load — before any event listener fires.
-// document.documentElement is always available; localStorage is synchronous.
 loadThemeEarly(getSavedSettings());
 
-// Wait for DOM to be ready for the rest
 if (document.readyState === 'loading') {
   document.addEventListener('DOMContentLoaded', init);
 } else {

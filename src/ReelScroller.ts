@@ -1,42 +1,15 @@
-/**
- * ReelScroller — JS-native, one-card-per-gesture scrolling for reel mode.
- *
- * Replaces CSS scroll-snap (`scroll-snap-type` / `scroll-snap-align`), whose
- * settling behaviour is browser/OS-dependent and caused fast wheel flicks to
- * snap back to the wrong card. Instead this owns the scroll position outright:
- * every wheel notch, swipe, or arrow key advances exactly one card via an
- * animated `scrollTop` transition, with input locked until the animation lands.
- *
- * It does not allocate any per-card state — cards are enumerated live via the
- * `getCards` callback, so dynamically appended posts (infinite scroll) just work.
- */
-
-
 interface ReelScrollerOptions {
-  /** The element that actually scrolls (overflow-y:auto, fixed viewport height). */
   scrollContainer: HTMLElement;
-  /** Ordered list of the post-card elements currently in the DOM. */
   getCards: () => HTMLElement[];
-  /** Extract a stable post id from a card element. */
   getPostId: (card: HTMLElement) => string | null;
-  /** Called once the scroller settles on a card (after the animation finishes). */
   onSettle: (postId: string, index: number) => void;
-  /**
-   * Called as soon as a gesture starts moving toward a new card index (before the
-   * animation lands). Lets the feed kick off prefetch a card or two earlier so a
-   * slow fetch is ready by the time the user arrives. Optional.
-   */
   onAdvance?: (index: number) => void;
 }
 
 const ANIMATION_MS = 360;
-/** Swallow the inertial tail of trackpad/wheel gestures after one card fires. */
 const WHEEL_COOLDOWN_MS = 180;
-/** Ignore micro wheel deltas (e.g. horizontal trackpad noise). */
 const WHEEL_MIN_DELTA = 4;
-/** Fraction of viewport height a swipe must cover to advance (if slow). */
 const SWIPE_DISTANCE_RATIO = 0.18;
-/** px/ms swipe velocity that advances regardless of distance. */
 const SWIPE_VELOCITY = 0.35;
 
 function easeOutCubic(t: number): number {
@@ -56,10 +29,8 @@ export class ReelScroller {
   private animationFrameId?: number;
   private animationTarget?: { card: HTMLElement; index: number };
   private wheelCooldownUntil = 0;
-  /** The card the reel is on. Geometry alone can't recover it once a resize changes every card's height. */
   private anchorCard?: HTMLElement;
 
-  // Touch-gesture state
   private touchActive = false;
   private touchId = 0;
   private touchStartY = 0;
@@ -85,20 +56,10 @@ export class ReelScroller {
     this.onAdvance = options.onAdvance;
   }
 
-  /**
-   * True while a snap animation is in flight OR the user is mid-swipe — callers (e.g.
-   * memory cleanup) must avoid mutating the card list or scrollTop, which would jerk the
-   * viewport onto a different card.
-   */
   isBusy(): boolean {
     return this.isAnimating || this.touchActive;
   }
 
-  /**
-   * Align `card` to the top of the scroll container immediately (no animation). Used to
-   * deterministically re-anchor after memory cleanup removes cards above the viewport —
-   * with native scroll-anchoring disabled, this is the single source of that compensation.
-   */
   snapToCard(card: HTMLElement): void {
     this.anchorCard = card;
     this.scrollContainer.scrollTop = this.targetScrollTopFor(card);
@@ -108,7 +69,6 @@ export class ReelScroller {
     if (this.enabled) return;
     this.enabled = true;
     this.scrollContainer.addEventListener('wheel', this.onWheel, { passive: false });
-    // Capture phase: card buttons stop their touchend from propagating, which must not leave a gesture open.
     this.scrollContainer.addEventListener('touchstart', this.onTouchStart, { passive: true, capture: true });
     this.scrollContainer.addEventListener('touchmove', this.onTouchMove, { passive: false, capture: true });
     this.scrollContainer.addEventListener('touchend', this.onTouchEnd, { passive: true, capture: true });
@@ -134,14 +94,12 @@ export class ReelScroller {
     this.disable();
   }
 
-  /** Post id of the card currently at the top of the scroll container, or null if none. */
   getCurrentPostId(): string | null {
     const cards = this.getCards();
     const card = cards[this.getCurrentIndex()];
     return card ? this.getPostId(card) : null;
   }
 
-  /** Programmatically advance one card (e.g. reel auto-advance on video loop). */
   next(): void {
     if (!this.enabled) return;
     if (this.isAnimating) {
@@ -156,11 +114,6 @@ export class ReelScroller {
     this.goToIndex(this.getCurrentIndex() - 1, true);
   }
 
-  /**
-   * Snap (no animation, no onSettle) to the card nearest the top. Used when reel
-   * mode is toggled on mid-feed so the viewport lands on a whole card instead of
-   * a partial one — autoplay is driven separately by the initial-card path.
-   */
   realign(): void {
     if (!this.enabled) return;
     this.cancelAnimation();
@@ -171,9 +124,6 @@ export class ReelScroller {
     }
   }
 
-  // --- Geometry helpers ----------------------------------------------------
-
-  /** Target scrollTop that aligns `card` to the top of the scroll container. */
   private targetScrollTopFor(card: HTMLElement): number {
     const containerRect = this.scrollContainer.getBoundingClientRect();
     const cardRect = card.getBoundingClientRect();
@@ -185,15 +135,6 @@ export class ReelScroller {
     return Math.max(0, Math.min(index, cardCount - 1));
   }
 
-  /**
-   * Index of the card currently at the top of the scroll container.
-   *
-   * Image cards are sized by aspect ratio, so they are NOT all one viewport tall —
-   * a `scrollTop / clientHeight` estimate picks the wrong card and makes prune
-   * anchoring jump the viewport (the "images swap on scroll-back" bug). Instead pick
-   * the card whose top edge is closest to the container's top edge, using live
-   * geometry that works for any card height.
-   */
   private getCurrentIndex(): number {
     const cards = this.getCards();
     if (cards.length === 0) return 0;
@@ -210,16 +151,12 @@ export class ReelScroller {
     return bestIndex;
   }
 
-  // --- Core motion ---------------------------------------------------------
-
   private goToIndex(index: number, animate: boolean): void {
     const cards = this.getCards();
     const clamped = this.clampIndex(index, cards.length);
     const card = cards[clamped];
     if (!card) return;
 
-    // Kick off prefetch as soon as we commit to a new card, not after the animation
-    // settles — a multi-second fetch otherwise can't keep up with fast scrolling.
     this.onAdvance?.(clamped);
 
     const target = this.targetScrollTopFor(card);
@@ -279,20 +216,12 @@ export class ReelScroller {
     }
   }
 
-  // --- Input handlers ------------------------------------------------------
-
   private handleWheel(e: WheelEvent): void {
     const now = performance.now();
-    // Inertial-tail events are swallowed below; skip the getComputedStyle ancestor walk for them.
     const inTail = this.isAnimating || now < this.wheelCooldownUntil;
-    // Let nested scrollable UI (e.g. a search-suggestions dropdown) scroll natively.
     if (!inTail && this.isOverNestedScrollable(e.target)) return;
-    e.preventDefault(); // We own scrolling; never let the container free-scroll.
+    e.preventDefault();
     if (Math.abs(e.deltaY) < WHEEL_MIN_DELTA) return;
-    // A wheel event while still animating or cooling down is the inertial tail of
-    // the same trackpad flick — swallow it AND push the cooldown out, so momentum
-    // can't sneak a second advance once the window elapses. A real second gesture
-    // needs a genuine gap in wheel events.
     if (this.isAnimating || now < this.wheelCooldownUntil) {
       this.wheelCooldownUntil = now + WHEEL_COOLDOWN_MS;
       return;
@@ -304,11 +233,6 @@ export class ReelScroller {
     }
   }
 
-  /**
-   * True if `target` sits inside a scrollable element nested within the scroll
-   * container (its own overflow that hasn't hit its limit) — those should keep
-   * their native wheel/scroll behaviour rather than advancing the reel.
-   */
   private isOverNestedScrollable(target: EventTarget | null): boolean {
     let node = target instanceof HTMLElement ? target : null;
     while (node && node !== this.scrollContainer) {
@@ -322,13 +246,8 @@ export class ReelScroller {
     return false;
   }
 
-  /**
-   * Every gesture belongs to the reel, including one that lands mid-animation: it takes over
-   * from the animation's target card, so a tap completes the snap and a swipe moves on from it.
-   * Any touch the scroller ignored would scroll natively and could stop between two cards.
-   */
   private handleTouchStart(e: TouchEvent): void {
-    if (e.touches.length !== 1) return; // an extra finger joins the gesture already in progress
+    if (e.touches.length !== 1) return;
     const touch = e.touches[0];
     const cards = this.getCards();
     const baseIndex = this.animationTarget ? cards.indexOf(this.animationTarget.card) : this.getCurrentIndex();
@@ -341,8 +260,6 @@ export class ReelScroller {
     this.touchVelocity = 0;
     this.touchStartScrollTop = this.scrollContainer.scrollTop;
     this.touchStartIndex = Math.max(0, baseIndex);
-    // Geometry is fixed for the gesture (pruning is blocked while touchActive), so read
-    // the ±1 card bounds once here instead of forcing layout on every touchmove.
     this.touchLowerBound = this.boundScrollTop(cards, this.touchStartIndex - 1);
     this.touchUpperBound = this.boundScrollTop(cards, this.touchStartIndex + 1);
   }
@@ -353,25 +270,22 @@ export class ReelScroller {
 
   private handleTouchMove(e: TouchEvent): void {
     if (!this.touchActive) return;
-    e.preventDefault(); // We own scrolling for the whole gesture, whatever the finger count.
+    e.preventDefault();
     const touch = this.trackedTouch(e.touches);
     if (!touch) return;
     const y = touch.clientY;
     const now = performance.now();
     const dt = now - this.touchLastTime;
     if (dt > 0) {
-      this.touchVelocity = (this.touchLastY - y) / dt; // +ve = swiping up (→ next)
+      this.touchVelocity = (this.touchLastY - y) / dt;
     }
     this.touchLastY = y;
     this.touchLastTime = now;
 
-    // Follow the finger, but clamp to ±1 card so a single swipe can never fling
-    // past one neighbour.
     const desired = this.touchStartScrollTop + (this.touchStartY - y);
     this.scrollContainer.scrollTop = Math.max(this.touchLowerBound, Math.min(desired, this.touchUpperBound));
   }
 
-  /** scrollTop that would align card[index] to top, clamped to existing cards. */
   private boundScrollTop(cards: HTMLElement[], index: number): number {
     const clamped = this.clampIndex(index, cards.length);
     const card = cards[clamped];
@@ -395,10 +309,6 @@ export class ReelScroller {
     this.goToIndex(targetIndex, true);
   }
 
-  /**
-   * Rotation or a browser-bar change resizes every card, so the old scrollTop now points into
-   * a different card. Re-align to the card the reel was on, or finish the snap it was making.
-   */
   private handleResize(): void {
     const target = this.animationTarget;
     this.touchActive = false;

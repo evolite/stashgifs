@@ -1,10 +1,3 @@
-/**
- * Recently shown items, persisted so a reload doesn't replay the same cards.
- *
- * Marker, scene and image ids are separate sequences, so keys carry the content type
- * ("marker:12"). Most-recent-last, capped at `getMax()`; 0 disables the history.
- */
-
 export type SeenType = 'marker' | 'image';
 
 const STORAGE_KEY = 'stashgifs-seen-ids';
@@ -24,7 +17,6 @@ export class SeenHistory {
     if (this.cache) return this.cache;
     try {
       const raw = localStorage.getItem(STORAGE_KEY);
-      // Keys are "<type>:<id>"; bare legacy ids could match an unrelated item of another type.
       const ids: string[] = raw ? (JSON.parse(raw) as string[]).filter((k) => k.includes(':')) : [];
       this.cache = { ids, set: new Set(ids) };
     } catch {
@@ -39,7 +31,6 @@ export class SeenHistory {
     const cache = this.load();
     const key = SeenHistory.key(type, id);
     if (cache.set.has(key)) {
-      // Move to end (most recent)
       const idx = cache.ids.indexOf(key);
       if (idx !== -1) cache.ids.splice(idx, 1);
     } else {
@@ -49,7 +40,6 @@ export class SeenHistory {
     if (cache.ids.length > max) {
       for (const removed of cache.ids.splice(0, cache.ids.length - max)) cache.set.delete(removed);
     }
-    // Debounce the write — flush once after the render batch settles
     if (this.flushTimer) clearTimeout(this.flushTimer);
     this.flushTimer = setTimeout(() => {
       this.flushTimer = undefined;
@@ -57,10 +47,6 @@ export class SeenHistory {
     }, FLUSH_DELAY_MS);
   }
 
-  /**
-   * Drop already-seen items. A saved filter is a curated pool the user explicitly picked: never thinned.
-   * While scrolling (append) seen content is strictly removed; on a fresh load an exhausted pool falls back to everything.
-   */
   filter<T extends { type: SeenType; data: { id: string } }>(content: T[], append: boolean, savedFilterActive: boolean): T[] {
     if (this.getMax() === 0 || savedFilterActive) return content;
     const { set } = this.load();
@@ -78,7 +64,6 @@ export class SeenHistory {
     }
   }
 
-  /** Persist pending changes and drop the in-memory copy. */
   dispose(): void {
     if (this.flushTimer) {
       clearTimeout(this.flushTimer);

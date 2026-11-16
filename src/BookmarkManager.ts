@@ -1,9 +1,3 @@
-/**
- * Bookmark Manager
- * Manages bookmarked scenes using Stash GraphQL API with a special tag.
- * Always applies to the parent scene (never to the marker directly).
- */
-
 import { StashAPI } from './StashAPI.js';
 import { SceneMarker } from './types.js';
 
@@ -16,7 +10,6 @@ export class BookmarkManager {
     this.api = api;
   }
 
-  /** Id of the bookmark tag, created on first use. Null if Stash couldn't provide it (retried next call). */
   async getBookmarkTagId(): Promise<string | null> {
     try {
       return (await this.api.ensureTag(BOOKMARK_TAG_NAME))?.id ?? null;

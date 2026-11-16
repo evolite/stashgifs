@@ -1,8 +1,3 @@
-/**
- * Entity details and writes: performer/studio details, ratings, O-counts, play counts, watch activity,
- * image and scene edits, galleries, and marker creation.
- */
-
 import * as queries from '../graphql/queries.js';
 import * as mutations from '../graphql/mutations.js';
 import type {
@@ -26,14 +21,10 @@ import type { ApiIO } from './ApiIO.js';
 
 export class EntityApi {
   private static readonly GALLERIES_PER_PAGE = 200;
-  private static readonly MAX_GALLERY_PAGES = 50; // 10,000 galleries; the picker is not meant for more
+  private static readonly MAX_GALLERY_PAGES = 50;
 
   constructor(private readonly io: ApiIO) {}
 
-  /**
-   * Get detailed performer information by ID
-   * Used for hover overlay display
-   */
   async getPerformerDetails(performerId: string, signal?: AbortSignal): Promise<PerformerExtended | null> {
     if (this.io.isAborted(signal)) return null;
 
@@ -99,23 +90,14 @@ export class EntityApi {
     }
   }
 
-  /**
-   * Update tags for an image
-   */
   async updateImageTags(imageId: string, tagIds: string[], signal?: AbortSignal): Promise<void> {
     return this.updateImageField(imageId, 'tag_ids', tagIds, signal, 'updateImageTags');
   }
 
-  /**
-   * Update performers for an image
-   */
   async updateImagePerformers(imageId: string, performerIds: string[], signal?: AbortSignal): Promise<void> {
     return this.updateImageField(imageId, 'performer_ids', performerIds, signal, 'updateImagePerformers');
   }
 
-  /**
-   * Increment image o-counter
-   */
   async incrementImageOCount(imageId: string, signal?: AbortSignal): Promise<number> {
     if (this.io.isAborted(signal)) return 0;
     
@@ -140,9 +122,6 @@ export class EntityApi {
     }
   }
 
-  /**
-   * Update performers on a scene
-   */
   async updateScenePerformers(sceneId: string, performerIds: string[], signal?: AbortSignal): Promise<void> {
     if (this.io.isAborted(signal)) return;
 
@@ -162,9 +141,6 @@ export class EntityApi {
     if (this.io.isAborted(signal)) return;
   }
 
-  /**
-   * Update performer favorite flag
-   */
   async updatePerformerFavorite(performerId: string, favorite: boolean, signal?: AbortSignal): Promise<void> {
     if (this.io.isAborted(signal)) return;
 
@@ -184,13 +160,6 @@ export class EntityApi {
     if (this.io.isAborted(signal)) return;
   }
 
-  /**
-   * Increment the o count for a scene
-   * @param sceneId The scene ID
-   * @param times Optional array of timestamps (if not provided, uses current time)
-   * @param signal Optional abort signal
-   * @returns The updated o count and history
-   */
   async incrementOCount(sceneId: string, times?: string[], signal?: AbortSignal): Promise<{ count: number; history: string[] }> {
     if (this.io.isAborted(signal)) return { count: 0, history: [] };
     
@@ -212,7 +181,6 @@ export class EntityApi {
       if (sceneAddO && 'count' in sceneAddO) {
         return { count: sceneAddO.count ?? 0, history: times || [] };
       }
-      // Return provided times in history even when count is missing
       return { count: 0, history: times || [] };
     } catch (error) {
       if (isAbortError(error) || this.io.isAborted(signal)) {
@@ -223,9 +191,6 @@ export class EntityApi {
     }
   }
 
-  /**
-   * Increment the play count for a scene. Fire-and-forget — never throws.
-   */
   // fallow-ignore-next-line unused-class-member
   async incrementScenePlayCount(sceneId: string): Promise<void> {
     if (!sceneId) return;
@@ -239,11 +204,6 @@ export class EntityApi {
     }
   }
 
-  /**
-   * Save scene watch activity. Fire-and-forget — never throws.
-   * @param resumeTime Current playback position in the scene (seconds), or undefined
-   * @param playDuration Seconds watched in this session
-   */
   // fallow-ignore-next-line unused-class-member
   async saveSceneActivity(sceneId: string, resumeTime: number | undefined, playDuration: number): Promise<void> {
     if (!sceneId || playDuration <= 0) return;
@@ -257,9 +217,6 @@ export class EntityApi {
     }
   }
 
-  /**
-   * Validate and normalize a rating10 value to rating100
-   */
   private validateAndNormalizeRating(methodName: string, entityId: string, rating10: number): number {
     if (!entityId || typeof entityId !== 'string' || entityId.trim() === '') {
       throw new Error(`${methodName}: entityId is required and must be a non-empty string`);
@@ -272,9 +229,6 @@ export class EntityApi {
     return Math.round(clamped * 10);
   }
 
-  /**
-   * Perform a rating mutation (shared by scene and image rating updates)
-   */
   private async performRatingMutation<T>(
     methodName: string,
     entityId: string,
@@ -302,31 +256,19 @@ export class EntityApi {
     }
   }
 
-  /**
-   * Update the rating for a scene (0-10 scale → rating100)
-   */
   async updateSceneRating(sceneId: string, rating10: number, signal?: AbortSignal): Promise<number> {
     const rating100 = this.validateAndNormalizeRating('updateSceneRating', sceneId, rating10);
     return this.performRatingMutation<SceneUpdateResponse>('updateSceneRating', sceneId, rating100, mutations.SCENE_UPDATE, signal);
   }
 
-  /**
-   * Update image rating (0-10 scale → rating100)
-   */
   async updateImageRating(imageId: string, rating10: number, signal?: AbortSignal): Promise<number> {
     const rating100 = this.validateAndNormalizeRating('updateImageRating', imageId, rating10);
     return this.performRatingMutation<{ imageUpdate: { id: string } }>('updateImageRating', imageId, rating100, mutations.IMAGE_UPDATE, signal);
   }
 
-  /**
-   * Find all galleries (for gallery selector in settings)
-   * @param signal Optional abort signal
-   * @returns Array of galleries with id, title, and folder path
-   */
   async findGalleries(signal?: AbortSignal): Promise<Gallery[]> {
     if (this.io.isAborted(signal)) return [];
     try {
-      // Paged (not per_page:-1) so a big library can't return thousands of rows in one response.
       const galleries: Gallery[] = [];
       for (let page = 1; page <= EntityApi.MAX_GALLERY_PAGES; page++) {
         const result = await this.io.gql.query<FindGalleriesResponse>({
@@ -347,20 +289,6 @@ export class EntityApi {
     }
   }
 
-  /**
-   * Create a new scene marker
-   * @param sceneId Scene ID
-   * @param seconds Start time in seconds
-   * @param primaryTagId Primary tag ID (required)
-   * @param title Optional title (defaults to empty string)
-   * @param endSeconds Optional end time in seconds
-   * @param tagIds Optional array of additional tag IDs
-   * @param signal Optional abort signal
-   * @returns Created marker data
-   */
-  /**
-   * Validate createSceneMarker input parameters
-   */
   private validateCreateSceneMarkerInput(
     sceneId: string,
     seconds: number,
@@ -403,7 +331,6 @@ export class EntityApi {
       throw new Error('Operation aborted');
     }
     
-    // Input validation
     this.validateCreateSceneMarkerInput(sceneId, seconds, primaryTagId, endSeconds, tagIds);
     
     const variables = {
@@ -430,7 +357,6 @@ export class EntityApi {
       if (!marker) {
         throw new Error('Failed to create scene marker: response was null');
       }
-      // Convert null end_seconds to undefined to match return type
       return {
         ...marker,
         end_seconds: marker.end_seconds ?? undefined,

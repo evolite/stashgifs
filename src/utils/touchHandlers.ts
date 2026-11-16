@@ -1,25 +1,10 @@
-/**
- * Unified touch handler utilities for consistent mobile interaction
- * Provides standardized touch detection logic across the application
- */
-
-/**
- * Standard touch detection thresholds
- */
 const TOUCH_THRESHOLDS = {
-  /** Maximum pixel movement to consider a tap (not a scroll) */
   MOVE_THRESHOLD: 15,
-  /** Maximum duration in ms to consider a tap (not a long press) */
   DURATION_THRESHOLD: 250,
-  /** Maximum distance between taps for double-tap detection */
   DOUBLE_TAP_DISTANCE: 50,
-  /** Maximum time between taps for double-tap detection */
   DOUBLE_TAP_TIME: 300,
 } as const;
 
-/**
- * Touch tracking state for a single element
- */
 interface TouchState {
   startX: number;
   startY: number;
@@ -30,9 +15,6 @@ interface TouchState {
   lastTapY: number;
 }
 
-/**
- * Initialize touch state
- */
 function createTouchState(): TouchState {
   return {
     startX: 0,
@@ -45,9 +27,6 @@ function createTouchState(): TouchState {
   };
 }
 
-/**
- * Handle touchstart event and update state
- */
 function handleTouchStart(
   event: TouchEvent,
   state: TouchState
@@ -61,9 +40,6 @@ function handleTouchStart(
   }
 }
 
-/**
- * Handle touchmove event and detect scrolling
- */
 function handleTouchMove(
   event: TouchEvent,
   state: TouchState
@@ -80,23 +56,13 @@ function handleTouchMove(
   }
 }
 
-/**
- * Result of touch end analysis
- */
 interface TouchEndResult {
-  /** Whether this was a valid tap (not a scroll) */
   isTap: boolean;
-  /** Whether this was a double tap */
   isDoubleTap: boolean;
-  /** Total distance moved */
   distance: number;
-  /** Duration of the touch */
   duration: number;
 }
 
-/**
- * Analyze touchend event and determine if it was a tap
- */
 function analyzeTouchEnd(
   event: TouchEvent,
   state: TouchState
@@ -117,7 +83,6 @@ function analyzeTouchEnd(
   const touchDuration = Date.now() - state.startTime;
   const currentTime = Date.now();
 
-  // Check for double tap
   const timeSinceLastTap = currentTime - state.lastTapTime;
   const distanceFromLastTap = Math.hypot(
     touch.clientX - state.lastTapX,
@@ -127,17 +92,14 @@ function analyzeTouchEnd(
   const isDoubleTap = timeSinceLastTap < TOUCH_THRESHOLDS.DOUBLE_TAP_TIME &&
     distanceFromLastTap < TOUCH_THRESHOLDS.DOUBLE_TAP_DISTANCE;
 
-  // Determine if this was a valid tap
   const isTap = !state.isScrolling &&
     totalDistance < TOUCH_THRESHOLDS.MOVE_THRESHOLD &&
     touchDuration < TOUCH_THRESHOLDS.DURATION_THRESHOLD;
 
-  // Update last tap info for next double-tap detection
   state.lastTapTime = currentTime;
   state.lastTapX = touch.clientX;
   state.lastTapY = touch.clientY;
 
-  // Reset touch tracking
   state.isScrolling = false;
   state.startX = 0;
   state.startY = 0;
@@ -151,20 +113,11 @@ function analyzeTouchEnd(
   };
 }
 
-/**
- * Setup unified touch handlers for an element
- * Returns cleanup function
- */
 interface TouchHandlerOptions {
-  /** Callback for single tap */
   onTap?: (event: TouchEvent) => void;
-  /** Callback for double tap */
   onDoubleTap?: (event: TouchEvent) => void;
-  /** Whether to prevent default on tap */
   preventDefault?: boolean;
-  /** Whether to stop propagation on tap */
   stopPropagation?: boolean;
-  /** Whether to stop immediate propagation on tap */
   stopImmediatePropagation?: boolean;
 }
 
@@ -202,7 +155,6 @@ export function setupTouchHandlers(
     if (result.isDoubleTap && onDoubleTap) {
       applyEventOptions(e);
       onDoubleTap(e);
-      // Reset to prevent triple tap
       state.lastTapTime = 0;
       return;
     }
@@ -213,12 +165,10 @@ export function setupTouchHandlers(
     }
   };
 
-  // Add event listeners
   element.addEventListener('touchstart', handleStart, { passive: true });
   element.addEventListener('touchmove', handleMove, { passive: true });
   element.addEventListener('touchend', handleEnd, { passive: !preventDefault });
 
-  // Return cleanup function
   return () => {
     element.removeEventListener('touchstart', handleStart);
     element.removeEventListener('touchmove', handleMove);
@@ -226,10 +176,6 @@ export function setupTouchHandlers(
   };
 }
 
-/**
- * Prevent click event from firing after touch (to avoid double-firing)
- * Call this in touchend handler to prevent subsequent click event
- */
 export function preventClickAfterTouch(element: HTMLElement, timeout: number = 300): () => void {
   let clickPrevented = false;
 

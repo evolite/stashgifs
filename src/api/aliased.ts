@@ -1,13 +1,3 @@
-/**
- * Run the same GraphQL selection for many values in one request by aliasing it per value:
- *
- *   query Op($v0: ID!, $v1: ID!) { self0: findTags(ids: [$v0]) {...} self1: findTags(ids: [$v1]) {...} }
- *
- * `fields` maps an alias to a selection that references the value as `$v`; it is rewritten to
- * `$v<i>` per value. Returns one `{ alias: data }` object per input value, in input order.
- * Large inputs are split into chunks so a single query stays a reasonable size.
- */
-
 export type AliasedExec = (query: string, variables: Record<string, unknown>) => Promise<Record<string, unknown> | undefined>;
 
 export async function runAliased(
@@ -20,7 +10,6 @@ export async function runAliased(
 ): Promise<Array<Record<string, unknown>>> {
   const chunks: Array<readonly unknown[]> = [];
   for (let start = 0; start < values.length; start += chunkSize) chunks.push(values.slice(start, start + chunkSize));
-  // Chunks are independent requests: run them together, keep input order.
   const rows = await Promise.all(chunks.map((chunk) => runChunk(exec, opName, varType, chunk, fields)));
   return rows.flat();
 }

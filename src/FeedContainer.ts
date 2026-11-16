@@ -1,8 +1,3 @@
-/**
- * Feed Container
- * Main application container managing the feed
- */
-
 import { SceneMarker, FilterOptions, FeedSettings, VideoPostData, ImagePostData, ImageVideoPostData, Image, SavedSearch, DateRangeFilter } from './types.js';
 import { FilterState, type SavedFilter } from './FilterState.js';
 import { SeenHistory } from './SeenHistory.js';
@@ -35,17 +30,17 @@ import { handleHotkey, toggleHotkeyHelp, type HotkeyActions } from './Hotkeys.js
 const DEFAULT_SETTINGS: FeedSettings = {
   cardMaxWidth: 800,
   aspectRatio: 'preserve',
-  enabledFileTypes: ['.jpg', '.png', '.gif', '.mp4', '.m4v'], // Default file types to include
-  includeImagesInFeed: true, // Whether to include images in feed
-  searchMarkersByName: false, // Show a Markers section in search suggestions
+  enabledFileTypes: ['.jpg', '.png', '.gif', '.mp4', '.m4v'],
+  includeImagesInFeed: true,
+  searchMarkersByName: false,
   imagesOnly: false,
-  includeShortForm: true, // Include short-form content
-  shortFormMaxDuration: 120, // Maximum duration in seconds for short-form content
+  includeShortForm: true,
+  shortFormMaxDuration: 120,
   shortFormFolder: '',
   shortFormTags: [],
   randomLongScenesOnly: false,
   playMarkersToEnd: false,
-  includeScenePreviews: false, // Include scene hover-preview clips
+  includeScenePreviews: false,
   autoHideSearchBar: true,
   themeBackground: THEME_DEFAULTS.backgroundPrimary,
   themePrimary: THEME_DEFAULTS.surface,
@@ -69,26 +64,14 @@ const DEFAULT_SETTINGS: FeedSettings = {
   showSceneTags: false,
 };
 
-/**
- * Type guard to check if a player is a video player (vs the GIF ImagePlayer).
- */
 function isVideoPlayer(player: IVideoPlayer | ImagePlayer | undefined): player is IVideoPlayer {
   return player !== undefined && 'getVideoElement' in player;
 }
 
-/**
- * Content type for unified mixing
- */
-
-/**
- * Union type for all post types
- */
 type PostType = VideoPost | ImagePost | ImageVideoPost;
 
 export class FeedContainer {
   private static readonly CONTENT_LOAD_LIMIT: number = 8;
-  // Reel scroll advances one card per gesture. Prefetch the next batch this many cards
-  // before the end so the (often multi-second) fetch is ready by the time they arrive.
   private static readonly PREFETCH_CARDS_AHEAD = 5;
   private readonly container: HTMLElement;
   private scrollContainer: HTMLElement;
@@ -104,13 +87,13 @@ export class FeedContainer {
   private settingsContainer?: HTMLElement;
   private ratingConfigReady: Promise<void> = Promise.resolve();
   private ratingSystemConfig: { type?: string; starPrecision?: string } | null | undefined;
-  private imagesLoadedCount: number = 0; // Track how many images we've loaded
-  private markersLoadedCount: number = 0; // Track how many markers we've loaded
+  private imagesLoadedCount: number = 0;
+  private markersLoadedCount: number = 0;
   private shortFormOffset: number | null = 0;
   private shortFormScanPaused = false;
-  private scenePreviewUnfilteredOffset: number = 0; // Track offset in UNFILTERED scene list for scene-preview pagination
-  private markerPageSize: number = 0; // Track the page size used for markers (for consistent pagination)
-  private imagePageSize: number = 0; // Track the page size used for images (for consistent pagination)
+  private scenePreviewUnfilteredOffset: number = 0;
+  private markerPageSize: number = 0;
+  private imagePageSize: number = 0;
   private isLoading: boolean = false;
   private currentFilters?: FilterOptions;
   private readonly filterState = new FilterState();
@@ -121,8 +104,6 @@ export class FeedContainer {
   private currentPage: number = 1;
   private appendRetryCount = 0;
   private appendRetryTimeoutId?: ReturnType<typeof setTimeout>;
-  // Coalesce the rapid per-toggle reloads fired while the settings page is open into a
-  // single full reset, so concurrent force-loads can't race and blank the feed.
   private settingsReloadTimeoutId?: ReturnType<typeof setTimeout>;
   private latestLoadId = 0;
   private endCard?: HTMLElement;
@@ -147,17 +128,16 @@ export class FeedContainer {
   private scrollEventTarget?: Window | HTMLElement;
   private suggestionsClickOutsideHandler?: (event: Event) => void;
   private suggestionsTouchOutsideHandler?: (event: Event) => void;
-  private placeholderAnimationInterval?: ReturnType<typeof setInterval>; // For scrolling placeholder animation
+  private placeholderAnimationInterval?: ReturnType<typeof setInterval>;
   private savedFiltersCache: SavedFilter[] = [];
   private savedFiltersPromise?: Promise<void>;
   private suggestionAbortController?: AbortController;
   private activeLoadVideosAbortController?: AbortController;
   private skeletonLoaders: HTMLElement[] = [];
   private useHDMode: boolean = false;
-  private globalMuteState: boolean = false; // Global mute state - all videos muted when true
-  private readonly loadObservers: Map<string, IntersectionObserver> = new Map(); // Track load observers for cleanup
-  private updatePlaceholderVisibilityRef?: () => void; // Reference to updatePlaceholderVisibility function
-  // Reel scrolling: JS-driven, one-card-per-gesture (replaces CSS scroll-snap)
+  private globalMuteState: boolean = false;
+  private readonly loadObservers: Map<string, IntersectionObserver> = new Map();
+  private updatePlaceholderVisibilityRef?: () => void;
   private reelScroller?: ReelScroller;
   private readonly autoplayUnlock = new AutoplayUnlock(() => this.playback?.retryActive());
 
@@ -166,17 +146,14 @@ export class FeedContainer {
     this.api = api || new StashAPI();
     this.settingsManager = settingsManager || new PluginSettingsManager(this.api);
     this.savedSearches = new SavedSearches(this.settingsManager);
-    // Merge settings: defaults first, then passed settings (which may include loaded settings from index.ts)
-    // If no settings passed, load from localStorage
     const loadedSettings = settings && Object.keys(settings).length > 0 ? settings : this.loadSettingsFromStorage();
     this.settings = { ...DEFAULT_SETTINGS, ...loadedSettings };
     this.api.maxContentLimit = this.settings.contentLimit ?? 5000;
     this.api.maxResolution = this.settings.maxResolution ?? 0;
-    // Initialize properties that will be set in methods
-    this.scrollContainer = null!; // Will be set in initializeContainers
-    this.playback = null!; // Will be set in initializeManagers
-    this.favoritesManager = null!; // Will be set in initializeManagers
-    this.bookmarkManager = null!; // Will be set in initializeManagers
+    this.scrollContainer = null!;
+    this.playback = null!;
+    this.favoritesManager = null!;
+    this.bookmarkManager = null!;
     this.posts = new Map();
     this.postOrder = [];
 
@@ -185,7 +162,6 @@ export class FeedContainer {
     this.applyFooterVisibility(this.settings);
     this.loadUserPreferences();
     
-    // Create header bar with unified search
     this.createHeaderBar();
     this.debouncedApplyFilters = debounce(() => {
       this.applyFilters();
@@ -195,29 +171,20 @@ export class FeedContainer {
     this.applyReelModeLayout();
     this.initializeManagers();
 
-    // Setup scroll handler
     this.setupScrollHandler();
     
-    // Setup JS reel scroller if reel mode is enabled
     this.setupReelScroller();
     
     this.autoplayUnlock.start();
     document.addEventListener('keydown', this.onHotkey);
 
-    // Defer suggestion preload until after initial videos load to avoid competing for bandwidth
-    // Will be triggered lazily when user opens filter dropdown or after initial load completes
   }
 
-  /**
-   * Initialize scroll and posts containers
-   */
   private initializeContainers(): void {
-    // Check if container structure already exists (from initial HTML skeleton)
     const existingScrollContainer = this.container.querySelector('.feed-scroll-container') as HTMLElement;
     if (existingScrollContainer) {
     this.scrollContainer = existingScrollContainer;
     } else {
-      // Create scroll container
       this.scrollContainer = document.createElement('div');
       this.scrollContainer.className = 'feed-scroll-container';
       this.container.appendChild(this.scrollContainer);
@@ -237,25 +204,17 @@ export class FeedContainer {
       : THEME.colors.backgroundPrimary;
   }
 
-  /**
-   * Initialize posts container
-   */
   private initializePostsContainer(): void {
-    // Check if posts container already exists
     const existingPostsContainer = this.scrollContainer.querySelector('.feed-posts') as HTMLElement;
     if (existingPostsContainer) {
       this.postsContainer = existingPostsContainer;
     } else {
-      // Create posts container (separate from filter bar so we don't wipe it)
       this.postsContainer = document.createElement('div');
       this.postsContainer.className = 'feed-posts';
       this.scrollContainer.appendChild(this.postsContainer);
     }
   }
 
-  /**
-   * Load settings from localStorage
-   */
   private loadSettingsFromStorage(): Partial<FeedSettings> {
     try {
       const savedSettings = localStorage.getItem('stashgifs-settings');
@@ -357,11 +316,6 @@ export class FeedContainer {
     this.scrollContainer.style.overflowY = 'auto';
     this.scrollContainer.style.overflowX = 'hidden';
     this.scrollContainer.style.overscrollBehavior = 'contain';
-    // The reel owns scroll position outright. Without this, the browser's native
-    // scroll-anchoring silently shifts scrollTop whenever DOM above the viewport changes
-    // (video.js players mounting/unmounting, images decoding) as the user scrolls — which
-    // surfaces as sudden backward/up jumps. Cards are fixed-height, so there is nothing
-    // legitimate to anchor; pruning compensates explicitly via ReelScroller.snapToCard.
     this.scrollContainer.style.overflowAnchor = 'none';
 
     if (this.postsContainer) {
@@ -396,8 +350,6 @@ export class FeedContainer {
     if (header.dataset.overlayZIndex === undefined) {
       header.style.zIndex = '900';
     } else {
-      // overlay is open; header must stay above it — update the stashed value that
-      // setHeaderOverlayState(false) will restore instead of the live z-index
       header.dataset.overlayZIndex = '900';
     }
     header.style.background = 'transparent';
@@ -431,10 +383,6 @@ export class FeedContainer {
     }
   }
 
-  /**
-   * Apply a settings change to the live feed. `persist` is true for edits made here (settings page)
-   * and false for values that just arrived from the server, which are already stored.
-   */
   private applySettings(newSettings: Partial<FeedSettings>, persist: boolean): void {
     const previousSettings = { ...this.settings };
     const previousShowVerified = this.settings.showVerifiedCheckmarks;
@@ -484,13 +432,6 @@ export class FeedContainer {
     }
   }
 
-  /**
-   * Debounce content-affecting settings reloads. Toggling several content types in the
-   * overflow menu (e.g. markers off, short-form off, images on) used to fire one
-   * forced loadVideos per toggle; those ran concurrently, mutated the shared filter
-   * object, and aborted each other — leaving hasMore=false and a blank feed until a
-   * manual refresh. Collapsing them into a single delayed refreshFeed() removes the race.
-   */
   private scheduleSettingsReload(): void {
     if (this.settingsReloadTimeoutId) {
       clearTimeout(this.settingsReloadTimeoutId);
@@ -503,7 +444,6 @@ export class FeedContainer {
     }, 250);
   }
 
-  /** Footer button visibility is a class on the feed root, so it costs nothing per post and works for cards built while hidden. */
   private applyFooterVisibility(settings: FeedSettings): void {
     this.container.classList.toggle('feed-container--hide-ocount', settings.showOCountButton === false);
     this.container.classList.toggle('feed-container--hide-rating', settings.showRatingButton === false);
@@ -620,9 +560,6 @@ export class FeedContainer {
     this.settingsManager.save({ settings: completeSettings });
   }
 
-  /**
-   * Load user preferences from localStorage
-   */
   private loadUserPreferences(): void {
     this.useHDMode = this.loadHDModePreference();
     this.globalMuteState = this.loadGlobalMuteState();
@@ -696,7 +633,6 @@ export class FeedContainer {
         }
       })
     );
-    // Don't remember the names as resolved when a lookup failed: the next load retries.
     if (lookupFailed) this.excludedTagNamesNormalized = [];
 
     this.excludedTagIds = resolvedTags
@@ -727,13 +663,6 @@ export class FeedContainer {
     filters.showPerformerTags = this.settings.showPerformerTags ?? false;
   }
 
-
-  // Tag/exclude filtering is fully server-side (StashAPI.applyRoutedTags / applyExcludedTags /
-  // buildImageFilter route every selected tag to one field and exclude across enabled fields), so
-  // there is no client-side tag or exclude post-filter — that would desync the displayed length
-  // from the server count and break pagination. Marker title search (filterMarkersByName) is the
-  // only remaining client filter, since Stash has no marker-title filter field.
-
   private deferAutoAdvance(retries = 5): void {
     if (retries <= 0) return;
     requestAnimationFrame(() => {
@@ -745,114 +674,73 @@ export class FeedContainer {
     });
   }
 
-  /**
-   * Load HD mode preference from localStorage
-   */
   private loadHDModePreference(): boolean {
-    // Read from FeedSettings first (new path), fall back to legacy hdMode field
     if (this.settings.hdMode !== undefined) {
       return this.settings.hdMode;
     }
     return this.settingsManager.data.hdMode;
   }
 
-
-
   private loadGlobalMuteState(): boolean {
     return this.settingsManager.data.globalMuteState;
   }
 
-  /**
-   * Set global mute state and apply to all videos
-   */
   private setGlobalMuteState(isMuted: boolean): void {
     this.globalMuteState = isMuted;
     this.settingsManager.save({ globalMuteState: isMuted });
 
-    // Apply to every existing player, then re-apply audio to the active card.
     this.applyGlobalMuteState();
     this.playback?.setGlobalMute(isMuted);
     this.updateAllMuteButtons();
   }
 
-  /**
-   * Apply mute state to a video post
-   */
   private applyMuteStateToPost(post: VideoPost | ImageVideoPost): void {
     const player = post.getPlayer();
     if (player) {
-      // Apply mute state immediately, even if video isn't playing
-      // This ensures the mute state is correct when user toggles it
       player.setMuted(this.globalMuteState);
     }
-    // Update overlay mute button appearance
     post.updateMuteOverlayButton();
   }
 
-  /**
-   * Apply global mute state to all existing video players
-   */
   private applyGlobalMuteState(): void {
     for (const post of this.posts.values()) {
       if (post instanceof VideoPost || post instanceof ImageVideoPost) {
         this.applyMuteStateToPost(post);
       }
-      // ImagePost videos are always muted (no audio playback), no need to handle here
     }
   }
 
-  /**
-   * Update all mute buttons to reflect current global mute state
-   */
   private updateAllMuteButtons(): void {
     for (const post of this.posts.values()) {
       if (post instanceof VideoPost || post instanceof ImageVideoPost) {
         post.updateMuteOverlayButton();
       }
-      // ImagePost videos are always muted (no audio playback), no mute button to update
     }
   }
 
-  /**
-   * Get current global mute state
-   */
   getGlobalMuteState(): boolean {
     return this.globalMuteState;
   }
 
-  /**
-   * Initialize playback and favorites managers
-   */
   private initializeManagers(): void {
-    // Reel playback: one active card at a time, driven by ReelScroller.
     this.playback = new ReelPlaybackController({
       getOrderedPostIds: () => this.postOrder,
       getPost: (postId: string) => this.posts.get(postId),
     });
     this.playback.setGlobalMute(this.globalMuteState);
 
-    // Apply global mute state to all existing players and update mute buttons
-    // This ensures the loaded state is applied to any posts that were created before managers were initialized
     this.applyGlobalMuteState();
     this.updateAllMuteButtons();
 
-    // Initialize favorites and bookmark managers
     this.favoritesManager = new FavoritesManager(this.api);
     this.bookmarkManager = new BookmarkManager(this.api);
   }
   
-  /**
-   * Close suggestions overlay and unlock body scroll
-   */
   private closeSuggestions(): void {
-    // Find all suggestion overlays (there might be multiple instances)
     const suggestions = document.querySelectorAll('.feed-filters__suggestions');
     for (const suggestion of suggestions) {
       const el = suggestion as HTMLElement;
-      // Hide panel first to prevent any flash of old content
       el.style.display = 'none';
-      // Clear all content while hidden to ensure panel is empty when it opens next time
-      // Use removeChild for better performance than innerHTML
       while (el.firstChild) {
         el.firstChild.remove();
       }
@@ -860,8 +748,6 @@ export class FeedContainer {
 
     this.setHeaderOverlayState(false);
 
-    // Refresh cache in the background for next time the overlay opens
-    // Don't await - let it run asynchronously
     if (!this.isPreloading) {
       this.preloadSuggestions().catch((e) => console.warn('Failed to refresh suggestions cache', e));
     }
@@ -883,9 +769,6 @@ export class FeedContainer {
     delete this.headerBar.dataset.overlayZIndex;
   }
 
-  /**
-   * Create section label element
-   */
   private createSectionLabel(label: string, uppercase: boolean = false): HTMLElement {
     const el = document.createElement('div');
     el.className = uppercase ? 'feed-section-label feed-section-label--uppercase' : 'feed-section-label';
@@ -893,12 +776,9 @@ export class FeedContainer {
     return el;
   }
 
-  /**
-   * Create pill button element
-   */
   private attachSuggestionClickHandler(button: HTMLElement, onSelect: () => void | Promise<void>): void {
     button.addEventListener('mousedown', (event) => {
-      event.preventDefault(); // prevent blur on queryInput before selection is committed
+      event.preventDefault();
     });
     button.addEventListener('click', (event) => {
       event.preventDefault();
@@ -911,15 +791,12 @@ export class FeedContainer {
     const button = document.createElement('button');
     button.type = 'button';
     button.className = 'feed-pill-button';
-    if (iconSvg) button.innerHTML = iconSvg; // trusted markup from icons.ts
+    if (iconSvg) button.innerHTML = iconSvg;
     button.append(label);
     this.attachSuggestionClickHandler(button, onSelect);
     return button;
   }
 
-  /**
-   * Create list button element
-   */
   private createListButton(
     label: string,
     onSelect: () => void | Promise<void>,
@@ -947,7 +824,7 @@ export class FeedContainer {
           console.warn('FeedContainer: Invalid leading image URL', { url: options.leadingImage, label });
         }
       } else if (options.leadingIcon) {
-        leading.innerHTML = options.leadingIcon; // trusted markup from icons.ts
+        leading.innerHTML = options.leadingIcon;
       } else if (options.leadingText) {
         leading.textContent = options.leadingText;
       }
@@ -980,9 +857,6 @@ export class FeedContainer {
     return button;
   }
 
-  /**
-   * Append empty state message
-   */
   private appendEmptyState(target: HTMLElement, message: string): void {
     const emptyState = document.createElement('div');
     emptyState.className = 'feed-empty-state';
@@ -990,12 +864,6 @@ export class FeedContainer {
     target.appendChild(emptyState);
   }
 
-  /**
-
-
-  /**
-   * Create loading skeleton section
-   */
   private createLoadingSkeletons(): HTMLElement {
     const loadingSection = document.createElement('div');
     loadingSection.style.display = 'flex';
@@ -1003,7 +871,6 @@ export class FeedContainer {
     loadingSection.style.gap = '8px';
     loadingSection.appendChild(this.createSectionLabel('Suggested Tags'));
     
-    // Create 6 skeleton placeholders that match the list button style
     for (let i = 0; i < 6; i++) {
       const skeletonButton = document.createElement('div');
       skeletonButton.style.width = '100%';
@@ -1014,7 +881,6 @@ export class FeedContainer {
       skeletonButton.style.borderRadius = '12px';
       skeletonButton.style.background = 'transparent';
       
-      // Leading circle skeleton
       const leadingSkeleton = document.createElement('div');
       leadingSkeleton.className = 'chip-skeleton';
       leadingSkeleton.dataset.suggestionSkeleton = 'true';
@@ -1023,14 +889,12 @@ export class FeedContainer {
       leadingSkeleton.style.borderRadius = '50%';
       leadingSkeleton.style.flexShrink = '0';
       
-      // Text skeleton
       const textSkeleton = document.createElement('div');
       textSkeleton.className = 'chip-skeleton';
       textSkeleton.dataset.suggestionSkeleton = 'true';
       textSkeleton.style.height = '16px';
       textSkeleton.style.borderRadius = '4px';
       textSkeleton.style.flex = '1';
-      // Vary width for more natural look
       const widths = [120, 140, 100, 130, 110, 150];
       textSkeleton.style.width = `${widths[i % widths.length]}px`;
       
@@ -1056,9 +920,6 @@ export class FeedContainer {
     this.loadVideos(this.currentFilters, false).catch((e) => console.error('Apply saved filter failed', e));
   }
 
-  /**
-   * Create saved filters section
-   */
   private createSavedFiltersSection(
     container: HTMLElement,
     updateSearchBarDisplay: () => void,
@@ -1107,8 +968,6 @@ export class FeedContainer {
     container.appendChild(filtersSection);
   }
 
-  // Generic words that surface all three date-range options; each option's own word
-  // ("week"/"month"/"year") also surfaces just itself, so typing "week" works without "created".
   private static readonly DATE_RANGE_KEYWORDS = ['created', 'new', 'recent', 'recently'];
   private static readonly DATE_RANGE_OPTIONS: Array<{ label: string; value: DateRangeFilter; word: string }> = [
     { label: 'This Week', value: 'week', word: 'week' },
@@ -1123,11 +982,6 @@ export class FeedContainer {
     return FeedContainer.DATE_RANGE_OPTIONS.filter((opt) => genericMatch || opt.word.startsWith(q));
   }
 
-  /**
-   * Create "created within" date-range section, shown only when the typed search text
-   * matches a date keyword (e.g. "created", "recent", "week") — kept out of the default
-   * dropdown so it doesn't add permanent clutter.
-   */
   private createMatchingDateRangeSection(
     container: HTMLElement,
     trimmedText: string,
@@ -1215,9 +1069,6 @@ export class FeedContainer {
     container.appendChild(section);
   }
 
-  /**
-   * Create tags section
-   */
   private createTagsSection(
     container: HTMLElement,
     tags: Array<{ id: string; name: string }>,
@@ -1256,9 +1107,6 @@ export class FeedContainer {
     container.appendChild(tagsSection);
   }
 
-  /**
-   * Create performers section
-   */
   private createPerformersSection(
     container: HTMLElement,
     performers: Array<{ id: string; name: string; image_path?: string }>,
@@ -1349,10 +1197,6 @@ export class FeedContainer {
     container.appendChild(studiosSection);
   }
 
-  /**
-   * Create markers section — lists markers by title. Selecting one runs a
-   * free-text title search (via filters.query) showing all matching markers.
-   */
   private createMarkersSection(
     container: HTMLElement,
     markers: Array<{ id: string; title: string }>,
@@ -1375,11 +1219,6 @@ export class FeedContainer {
     container.appendChild(markersSection);
   }
 
-  /**
-   * Run a marker title search. Bypasses resolveQueryToFilters (which would coerce
-   * the text into a tag/performer chip) and instead passes the title straight
-   * through as filters.query → findSceneMarkers `q`.
-   */
   private applyMarkerTitleSearch(title: string): void {
     this.filterState.replace({ markerName: title });
     this.closeSuggestions();
@@ -1400,11 +1239,6 @@ export class FeedContainer {
     this.loadVideos(this.currentFilters, false).catch((e) => console.error('Apply marker search failed', e));
   }
 
-  /**
-   * Restrict markers to those whose title exactly matches the active marker-name
-   * filter. Stash's SceneMarkerFilterType has no title field, so the `query`/`q`
-   * narrows server-side (fuzzy) and this enforces "only markers with that name".
-   */
   private filterMarkersByName(markers: SceneMarker[]): SceneMarker[] {
     if (!this.filterState.markerName) return markers;
     const target = this.filterState.markerName.trim().toLowerCase();
@@ -1418,9 +1252,6 @@ export class FeedContainer {
     });
   }
 
-  /**
-   * Render default suggestions view
-   */
   private async renderDefaultSuggestionsView(
     container: HTMLElement,
     suggestions: HTMLElement,
@@ -1461,7 +1292,6 @@ export class FeedContainer {
 
     try {
       if (this.preloadedTags.length > 0 && this.preloadedPerformers.length > 0) {
-        // Reuse the background-preloaded pool (reshuffled for variety) instead of two requests per open.
         freshTags = shuffle([...this.preloadedTags]).slice(0, 3);
         freshPerformers = shuffle([...this.preloadedPerformers]).slice(0, 3);
       } else {
@@ -1501,9 +1331,6 @@ export class FeedContainer {
     suggestions.scrollTop = 0;
   }
 
-  /**
-   * Render search results view
-   */
   private async renderSearchResultsView(
     container: HTMLElement,
     suggestions: HTMLElement,
@@ -1547,7 +1374,6 @@ export class FeedContainer {
 
     const searchMarkers = this.settings.searchMarkersByName === true;
 
-    // Cancel the previous keystroke's queries rather than letting 3-4 stale requests finish.
     this.suggestionAbortController?.abort();
     this.suggestionAbortController = new AbortController();
     const suggestionSignal = this.suggestionAbortController.signal;
@@ -1610,15 +1436,11 @@ export class FeedContainer {
     });
   }
 
-  /**
-   * Create header element with proper styling
-   */
   private createHeaderElement(): HTMLElement {
     const header = document.createElement('div');
     this.headerBar = header;
     header.className = 'feed-header-bar';
     
-    // Dynamic styles that must remain inline
     header.style.maxWidth = `${this.settings.cardMaxWidth + 24}px`;
     header.style.top = '0';
     header.style.transform = 'translateY(0)';
@@ -1637,9 +1459,6 @@ export class FeedContainer {
     return header;
   }
 
-  /**
-   * Create header inner container with grid layout
-   */
   private createHeaderInnerContainer(): HTMLElement {
     const headerInner = document.createElement('div');
     headerInner.className = 'feed-header-inner';
@@ -1647,18 +1466,12 @@ export class FeedContainer {
     return headerInner;
   }
 
-  /**
-   * Create search area container
-   */
   private createSearchArea(): HTMLElement {
     const searchArea = document.createElement('div');
     searchArea.className = 'feed-search-area';
     return searchArea;
   }
 
-  /**
-   * Create tag header element
-   */
   private createTagHeader(): HTMLElement {
     const tagHeader = document.createElement('div');
     tagHeader.className = 'feed-filters__tag-header feed-tag-header';
@@ -1666,9 +1479,6 @@ export class FeedContainer {
     return tagHeader;
   }
 
-  /**
-   * Create brand container with logo and refresh functionality
-   */
   private createBrandContainer(headerInner: HTMLElement): HTMLElement {
     const brandContainer = document.createElement('div');
     brandContainer.className = 'feed-brand-container';
@@ -1720,9 +1530,6 @@ export class FeedContainer {
     return brandContainer;
   }
 
-  /**
-   * Setup search input with placeholder animation and all related elements
-   */
   private setupSearchInput(): {
     inputWrapper: HTMLElement;
     queryInput: HTMLInputElement;
@@ -1752,17 +1559,11 @@ export class FeedContainer {
     };
   }
 
-  /**
-   * Create query input element
-   */
   private createQueryInput(): HTMLInputElement {
     const queryInput = document.createElement('input');
     queryInput.type = 'text';
     queryInput.placeholder = '';
     queryInput.className = 'feed-filters__input';
-    // A bare, unnamed lone text input trips Chrome's "this is a username field"
-    // heuristic and it offers saved-password autofill. Name it, label it and opt
-    // out of autofill so it reads as the search box it is.
     queryInput.name = 'stashgifs-feed-search';
     queryInput.setAttribute('autocomplete', 'off');
     queryInput.setAttribute('autocapitalize', 'none');
@@ -1772,9 +1573,6 @@ export class FeedContainer {
     return queryInput;
   }
 
-  /**
-   * Setup placeholder animation
-   */
   private setupPlaceholderAnimation(queryInput: HTMLInputElement): {
     placeholderWrapper: HTMLElement;
     updatePlaceholderVisibility: () => void;
@@ -1846,7 +1644,6 @@ export class FeedContainer {
           dynamicContainer.appendChild(placeholderText);
         }
         
-        // eslint-disable-next-line @typescript-eslint/no-unused-expressions
         dynamicContainer.offsetHeight;
         
         setTimeout(() => {
@@ -1888,9 +1685,6 @@ export class FeedContainer {
     };
   }
 
-  /**
-   * Setup input event handlers for placeholder animation
-   */
   private setupInputEventHandlers(
     queryInput: HTMLInputElement,
     placeholderWrapper: HTMLElement,
@@ -1918,9 +1712,6 @@ export class FeedContainer {
     });
   }
 
-  /**
-   * Create loading spinner for search input
-   */
   private createLoadingSpinner(): HTMLElement {
     const loadingSpinner = document.createElement('div');
     loadingSpinner.className = 'feed-search-loading feed-loading-spinner';
@@ -1961,15 +1752,11 @@ export class FeedContainer {
     return button;
   }
 
-  /**
-   * Open settings page
-   */
   private async openSettings(): Promise<void> {
-    if (this.isOpeningSettings) return; // a second click while the chunk loads must not build a second modal
+    if (this.isOpeningSettings) return;
     this.isOpeningSettings = true;
     let SettingsPageCtor: typeof SettingsPage;
     try {
-      // Lazy: SettingsPage is large and only needed when the modal opens.
       ({ SettingsPage: SettingsPageCtor } = await import('./SettingsPage.js'));
     } catch (error) {
       console.error('Failed to load settings', error);
@@ -1996,11 +1783,7 @@ export class FeedContainer {
     );
   }
 
-  /**
-   * Create top header bar with unified search
-   */
   private createHeaderBar(): void {
-    // Saved filters will be loaded lazily when filter dropdown opens
     const header = this.createHeaderElement();
     const headerInner = this.createHeaderInnerContainer();
 
@@ -2008,7 +1791,6 @@ export class FeedContainer {
 
     const searchArea = this.createSearchArea();
     
-    // Create a container for search area and settings button
     const searchAndSettingsContainer = document.createElement('div');
     searchAndSettingsContainer.style.display = 'flex';
     searchAndSettingsContainer.style.alignItems = 'center';
@@ -2017,10 +1799,8 @@ export class FeedContainer {
     searchAndSettingsContainer.style.minWidth = '0';
     searchAndSettingsContainer.style.position = 'relative';
     
-    // Add search area to container
     searchAndSettingsContainer.appendChild(searchArea);
     
-    // Touch devices have no keyboard, so the shortcuts button would only be clutter there.
     if (!isMobileDevice()) {
       searchAndSettingsContainer.appendChild(
         this.createHeaderIconButton(KEYBOARD_SVG, 'Keyboard shortcuts (?)', 'Show keyboard shortcuts', () => toggleHotkeyHelp())
@@ -2030,7 +1810,6 @@ export class FeedContainer {
       this.createHeaderIconButton(SETTINGS_SVG, 'Settings', 'Open settings', () => void this.openSettings())
     );
     
-    // Add the container to header inner (middle grid column)
     headerInner.appendChild(searchAndSettingsContainer);
     header.appendChild(headerInner);
 
@@ -2054,13 +1833,11 @@ export class FeedContainer {
     const updatePlaceholderVisibility = inputSetup.updatePlaceholderVisibility;
     this.updatePlaceholderVisibilityRef = updatePlaceholderVisibility;
 
-    // Append input to wrapper
     inputWrapper.appendChild(queryInput);
 
     const suggestions = document.createElement('div');
     suggestions.className = 'feed-filters__suggestions hide-scrollbar';
     suggestions.style.position = 'fixed';
-    // Use CSS custom properties for inset (supported in modern browsers)
     suggestions.style.setProperty('inset', '0');
     suggestions.style.top = '0';
     suggestions.style.left = '0';
@@ -2071,29 +1848,21 @@ export class FeedContainer {
     suggestions.style.flexDirection = 'column';
     suggestions.style.background = THEME.colors.overlay;
     suggestions.style.backdropFilter = 'blur(20px) saturate(180%)';
-    // webkitBackdropFilter for Safari compatibility
     suggestions.style.setProperty('-webkit-backdrop-filter', 'blur(20px) saturate(180%)');
     suggestions.style.overflowY = 'auto';
     suggestions.style.padding = '0';
     suggestions.style.boxSizing = 'border-box';
 
-    // Input wrapper (contains input and reset button), then tag header below
     searchArea.appendChild(inputWrapper);
     searchArea.appendChild(tagHeader);
     document.body.appendChild(suggestions);
 
-    // Append header to scroll container at the top (before posts)
-    // Check if header skeleton already exists (from initial HTML)
     const existingHeader = this.scrollContainer.querySelector('.feed-header-bar');
     if (existingHeader) {
-      // Replace existing header skeleton with real header
       this.scrollContainer.replaceChild(header, existingHeader);
     } else {
-      // Insert header before first child (posts container)
       this.scrollContainer.insertBefore(header, this.scrollContainer.firstChild);
     }
-
-    // No need for paddingTop since header is sticky and inside scroll container
 
     const updateSearchBarDisplay = () => {
       queryInput.value = this.getSelectedFilterDisplayName();
@@ -2108,28 +1877,24 @@ export class FeedContainer {
     };
 
     const apply = async () => {
-      // Show loading state
       queryInput.disabled = true;
       queryInput.style.opacity = '0.6';
       loadingSpinner.style.display = 'block';
       try {
         updateSearchBarDisplay();
         await this.applyCurrentSearch();
-        // Scroll to top (same approach as refreshFeed)
         this.scrollToTop();
       } catch (e: unknown) {
         if (!(e instanceof Error && e.name === 'AbortError')) {
           console.error('Apply filters failed', e);
         }
       } finally {
-        // Hide loading state
         queryInput.disabled = false;
         queryInput.style.opacity = '1';
         loadingSpinner.style.display = 'none';
       }
     };
 
-    // Suggestions with proper debouncing
     let suggestionsRequestId = 0;
     let pendingSuggestionsFetch: Promise<void> | null = null;
 
@@ -2140,7 +1905,6 @@ export class FeedContainer {
       return p;
     };
 
-    // Debounced suggestion fetcher (150ms delay)
     const debouncedFetchSuggestions = debounce((text: string, forceShow: boolean) => {
       void triggerFetchSuggestions(text, forceShow);
     }, 150);
@@ -2283,7 +2047,6 @@ export class FeedContainer {
       });
     });
     
-    // Handle focus and show suggestions
     let focusHandled = false;
     let clickHandled = false;
 
@@ -2345,7 +2108,6 @@ export class FeedContainer {
       handleFocus();
     };
     
-    // Detect mobile device
     const isMobile = isMobileDevice();
     
     if (isMobile) {
@@ -2364,13 +2126,10 @@ export class FeedContainer {
     
     queryInput.addEventListener('input', () => {
       const text = queryInput.value;
-      // Clear saved filter when user types something new
       if (text !== this.filterState.savedFilter?.name) {
         this.filterState.savedFilter = undefined;
       }
-      // Use debounced function for better performance - only fetch suggestions, don't apply
       debouncedFetchSuggestions(text, false);
-      // Don't auto-apply while typing - only apply when user presses Enter or selects a suggestion
     });
 
     suggestions.addEventListener('click', (e) => {
@@ -2382,7 +2141,6 @@ export class FeedContainer {
     
     this.registerSuggestionsOutsideHandlers(searchArea, suggestions);
 
-    // Initial render of search bar display (in case defaults are provided)
     updateSearchBarDisplay();
   }
 
@@ -2425,9 +2183,6 @@ export class FeedContainer {
     }
   }
 
-  /**
-   * Handle performer chip click - toggle performer in active filter set
-   */
   private handlePerformerChipClick(performerId: number, performerName: string): void {
     this.filterState.savedFilter = undefined;
     if (this.filterState.performers.has(performerId)) {
@@ -2441,9 +2196,6 @@ export class FeedContainer {
     this.scrollToTop();
   }
 
-  /**
-   * Handle tag chip click - toggle tag in active filter set
-   */
   private handleTagChipClick(tagId: number, tagName: string): void {
     this.filterState.savedFilter = undefined;
     if (this.filterState.tags.has(tagId)) {
@@ -2470,16 +2222,12 @@ export class FeedContainer {
     this.scrollToTop();
   }
 
-  /**
-   * Get current query text from active input element
-   */
   private getCurrentQueryFromInput(): string | undefined {
     const activeEl = document.activeElement as HTMLElement | null;
     if (activeEl?.classList?.contains('feed-filters__input')) {
       const input = activeEl as HTMLInputElement;
       return input.value?.trim() || undefined;
     }
-    // Fallback: query the input element directly even if not focused
     const queryInput = this.container.querySelector('.feed-filters__input') as HTMLInputElement;
     if (queryInput) {
       return queryInput.value?.trim() || undefined;
@@ -2487,10 +2235,6 @@ export class FeedContainer {
     return undefined;
   }
 
-
-  /**
-   * Resolve query text to tag or performer, or use as plain query
-   */
   private async resolveQueryToFilters(
     q: string,
     loadSignal?: AbortSignal
@@ -2526,10 +2270,6 @@ export class FeedContainer {
     }
   }
 
-  /**
-   * Apply current search across UIs using unified logic
-   * Resolves text query to tag/performer if Maps are empty, or falls back to plain text.
-   */
   private async applyCurrentSearch(loadSignal?: AbortSignal): Promise<void> {
     const q = this.getCurrentQueryFromInput();
     let queryValue: string | undefined;
@@ -2548,9 +2288,6 @@ export class FeedContainer {
     await this.loadVideos(newFilters, false, loadSignal);
   }
 
-  /**
-   * Get display name for the current filter selection
-   */
   private getSelectedFilterDisplayName(): string {
     if (this.filterState.tags.size > 0 || this.filterState.performers.size > 0) {
       return '';
@@ -2558,9 +2295,6 @@ export class FeedContainer {
     return this.filterState.savedFilter ? this.filterState.savedFilter.name : '';
   }
 
-  /**
-   * Update query input display with current selection
-   */
   private updateQueryInputDisplay(): void {
     const queryInput = this.container.querySelector('.feed-filters__input') as HTMLInputElement;
     if (!queryInput) {
@@ -2576,7 +2310,6 @@ export class FeedContainer {
     this.updateActivePills();
   }
 
-  /** Feed query for the current selection; `query` overrides the marker-name search (resolved free text). */
   private buildCurrentFilterOptions(query?: string): FilterOptions {
     return this.filterState.toFilterOptions({
       limit: FeedContainer.CONTENT_LOAD_LIMIT,
@@ -2585,9 +2318,6 @@ export class FeedContainer {
     });
   }
 
-  /**
-   * Apply current filters and update UI
-   */
   private applyFilters(): void {
     this.updateQueryInputDisplay();
 
@@ -2597,9 +2327,6 @@ export class FeedContainer {
     this.loadVideos(newFilters, false).catch((e) => console.error('Apply filters failed', e));
   }
 
-  /**
-   * Render active filter pills bar from current Maps
-   */
   private createPillWord(text: string): HTMLElement {
     const sep = document.createElement('span');
     sep.textContent = text;
@@ -2730,7 +2457,6 @@ export class FeedContainer {
   private showSaveSearchInput(): void {
     this.saveSearchInputVisible = true;
     this.updateActivePills();
-    // Focus the input we just rendered
     const input = this.activePillsBar?.querySelector<HTMLInputElement>('.feed-save-search-input');
     input?.focus();
   }
@@ -2748,7 +2474,6 @@ export class FeedContainer {
     input.type = 'text';
     input.placeholder = 'Name this search…';
     input.className = 'feed-save-search-input';
-    // Same anti-credential-autofill treatment as the main search input.
     input.name = 'stashgifs-save-search-name';
     input.setAttribute('autocomplete', 'off');
     input.setAttribute('aria-label', 'Name this search');
@@ -2783,7 +2508,6 @@ export class FeedContainer {
       if (e.key === 'Escape') { e.preventDefault(); cancel(); }
     });
 
-    // blur → cancel only if confirm wasn't already triggered
     input.addEventListener('blur', () => {
       if (this.saveSearchInputVisible) cancel();
     });
@@ -2792,7 +2516,6 @@ export class FeedContainer {
     confirmBtn.type = 'button';
     confirmBtn.textContent = '✓';
     confirmBtn.setAttribute('aria-label', 'Save search');
-    // mousedown before blur so the value is captured
     confirmBtn.addEventListener('mousedown', (e) => { e.preventDefault(); });
     confirmBtn.addEventListener('click', confirm);
     Object.assign(confirmBtn.style, {
@@ -2826,9 +2549,6 @@ export class FeedContainer {
     }
   }
 
-  /**
-   * Create a dismissible active-filter pill
-   */
   private createActivePill(label: string, onRemove: () => void, isDestructive: boolean = false): HTMLElement {
     const pill = document.createElement('button');
     pill.type = 'button';
@@ -2877,19 +2597,14 @@ export class FeedContainer {
     return pill;
   }
 
-  /**
-   * Initialize the feed
-   */
   async init(filters?: FilterOptions): Promise<void> {
     this.filterHistory.start();
 
-    // Load rating system configuration in parallel with the first feed fetch; posts only
-    // need it at render time, so loadVideos awaits ratingConfigReady before building them.
     this.ratingConfigReady = this.api.getUIConfiguration()
       .then((config) => { this.ratingSystemConfig = config || { type: 'stars', starPrecision: 'full' }; })
       .catch((error) => {
         console.warn('Failed to load rating system configuration, using defaults', error);
-        this.ratingSystemConfig = { type: 'stars', starPrecision: 'full' }; // Default fallback
+        this.ratingSystemConfig = { type: 'stars', starPrecision: 'full' };
       });
     this.currentFilters = filters;
     await this.refreshFeed();
@@ -2897,8 +2612,6 @@ export class FeedContainer {
       await this.loadVideos(this.currentFilters, false, undefined, true);
     }
     
-    // Defer suggestion preloading significantly to avoid competing with initial load
-    // Wait 10 seconds on mobile, 5 seconds on desktop to ensure initial content is loaded first
     if (globalThis.window !== undefined) {
       const suggestionDelay = 5000;
       globalThis.setTimeout(() => {
@@ -2907,44 +2620,30 @@ export class FeedContainer {
     }
   }
 
-  /**
-   * Preload suggestions in the background for instant search overlay opening
-   */
   private async preloadSuggestions(): Promise<void> {
-    // Prevent multiple simultaneous preloads
     if (this.isPreloading) {
       return;
     }
 
     this.isPreloading = true;
     try {
-      // Fetch tags and performers in parallel (reduced from 40 to 20 for faster loading)
       const [tags, performers] = await Promise.all([
         this.api.searchMarkerTags('', 20),
         this.api.searchPerformers('', 20),
         this.loadSavedFiltersIfNeeded()
       ]);
 
-      // Store in cache
       this.preloadedTags = tags;
       this.preloadedPerformers = performers;
     } catch (error) {
       console.warn('Failed to preload suggestions:', error);
-      // Don't throw - preload failure shouldn't break the app
     } finally {
       this.isPreloading = false;
     }
   }
 
-  /**
-   * Prepare for loading videos (setup abort controller, check loading state)
-   */
   private prepareLoadVideos(signal?: AbortSignal, append: boolean = false): AbortSignal {
     if (!append && this.activeLoadVideosAbortController) {
-      // Fresh load: cancel the previous batch and its in-flight image lazy-load observers.
-      // (clearPosts() in initializeLoadState also clears observers, so this only matters
-      // for cancelling in-flight fetches.) On append we must NOT abort, or the previous
-      // batch's not-yet-fired image observers would be orphaned and never load.
       this.activeLoadVideosAbortController.abort();
       this.cleanupLoadObservers();
       this.stopLoadingVideos();
@@ -2953,15 +2652,10 @@ export class FeedContainer {
     if (signal) {
       return signal;
     }
-    // Reuse the live controller across appends so earlier batches' image observers
-    // (which captured this signal) keep loading instead of being aborted/orphaned.
     this.activeLoadVideosAbortController ??= new AbortController();
     return this.activeLoadVideosAbortController.signal;
   }
 
-  /**
-   * Calculate pagination parameters
-   */
   private calculatePaginationParams(
     filters: FilterOptions,
     append: boolean
@@ -2975,13 +2669,6 @@ export class FeedContainer {
     return { limit, offset, page };
   }
 
-  /**
-   * Check if signal is aborted and handle cleanup
-   */
-
-  /**
-   * Shared helper: create a post container and append it to a fragment
-   */
   private async processItemForRender(
     createContainer: () => HTMLElement | null | Promise<HTMLElement | null>,
     fragment: DocumentFragment | null
@@ -2996,9 +2683,6 @@ export class FeedContainer {
     return { fragment: currentFragment, postContainer };
   }
 
-  /**
-   * Process a single marker and add to fragment
-   */
   private async processMarkerForRender(
     marker: SceneMarker | undefined,
     fragment: DocumentFragment | null,
@@ -3010,25 +2694,16 @@ export class FeedContainer {
     return this.processItemForRender(() => this.createPost(marker, signal), fragment);
   }
 
-  /**
-   * Remove skeleton loader if needed
-   */
   private removeSkeletonIfNeeded(append: boolean, index: number): void {
     if (!append && index < this.getSkeletonCount()) {
       this.removeSkeletonLoader();
     }
   }
 
-  /**
-   * Check if fragment should be inserted into DOM
-   */
   private shouldInsertFragment(index: number, renderChunkSize: number, markersLength: number): boolean {
     return (index + 1) % renderChunkSize === 0 || index === markersLength - 1;
   }
 
-  /**
-   * Insert fragment into DOM at appropriate position
-   */
   private insertFragment(fragment: DocumentFragment, fragmentPostCount: number): void {
     if (fragmentPostCount === 0) {
       return;
@@ -3042,18 +2717,12 @@ export class FeedContainer {
     postsContainer.appendChild(fragment);
   }
 
-  /**
-   * Wait for render delay if not last item
-   */
   private async waitForRenderDelay(index: number, markersLength: number, renderDelay: number): Promise<void> {
     if (index < markersLength - 1) {
       await new Promise(resolve => setTimeout(resolve, renderDelay));
     }
   }
 
-  /**
-   * Render posts progressively in chunks
-   */
   private async renderPostsProgressively(
     content: Array<{ type: 'marker' | 'image'; data: SceneMarker | Image; date?: string }> | SceneMarker[],
     append: boolean,
@@ -3064,7 +2733,6 @@ export class FeedContainer {
     let fragment: DocumentFragment | null = null;
     let fragmentPostCount = 0;
 
-    // Handle both merged content and legacy markers array
     const isMergedContent = content.length > 0 && 'type' in content[0];
     const items = isMergedContent 
       ? content as Array<{ type: 'marker' | 'image'; data: SceneMarker | Image; date?: string }>
@@ -3099,9 +2767,6 @@ export class FeedContainer {
     fragment: DocumentFragment | null,
     signal?: AbortSignal
   ): Promise<{ fragment: DocumentFragment; postContainer: HTMLElement | null }> {
-    // Guard against rendering an id that's already on screen (e.g. a paginated re-fetch
-    // returned a duplicate): adding it twice would push a second entry into postOrder and a
-    // second DOM card, desyncing index/next tracking. Skip it.
     const itemId = (item.data as { id: string }).id;
     if (this.posts.has(itemId)) {
       return { fragment: fragment ?? document.createDocumentFragment(), postContainer: null };
@@ -3124,9 +2789,6 @@ export class FeedContainer {
     return { fragment: null, fragmentPostCount: 0 };
   }
 
-  /**
-   * Process image for rendering
-   */
   private async processImageForRender(
     image: Image | undefined,
     fragment: DocumentFragment | null,
@@ -3138,14 +2800,9 @@ export class FeedContainer {
     return this.processItemForRender(() => this.createPostFromImage(image, signal), fragment);
   }
 
-  /**
-   * Create a post from an image (can be either ImagePost or VideoPost depending on file type and settings)
-   */
   private createPostFromImage(image: Image, signal?: AbortSignal): HTMLElement | null {
-    // Use centralized utility to detect video
     const { isVideo, videoFile } = detectVideoFromVisualFiles(image.visualFiles);
     
-    // Check if this is a .m4v or .mp4 file (always treat as video, behavior controlled by HD mode)
     const videoPath = videoFile?.path;
     const isMp4Video = isVideo && videoPath && isMp4File(videoPath);
     
@@ -3163,8 +2820,6 @@ export class FeedContainer {
     
     this.posts.set(image.id, post);
     this.postOrder.push(image.id);
-    // Don't observe images with VisibilityManager - they don't need video playback management
-    // Images use their own simple IntersectionObserver in setupLazyLoadingForImage
 
     if (signal?.aborted) {
       return null;
@@ -3174,9 +2829,6 @@ export class FeedContainer {
     return postContainer;
   }
 
-  /**
-   * Create a VideoPost from an Image (for .m4v/.mp4 files)
-   */
   private createVideoPostFromImage(image: Image, signal?: AbortSignal): HTMLElement | null {
     const videoUrl = this.getImageUrlForPost(image);
     if (!videoUrl) {
@@ -3193,19 +2845,13 @@ export class FeedContainer {
       return null;
     }
 
-    // Set HQ mode if feed-level HD is enabled (mirroring regular marker behavior)
     if (this.useHDMode) {
       post.setHQMode(true);
     }
 
-    // Loading is driven by ReelPlaybackController.activate() → post.preload() once
-    // the reel scroller settles on this card — no separate per-post load observer.
     return postContainer;
   }
 
-  /**
-   * Build the common options shared by all post constructors
-   */
   private buildCommonPostOptions() {
     return {
       favoritesManager: this.favoritesManager,
@@ -3237,9 +2883,6 @@ export class FeedContainer {
     };
   }
 
-  /**
-   * Create ImageVideoPost instance
-   */
   private createImageVideoPostInstance(
     postContainer: HTMLElement,
     image: Image,
@@ -3267,18 +2910,12 @@ export class FeedContainer {
     return post;
   }
 
-  /**
-   * Try to get valid media URL from path
-   */
   private tryGetValidMediaUrl(path: string | undefined, baseUrl: string): string | undefined {
     if (!path) return undefined;
     const url = buildFullUrl(path, baseUrl);
     return normalizeMediaUrl(url) ?? undefined;
   }
 
-  /**
-   * Get MP4 video URL for image post in HD mode
-   */
   private getMp4VideoUrlForImageHD(image: Image, videoPath: string | undefined, baseUrl: string): string | undefined {
     if (videoPath && /^https?:\/\//i.test(videoPath)) {
       return this.tryGetValidMediaUrl(videoPath, baseUrl);
@@ -3286,43 +2923,28 @@ export class FeedContainer {
     return this.tryGetValidMediaUrl(image.paths?.image, baseUrl);
   }
 
-  /**
-   * Get MP4 video URL for image post in non-HD mode
-   */
   private getMp4VideoUrlForImageNonHD(image: Image, videoPath: string | undefined, baseUrl: string): string | undefined {
     const previewUrl = this.tryGetValidMediaUrl(image.paths?.preview, baseUrl);
     if (previewUrl) return previewUrl;
-    // Fallback to MP4 video file only if it's a valid absolute URL
     if (videoPath && /^https?:\/\//i.test(videoPath)) {
       const videoUrl = this.tryGetValidMediaUrl(videoPath, baseUrl);
       if (videoUrl) return videoUrl;
     }
-    // Fallback to Stash media endpoint
     return this.tryGetValidMediaUrl(image.paths?.image, baseUrl);
   }
 
-  /**
-   * Get MP4 video URL for image post
-   */
   private getMp4VideoUrlForImage(image: Image, videoPath: string | undefined, baseUrl: string): string | undefined {
     return this.useHDMode
       ? this.getMp4VideoUrlForImageHD(image, videoPath, baseUrl)
       : this.getMp4VideoUrlForImageNonHD(image, videoPath, baseUrl);
   }
 
-  /**
-   * Get image URL for post
-   * For MP4/M4V images: returns preview (non-HD) or full video (HD) based on useHDMode
-   * For regular images: uses centralized utility
-   */
   private getImageUrlForPost(image: Image): string | undefined {
     const baseUrl = getStashBaseUrl();
     
-    // Detect if this is a video from visualFiles
     const { isVideo, videoFile } = detectVideoFromVisualFiles(image.visualFiles);
     
     const videoPath = videoFile?.path;
-    // Check if this is a .m4v or .mp4 file (always treat as video, behavior controlled by HD mode)
     const isMp4Video = isVideo && videoPath && isMp4File(videoPath);
     
     if (isMp4Video) {
@@ -3332,13 +2954,9 @@ export class FeedContainer {
       }
     }
     
-    // For regular images, use centralized utility (always treat MP4 as video)
     return getImageUrlForDisplay(image, true);
   }
 
-  /**
-   * Create image post instance
-   */
   private createImagePostInstance(
     postContainer: HTMLElement,
     image: Image,
@@ -3362,9 +2980,6 @@ export class FeedContainer {
     return post;
   }
 
-  /**
-   * Setup lazy loading for image post
-   */
   private setupLazyLoadingForImage(
     postContainer: HTMLElement,
     post: ImagePost,
@@ -3372,7 +2987,6 @@ export class FeedContainer {
     imageUrl: string,
     signal?: AbortSignal
   ): void {
-    // Use IntersectionObserver for lazy loading
     const observer = new IntersectionObserver(
       (entries) => {
         for (const entry of entries) {
@@ -3392,19 +3006,14 @@ export class FeedContainer {
     this.loadObservers.set(image.id, observer);
   }
 
-  /**
-   * Initialize load state for video loading
-   */
   private initializeLoadState(append: boolean): void {
     this.isLoading = true;
     this.hideError();
     if (!append) {
-      // Clear all cached content when starting a new search/filter
       this.clearPosts();
       this.showSkeletonLoaders();
       this.currentPage = 1;
       this.hasMore = true;
-      // Reset loaded counts when starting fresh
       this.markersLoadedCount = 0;
       this.imagesLoadedCount = 0;
       this.shortFormOffset = 0;
@@ -3419,9 +3028,6 @@ export class FeedContainer {
     }
   }
 
-  /**
-   * Check if load should be aborted and handle cleanup
-   */
   private checkAbortAndCleanup(signal?: AbortSignal): boolean {
     if (signal?.aborted) {
       this.isLoading = false;
@@ -3431,9 +3037,6 @@ export class FeedContainer {
     return false;
   }
 
-  /**
-   * Fetch scene markers from API
-   */
   private async fetchMarkersForLoad(
     currentFilters: FilterOptions,
     limit: number,
@@ -3449,7 +3052,6 @@ export class FeedContainer {
     return this.finalizeMarkersResult(result, currentFilters);
   }
 
-  /** Shared tail for marker-fetching loaders: persist a regenerated sortSeed back onto the filters, then apply the client-side name filter. */
   private finalizeMarkersResult<T extends { sortSeed?: string; markers: SceneMarker[] }>(
     result: T,
     currentFilters: FilterOptions
@@ -3464,22 +3066,15 @@ export class FeedContainer {
     };
   }
 
-  /**
-   * Handle empty markers result
-   */
   private handleEmptyMarkers(append: boolean): void {
     if (append) {
       this.scheduleAppendRetry();
     } else {
-      // Fresh load returned nothing — mark done so updateEndCard shows the end card.
       this.hasMore = false;
     }
     this.hideSkeletonLoaders();
   }
 
-  /**
-   * Finalize load state after rendering
-   */
   private finalizeLoadState(append: boolean, page: number, firstCards: boolean): void {
     this.appendRetryCount = 0;
     if (append) {
@@ -3490,13 +3085,9 @@ export class FeedContainer {
       this.hideSkeletonLoaders();
     }
 
-    // A batch can land with no gesture to follow (short pages, filters): re-check once the
-    // load has fully settled (isLoading clears after this returns). Only fires when the feed
-    // actually grew, so an empty page can't loop.
     setTimeout(() => this.prefetchIfNearEnd(), 0);
 
     if (firstCards) {
-      // First batch rendered: align to the first card and start it playing.
       requestAnimationFrame(() => {
         this.reelScroller?.realign();
         this.ensureReelInitialCardLoaded();
@@ -3504,9 +3095,6 @@ export class FeedContainer {
     }
   }
 
-  /**
-   * Handle load error
-   */
   private handleLoadError(error: unknown, append: boolean): void {
     console.error('Error loading scene markers:', error);
     if (append) {
@@ -3532,23 +3120,11 @@ export class FeedContainer {
     }, 1500);
   }
 
-  /**
-   * Defer setting isLoading to false to prevent rapid successive loads
-   */
-
-
-
-  /**
-   * Refresh the entire feed by clearing all posts and reloading from the beginning
-   */
   async refreshFeed(): Promise<void> {
-    // Clear all existing posts and DOM
     this.clearPosts();
 
-    // Scroll to top
     this.scrollToTop();
     
-    // Reset pagination state
     this.currentPage = 1;
     this.hasMore = true;
     this.markersLoadedCount = 0;
@@ -3562,20 +3138,14 @@ export class FeedContainer {
       this.appendRetryTimeoutId = undefined;
     }
     
-    // Refresh depth fields so a settings change (e.g. includeSubtags toggle) takes effect
-    // even when currentFilters was built before the setting changed.
     if (this.currentFilters && !this.currentFilters.savedFilterId) {
       this.currentFilters.tagDepth = this.settings.includeSubtags ? -1 : 0;
       this.currentFilters.studioDepth = this.settings.includeSubtags ? -1 : 0;
     }
 
-    // Reload feed with current filters
     await this.loadVideos(this.currentFilters, false, undefined, true);
   }
 
-  /**
-   * Determine what content types should be loaded
-   */
   private determineContentLoadingFlags(filters?: FilterOptions): {
     shouldLoadMarkers: boolean;
     shouldLoadImages: boolean;
@@ -3583,11 +3153,8 @@ export class FeedContainer {
     shouldLoadRandom: boolean;
     shouldLoadScenePreviews: boolean;
   } {
-    // Use provided filters or fall back to currentFilters
     const activeFilters = filters || this.currentFilters || {};
 
-    // A saved filter only applies to its own content type (markers or images); a marker-name
-    // search only to markers — other content types ignore them and would pollute results.
     if (activeFilters.savedFilterId && activeFilters.savedFilterMode === 'IMAGES') {
       return {
         shouldLoadMarkers: false,
@@ -3626,32 +3193,22 @@ export class FeedContainer {
     };
   }
 
-  /**
-   * Calculate pagination parameters for content loading
-   */
   private calculatePaginationForContent(
     append: boolean,
     markerLimit: number,
     limit: number
   ): { markerPageSize: number; imagePageSize: number } {
-    // For markers and images: Use consistent page size (track the first limit used)
-    // This prevents wrong page calculations when limit changes between initial and subsequent loads
     if (!append) {
-      // Store the page sizes used for first load
       this.markerPageSize = markerLimit;
       this.imagePageSize = limit;
     }
     
-    // Use stored page sizes for consistent pagination, or current limit if not set
     return {
       markerPageSize: this.markerPageSize || markerLimit,
       imagePageSize: this.imagePageSize || limit
     };
   }
 
-  /**
-   * Fetch all content types in parallel
-   */
   private async fetchAllContent(options: {
     currentFilters: FilterOptions;
     limits: {
@@ -3842,9 +3399,6 @@ export class FeedContainer {
     return this.fetchScenePreviewVideosForLoad(currentFilters, scenePreviewLimit, scenePreviewOffset, signal);
   }
 
-  /**
-   * Fetch scene-preview videos for loading
-   */
   private async fetchScenePreviewVideosForLoad(
     currentFilters: FilterOptions,
     limit: number,
@@ -3926,9 +3480,6 @@ export class FeedContainer {
     }
   }
 
-  /**
-   * Process and merge fetched content
-   */
   private processFetchedContent(options: {
     content: {
       markers: SceneMarker[];
@@ -3951,21 +3502,16 @@ export class FeedContainer {
     const { markers, shortFormMarkers, scenePreviewMarkers, images } = content;
     const { markerCount, shortFormCount, imageCount } = counts;
 
-    // Merge regular markers, short-form markers, scene previews, and images, then filter seen items
     const mergedContent = this.seenHistory.filter(mixContent(markers, shortFormMarkers, images, scenePreviewMarkers), append, !!currentFilters.savedFilterId);
 
     const expectedLimit = currentFilters.limit || FeedContainer.CONTENT_LOAD_LIMIT;
 
-    // Use real (non-synthetic) counts for pagination offsets so random markers
-    // don't inflate markersLoadedCount and push regular marker queries past the pool.
     const trackableMarkers = realMarkersCount ?? markers.length;
 
-    // Track loaded counts for each content type separately
     if (append) {
       this.markersLoadedCount += trackableMarkers;
       this.imagesLoadedCount += images.length;
     } else {
-      // Reset counts when starting fresh
       this.markersLoadedCount = trackableMarkers;
       this.imagesLoadedCount = images.length;
     }
@@ -3989,9 +3535,6 @@ export class FeedContainer {
     return mergedContent;
   }
 
-  /**
-   * Render and finalize loaded content
-   */
   private async renderAndFinalizeContent(
     mergedContent: Array<{ type: 'marker' | 'image'; data: SceneMarker | Image; date?: string }>,
     allMarkers: SceneMarker[],
@@ -4017,17 +3560,9 @@ export class FeedContainer {
       return;
     }
 
-    // Memory cleanup is driven solely by scheduleCleanupAfterScroll (debounced after the
-    // user stops scrolling). Pruning synchronously here — right after appending to the
-    // bottom while the user is scrolling toward those new cards — risked removing cards and
-    // shifting layout mid-gesture; the debounced path runs only once the reel has settled.
     this.finalizeLoadState(append, page, firstCards);
   }
 
-  /**
-   * Track a paused short-form scan. Returns true when this empty batch should stop and
-   * wait for the user to tap "Continue searching" instead of rendering.
-   */
   private holdForShortFormScan(contentCount: number, hasMoreShortForm: boolean, page: number): boolean {
     const wasPaused = this.shortFormScanPaused;
     const pauseShortForm = contentCount === 0 && hasMoreShortForm;
@@ -4037,7 +3572,6 @@ export class FeedContainer {
       this.endCard = undefined;
     }
     if (contentCount === 0 && (wasPaused || pauseShortForm)) {
-      // Leave the cursor in place for the next user request, even on an empty first batch.
       this.hasMore = false;
       this.currentPage = page;
       this.hideSkeletonLoaders();
@@ -4057,16 +3591,9 @@ export class FeedContainer {
     const reqId = ++this.latestLoadId;
 
     try {
-      // Work on a shallow copy: ensureSortSeed/applyExcludedTags/applyOrientation and the
-      // image fetch all mutate this object, so a superseded concurrent load must not be able
-      // to corrupt the winning load's filters/sortSeed. The resolved copy is written back to
-      // this.currentFilters below for pagination persistence.
       const currentFilters: FilterOptions = { ...(filters || this.currentFilters) };
-      // Independent lookups: run together instead of back to back.
       await Promise.all([
         this.updateExcludedTagIds(),
-        // Warm the tag→effective-source cache so the filter builders can route each selected tag to
-        // the single server-side field that can match it (own ∪ descendants resolves parent tags).
         this.filterState.tags.size > 0
           ? this.api.getTagSources([...this.filterState.tags.keys()].map(String))
           : undefined,
@@ -4116,7 +3643,6 @@ export class FeedContainer {
         append
       });
 
-      // Store currentFilters (with sortSeed) back to this.currentFilters for pagination persistence
       this.currentFilters = currentFilters;
       await this.ratingConfigReady;
 
@@ -4138,8 +3664,6 @@ export class FeedContainer {
           shortFormCount: shortFormCount + scenePreviewCount,
           imageCount
         },
-        // Track only real markers/shortform for pagination offsets — random synthetic
-        // markers don't paginate and must not inflate markersLoadedCount.
         realMarkersCount: markers.length,
         currentFilters,
         offset,
@@ -4174,15 +3698,10 @@ export class FeedContainer {
       this.handleLoadError(error, append);
     } finally {
       this.isLoading = false;
-      // Only the winning load reconciles the end card — a superseded load's
-      // hasMore is stale and would flicker it.
       if (reqId === this.latestLoadId) this.updateEndCard();
     }
   }
 
-  /**
-   * Process loaded markers and images
-   */
   private processLoadedContent(options: {
     images: Image[];
     counts: {
@@ -4206,9 +3725,6 @@ export class FeedContainer {
       append
     } = options;
 
-    // (A fresh load already cleared the feed and showed skeletons in initializeLoadState.)
-
-    // hasMore comes from the server totals when available (see content/hasMore.ts).
     this.hasMore = computeHasMore({
       append,
       offset,
@@ -4221,25 +3737,16 @@ export class FeedContainer {
     });
   }
 
-  /**
-   * Check if images should be loaded
-   */
   private shouldLoadImages(): boolean {
     const imagesEnabled = this.settings.includeImagesInFeed ?? true;
     const hasFileTypes = (this.settings.enabledFileTypes?.length ?? 0) > 0;
     return imagesEnabled && hasFileTypes;
   }
 
-  /**
-   * Check if short-form content should be loaded based on settings and HD mode
-   */
   private shouldLoadShortFormContent(): boolean {
     return this.settings.includeShortForm !== false;
   }
 
-  /**
-   * Fetch short-form videos for loading
-   */
   private async fetchShortFormVideosForLoad(
     currentFilters: FilterOptions,
     limit: number,
@@ -4297,9 +3804,6 @@ export class FeedContainer {
     };
   }
 
-  /**
-   * Load images from Stash
-   */
   private async loadImages(
     filters: FilterOptions,
     limit: number,
@@ -4322,13 +3826,10 @@ export class FeedContainer {
         signal
       );
       
-      // Store the sort seed back in filters for pagination (if it was generated)
       if (sortSeed && filters) {
         filters.sortSeed = sortSeed;
       }
 
-      // Convert GraphQL Image to simplified Image type. No client-side tag/exclude filter — the
-      // server query is exact, so the returned page IS the result (keeps pagination correct).
       const images = graphQLImages.map((img) => this.convertGraphQLImageToImage(img));
       return { images, totalCount };
     } catch (error) {
@@ -4337,9 +3838,6 @@ export class FeedContainer {
     }
   }
 
-  /**
-   * Convert GraphQL Image to simplified Image type
-   */
   private convertGraphQLImageToImage(graphqlImage: GQLImage): Image {
     const visualFile = graphqlImage.visual_files?.find(
       (file) => typeof (file as { width?: number }).width === 'number' && typeof (file as { height?: number }).height === 'number'
@@ -4380,10 +3878,6 @@ export class FeedContainer {
     };
   }
 
-  /**
-   * Check if browser supports the video codec/format
-   * Returns true if supported, false if not
-   */
   private static readonly HEVC_MIME_TYPES = [
     'video/mp4; codecs="hev1.1.6.L93.B0,mp4a.40.2"',
     'video/mp4; codecs="hvc1.1.6.L93.B0,mp4a.40.2"',
@@ -4427,9 +3921,6 @@ export class FeedContainer {
     return true;
   }
 
-  /**
-   * Clean up all active load observers
-   */
   private cleanupLoadObservers(): void {
     for (const [, observer] of this.loadObservers.entries()) {
       observer.disconnect();
@@ -4437,21 +3928,14 @@ export class FeedContainer {
     this.loadObservers.clear();
   }
 
-  /**
-   * Cancel all pending requests (used during marker creation)
-   */
   cancelAllPendingRequests(): void {
     if (this.activeLoadVideosAbortController) {
       this.activeLoadVideosAbortController.abort();
       this.activeLoadVideosAbortController = undefined;
     }
-    // Also stop any loading videos
     this.stopLoadingVideos();
   }
 
-  /**
-   * Stop video elements that are currently loading
-   */
   private stopLoadingVideos(): void {
     for (const [, post] of this.posts.entries()) {
       const player = post.getPlayer();
@@ -4472,12 +3956,6 @@ export class FeedContainer {
     }
   }
 
-  // Removed marker proximity checks for random start time to improve performance
-
-  /**
-   * Create a video post from a scene marker
-   * Returns the post container element for batch DOM insertion
-   */
   private createPost(marker: SceneMarker, signal?: AbortSignal): HTMLElement | null {
     const playMarkerToEnd = this.settings.playMarkersToEnd === true
       && !/^(synthetic|shortform|scenepreview|image)-/.test(marker.id);
@@ -4498,14 +3976,9 @@ export class FeedContainer {
       return null;
     }
 
-    // Loading is driven by ReelPlaybackController.activate() → post.preload() once
-    // the reel scroller settles on this card — no separate per-post load observer.
     return postContainer;
   }
 
-  /**
-   * Get video URL for post based on HD mode
-   */
   private getVideoUrlForPost(marker: SceneMarker): string | undefined {
     const isScenePreview = typeof marker.id === 'string' && marker.id.startsWith('scenepreview-');
     const selectedUrl = (this.useHDMode && !isScenePreview)
@@ -4525,37 +3998,26 @@ export class FeedContainer {
     return normalizedUrl;
   }
 
-  /**
-   * Create post container element
-   */
   private createPostContainer(): HTMLElement {
     const postContainer = document.createElement('article');
     postContainer.className = 'video-post-wrapper';
     return postContainer;
   }
 
-  /**
-   * Calculate start time for video based on HD mode and shuffle mode
-   */
   private calculateStartTime(marker: SceneMarker): number | undefined {
     if (!this.useHDMode) {
-      return undefined; // Marker videos are pre-rendered clips
+      return undefined;
     }
 
     return marker.seconds;
   }
 
-  /**
-   * Create VideoPost instance
-   */
   private createVideoPostInstance(
     postContainer: HTMLElement,
     marker: SceneMarker,
     safeVideoUrl: string,
     playMarkerToEnd: boolean
   ): VideoPost {
-    // Shortform and scene previews play the whole scene (seconds=0, no end); other
-    // synthetic markers default to a randomSnippetDuration-second clip from their random start position.
     const isShortForm = typeof marker.id === 'string' && marker.id.startsWith('shortform-');
     const isScenePreview = typeof marker.id === 'string' && marker.id.startsWith('scenepreview-');
     const wholeScene = playMarkerToEnd || isShortForm || isScenePreview;
@@ -4585,8 +4047,6 @@ export class FeedContainer {
     
     post.initialize();
 
-    // Short form content is always HD by default, even when feed-level HD mode is off.
-    // Scene previews stay preview-only — they never upgrade to the full scene.
     if ((isShortForm || this.useHDMode) && !isScenePreview) {
       post.setHQMode(true);
     }
@@ -4594,21 +4054,17 @@ export class FeedContainer {
     return post;
   }
 
-  /**
-   * Clear all posts
-   */
   private clearPosts(): void {
     for (const post of this.posts.values()) {
       post.destroy();
     }
     this.posts.clear();
     this.postOrder = [];
-    this.endCard = undefined; // innerHTML reset below detaches it
+    this.endCard = undefined;
     if (this.postsContainer) {
       this.postsContainer.innerHTML = '';
     }
     
-    // Clean up all load observers
     this.cleanupLoadObservers();
   }
 
@@ -4620,11 +4076,6 @@ export class FeedContainer {
     this.debouncedApplyFilters();
   }
 
-  /**
-   * Reconcile the synthetic end-of-feed card with the current hasMore state:
-   * show it (as a full-viewport snap card at the end of the feed)
-   * when the feed ends or is waiting for the user to continue a short-form search.
-   */
   private updateEndCard(): void {
     const container = this.postsContainer;
     if (!container) return;
@@ -4640,26 +4091,13 @@ export class FeedContainer {
     }
   }
 
-  /** Open the header search UI from the end card's "Search for more?" button. */
   private openSearchFromEndCard(): void {
-    // Focusing fires the input's focus handler, which opens the suggestions UI.
     this.headerBar?.querySelector<HTMLInputElement>('.feed-filters__input')?.focus();
   }
 
-  /**
-   * Free memory by removing cards the user has already scrolled past.
-   *
-   * Only ever removes cards strictly BEHIND the current one (lower DOM index). The current
-   * card, everything ahead, and a buffer behind are never touched — so the scroller's
-   * current/next indices below the removal point don't move, nothing ahead/below shrinks,
-   * and there's no oscillation or "lost track of next". The current card is re-aligned
-   * once afterwards because native scroll-anchoring is disabled.
-   */
   private cleanupDistantPosts(): void {
     const keepBehind = this.useHDMode ? 8 : 12;
 
-    // Never prune mid-interaction: removing cards while the reel is snapping or the user is
-    // mid-swipe would shift geometry under the gesture. Wait until it settles.
     if (this.reelScroller?.isBusy()) {
       return;
     }
@@ -4671,7 +4109,7 @@ export class FeedContainer {
 
     const firstToKeep = currentIdx - keepBehind;
     if (firstToKeep <= 0) {
-      return; // nothing far enough behind to prune
+      return;
     }
 
     const currentCard = this.posts.get(this.postOrder[currentIdx])?.getContainer();
@@ -4681,25 +4119,16 @@ export class FeedContainer {
       this.removePost(postId);
     }
 
-    // Deleting cards above shifts content up; re-anchor the current card explicitly (single
-    // source of compensation now that native scroll-anchoring is off).
     if (currentCard?.parentNode) {
       this.reelScroller?.snapToCard(currentCard);
     }
   }
 
-  /**
-   * Index in postOrder of the card currently at the top of the viewport, or -1 if it
-   * can't be determined. Prefers the reel scroller's geometry; falls back to the card
-   * whose top is nearest the container top (same rule as the scroller) so every consumer
-   * shares one definition of "current card".
-   */
   private getCurrentPostOrderIndex(): number {
     const currentId = this.reelScroller?.getCurrentPostId() ?? this.getTopMostCardPostId();
     return currentId ? this.postOrder.indexOf(currentId) : -1;
   }
 
-  /** Post id of the card whose top is nearest the scroll container's top edge. */
   private getTopMostCardPostId(): string | null {
     const cards = this.getAllCardContainers();
     if (cards.length === 0) {
@@ -4718,13 +4147,10 @@ export class FeedContainer {
     return this.getPostIdFromCard(best);
   }
 
-  /**
-   * Remove a single post and clean up all associated resources
-   */
   private removePost(postId: string): void {
     const post = this.posts.get(postId);
     if (post) {
-      post.destroy(); // each post unloads and disposes its own player
+      post.destroy();
       this.posts.delete(postId);
       this.removePostFromOrder(postId);
     }
@@ -4732,9 +4158,6 @@ export class FeedContainer {
     this.cleanupLoadObserver(postId);
   }
 
-  /**
-   * Remove post ID from post order array
-   */
   private removePostFromOrder(postId: string): void {
     const index = this.postOrder.indexOf(postId);
     if (index !== -1) {
@@ -4742,9 +4165,6 @@ export class FeedContainer {
     }
   }
 
-  /**
-   * Clean up load observer for a post
-   */
   private cleanupLoadObserver(postId: string): void {
     const observer = this.loadObservers.get(postId);
     if (observer) {
@@ -4753,9 +4173,6 @@ export class FeedContainer {
     }
   }
 
-  /**
-   * Check if header handling should be skipped
-   */
   private shouldSkipHeaderHandling(): boolean {
     if (this.settings.autoHideSearchBar === false) return true;
 
@@ -4767,9 +4184,6 @@ export class FeedContainer {
     return false;
   }
 
-  /**
-   * Handle header visibility based on scroll direction
-   */
   private handleHeaderVisibility(
     currentScrollY: number,
     lastScrollY: number,
@@ -4795,9 +4209,6 @@ export class FeedContainer {
     return { lastScrollY: currentScrollY, isHeaderHidden };
   }
 
-  /**
-   * Hide the header by translating it up
-   */
   private hideHeader(): void {
     if (!this.headerBar) {
       return;
@@ -4808,9 +4219,6 @@ export class FeedContainer {
     this.headerBar.style.transform = `translateY(-${hideDistance}px)`;
   }
 
-  /**
-   * Show the header by translating it to normal position
-   */
   private showHeader(): void {
     if (this.headerBar) {
       this.headerBar.style.transform = 'translateY(0)';
@@ -4827,10 +4235,6 @@ export class FeedContainer {
     }, 2000);
   }
 
-  /**
-   * Setup scroll handler
-   * Handles header hide/show based on scroll direction and tracks scroll velocity
-   */
   private setupScrollHandler(): void {
     let lastScrollY = this.getViewportTop();
     let isHeaderHidden = false;
@@ -4854,7 +4258,6 @@ export class FeedContainer {
       requestAnimationFrame(processScroll);
     };
 
-    // Use passive listener for better performance
     const previousHandler = this.scrollHandler;
     const previousTarget = this.scrollEventTarget;
     if (previousHandler && previousTarget) {
@@ -4865,11 +4268,6 @@ export class FeedContainer {
     this.scrollEventTarget.addEventListener('scroll', handleScroll, { passive: true });
   }
 
-  /**
-   * Enable/disable the JS reel scroller to match the current reel-mode state.
-   * The scroller owns scroll position in reel mode (one card per gesture) and
-   * drives autoplay via onSettle; outside reel mode the feed scrolls natively.
-   */
   private setupReelScroller(): void {
     if (!this.scrollContainer) return;
 
@@ -4883,16 +4281,8 @@ export class FeedContainer {
     this.reelScroller.enable();
   }
 
-  /**
-   * Autoplay + audio for the card the reel scroller just landed on. Prefetch is driven
-   * separately by the scroller's onAdvance hook (which fires earlier, as soon as a gesture
-   * commits to a new index), so we don't repeat it here.
-   */
   private handleReelSettle(postId: string, _index: number): void {
     if (postId === END_CARD_POST_ID) {
-      // No video on the end card — silence whatever was playing, and force the
-      // search bar back in (auto-hide leaves it tucked away after scrolling down)
-      // so the card's arrow has something to point at.
       this.playback.pauseAll();
       this.showHeader();
       return;
@@ -4900,10 +4290,6 @@ export class FeedContainer {
     this.playback.setActive(postId);
   }
 
-  /**
-   * Kick off the next batch once the active card is within PREFETCH_CARDS_AHEAD of the
-   * last loaded card. loadVideos guards against concurrent loads.
-   */
   private lastSafetyPrefetchLength = -1;
 
   private prefetchIfNearEnd(): void {
@@ -5008,7 +4394,7 @@ export class FeedContainer {
 
   destroy(): void {
     this.suggestionAbortController?.abort();
-    this.cancelAllPendingRequests(); // don't let an in-flight load keep building posts into a detached DOM
+    this.cancelAllPendingRequests();
     if (this.settingsReloadTimeoutId) {
       clearTimeout(this.settingsReloadTimeoutId);
       this.settingsReloadTimeoutId = undefined;
@@ -5018,15 +4404,6 @@ export class FeedContainer {
     this.api.destroy();
   }
 
-  /**
-   * Get all card containers in true visual (DOM) order.
-   *
-   * The reel addresses "current" and "next" by index into this list, so it MUST match
-   * what's on screen top-to-bottom. Reading the live DOM children (rather than walking
-   * postOrder) guarantees that — any drift between postOrder and the DOM can no longer
-   * make the scroller advance to the wrong card. Cards carry data-post-id; the
-   * load-more trigger and skeletons don't, so they're filtered out.
-   */
   private getAllCardContainers(): HTMLElement[] {
     if (!this.postsContainer) {
       return [];
@@ -5040,9 +4417,6 @@ export class FeedContainer {
     return cards;
   }
 
-  /**
-   * Extract post ID from a card element
-   */
   private getPostIdFromCard(card: HTMLElement): string | null {
     return card.dataset.postId ?? null;
   }
@@ -5053,18 +4427,12 @@ export class FeedContainer {
     this.playback.setActive(postId);
   }
 
-  /**
-   * Show skeleton loaders for better perceived performance
-   */
   private showSkeletonLoaders(): void {
-    // Check for existing skeleton loaders in the HTML (from initial page load)
     const existingSkeletons = Array.from(this.postsContainer.querySelectorAll('.video-post-skeleton'));
     
     if (existingSkeletons.length > 0) {
-      // Reuse existing skeletons from HTML
       this.skeletonLoaders = existingSkeletons as HTMLElement[];
       
-      // If we need more skeletons than exist, create additional ones
       const skeletonCount = FeedContainer.CONTENT_LOAD_LIMIT;
       const needed = skeletonCount - existingSkeletons.length;
       if (needed > 0) {
@@ -5074,7 +4442,6 @@ export class FeedContainer {
           this.skeletonLoaders.push(skeleton);
         }
       } else if (needed < 0) {
-        // If we have too many, remove the excess
         const excess = existingSkeletons.slice(skeletonCount);
         for (const skeleton of excess) {
           skeleton.remove();
@@ -5082,10 +4449,8 @@ export class FeedContainer {
         this.skeletonLoaders = existingSkeletons.slice(0, skeletonCount) as HTMLElement[];
       }
     } else {
-      // No existing skeletons, create new ones
       this.hideSkeletonLoaders();
       
-      // Create skeleton loaders matching expected initial load count
       const skeletonCount = FeedContainer.CONTENT_LOAD_LIMIT;
       this.skeletonLoaders = [];
       
@@ -5097,9 +4462,6 @@ export class FeedContainer {
     }
   }
 
-  /**
-   * Create a single skeleton loader element
-   */
   private createSkeletonLoader(): HTMLElement {
     const skeleton = document.createElement('article');
     skeleton.className = 'video-post-wrapper video-post-skeleton';
@@ -5107,7 +4469,6 @@ export class FeedContainer {
     const card = document.createElement('div');
     card.className = 'video-post';
     
-    // Header skeleton
     const header = document.createElement('div');
     header.className = 'video-post__header';
     header.style.padding = '8px 16px';
@@ -5120,7 +4481,6 @@ export class FeedContainer {
     chips.style.gap = '4px';
     chips.style.margin = '0';
     
-    // Add 2-3 chip skeletons
     for (let i = 0; i < 3; i++) {
       const chip = document.createElement('div');
       chip.className = 'chip-skeleton';
@@ -5132,7 +4492,6 @@ export class FeedContainer {
     header.appendChild(chips);
     card.appendChild(header);
     
-    // Player skeleton
     const player = document.createElement('div');
     player.className = 'video-post__player aspect-16-9';
     player.style.position = 'relative';
@@ -5140,7 +4499,6 @@ export class FeedContainer {
     player.style.overflow = 'hidden';
     card.appendChild(player);
     
-    // Footer skeleton
     const footer = document.createElement('div');
     footer.className = 'video-post__footer';
     footer.style.padding = '8px 16px';
@@ -5148,7 +4506,6 @@ export class FeedContainer {
     footer.style.justifyContent = 'flex-end';
     footer.style.gap = '4px';
     
-    // Add 4 button skeletons
     for (let i = 0; i < 4; i++) {
       const btn = document.createElement('div');
       btn.className = 'button-skeleton';
@@ -5192,9 +4549,6 @@ export class FeedContainer {
     return skeleton;
   }
 
-  /**
-   * Hide and remove all skeleton loaders
-   */
   private hideSkeletonLoaders(): void {
     for (const skeleton of this.skeletonLoaders) {
       skeleton.remove();
@@ -5202,9 +4556,6 @@ export class FeedContainer {
     this.skeletonLoaders = [];
   }
 
-  /**
-   * Remove a single skeleton loader (when real post is added)
-   */
   private removeSkeletonLoader(): void {
     if (this.skeletonLoaders.length > 0) {
       const skeleton = this.skeletonLoaders.shift();
@@ -5212,22 +4563,15 @@ export class FeedContainer {
     }
   }
 
-  /**
-   * Get current skeleton count
-   */
   private getSkeletonCount(): number {
     return this.skeletonLoaders.length;
   }
 
-  /** Saved filters whose content type the feed can currently show (image ones need images enabled). */
   private getApplicableSavedFilters(): SavedFilter[] {
     const imagesOn = this.shouldLoadImages();
     return this.savedFiltersCache.filter((f) => f.mode !== 'IMAGES' || imagesOn);
   }
 
-  /**
-   * Load saved filters once; concurrent callers share the in-flight request
-   */
   private loadSavedFiltersIfNeeded(): Promise<void> {
     this.savedFiltersPromise ??= this.api.fetchSavedFilters().then(
       (items) => { this.savedFiltersCache = items; },
@@ -5236,9 +4580,6 @@ export class FeedContainer {
     return this.savedFiltersPromise;
   }
 
-  /**
-   * Show error message
-   */
   private showError(message: string): void {
     let error = this.container.querySelector('.feed-error') as HTMLElement;
     if (!error) {
@@ -5255,15 +4596,11 @@ export class FeedContainer {
     if (error) error.style.display = 'none';
   }
 
-  /** Settings pushed from the server: same live effects as an edit, without writing them back. */
   updateSettings(newSettings: Partial<FeedSettings>): void {
     this.applySettings(newSettings, false);
     this.refreshAutoplayAfterLayout();
   }
 
-  /**
-   * Get current settings
-   */
   getSettings(): FeedSettings {
     return { ...this.settings };
   }

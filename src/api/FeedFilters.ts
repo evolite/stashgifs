@@ -1,12 +1,3 @@
-/**
- * Builds the GraphQL filter inputs for the feed's content types (markers, scenes, images):
- * saved-filter merging, tag routing to the one server field that can match, excludes,
- * orientation, studios, date range.
- *
- * Pure with respect to the network. The only state is the shared tag-source map, which StashAPI
- * fills (getTagSources) and these builders read.
- */
-
 import type { FilterOptions, Scene, DateRangeFilter } from '../types.js';
 import type {
   FindFilterInput,
@@ -32,7 +23,7 @@ export type ImageFilterOptions = {
   imagesInGalleryOnly?: boolean;
   galleryIds?: string[];
   showPerformerTags?: boolean;
-  savedFilterId?: string; // IMAGES-mode saved filter; replaces tag/performer/studio selection
+  savedFilterId?: string;
   sortSeed?: string;
 };
 
@@ -62,23 +53,14 @@ export class FeedFilters {
     year: 365,
   };
 
-  /** A tag id that matches nothing: forces an empty result for unsatisfiable selections. */
   private static readonly IMPOSSIBLE_TAG = '-1';
 
-  /** @param tagSources tag id -> which content types it (and its descendants) effectively belongs to */
   constructor(private readonly tagSources: Map<string, TagSource>) {}
 
-
-  /**
-   * Calculate initial page number from offset
-   */
   calculateInitialPage(limit: number, filters?: FilterOptions): number {
     return filters?.offset ? Math.floor(filters.offset / limit) + 1 : 1;
   }
 
-  /**
-   * Merge saved filter criteria and query into a base FindFilterInput
-   */
   mergeSavedFilterAndQuery(
     baseFilter: FindFilterInput,
     filters: FilterOptions | undefined,
@@ -97,21 +79,12 @@ export class FeedFilters {
     return merged;
   }
 
-
-
-  /**
-   * Parse tag IDs from filter array
-   */
   private parseTagIds(tags: (string | number)[]): number[] {
     return tags
       .map((v) => Number.parseInt(String(v), 10))
       .filter((n) => !Number.isNaN(n));
   }
 
-  /**
-   * Extract tag and performer IDs from filters consistently
-   * Handles both tags and primary_tags for unified filtering
-   */
   extractTagAndPerformerFilters(filters?: FilterOptions): {
     tagIds: string[];
     performerIds: number[];
@@ -122,7 +95,6 @@ export class FeedFilters {
     const performerIds: number[] = [];
     const excludedTagIds: string[] = [];
 
-    // Extract tags (include both tags and primary_tags)
     if (filters?.tags && filters.tags.length > 0) {
       const parsed = this.parseTagIds(filters.tags);
       tagIds.push(...parsed.map(String));
@@ -137,7 +109,6 @@ export class FeedFilters {
       excludedTagIds.push(...parsed.map(String));
     }
 
-    // Extract performers
     if (filters?.performers && filters.performers.length > 0) {
       performerIds.push(...this.parseTagIds(filters.performers));
     }
@@ -152,9 +123,6 @@ export class FeedFilters {
     };
   }
 
-  /**
-   * Build find filter for main query
-   */
   buildFindFilter(
     filters: FilterOptions | undefined,
     savedFilterCriteria: GetSavedFilterResponse['findSavedFilter'],
@@ -171,16 +139,12 @@ export class FeedFilters {
     
     const merged = this.mergeSavedFilterAndQuery(baseFilter, filters, savedFilterCriteria);
     
-    // Ensure page and per_page are set correctly (may have been overridden by saved filter)
     merged.page = page;
     merged.per_page = limit;
     
     return merged;
   }
 
-  /**
-   * Build scene marker filter
-   */
   buildSceneMarkerFilter(
     filters: FilterOptions | undefined,
     savedFilterCriteria: GetSavedFilterResponse['findSavedFilter']
@@ -200,8 +164,6 @@ export class FeedFilters {
     return sceneMarkerFilter;
   }
 
-  /** Add an `excludes` list to a hierarchical tag criterion, creating it (excludes-only) if the
-   *  field has no positive value yet, or merging onto an existing positive criterion. */
   private static addExcludes(
     field: { value?: string[]; modifier?: 'INCLUDES' | 'INCLUDES_ALL' | 'EXCLUDES'; depth?: number; excludes?: string[] } | undefined,
     excludes: string[],
@@ -215,12 +177,6 @@ export class FeedFilters {
     };
   }
 
-  /**
-   * Exclude tags server-side from every ENABLED source field (ANDed = "not present in any enabled
-   * source"), so exclusion needs no client-side pass. Merges onto positive criteria already
-   * written by applyRoutedTags. Uses the same depth as positive matching so excluding a parent
-   * hides its subtree.
-   */
   private applyExcludedTags(
     targetFilter: SceneMarkerFilterInput | SceneFilterInput,
     excludedTagIds: string[],
@@ -245,9 +201,6 @@ export class FeedFilters {
     }
   }
 
-  /**
-   * Apply performer filters to a filter object
-   */
   private applyPerformersToFilter(targetFilter: SceneMarkerFilterInput | SceneFilterInput, performerIds: number[]): void {
     if (performerIds.length > 0) {
       targetFilter.performers = {
@@ -312,7 +265,6 @@ export class FeedFilters {
     targetFilter.scene_filter = sceneFilter;
   }
 
-  /** Groups tagIds by effective source; returns undefined if a tag resolves to no enabled source (unsatisfiable). */
   private groupTagsBySource(
     tagIds: string[],
     enabledList: Array<'marker' | 'scene' | 'performer'>
@@ -321,9 +273,8 @@ export class FeedFilters {
     const groups = { marker: [] as string[], scene: [] as string[], performer: [] as string[] };
     for (const id of tagIds) {
       const src = this.tagSources.get(id);
-      // uncached → primary enabled source (best-effort, still server-side)
       const target = src ? enabledList.find((s) => src[s]) : primary;
-      if (src && !target) return undefined; // resolved and in no enabled source → unsatisfiable, force empty
+      if (src && !target) return undefined;
       if (target) groups[target].push(id);
     }
     return groups;
@@ -367,9 +318,6 @@ export class FeedFilters {
     this.assignRoutedTagGroups(targetFilter, groups, shape, incAll);
   }
 
-  /**
-   * Apply tag and performer filters to a filter object
-   */
   private applyTagAndPerformerFilters(
     filters: FilterOptions | undefined,
     targetFilter: SceneMarkerFilterInput | SceneFilterInput,
@@ -404,9 +352,6 @@ export class FeedFilters {
     }
   }
 
-  /**
-   * Build scene filter for shuffle mode
-   */
   buildShuffleSceneFilter(filters?: FilterOptions): SceneFilterInput | null {
     const sceneFilter: SceneFilterInput = {};
     
@@ -414,19 +359,14 @@ export class FeedFilters {
       sceneFilter.has_markers = 'false';
     }
     if (filters?.randomMinSceneDuration !== undefined) {
-      // Stash's scene duration criterion compares integer seconds.
       sceneFilter.duration = { value: Math.ceil(filters.randomMinSceneDuration) - 1, modifier: 'GREATER_THAN' };
     }
     this.applyTagAndPerformerFilters(filters, sceneFilter, { isMarkerFilter: false });
     this.applyOrientationToSceneFilter(sceneFilter, filters);
 
-
     return Object.keys(sceneFilter).length > 0 ? sceneFilter : null;
   }
 
-  /**
-   * Build scene filter for short-form content
-   */
   buildShortFormSceneFilter(filters?: FilterOptions, maxDuration?: number, scope?: ShortFormScope): SceneFilterInput {
     const sceneFilter: SceneFilterInput = {
       file_count: {
@@ -447,8 +387,6 @@ export class FeedFilters {
     const createdAt = this.resolveCreatedAtCriterion(filters?.dateRangeFilter);
     if (createdAt) sceneFilter.created_at = createdAt;
 
-    // Stash reuses the same SQL join for positive scene tag criteria. When the feed already
-    // uses that join, the short-form tag/folder union is checked on the returned scenes.
     const tagIds = scope?.tagIds ?? [];
     if (tagIds.length > 0 && sceneFilter.tags?.value.length) return sceneFilter;
 
@@ -466,9 +404,6 @@ export class FeedFilters {
     return sceneFilter;
   }
 
-  /**
-   * Filter scenes for short-form content (duration < maxDuration)
-   */
   shortFormSceneMatcher(maxDuration: number, scope?: ShortFormScope): (scene: Scene) => boolean {
     const folder = shortFormFolderPattern(scope?.folder);
     const path = folder && new RegExp(folder.source, folder.ignoreCase ? 'i' : '');
@@ -482,9 +417,6 @@ export class FeedFilters {
     };
   }
 
-  /**
-   * Build scene filter for scene-preview content
-   */
   buildScenePreviewFilter(filters?: FilterOptions): SceneFilterInput | null {
     const sceneFilter: SceneFilterInput = {};
     this.applyTagAndPerformerFilters(filters, sceneFilter, { isMarkerFilter: false });
@@ -494,17 +426,11 @@ export class FeedFilters {
     return Object.keys(sceneFilter).length > 0 ? sceneFilter : null;
   }
 
-  /**
-   * Build regex pattern from file extensions
-   * Converts ['.gif', '.webm'] to "(?i)\.(gif|webm)$" (case-insensitive)
-   * @throws Error if fileExtensions is empty or all extensions are invalid
-   */
   buildPathRegex(fileExtensions: string[]): string {
     if (fileExtensions.length === 0) {
       throw new Error('buildPathRegex: fileExtensions array cannot be empty');
     }
     
-    // Strip leading dots and validate
     const extensions = fileExtensions
       .map(ext => ext.trim().toLowerCase().replace(/^\./, ''))
       .filter(ext => ext.length > 0 && /^[a-z0-9]+$/i.test(ext));
@@ -513,17 +439,9 @@ export class FeedFilters {
       throw new Error('buildPathRegex: all file extensions are invalid');
     }
     
-    // Build regex: (?i)\.(gif|webm|mp4)$ (case-insensitive)
     return String.raw`(?i)\.(${extensions.join('|')})$`;
   }
 
-  /**
-   * Route each positive tag to exactly ONE server-side field (image `tags` > `performer_tags`)
-   * so filtering is fully server-side and pagination stays correct. A tag's effective source
-   * (own ∪ descendants) resolves parent-only tags; uncached tags fall back to image tags.
-   * A tag effectively in both image and performer is matched as an image tag (highest priority).
-   * Applies excludes too. Returns true if the selection is unsatisfiable (forces an empty result).
-   */
   private applyImageTagFilters(imageFilter: ImageFilterInput, filters: ImageFilterOptions | undefined, depth: number): boolean {
     const performerEnabled = !!filters?.showPerformerTags;
     const imageGroup: string[] = [];
@@ -531,14 +449,12 @@ export class FeedFilters {
     for (const id of filters?.tagIds ?? []) {
       const src = this.tagSources.get(id);
       if (src && !src.image && !(performerEnabled && src.performer)) {
-        // resolved and in no enabled source → unsatisfiable, force empty
         imageFilter.tags = { value: [FeedFilters.IMPOSSIBLE_TAG], modifier: 'INCLUDES_ALL' };
         return true;
       }
       if (src && !src.image && performerEnabled && src.performer) performerGroup.push(id);
-      else imageGroup.push(id); // image source, or uncached fallback
+      else imageGroup.push(id);
     }
-    // depth cast: the server accepts depth on image tag criteria, but the generated type omits it.
     if (imageGroup.length) imageFilter.tags = { value: imageGroup, modifier: 'INCLUDES_ALL', depth } as ImageFilterInput['tags'];
     if (performerGroup.length) imageFilter.performer_tags = { value: performerGroup, modifier: 'INCLUDES_ALL', depth } as ImageFilterInput['performer_tags'];
 
@@ -584,8 +500,6 @@ export class FeedFilters {
     savedFilterCriteria?: GetSavedFilterResponse['findSavedFilter']
   ): ImageFilterInput {
     if (filters?.savedFilterId) {
-      // The saved filter is authoritative: the feed's own constraints (file-type regex, orientation,
-      // date range...) are ANDed in alongside it instead of overwriting its criteria.
       const saved = normalizeSavedObjectFilter<ImageFilterInput>(savedFilterCriteria?.object_filter);
       const extra: ImageFilterInput = { path: { value: regexPattern, modifier: 'MATCHES_REGEX' } };
       this.applyImageMiscFilters(extra, filters);

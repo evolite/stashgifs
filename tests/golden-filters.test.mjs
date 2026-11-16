@@ -1,7 +1,3 @@
-// Golden test for the GraphQL filters the feed sends. Records the variables for a matrix of filter
-// options (network stubbed) and compares them with tests/fixtures/golden-filters.json, so a change
-// to filter building shows up as a readable diff.
-//   UPDATE_GOLDEN=1 pnpm test    rewrite the fixture after an intentional change
 import { it } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync, writeFileSync } from 'node:fs';
@@ -23,7 +19,6 @@ async function makeApi() {
     if (op === 'GetSavedFilter') return { findSavedFilter: savedFilter };
     return { findSceneMarkers: { count: 0, scene_markers: [] }, findScenes: { count: 0, scenes: [] }, findImages: { count: 0, images: [] } };
   });
-  // tag routing: 1 -> marker only, 2 -> scene only, 3 -> performer only, 4 -> image only, 5 -> everywhere
   const sources = { 1: [1, 0, 0, 0], 2: [0, 1, 0, 0], 3: [0, 0, 1, 0], 4: [0, 0, 0, 1], 5: [1, 1, 1, 1] };
   for (const [id, [marker, scene, performer, image]] of Object.entries(sources)) {
     api.tags.tagSources.set(id, { marker: !!marker, scene: !!scene, performer: !!performer, image: !!image });
@@ -56,7 +51,6 @@ const imageCases = {
   saved: { savedFilterId: '3', dateRangeFilter: 'year', orientationFilter: ['landscape'] },
 };
 
-// Normalize what legitimately differs per run: random sort seeds and "now"-based dates.
 const normalize = (_key, value) => (typeof value === 'string'
   ? value.replace(/random_\d{8}/g, 'random_SEED').replace(/\d{4}-\d{2}-\d{2}T[\d:.]+Z/g, 'DATE')
   : value);

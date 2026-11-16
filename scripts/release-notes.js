@@ -1,20 +1,10 @@
 #!/usr/bin/env node
 
-/**
- * Release notes for one version, from the hand-written RELEASE_NOTES.md.
- *
- *   node scripts/release-notes.js 7.23.0    -> the notes body for that version (stdout)
- *
- * Falls back to a one-line maintenance note when the version has no section, so a release
- * with nothing user-facing never publishes commit noise.
- */
-
 const fs = require('fs');
 const path = require('path');
 
 const FALLBACK = 'Maintenance and internal improvements.';
 
-/** Body (without the "## [x.y.z]" heading) of `version`'s section, or the fallback. */
 function notesFor(version, markdown) {
   const lines = markdown.split('\n');
   const start = lines.findIndex((line) => line.startsWith(`## [${version}]`));

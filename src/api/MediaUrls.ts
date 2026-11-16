@@ -1,24 +1,12 @@
-/**
- * Playable URLs for Stash media: marker streams, scene sources for video.js, resolution capping.
- * Pure URL logic — no network, no caching — so it lives apart from the GraphQL client.
- */
-
 import type { Scene, SceneMarker, VideoSource } from '../types.js';
 import { normalizeMediaUrl, stripApiKey } from '../utils.js';
 
 export class MediaUrls {
-  /**
-   * @param baseUrl Stash base URL (no trailing slash)
-   * @param maxResolution Current resolution cap in px (0 = off); read on every call, so changes apply immediately
-   */
   constructor(
     private readonly baseUrl: string,
     private readonly maxResolution: () => number,
   ) {}
 
-  /**
-   * Get video URL for a scene marker
-   */
   getMarkerVideoUrl(marker: SceneMarker): string | undefined {
     if (!marker.stream) {
       return this.getVideoUrl(marker.scene);
@@ -38,39 +26,28 @@ export class MediaUrls {
     return this.stableUrl(normalizedUrl);
   }
 
-  /**
-   * Get video URL for a scene
-   * Tries multiple sources in order: sceneStreams, stream path, file path
-   */
   getVideoUrl(scene: Scene): string | undefined {
     const cap = this.resolutionCapFor(scene);
 
-    // A capped scene must NOT use the direct stream (it ignores ?resolution=);
-    // go straight to the transcoded stream path so the cap takes effect.
     if (!cap) {
       const streamUrl = this.tryGetUrlFromStreams(scene);
       if (streamUrl) return streamUrl;
     }
 
-    // Try stream path
     const streamPathUrl = this.tryGetUrlFromPath(scene.paths?.stream, cap);
     if (streamPathUrl) return streamPathUrl;
 
     if (cap) {
-      // Last-ditch: a non-direct transcode entry from sceneStreams.
       const transcoded = this.pickTranscodedStream(scene);
       if (transcoded) return this.buildAndValidateUrl(MediaUrls.capStreamUrl(transcoded, cap));
     }
 
-    // Try file path as last resort
     const filePathUrl = this.tryGetUrlFromFiles(scene.files);
     if (filePathUrl) return filePathUrl;
 
     return undefined;
   }
 
-  /** Stash transcode-resolution enum for the current cap, or undefined when the
-   *  scene is within the cap (or the cap is off). */
   private resolutionCapFor(scene: Scene): string | undefined {
     if (this.maxResolution() <= 0) return undefined;
     const file = scene.files?.[0];
@@ -79,7 +56,6 @@ export class MediaUrls {
     return MediaUrls.resolutionEnum(this.maxResolution());
   }
 
-  /** Map a cap in px to the nearest Stash transcode-size enum at or below it. */
   static resolutionEnum(px: number): string {
     if (px <= 240) return 'LOW';
     if (px <= 480) return 'STANDARD';
@@ -88,7 +64,6 @@ export class MediaUrls {
     return 'FOUR_K';
   }
 
-  /** Set/replace the `resolution` query param on a Stash stream URL. */
   static capStreamUrl(url: string, resolutionEnum: string): string {
     const [base, hash] = url.split('#');
     const [path, query = ''] = base.split('?');
@@ -113,16 +88,6 @@ export class MediaUrls {
     return this.buildAndValidateUrl(streamUrl);
   }
 
-  /**
-   * Build an ordered list of playable sources for a scene, for a player (video.js)
-   * that selects/falls-back by MIME type. Order:
-   *   1. Direct stream first IF the browser can decode the file's codec (cheapest, best quality).
-   *   2. HLS (Stash transcodes/remuxes to a browser-compatible codec — always plays).
-   *   3. Other forced-transcode variants (MP4/WebM), then DASH.
-   *   4. Direct stream last as a final fallback when codec support is unknown.
-   * URLs are NOT cache-busted: Stash keys transcode sessions on the URL, so a stable
-   * URL lets it resume an existing transcode instead of restarting one each load.
-   */
   getSceneSources(scene: Scene): VideoSource[] {
     const out: VideoSource[] = [];
     const seen = new Set<string>();
@@ -148,7 +113,6 @@ export class MediaUrls {
     const dash = streams.filter(isDash);
     const rest = streams.filter((s) => !isDirect(s) && !isHls(s) && !isDash(s));
 
-    // A capped scene skips the direct stream entirely — it can't be resolution-limited.
     const directPlayable = !cap && this.isDirectPlayable(scene);
     if (directPlayable) {
       for (const s of direct) push(s.url, s.mime_type || 'video/mp4');
@@ -160,7 +124,6 @@ export class MediaUrls {
       for (const s of direct) push(s.url, s.mime_type || 'video/mp4');
     }
 
-    // Fallbacks when sceneStreams is empty (older Stash or odd configs).
     if (out.length === 0) {
       push(scene.paths?.stream ?? undefined, 'video/mp4');
       push(scene.files?.[0]?.path, 'video/mp4');
@@ -168,12 +131,6 @@ export class MediaUrls {
     return out;
   }
 
-  /**
-   * Whether the browser is likely able to directly decode the scene's primary
-   * video codec. Conservative: H.264/AVC always; HEVC/AV1/VP9 only if canPlayType
-   * reports support. Unknown codecs default to true (the error-fallback in the
-   * player handles a wrong guess).
-   */
   private isDirectPlayable(scene: Scene): boolean {
     const codec = scene.files?.find((f) => f.video_codec)?.video_codec?.toLowerCase();
     if (!codec) return true;
@@ -197,7 +154,6 @@ export class MediaUrls {
     return true;
   }
 
-  /** Build a full, normalized stream URL without cache-busting (see getSceneSources). */
   private buildStreamUrl(path?: string | null): string | undefined {
     const trimmed = path?.trim();
     if (!trimmed) return undefined;
@@ -225,18 +181,10 @@ export class MediaUrls {
     return this.stableUrl(normalizedUrl);
   }
 
-  /**
-   * Build full URL from path
-   */
   private buildUrl(path: string): string {
     return path.startsWith('http') ? path : `${this.baseUrl}${path}`;
   }
 
-  /**
-   * Stream URLs are NOT cache-busted: Stash keys transcode sessions on the exact URL, so a stable URL
-   * lets it resume an existing transcode instead of restarting one on every load. (Image/poster URLs,
-   * which Stash itself versions with ?t=, are handled elsewhere.)
-   */
   private stableUrl(url: string): string {
     return stripApiKey(url);
   }

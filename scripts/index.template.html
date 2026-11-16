@@ -12,7 +12,6 @@
     <meta name="theme-color" content="#000000" />
     <link rel="manifest" crossorigin="use-credentials" href="manifest.json" />
     <title>StashGifs | Stash</title>
-    <!-- Seems to be required to make the Dark Reader extension detect the site as having a dark mode -->
     <meta name="color-scheme" content="light dark" />
     <style>
       :root {
@@ -25,7 +24,6 @@
       html { visibility: hidden; }
       html, body { background-color: #000000; margin: 0; padding: 0; }
     </style>
-    <!-- Feed UI: placed before the inline script so the script runs only after feed.css is render-blocking-loaded, preventing FOUC -->
     <link rel="stylesheet" href="./assets/feed.css">
     <script>
       (function () {
@@ -81,8 +79,6 @@
         if (e.touches.length > 1) e.preventDefault();
       }, { passive: false });
     </script>
-    <!-- video.js engine (vendored UMD; includes @videojs/http-streaming for HLS). -->
-    <!-- Loaded as classic scripts so the global `window.videojs` is available to the ESM app. -->
     <link rel="stylesheet" href="./assets/vendor/video-js.min.css">
     <script defer src="./assets/vendor/video.min.js"></script>
     <link rel="modulepreload" href="./assets/index.js">
@@ -92,7 +88,6 @@
     <div id="app" class="feed-container">
       <div class="feed-scroll-container">
         <div class="feed-posts">
-          <!-- Content will be loaded by JavaScript -->
         </div>
       </div>
     </div>

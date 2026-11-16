@@ -1,10 +1,3 @@
-/**
- * Tags: lookups by name, the plugin's own tags (favorite/bookmark/marker), scene and marker tag
- * edits, tag details, and which content types a tag effectively belongs to.
- *
- * Scene tag reads are batched and cached; scene tag edits are single server-side mutations.
- */
-
 import * as queries from '../graphql/queries.js';
 import * as mutations from '../graphql/mutations.js';
 import type {
@@ -33,15 +26,10 @@ export interface MarkerTagUpdateData {
 }
 
 export class TagsApi {
-  /** Per tag: which content types it (and its descendants) effectively belongs to. Filled by getTagSources,
-   *  read by FeedFilters to route a tag to the single filter field that can match it. Cached for the session. */
   readonly tagSources = new Map<string, TagSource>();
 
   constructor(private readonly io: ApiIO) {}
 
-  /**
-   * Get detailed tag information by ID
-   */
   async getTagDetails(tagId: string, signal?: AbortSignal): Promise<{ id: string; name: string; image_path?: string; description?: string; favorite?: boolean } | null> {
     if (this.io.isAborted(signal)) return null;
 
@@ -61,16 +49,11 @@ export class TagsApi {
     }
   }
 
-  /**
-   * Find a tag by name
-   */
-  /** Resolved tags by lowercase name — callers re-resolve the same few tags (favorite, bookmark, excluded) on every load. Misses aren't cached (the tag may be created later). */
   private readonly _tagByName = new TtlCache<{ id: string; name: string } | null>(Number.POSITIVE_INFINITY, 200);
 
   async findTagByName(tagName: string, signal?: AbortSignal): Promise<{ id: string; name: string } | null> {
     if (this.io.isAborted(signal)) return null;
     try {
-      // The shared lookup carries no caller signal (tiny query; one caller aborting must not fail the rest).
       const tag = await this._tagByName.getOrLoad(tagName.toLowerCase(), () => this.queryTagByName(tagName), (t) => t !== null);
       return this.io.isAborted(signal) ? null : tag;
     } catch (error: unknown) {
@@ -79,7 +62,6 @@ export class TagsApi {
   }
 
   private async queryTagByName(tagName: string): Promise<{ id: string; name: string } | null> {
-    // Use findTags (plural) instead of findTag (singular) as it's more widely supported
     const result = await this.io.gql.query<FindTagsResponse>({
       query: queries.FIND_TAGS,
       variables: {
@@ -89,7 +71,6 @@ export class TagsApi {
     });
     const tag = result.data?.findTags?.tags?.[0];
     if (!tag) return null;
-    // Validate exact match (case-insensitive) - EQUALS modifier might not work as expected
     if (tag.name.toLowerCase() !== tagName.toLowerCase()) {
       this.io.logError('findTagByName', new Error(`Tag name mismatch: searched="${tagName}", found="${tag.name}"`));
       return null;
@@ -97,10 +78,6 @@ export class TagsApi {
     return tag;
   }
 
-  /**
-   * Create a new tag
-   * If the tag already exists, attempts to find and return it
-   */
   async createTag(tagName: string, signal?: AbortSignal): Promise<{ id: string; name: string } | null> {
     if (this.io.isAborted(signal)) return null;
     
@@ -123,11 +100,9 @@ export class TagsApi {
         return null;
       }
       
-      // If tag already exists, try to find it
       const errorMessage = error instanceof Error ? error.message : String(error);
       if (errorMessage.includes('already exists') || errorMessage.includes('duplicate')) {
         this.io.logError('createTag', new Error(`Tag "${tagName}" already exists, attempting to find it`));
-        // Try to find the existing tag
         const existingTag = await this.findTagByName(tagName, signal);
         if (existingTag) {
           return existingTag;
@@ -138,10 +113,8 @@ export class TagsApi {
     }
   }
 
-  /** Tags this plugin owns (favorite, bookmark, marker), resolved once per session. */
   private readonly _ensuredTags = new TtlCache<{ id: string; name: string } | null>(Number.POSITIVE_INFINITY, 20);
 
-  /** Find the tag by name, creating it if missing. Concurrent callers share one lookup; failures throw and aren't remembered. */
   ensureTag(tagName: string): Promise<{ id: string; name: string } | null> {
     return this._ensuredTags.getOrLoad(
       tagName.toLowerCase(),
@@ -150,26 +123,13 @@ export class TagsApi {
     );
   }
 
-  /**
-   * Check if a scene marker has a specific tag
-   * Uses the marker's existing tags array
-   */
   markerHasTag(marker: { id: string; tags?: Array<{ id: string }> }, tagId: string): boolean {
     return marker.tags?.some(tag => tag.id === tagId) ?? false;
   }
 
-  /**
-   * Check if a scene has a specific tag
-   * @param sceneId Scene ID
-   * @param tagId Tag ID to check
-   * @param tags Optional array of tags to check against (avoids query if provided)
-   * @param signal Optional abort signal
-   * @returns True if scene has the tag
-   */
   async sceneHasTag(sceneId: string, tagId: string, tags?: Array<{ id: string }>, signal?: AbortSignal): Promise<boolean> {
     if (this.io.isAborted(signal)) return false;
     
-    // If tags array is provided, use it directly (more efficient)
     if (tags) {
       return tags.some((tag) => tag.id === tagId);
     }
@@ -183,10 +143,8 @@ export class TagsApi {
     }
   }
 
-  /** Scene tag ids fetched so far, so repeat checks and toggles don't re-query. */
   private readonly _sceneTagIds = new TtlCache<Set<string>>(60_000, 1000);
 
-  /** Per-post checks made while a page renders coalesce into one findScenes(ids: [...]) instead of one findScene each. */
   private readonly _sceneTagBatcher = new Batcher<string, Set<string>>(
     10,
     async (ids) => {
@@ -203,9 +161,6 @@ export class TagsApi {
     return this._sceneTagIds.getOrLoad(sceneId, () => this._sceneTagBatcher.load(sceneId));
   }
 
-  /**
-   * Update tags on a scene marker
-   */
   private async updateMarkerTags(
     marker: MarkerTagUpdateData,
     newTagIds: string[],
@@ -213,7 +168,6 @@ export class TagsApi {
   ): Promise<void> {
     if (this.io.isAborted(signal)) return;
     
-    // Ensure we have required fields
     if (!marker.primary_tag?.id) {
       throw new Error('Marker must have a primary_tag');
     }
@@ -248,10 +202,6 @@ export class TagsApi {
     if (this.io.isAborted(signal)) return;
   }
 
-  /**
-   * Add a tag to a scene marker
-   * Requires full marker data to include all required fields in the mutation
-   */
   private extractMarkerTagIds(marker: MarkerTagUpdateData): string[] {
     return (marker.tags || []).map(t => t.id);
   }
@@ -266,7 +216,6 @@ export class TagsApi {
     try {
       const currentTags = this.extractMarkerTagIds(marker);
 
-      // Add the new tag if not already present
       if (!currentTags.includes(tagId)) {
         await this.updateMarkerTags(marker, [...currentTags, tagId], signal);
       }
@@ -279,11 +228,6 @@ export class TagsApi {
     }
   }
 
-  /**
-   * Add or remove one tag on a scene in a single server-side mutation (no read-modify-write,
-   * so concurrent toggles can't clobber each other's tag list). The response carries the
-   * scene's resulting tags, which refresh the local cache.
-   */
   private async bulkModifySceneTag(
     methodName: string,
     sceneId: string,
@@ -311,17 +255,10 @@ export class TagsApi {
     }
   }
 
-  /**
-   * Add a tag to a scene
-   */
   async addTagToScene(sceneId: string, tagId: string, signal?: AbortSignal): Promise<void> {
     await this.bulkModifySceneTag('addTagToScene', sceneId, tagId, 'ADD', signal);
   }
 
-  /**
-   * Remove a tag from a scene marker
-   * Requires full marker data to include all required fields in the mutation
-   */
   async removeTagFromMarker(
     marker: MarkerTagUpdateData,
     tagId: string,
@@ -340,25 +277,14 @@ export class TagsApi {
     }
   }
 
-  /**
-   * Remove a tag from a scene
-   */
   async removeTagFromScene(sceneId: string, tagId: string, signal?: AbortSignal): Promise<void> {
     await this.bulkModifySceneTag('removeTagFromScene', sceneId, tagId, 'REMOVE', signal);
   }
 
-  /**
-   * Prime the tag→effective-source cache (session-cached). A tag's "effective" sources are the
-   * union of its own counts AND all its descendants' counts, so a parent-only organizational tag
-   * resolves to the sources its subtree actually lives in (the routing then matches by depth).
-   * One query per uncached tag: the tag itself + every descendant (via parents/depth).
-   */
   async getTagSources(ids: string[]): Promise<void> {
     const missing = [...new Set(ids)].filter((id) => id && !this.tagSources.has(id));
     if (missing.length === 0) return;
     type Counts = { scene_count?: number; scene_marker_count?: number; performer_count?: number; image_count?: number };
-    // One request for every uncached tag. Descendants are asked as four count-only queries
-    // (> 0 per source) instead of downloading the whole subtree with per_page:-1.
     const desc = (field: string) =>
       `findTags(tag_filter:{parents:{value:[$v],modifier:INCLUDES,depth:-1},${field}:{value:0,modifier:GREATER_THAN}},filter:{per_page:1}){count}`;
     try {

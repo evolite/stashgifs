@@ -1,7 +1,3 @@
-/**
- * Utility functions
- */
-
 import { Image } from './types.js';
 import { getStashBaseUrl, stripSlashes } from './utils/baseUrl.js';
 
@@ -61,9 +57,6 @@ export const THEME = {
   },
 };
 
-/**
- * Normalize a hex color value, validating format and adding # prefix if needed
- */
 export function normalizeHexColor(value: string | undefined, fallback: string): string {
   if (!value) return fallback;
   const trimmed = value.trim();
@@ -71,9 +64,6 @@ export function normalizeHexColor(value: string | undefined, fallback: string): 
   return /^#[0-9a-fA-F]{6}$/.test(normalized) ? normalized.toUpperCase() : fallback;
 }
 
-/**
- * Convert a hex color to rgba string
- */
 export function toRgba(hex: string, alpha: number): string {
   const normalized = normalizeHexColor(hex, '#000000');
   const r = Number.parseInt(normalized.slice(1, 3), 16);
@@ -82,9 +72,6 @@ export function toRgba(hex: string, alpha: number): string {
   return `rgba(${r}, ${g}, ${b}, ${alpha})`;
 }
 
-/**
- * Darken a hex color by a given fraction (0-1)
- */
 function darkenHex(hex: string, fraction: number): string {
   const value = hex.replace('#', '');
   const r = Math.round(Number.parseInt(value.slice(0, 2), 16) * (1 - fraction));
@@ -93,9 +80,6 @@ function darkenHex(hex: string, fraction: number): string {
   return `#${r.toString(16).padStart(2, '0')}${g.toString(16).padStart(2, '0')}${b.toString(16).padStart(2, '0')}`;
 }
 
-/**
- * Throttle function calls
- */
 export function throttle<T extends (...args: never[]) => unknown>(
   func: T,
   delay: number
@@ -110,9 +94,6 @@ export function throttle<T extends (...args: never[]) => unknown>(
   }) as T;
 }
 
-/**
- * Debounce function calls
- */
 export function debounce<T extends (...args: never[]) => unknown>(
   func: T,
   delay: number
@@ -170,58 +151,33 @@ export function subscribeWindowScroll(handler: () => void): () => void {
   };
 }
 
-/**
- * Format duration in seconds to HH:MM:SS or MM:SS
- */
-
 export function formatViewCount(n: number): string {
   if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1).replace(/\.0$/, '')}M`;
   if (n >= 1_000) return `${(n / 1_000).toFixed(1).replace(/\.0$/, '')}K`;
   return String(n);
 }
 
-/**
- * Calculate aspect ratio from width and height
- */
 export function calculateAspectRatio(width: number, height: number): number {
   return width / height;
 }
 
-/**
- * Get aspect ratio class name
- */
 export function getAspectRatioClass(aspectRatio: number): string {
   if (aspectRatio > 1.5) {
-    return 'aspect-16-9'; // Landscape
+    return 'aspect-16-9';
   } else if (aspectRatio < 0.7) {
-    return 'aspect-9-16'; // Portrait
+    return 'aspect-9-16';
   } else {
-    return 'aspect-1-1'; // Square
+    return 'aspect-1-1';
   }
 }
 
-/**
- * Check if element is in viewport
- */
-// Removed unused isInViewport helper
-
-/**
- * Create a unique ID
- */
-// Removed unused generateId helper
-
-/** True when keyboard input is going to a text field, so global hotkeys must stay out of the way. */
 export function isTypingTarget(target: EventTarget | null): boolean {
   if (!(target instanceof HTMLElement)) return false;
   const tag = target.tagName;
   return tag === 'INPUT' || tag === 'TEXTAREA' || target.isContentEditable;
 }
 
-/**
- * Show a toast notification
- */
 export function showToast(message: string, duration: number = 2000): void {
-  // Remove existing toast if any
   const existing = document.querySelector('.toast-notification');
   if (existing) {
     existing.remove();
@@ -248,13 +204,11 @@ export function showToast(message: string, duration: number = 2000): void {
 
   document.body.appendChild(toast);
 
-  // Animate in
   requestAnimationFrame(() => {
     toast.style.opacity = '1';
     toast.style.transform = 'translateX(-50%) translateY(0)';
   });
 
-  // Remove after duration
     setTimeout(() => {
       toast.style.opacity = '0';
       toast.style.transform = 'translateX(-50%) translateY(10px)';
@@ -264,56 +218,43 @@ export function showToast(message: string, duration: number = 2000): void {
     }, duration);
 }
 
-/**
- * Device capability detection for adaptive media quality
- */
 export interface DeviceCapabilities {
   isHighEnd: boolean;
   hasHighDPI: boolean;
-  availableRAM: number; // in MB (estimated)
+  availableRAM: number;
   recommendedVideoQuality: '480p' | '720p' | '1080p';
   recommendedThumbnailWidth: number;
 }
 
-/**
- * Detect device capabilities for adaptive media loading
- */
 export function detectDeviceCapabilities(): DeviceCapabilities {
   const isMobile = isMobileDevice();
   const isTablet = /iPad|Android/i.test(navigator.userAgent) && !/Mobile/i.test(navigator.userAgent);
   
-  // Detect high DPI display
   const hasHighDPI = globalThis.devicePixelRatio > 1.5;
   
-  // Estimate available RAM (rough heuristic)
-  // Modern browsers don't expose RAM directly, so we use heuristics
-  // deviceMemory is an experimental API, so we need to check and cast
   const nav = navigator as Navigator & { deviceMemory?: number };
   let estimatedRAM: number;
   if (nav.deviceMemory) {
-    estimatedRAM = nav.deviceMemory * 1024; // Convert GB to MB
+    estimatedRAM = nav.deviceMemory * 1024;
   } else if (isMobile) {
-    estimatedRAM = 2048; // Most modern phones have 4-8GB, but we'll be conservative
+    estimatedRAM = 2048;
   } else if (isTablet) {
-    estimatedRAM = 3072; // Tablets typically have more RAM
+    estimatedRAM = 3072;
   } else {
-    estimatedRAM = 4096; // Desktop typically has more RAM
+    estimatedRAM = 4096;
   }
   
-  // Determine if high-end device
   const isHighEnd = estimatedRAM >= 3072 && hasHighDPI;
   
-  // Recommend video quality based on device capabilities
   let recommendedQuality: '480p' | '720p' | '1080p';
   if (estimatedRAM < 2048) {
-    recommendedQuality = '480p'; // Low RAM devices
+    recommendedQuality = '480p';
   } else if (estimatedRAM >= 4096 && !isMobile) {
-    recommendedQuality = '1080p'; // High-end desktop
+    recommendedQuality = '1080p';
   } else {
-    recommendedQuality = '720p'; // Default for most devices
+    recommendedQuality = '720p';
   }
   
-  // Recommend thumbnail width based on viewport and DPI
   const viewportWidth = globalThis.innerWidth;
   let thumbnailWidth: number;
   if (recommendedQuality === '1080p') {
@@ -337,14 +278,9 @@ export function detectDeviceCapabilities(): DeviceCapabilities {
   };
 }
 
-/**
- * Convert a relative URL to an absolute URL
- * Handles both relative paths and already absolute URLs
- */
 export function toAbsoluteUrl(url?: string): string | undefined {
   if (!url) return undefined;
   if (/^https?:\/\//i.test(url)) return url;
-  // Preserve any base path prefix (e.g. /stash) — `new URL('/x', base)` would drop it.
   const base = getStashBaseUrl();
   if (url.startsWith('/')) return `${base}${url}`;
   try {
@@ -358,9 +294,6 @@ export function toAbsoluteUrl(url?: string): string | undefined {
   }
 }
 
-/**
- * Normalize media URL to a safe absolute URL
- */
 export function stripApiKey(url: string): string {
   if (!url) return url;
   const qIndex = url.indexOf('?');
@@ -379,7 +312,6 @@ export function normalizeMediaUrl(url?: string): string | undefined {
   if (!trimmed) return undefined;
   if (trimmed.startsWith('data:') || trimmed.startsWith('blob:')) return trimmed;
   if (/^https?:\/\//i.test(trimmed)) return stripApiKey(trimmed);
-  // Preserve any base path prefix (e.g. /stash) — `new URL('/x', base)` would drop it.
   const base = getStashBaseUrl();
   if (trimmed.startsWith('/')) return stripApiKey(`${base}${trimmed}`);
   try {
@@ -393,11 +325,6 @@ export function normalizeMediaUrl(url?: string): string | undefined {
   }
 }
 
-/**
- * Add cache-busting query parameter to a URL to prevent 304 responses with empty/corrupted cache
- * @param url - The URL to add cache-busting to
- * @returns URL with cache-busting timestamp parameter
- */
 export function addCacheBusting(url: string): string {
   if (!url) return url;
   const clean = stripApiKey(url);
@@ -405,58 +332,27 @@ export function addCacheBusting(url: string): string {
   return `${clean}${separator}t=${Date.now()}`;
 }
 
-// ============================================================================
-// Browser API Type Guards
-// ============================================================================
-
-/**
- * Navigator with standalone property (iOS Safari)
- */
 interface NavigatorStandalone extends Navigator {
   standalone?: boolean;
 }
 
-/**
- * Type guard for standalone navigator (iOS Safari app mode)
- */
 export function isStandaloneNavigator(nav: Navigator): nav is NavigatorStandalone {
   return 'standalone' in nav;
 }
 
-/**
- * Detect if the primary pointer is coarse (touch/stylus).
- * Uses CSS Media Queries Level 4 — the RWD-standard capability check.
- * Returns true for phones and tablets; false for mouse-driven desktops.
- * A touchscreen laptop with a mouse attached returns false (primary pointer is fine).
- */
 let coarsePointerQuery: MediaQueryList | undefined;
 export function isMobileDevice(): boolean {
   if (!('matchMedia' in globalThis)) return false;
-  // MediaQueryList.matches is live, so one cached list stays correct without re-parsing per call.
   coarsePointerQuery ??= globalThis.matchMedia('(pointer: coarse)');
   return coarsePointerQuery.matches;
 }
 
-/**
- * Image codecs that should be treated as images (not videos)
- * These codecs may have animation but should be displayed as images
- */
 const IMAGE_CODECS = ['gif', 'webp', 'apng', 'avif', 'heic', 'heif'] as const;
 
-/**
- * Check if a codec is an image codec (should be treated as image, not video)
- * @param codec The codec string to check
- * @returns true if the codec is an image codec
- */
 function isImageCodec(codec: string): boolean {
   return IMAGE_CODECS.includes(codec.toLowerCase() as typeof IMAGE_CODECS[number]);
 }
 
-/**
- * Detect if visualFiles indicates a video (has video_codec that's not an image codec)
- * @param visualFiles Array of visual file information
- * @returns Object with isVideo boolean and the video file if found
- */
 export function detectVideoFromVisualFiles(visualFiles?: Array<{
   path?: string;
   video_codec?: string;
@@ -480,11 +376,6 @@ export function detectVideoFromVisualFiles(visualFiles?: Array<{
   };
 }
 
-/**
- * Check if a file path is an MP4 or M4V file
- * @param path The file path to check
- * @returns true if the path ends with .mp4 or .m4v
- */
 export function isMp4File(path?: string): boolean {
   if (!path) {
     return false;
@@ -493,34 +384,17 @@ export function isMp4File(path?: string): boolean {
   return filePath.endsWith('.mp4') || filePath.endsWith('.m4v');
 }
 
-/**
- * Get the appropriate image URL for display based on image data and settings
- * @param image The image data
- * @param treatMp4AsVideo Whether MP4/M4V files should be treated as videos (use paths.image) or images (use paths.preview)
- * @returns The URL to use for display, or undefined if no valid URL found
- */
-/**
- * Build full URL from path
- */
 export function buildFullUrl(path: string, baseUrl: string): string {
   if (/^(https?:|data:|blob:)/i.test(path)) return path;
-  // Concatenate (not `new URL`) so a base path prefix like /stash is preserved for
-  // root-relative paths — `new URL('/image/1', 'https://host/stash')` drops it.
   return stripSlashes(baseUrl, { trailing: true }) + (path.startsWith('/') ? path : `/${path}`);
 }
 
-/**
- * Try to get a valid URL from a path
- */
 function tryGetUrlFromPath(path: string | undefined | null, baseUrl: string): string | undefined {
   if (!path) return undefined;
   const url = buildFullUrl(path, baseUrl);
   return normalizeMediaUrl(url) ?? undefined;
 }
 
-/**
- * Get URL for MP4 video files
- */
 function getMp4VideoUrl(image: Image, videoFile: { path?: string }, baseUrl: string): string | undefined {
   if (!videoFile.path || !isMp4File(videoFile.path)) return undefined;
   const videoPath = videoFile.path;
@@ -533,16 +407,10 @@ function getMp4VideoUrl(image: Image, videoFile: { path?: string }, baseUrl: str
   return undefined;
 }
 
-/**
- * Get URL for video preview (WebM)
- */
 function getVideoPreviewUrl(image: Image, baseUrl: string): string | undefined {
   return tryGetUrlFromPath(image.paths?.preview, baseUrl);
 }
 
-/**
- * Get URL for regular images (tries image, preview, thumbnail in order)
- */
 function getImageUrl(image: Image, baseUrl: string): string | undefined {
   return tryGetUrlFromPath(image.paths?.image, baseUrl) ||
          tryGetUrlFromPath(image.paths?.preview, baseUrl) ||
@@ -552,35 +420,25 @@ function getImageUrl(image: Image, baseUrl: string): string | undefined {
 export function getImageUrlForDisplay(image: Image, treatMp4AsVideo: boolean): string | undefined {
   const baseUrl = getStashBaseUrl();
   
-  // Detect if this is a video from visualFiles
   const { isVideo, videoFile } = detectVideoFromVisualFiles(image.visualFiles);
   
-  // For .m4v and .mp4 files, use the actual video file path if treatMp4AsVideo is enabled
   if (isVideo && videoFile?.path && treatMp4AsVideo) {
     const mp4Url = getMp4VideoUrl(image, videoFile, baseUrl);
     if (mp4Url) return mp4Url;
   }
 
-  // For other videos, use preview path (WebM)
   if (isVideo) {
     const previewUrl = getVideoPreviewUrl(image, baseUrl);
     if (previewUrl) return previewUrl;
   }
 
-  // For regular images, try paths.image first, then paths.preview, then paths.thumbnail
   return getImageUrl(image, baseUrl);
 }
 
-/**
- * Setup a video element for looping playback (like GIFs)
- * Configures loop, muted, autoplay, playsInline, and mobile attributes
- * @param videoElement The video element to configure
- */
 export function setupLoopingVideoElement(
   videoElement: HTMLVideoElement,
   options?: { objectFit?: 'cover' | 'contain' }
 ): void {
-  // Basic looping video properties
   videoElement.loop = true;
   videoElement.muted = true;
   videoElement.autoplay = true;
@@ -590,13 +448,11 @@ export function setupLoopingVideoElement(
   videoElement.style.height = '100%';
   videoElement.style.display = 'block';
   
-  // Mobile-specific attributes (reused from NativeVideoPlayer patterns)
   videoElement.setAttribute('playsinline', 'true');
   videoElement.setAttribute('webkit-playsinline', 'true');
   videoElement.setAttribute('x5-playsinline', 'true');
   videoElement.setAttribute('x-webkit-airplay', 'allow');
   
-  // Prevent video element from receiving focus
   videoElement.setAttribute('tabindex', '-1');
 }
 
@@ -668,10 +524,6 @@ export function initPopoverDialog(dialog: HTMLElement, bottomOffset: string): vo
 
 const iconTemplates = new Map<string, DocumentFragment>();
 
-/**
- * Set an element's content to an SVG icon string. The markup is parsed once per distinct string and
- * cloned afterwards, instead of re-running the HTML parser for every button on every card.
- */
 export function setIcon(el: Element, svg: string): void {
   let template = iconTemplates.get(svg);
   if (!template) {

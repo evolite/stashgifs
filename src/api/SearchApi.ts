@@ -1,8 +1,3 @@
-/**
- * Autocomplete searches (tags, marker titles, performers, studios) and the tag picker list.
- * Non-empty searches are cached briefly; empty-term suggestions are random and never cached.
- */
-
 import * as queries from '../graphql/queries.js';
 import type {
   FindFilterInput,
@@ -19,26 +14,19 @@ import { TtlCache } from './TtlCache.js';
 import { generateRandomSortSeed } from './sortSeed.js';
 
 export class SearchApi {
-  private static readonly SEARCH_FETCH_MULTIPLIER = 3; // Fetch 3x limit when searching to improve relevance
-  private static readonly MIN_SEARCH_LIMIT = 20; // Minimum results to fetch when not searching
-  private static readonly MIN_MARKER_COUNT_FOR_TAG_FILTER = 10; // Minimum markers required for tag to appear in suggestions
+  private static readonly SEARCH_FETCH_MULTIPLIER = 3;
+  private static readonly MIN_SEARCH_LIMIT = 20;
+  private static readonly MIN_MARKER_COUNT_FOR_TAG_FILTER = 10;
 
   private readonly searchCache = new TtlCache<unknown[]>(5 * 60 * 1000, 300);
 
   constructor(private readonly io: ApiIO) {}
 
-  /**
-   * Build cache key with proper escaping to prevent collisions
-   */
   private buildCacheKey(prefix: string, term: string, limit: number): string {
-    // Escape colons and other special characters that could cause collisions
     const escapedTerm = term.replaceAll(':', '::').replaceAll('|', '||');
     return `${prefix}|${escapedTerm}|${limit}`;
   }
 
-  /**
-   * Generic search method for autocomplete results with caching
-   */
   private async searchWithCache<T>(
     cacheKey: string,
     isEmptyTerm: boolean,
@@ -47,7 +35,6 @@ export class SearchApi {
   ): Promise<T[]> {
     if (this.io.isAborted(signal)) return [];
 
-    // Check cache first (only for non-empty terms)
     if (!isEmptyTerm) {
       const cached = this.searchCache.peek(cacheKey);
       if (cached) return (await cached) as T[];
@@ -58,7 +45,6 @@ export class SearchApi {
       
       if (this.io.isAborted(signal)) return [];
       
-      // Cache the result (only for non-empty terms)
       if (!isEmptyTerm) {
         this.searchCache.set(cacheKey, results);
       }
@@ -80,20 +66,13 @@ export class SearchApi {
     return { hasSearchTerm, filter };
   }
 
-  /**
-   * Search marker tags (by name) for autocomplete
-   * Only returns tags that have more than 10 markers (filtered directly in GraphQL)
-   * Includes caching for autocomplete results only
-   */
   async searchMarkerTags(term: string, limit: number = 10, signal?: AbortSignal): Promise<Array<{ id: string; name: string }>> {
     const isEmptyTerm = !term || term.trim() === '';
     const cacheKey = this.buildCacheKey('tags', term, limit);
     const { hasSearchTerm, filter } = this.buildSearchFilter(term, limit);
     
-    // When searching, remove marker_count filter to show all tags (including newly created ones and tags with only scenes/images)
-    // When not searching (suggestions), keep marker_count > 10 filter to show only popular/relevant tags
     const tag_filter: TagFilterInput = hasSearchTerm
-      ? {} // No filter - show all tags when searching
+      ? {}
       : {
           marker_count: {
             value: SearchApi.MIN_MARKER_COUNT_FOR_TAG_FILTER,
@@ -118,11 +97,6 @@ export class SearchApi {
     );
   }
 
-  /**
-   * Search scene markers by title (for autocomplete).
-   * Uses the free-text `q` filter, which Stash matches against the marker title.
-   * Returns distinct titles (multiple markers can share a title).
-   */
   async searchMarkersByTitle(term: string, limit: number = 20, signal?: AbortSignal): Promise<Array<{ id: string; title: string }>> {
     const trimmed = term?.trim() ?? '';
     if (trimmed === '') return [];
@@ -160,11 +134,6 @@ export class SearchApi {
     );
   }
 
-  /**
-   * Search performers (by name) for autocomplete
-   * Returns performers regardless of scene/image counts
-   * Includes caching for autocomplete results only
-   */
   async searchPerformers(term: string, limit: number = 10, signal?: AbortSignal): Promise<Array<{ id: string; name: string; aliases?: string[]; image_path?: string }>> {
     const isEmptyTerm = !term || term.trim() === '';
     const cacheKey = this.buildCacheKey('performers-v2', term, limit);
@@ -208,13 +177,6 @@ export class SearchApi {
     );
   }
 
-  /**
-   * Find tags for selection (used in marker creation autocomplete)
-   * @param searchTerm Search term for tag name
-   * @param limit Maximum number of results
-   * @param signal Optional abort signal
-   * @returns Array of tags with id, name, and other fields
-   */
   async findTagsForSelect(searchTerm: string = '', limit: number = 200, signal?: AbortSignal): Promise<Array<{ id: string; name: string; sort_name?: string; favorite?: boolean; description?: string; aliases?: string[]; image_path?: string; parents?: Array<{ id: string; name: string }> }>> {
     const variables = {
       filter: {

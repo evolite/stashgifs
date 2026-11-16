@@ -1,8 +1,3 @@
-/**
- * Image Player
- * Displays GIFs, static images, and looping videos with support for looping and fullscreen
- */
-
 import { addCacheBusting, normalizeMediaUrl, setupLoopingVideoElement, THEME, subscribeWindowScroll, createFullscreenWrapper, createCoverDiv } from './utils.js';
 
 export class ImagePlayer {
@@ -34,7 +29,6 @@ export class ImagePlayer {
   }
 
   private createMediaElement(): void {
-    // Create loading indicator (reused for both image and video)
     this.loadingIndicator = document.createElement('div');
     this.loadingIndicator.className = 'image-player__loading';
     this.loadingIndicator.style.display = 'flex';
@@ -49,7 +43,6 @@ export class ImagePlayer {
     
     const wrapper = createFullscreenWrapper('image-player');
     
-    // Create video or image element based on file type
     if (this.isVideo) {
       this.createVideoElement(wrapper);
     } else {
@@ -71,7 +64,6 @@ export class ImagePlayer {
     
     wrapper.appendChild(this.imageElement);
 
-    // Handle image load
     const handleLoad = () => {
       this.hideLoadingIndicator();
     };
@@ -93,7 +85,6 @@ export class ImagePlayer {
     this.imageElement.addEventListener('load', handleLoad);
     this.imageElement.addEventListener('error', handleError);
 
-    // Set src to start loading
     this.setImageSource(this.imageUrl);
   }
 
@@ -101,25 +92,19 @@ export class ImagePlayer {
     this.videoElement = document.createElement('video');
     this.videoElement.className = 'image-player__element';
     
-    // Setup looping video properties (reused utility function)
     setupLoopingVideoElement(this.videoElement, { objectFit: this.objectFit });
     
-    // Determine MIME type based on file extension
     const urlLower = this.imageUrl.toLowerCase();
     if (urlLower.endsWith('.mp4') || urlLower.endsWith('.m4v')) {
       this.videoElement.setAttribute('type', 'video/mp4');
     } else {
-      // Preview videos from Stash are WebM
       this.videoElement.setAttribute('type', 'video/webm');
     }
     
     wrapper.appendChild(this.videoElement);
 
-    // Images should always be muted - no audio playback
-    // Keep video muted regardless of global mute state
     this.videoElement.muted = true;
 
-    // Try to play the video when it's ready
     const tryPlay = async (): Promise<void> => {
       if (!this.videoElement) return;
       
@@ -127,13 +112,11 @@ export class ImagePlayer {
         await this.videoElement.play();
         this.hideLoadingIndicator();
       } catch (error) {
-        // Autoplay blocked - will try again when visible or on user interaction
         console.log('ImagePlayer: Autoplay blocked, will retry on visibility/interaction', error);
         this.hideLoadingIndicator();
       }
     };
 
-    // Handle video load events - try to play when ready
     const handleVideoReady = () => {
       this.hideLoadingIndicator();
       void tryPlay();
@@ -142,9 +125,6 @@ export class ImagePlayer {
     this.videoElement.addEventListener('loadeddata', handleVideoReady, { once: true });
     this.videoElement.addEventListener('canplay', handleVideoReady, { once: true });
     this.videoElement.addEventListener('canplaythrough', handleVideoReady, { once: true });
-
-    // Images should always be muted - no audio playback
-    // No need to check for audio or create mute button
 
     this.videoElement.addEventListener('error', (e) => {
       this.hideLoadingIndicator();
@@ -165,18 +145,14 @@ export class ImagePlayer {
         url: this.imageUrl,
       });
       
-      // WebM is well-supported, so errors are likely network/CORS/file issues
       this.showVideoError('Failed to load video', 
         'The video failed to load. This may be due to network issues, CORS restrictions, or file corruption. Please check the console for details.');
     });
 
-    // Set up IntersectionObserver to play when visible
     this.setupVisibilityPlayback(wrapper);
 
-    // Try to play on user interaction (scroll, touch, click)
     this.setupInteractionPlayback();
 
-    // Set src to start loading
     this.setVideoSource(this.imageUrl);
   }
 
@@ -214,20 +190,16 @@ export class ImagePlayer {
     this.loadingIndicator.style.display = 'flex';
   }
 
-  /**
-   * Setup IntersectionObserver to play video when it becomes visible
-   */
   private setupVisibilityPlayback(wrapper: HTMLElement): void {
     const observer = new IntersectionObserver(
       (entries) => {
         for (const entry of entries) {
           if (entry.isIntersecting && this.videoElement?.paused) {
-            // Video is visible and paused, try to play
             this.videoElement.play().catch((error) => {
               console.log('ImagePlayer: Play failed on visibility', error);
             });
           } else if (!entry.isIntersecting && this.videoElement && !this.videoElement.paused) {
-            this.videoElement.pause(); // don't keep decoding while off-screen
+            this.videoElement.pause();
           }
         }
       },
@@ -236,13 +208,9 @@ export class ImagePlayer {
 
     observer.observe(wrapper);
 
-    // Store observer for cleanup
     (wrapper as any).__videoObserver = observer;
   }
 
-  /**
-   * Setup playback on user interaction (scroll, touch, click)
-   */
   private setupInteractionPlayback(): void {
     if (!this.videoElement) return;
 
@@ -254,7 +222,6 @@ export class ImagePlayer {
       }
     };
 
-    // Try to play on scroll (user interaction)
     let scrollTimeout: ReturnType<typeof setTimeout> | undefined;
     const handleScroll = () => {
       if (scrollTimeout) clearTimeout(scrollTimeout);
@@ -263,7 +230,6 @@ export class ImagePlayer {
       }, 100);
     };
 
-    // Try to play on touch/click
     const handleInteraction = () => {
       tryPlayOnInteraction();
     };
@@ -272,7 +238,6 @@ export class ImagePlayer {
     globalThis.addEventListener('touchstart', handleInteraction, { passive: true, once: true });
     globalThis.addEventListener('click', handleInteraction, { once: true });
 
-    // Store cleanup
     (this.videoElement as any).__interactionCleanup = () => {
       if (this.interactionScrollCleanup) {
         this.interactionScrollCleanup();
@@ -290,9 +255,6 @@ export class ImagePlayer {
     }
   }
 
-  /**
-   * Show error message when video fails to load
-   */
   private showVideoError(customMessage: string = 'Failed to load video', customDetails: string = 'The video failed to load. This may be due to network issues, CORS restrictions, or file corruption.'): void {
     if (this.errorMessage || !this.wrapper || this.isGif) {
       return;
@@ -301,7 +263,6 @@ export class ImagePlayer {
     const message = customMessage;
     const details = customDetails;
 
-    // Create error message element
     this.errorMessage = createCoverDiv('image-player__error');
     this.errorMessage.style.display = 'flex';
     this.errorMessage.style.flexDirection = 'column';
@@ -314,14 +275,12 @@ export class ImagePlayer {
     this.errorMessage.style.textAlign = 'center';
     this.errorMessage.style.zIndex = '3';
 
-    // Error icon/text
     const errorIcon = document.createElement('div');
     errorIcon.textContent = '⚠️';
     errorIcon.style.fontSize = '48px';
     errorIcon.style.marginBottom = '16px';
     this.errorMessage.appendChild(errorIcon);
 
-    // Error title
     const errorTitle = document.createElement('div');
     errorTitle.textContent = message;
     errorTitle.style.fontSize = '18px';
@@ -329,7 +288,6 @@ export class ImagePlayer {
     errorTitle.style.marginBottom = '8px';
     this.errorMessage.appendChild(errorTitle);
 
-    // Error details
     const errorDetails = document.createElement('div');
     errorDetails.textContent = details;
     errorDetails.style.fontSize = '14px';
@@ -341,11 +299,7 @@ export class ImagePlayer {
     this.wrapper.appendChild(this.errorMessage);
   }
 
-  /**
-   * Destroy the player
-   */
   destroy(): void {
-    // Clean up IntersectionObserver
     if (this.wrapper) {
       const observer = (this.wrapper as any).__videoObserver;
       if (observer) {
@@ -353,7 +307,6 @@ export class ImagePlayer {
       }
     }
     
-    // Clean up interaction listeners
     if (this.videoElement) {
       const cleanup = (this.videoElement as any).__interactionCleanup;
       if (cleanup) {
@@ -366,7 +319,6 @@ export class ImagePlayer {
       this.wrapper = undefined;
     }
     
-    // Clean up video element
     if (this.videoElement) {
       this.videoElement.pause();
       this.videoElement.removeAttribute('src');

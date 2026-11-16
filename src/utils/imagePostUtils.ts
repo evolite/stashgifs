@@ -1,9 +1,3 @@
-/**
- * Shared utility functions for image-type post components (ImagePost and ImageVideoPost).
- * Both classes handle image data and share identical implementations for favorite
- * management and dialog positioning.
- */
-
 import { StashAPI } from '../StashAPI.js';
 
 interface ImageTag {
@@ -16,11 +10,6 @@ interface ToggleImageFavoriteResult {
   newTags: ImageTag[];
 }
 
-/**
- * Toggle the favorite status of an image by adding/removing a favorite tag.
- * Returns the new favorite state and updated tag list.
- * Throws on API failure so the caller can revert UI state.
- */
 export async function toggleImageFavorite(
   imageId: string,
   currentTagsInput: ImageTag[] | undefined,
@@ -72,10 +61,6 @@ export async function toggleImageFavorite(
   return { newIsFavorite: shouldFavorite, newTags };
 }
 
-/**
- * Adjust a dialog's position to keep it within the card boundaries.
- * The dialog is centered on the button group but clamped to card edges.
- */
 export function adjustImageDialogPosition(
   dialog: HTMLElement,
   container: HTMLElement,

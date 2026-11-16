@@ -1,10 +1,3 @@
-/**
- * Plugin Settings Manager
- * Write-through cache: localStorage for fast sync reads, Stash server for persistence.
- * Reads always come from localStorage (fast, FOUC-safe).
- * Writes go to localStorage immediately + server (debounced).
- */
-
 import { StashAPI } from './StashAPI.js';
 import { FeedSettings, Tag } from './types.js';
 
@@ -37,23 +30,15 @@ export class PluginSettingsManager {
     this.api = api;
     this.current = PluginSettingsManager.getLocalSettings();
 
-    // Flush pending saves before page unload
     globalThis.addEventListener('beforeunload', () => {
       this.flushSync();
     });
   }
 
-  /**
-   * Register a callback for when server settings differ from local cache.
-   * Called during loadFromServer() if reconciliation updates the local state.
-   */
   setOnSettingsUpdated(callback: (data: PluginSettingsData) => void): void {
     this.onSettingsUpdated = callback;
   }
 
-  /**
-   * Synchronous read from localStorage. Safe for constructors and early theme loading.
-   */
   static getLocalSettings(): PluginSettingsData {
     const storedSettings = PluginSettingsManager.readLocalJSON<StoredFeedSettings>(LOCAL_SETTINGS_KEY, {});
     const settings = PluginSettingsManager.migrateSettings(storedSettings ?? {});
@@ -64,22 +49,15 @@ export class PluginSettingsManager {
     return { settings, hdMode, shuffleMode, globalMuteState, _version: SETTINGS_VERSION };
   }
 
-  /** Current in-memory settings (always up-to-date). */
   get data(): PluginSettingsData {
     return this.current;
   }
 
-  /**
-   * Fetch settings from Stash server and reconcile with local cache.
-   * If server has settings, they win (enables cross-device sync).
-   * If server is empty but local has settings, push local to server (migration).
-   */
   async loadFromServer(): Promise<PluginSettingsData> {
     try {
       const serverConfig = await this.api.getPluginSettings(PLUGIN_ID);
 
       if (serverConfig && this.hasServerSettings(serverConfig)) {
-        // Server has settings — use them as authoritative source
         const serverData = this.parseServerConfig(serverConfig);
         this.current = serverData;
         this.writeToLocalStorage(serverData);
@@ -91,7 +69,6 @@ export class PluginSettingsManager {
         return serverData;
       }
 
-      // Server is empty — migrate local settings to server
       const localData = PluginSettingsManager.getLocalSettings();
       if (Object.keys(localData.settings).length > 0) {
         this.current = localData;
@@ -105,11 +82,7 @@ export class PluginSettingsManager {
     }
   }
 
-  /**
-   * Write-through save: localStorage immediately, server debounced.
-   */
   save(partial: Partial<PluginSettingsData>): void {
-    // Merge into current state
     if (partial.settings !== undefined) {
       this.current.settings = { ...this.current.settings, ...partial.settings };
     }
@@ -123,10 +96,8 @@ export class PluginSettingsManager {
       this.current.globalMuteState = partial.globalMuteState;
     }
 
-    // Immediate localStorage write
     this.writeToLocalStorage(this.current);
 
-    // Debounced server write
     this.pendingSave = { ...this.current };
     if (this.debounceTimer !== null) {
       clearTimeout(this.debounceTimer);
@@ -143,9 +114,6 @@ export class PluginSettingsManager {
     }, SAVE_DEBOUNCE_MS);
   }
 
-  /**
-   * Force immediate server save. Used on page unload.
-   */
   async flush(): Promise<void> {
     if (this.debounceTimer !== null) {
       clearTimeout(this.debounceTimer);
@@ -158,12 +126,6 @@ export class PluginSettingsManager {
     }
   }
 
-  // --- Private helpers ---
-
-  /**
-   * Synchronous flush for beforeunload (sendBeacon-style best effort).
-   * Uses navigator.sendBeacon if available, otherwise fire-and-forget fetch.
-   */
   private flushSync(): void {
     if (this.debounceTimer !== null) {
       clearTimeout(this.debounceTimer);
@@ -174,7 +136,6 @@ export class PluginSettingsManager {
     const toSave = this.pendingSave;
     this.pendingSave = null;
 
-    // Best-effort: fire-and-forget the server save
     this.saveToServer(toSave).catch(() => {
       // Ignore errors during unload — localStorage already has the latest
     });
@@ -224,8 +185,6 @@ export class PluginSettingsManager {
     }
     return settings;
   }
-
-  // --- Static localStorage readers ---
 
   private static readLocalJSON<T>(key: string, fallback: T): T {
     try {

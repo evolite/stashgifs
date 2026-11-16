@@ -1,17 +1,3 @@
-/**
- * VideoJsPlayer
- *
- * A thin wrapper around the vendored video.js engine (window.videojs, loaded via
- * <script> in index.html) that implements the IVideoPlayer surface used across the
- * app. Replaces the hand-rolled NativeVideoPlayer: video.js + @videojs/http-streaming
- * give us HLS, transcode fallback, and source selection, so scenes whose codec the
- * browser can't decode natively (HEVC/AV1) or that are HLS-only now play.
- *
- * Clip start/end and looping are handled natively here: seek to startAt on load,
- * and loopBack() (driven by timeupdate + ended) returns every video — clipped or
- * not — to its start and fires onLoop for reel auto-advance.
- */
-
 import { VideoPlayerState, VideoSource, IVideoPlayer } from './types.js';
 import { normalizeMediaUrl } from './utils.js';
 // fallow-ignore-next-line unresolved-import
@@ -24,7 +10,6 @@ interface VideoJsPlayerOptions {
   endTime?: number;
   showLoadingIndicator?: boolean;
   objectFit?: 'cover' | 'contain';
-  /** Ordered candidate sources (for codec/transcode fallback). Overrides videoUrl. */
   sources?: VideoSource[];
 }
 
@@ -35,25 +20,16 @@ export class VideoJsPlayer implements IVideoPlayer {
   private readonly state: VideoPlayerState;
   private readonly sources: VideoSource[];
   private sourceIndex: number = 0;
-  // Clip window. startAt > 0 = seek there on load; endAt > 0 = loop at that bound.
   private readonly startAt: number;
   private readonly endAt: number;
 
   private isUnloaded: boolean = false;
   private manuallyPaused: boolean = false;
-  // Sticky "should be playing" intent. On a fast reel scroll, play() is issued the
-  // instant the card is activated — often before the source is ready, so the play
-  // promise rejects and there's no later reconcile to retry. We remember the intent
-  // and resume from the readiness events (canplay/loadeddata) so the card autoplays
-  // as soon as it can instead of sitting black and paused.
   private wantsToPlay: boolean = false;
   private destroyed: boolean = false;
   private sourcesExhausted: boolean = false;
-  // Re-entrancy guard so a single loop-back doesn't fire twice from the
-  // overlapping timeupdate/ended events.
   private looping = false;
   private startSeekFixed = false;
-  // Where playback was when the player was last unloaded; the next load resumes there instead of the clip start.
   private resumeAt = 0;
   private onLoopCallback?: () => void;
   private onSourcesExhaustedCallback?: () => void;
@@ -99,8 +75,6 @@ export class VideoJsPlayer implements IVideoPlayer {
     el.setAttribute('x5-playsinline', 'true');
     el.setAttribute('tabindex', '-1');
     el.muted = options?.muted ?? true;
-    // The autoplay gate checks the muted ATTRIBUTE (not just the property) on a
-    // cold load, so set both to keep muted autoplay eligible without a gesture.
     if (el.muted) el.setAttribute('muted', '');
     el.style.width = '100%';
     el.style.height = '100%';
@@ -118,8 +92,6 @@ export class VideoJsPlayer implements IVideoPlayer {
     const player = videojs(this.videoEl, {
       controls: false,
       muted: options?.muted ?? true,
-      // All media loops manually via loopBack() so it returns to startAt (not 0)
-      // and fires onLoop for reel auto-advance. Native loop is never used.
       loop: false,
       autoplay: options?.autoplay ? 'muted' : false,
       preload: 'auto',
@@ -135,7 +107,6 @@ export class VideoJsPlayer implements IVideoPlayer {
       sources: [this.sources[this.sourceIndex]],
     });
 
-    // Keep object-fit on the tech element (video.js resets element styles on setup).
     player.ready(() => {
       const techEl = player.tech(true)?.el();
       if (techEl instanceof HTMLVideoElement) {
@@ -151,7 +122,6 @@ export class VideoJsPlayer implements IVideoPlayer {
   private attachEventListeners(player: VjsPlayer): void {
     player.on('loadedmetadata', () => {
       this.state.duration = this.safeNumber(() => player.duration());
-      // Seek to where we left off (or the clip's start) once metadata is available.
       const target = this.seekTarget();
       if (target > 0) {
         try { player.currentTime(target); } catch { /* not seekable yet */ }
@@ -176,13 +146,9 @@ export class VideoJsPlayer implements IVideoPlayer {
       if (endBound > 0 && t >= endBound) {
         this.loopBack(player);
       }
-      // Player-level (not element-level) so progress consumers survive reload.
       this.onTimeUpdateCallback?.();
     });
     player.on('ended', () => this.loopBack(player));
-    // The source became playable — honour a pending play intent that an earlier
-    // (too-early) play() couldn't satisfy. This is what unsticks a fast-scrolled
-    // card from a black, paused state once its media finally loads.
     player.on('canplay', () => this.resumeIfWanted());
     player.on('loadeddata', () => this.resumeIfWanted());
     player.on('volumechange', () => {
@@ -192,12 +158,6 @@ export class VideoJsPlayer implements IVideoPlayer {
     player.on('error', () => this.handleSourceError());
   }
 
-  /**
-   * Loop all media back to its start (startAt, not 0), resume if paused, and
-   * fire onLoop for reel auto-advance. Driven from both timeupdate (clip end)
-   * and the native 'ended' event; the re-entrancy guard collapses the two into
-   * a single loop.
-   */
   private loopBack(player: VjsPlayer): void {
     if (this.looping) return;
     this.looping = true;
@@ -206,17 +166,9 @@ export class VideoJsPlayer implements IVideoPlayer {
       if (player.paused()) player.play()?.catch(() => {});
       this.onLoopCallback?.();
     } catch { /* not seekable */ }
-    // Release the guard only once the seek actually lands. A timer fallback here
-    // could clear it mid-seek and let a second timeupdate/ended re-enter loopBack
-    // (double reel auto-advance), so the 'seeked' event is the single release.
     player.one('seeked', () => { this.looping = false; });
   }
 
-  /**
-   * Some browsers reset currentTime when play() runs right after a seek, so the
-   * first frame can land at 0 instead of the clip start. Re-seek once on the
-   * first 'playing' event if the position drifted from startAt.
-   */
   private fixStartSeek(player: VjsPlayer): void {
     const target = this.seekTarget();
     if (this.startSeekFixed || target <= 0) return;
@@ -226,12 +178,10 @@ export class VideoJsPlayer implements IVideoPlayer {
     }
   }
 
-  /** Where a fresh load should start: the remembered position if any, else the clip start. */
   private seekTarget(): number {
     return this.resumeAt > 0 ? this.resumeAt : this.startAt;
   }
 
-  /** Remember the playback position at unload, unless it is at (or past) the clip's edges. */
   private rememberPosition(): void {
     const at = this.safeNumber(() => this.player!.currentTime());
     const end = this.endAt > 0 ? this.endAt : this.state.duration;
@@ -239,11 +189,6 @@ export class VideoJsPlayer implements IVideoPlayer {
     this.resumeAt = meaningful ? at : 0;
   }
 
-  /**
-   * On a media error, advance to the next candidate source (HLS/transcode fallback).
-   * This is how a HEVC/AV1 "direct" source that the browser can't decode gets
-   * replaced by Stash's transcoded stream.
-   */
   private handleSourceError(): void {
     if (this.destroyed || !this.player) return;
     if (this.sourceIndex + 1 < this.sources.length) {
@@ -259,8 +204,6 @@ export class VideoJsPlayer implements IVideoPlayer {
   private applyCurrentSource(): void {
     if (!this.player) return;
     this.player.src(this.sources[this.sourceIndex]);
-    // The clip start is re-applied by the 'loadedmetadata' handler after the
-    // new source loads, so nothing extra is needed here.
   }
 
   private isUsable(): boolean {
@@ -284,19 +227,12 @@ export class VideoJsPlayer implements IVideoPlayer {
     }
   }
 
-  // ---- IVideoPlayer ----
-
   async play(): Promise<void> {
     if (!this.isUsable() || this.isUnloaded) return;
     const player = this.player!;
-    // Record the intent first so the canplay/loadeddata handlers retry if this
-    // attempt loses the race against the source finishing loading.
     this.wantsToPlay = true;
     this.manuallyPaused = false;
 
-    // The caller (ReelPlaybackController.enforceActive) guarantees the player is
-    // already muted on the gesture-less autoplay path, so no mute reconciliation
-    // is needed here — keeping the engine's muted state the single owner.
     try {
       await player.play();
     } catch {
@@ -305,15 +241,8 @@ export class VideoJsPlayer implements IVideoPlayer {
       // canplay/loadeddata event resumes playback. Codec errors go through the
       // 'error' event → source fallback.
     }
-    // state.isPlaying / manuallyPaused are owned by the 'playing'/'play'/'pause'
-    // event handlers — no imperative write needed here.
   }
 
-  /**
-   * Resume a deferred play once the media is ready. Only the explicit pause paths
-   * (pause/pauseManually/unload) clear wantsToPlay, so a transient buffering
-   * 'pause' event never cancels the intent.
-   */
   private resumeIfWanted(): void {
     if (!this.wantsToPlay || this.manuallyPaused || !this.isUsable() || this.isUnloaded) return;
     const player = this.player!;
@@ -352,8 +281,6 @@ export class VideoJsPlayer implements IVideoPlayer {
   }
 
   getVideoElement(): HTMLVideoElement {
-    // Return the live tech element: video.js recreates it on reset()/src(), so a
-    // cached reference goes stale after an unload/reload cycle.
     const el = this.player?.tech(true)?.el();
     return el instanceof HTMLVideoElement ? el : this.videoEl;
   }
@@ -367,10 +294,6 @@ export class VideoJsPlayer implements IVideoPlayer {
     try { this.player!.currentTime(time); } catch { /* disposed */ }
   }
 
-  /**
-   * The active clip window as [start, span]. span <= 0 means the duration isn't
-   * known yet (metadata not loaded), so progress/seek consumers should no-op.
-   */
   private clipWindow(): { start: number; span: number } {
     const start = this.startAt;
     const end = this.endAt > 0 ? this.endAt : this.safeNumber(() => this.player!.duration());
@@ -418,10 +341,6 @@ export class VideoJsPlayer implements IVideoPlayer {
     } catch { /* disposed */ }
   }
 
-  /**
-   * Free the media buffers while keeping the player instance for a cheap reload.
-   * video.js reset() detaches the source and releases the tech's buffers.
-   */
   unload(): void {
     if (this.isUnloaded || !this.isUsable()) {
       this.isUnloaded = true;
@@ -432,10 +351,6 @@ export class VideoJsPlayer implements IVideoPlayer {
     try {
       this.player!.pause();
       this.player!.reset();
-      // reset() detaches the source but leaves the tech element's WebMediaPlayer
-      // (and its hardware video decode session) alive. Across a feed of many
-      // cards that exhausts the GPU decode pool — new videos then play audio but
-      // render black. Force the element to drop its WebMediaPlayer.
       const el = this.player!.tech(true)?.el();
       if (el instanceof HTMLVideoElement) {
         el.removeAttribute('src');
@@ -463,7 +378,7 @@ export class VideoJsPlayer implements IVideoPlayer {
   }
 
   hasLoadError(): boolean {
-    if (this.isUnloaded) return false; // an unloaded player has no meaningful error
+    if (this.isUnloaded) return false;
     if (this.sourcesExhausted) return true;
     if (!this.isUsable()) return false;
     try {

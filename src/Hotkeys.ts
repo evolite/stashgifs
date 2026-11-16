@@ -2,7 +2,6 @@ import { isTypingTarget } from './utils.js';
 
 export type PostButton = 'favorite' | 'ocount' | 'bookmark';
 
-/** What a hotkey can do. Each returns true when it acted, which suppresses the key's browser default. */
 export interface HotkeyActions {
   step(direction: 1 | -1): boolean;
   seek(direction: 1 | -1): boolean;
@@ -14,18 +13,15 @@ export interface HotkeyActions {
 }
 
 export interface Hotkey {
-  /** `KeyboardEvent.key` values; single characters are lowercase. */
   keys: readonly string[];
   display: string;
   label: string;
-  /** Holding the key down keeps firing it. */
   repeat?: boolean;
   run(actions: HotkeyActions, key: string): boolean;
 }
 
 const DIGITS = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '0'];
 
-/** The single source of truth for keyboard shortcuts: dispatch reads it, and so does the help card. */
 export const HOTKEYS: readonly Hotkey[] = [
   { keys: ['ArrowDown', 'PageDown', ' '], display: '↓ / Space', label: 'Next post', repeat: true, run: (a) => a.step(1) },
   { keys: ['ArrowUp', 'PageUp'], display: '↑', label: 'Previous post', repeat: true, run: (a) => a.step(-1) },
@@ -63,7 +59,6 @@ function el(tag: string, className: string, text?: string): HTMLElement {
   return node;
 }
 
-/** Open or close the shortcut list. It reuses the what's-new card styling. */
 export function toggleHotkeyHelp(table: readonly Hotkey[] = HOTKEYS): void {
   if (closeHelp) {
     closeHelp();

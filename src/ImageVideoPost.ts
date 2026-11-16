@@ -1,8 +1,3 @@
-/**
- * Image Video Post Component
- * MP4/M4V images displayed as videos with preview/HD upgrade capability
- */
-
 import { ImageVideoPostData, IVideoPlayer } from './types.js';
 import { calculateAspectRatio, getAspectRatioClass, normalizeMediaUrl, toAbsoluteUrl } from './utils.js';
 import { VideoPostBase, BaseVideoPostOptions } from './VideoPostBase.js';
@@ -26,16 +21,10 @@ export class ImageVideoPost extends VideoPostBase {
     this.render();
   }
 
-  /**
-   * Render the complete image video post structure
-   */
   private render(): void {
     this.renderImageBasedPost('video-post', this.data.image.id, () => this.createPlayerContainer(), () => this.createFooter());
   }
 
-  /**
-   * Create the player container with loading indicator
-   */
   private createPlayerContainer(): HTMLElement {
     let aspectRatio: number | undefined;
     let aspectRatioClass = 'aspect-16-9';
@@ -52,22 +41,17 @@ export class ImageVideoPost extends VideoPostBase {
     return this.createVideoPlayerContainer(aspectRatio, aspectRatioClass);
   }
 
-  /**
-   * Create footer with action buttons
-   */
   private createFooter(): HTMLElement {
     const { footer, buttonGroup } = this.buildFooterContainer();
     this.buttonGroup = buttonGroup;
 
     this.appendCommonImageFooterButtons(buttonGroup, this.data.image.id);
 
-    // HQ button (upgrade to HD)
     if (this.api && !this.isHQMode && !this.hdModeFromSettings) {
       this.hqButton = this.createHQButton();
       buttonGroup.appendChild(this.hqButton);
     }
 
-    // Mute button (always show, but grayed out in non-HD mode)
     const muteBtn = this.createMuteOverlayButton();
     buttonGroup.appendChild(muteBtn);
 
@@ -88,9 +72,6 @@ export class ImageVideoPost extends VideoPostBase {
     this.upgradeToHDVideo();
   }
 
-  /**
-   * Programmatically set HQ mode — also applies mute state to the player
-   */
   public override setHQMode(isHQ: boolean): void {
     super.setHQMode(isHQ);
     if (this.player && this.getGlobalMuteState) {
@@ -99,15 +80,11 @@ export class ImageVideoPost extends VideoPostBase {
     }
   }
 
-  /**
-   * Upgrade from preview video to full HD video with audio
-   */
   private upgradeToHDVideo(): void {
     if (!this.api) {
       throw new Error('API not available');
     }
 
-    // Get full video URL (paths.image)
     const imagePath = this.data.image.paths?.image;
     if (!imagePath) {
       throw new Error('Image video URL not available');
@@ -123,29 +100,21 @@ export class ImageVideoPost extends VideoPostBase {
 
     const { playerContainer } = this.capturePlayerState();
 
-    // Unload and destroy current player
     this.destroyCurrentPlayer();
 
-    // Clean up any leftover player elements
     this.cleanupPlayerElements(playerContainer);
 
-    // Create new player with full HD video
     this.createHDVideoPlayer(playerContainer, hdVideoUrl);
 
-    // The playback controller plays the active card via onPlayerReady.
     this.notifyPlayerReady();
   }
 
-  /**
-   * Create HD video player
-   */
   private createHDVideoPlayer(playerContainer: HTMLElement, hdVideoUrl: string): void {
     try {
-      // Respect global mute state when creating HD player
       const shouldBeMuted = this.getGlobalMuteState ? this.getGlobalMuteState() : true;
       this.player = this.createVideoPlayer(playerContainer, hdVideoUrl, {
         muted: shouldBeMuted,
-        startTime: undefined, // Start from beginning for images
+        startTime: undefined,
         endTime: undefined,
       });
 
@@ -163,18 +132,12 @@ export class ImageVideoPost extends VideoPostBase {
     }
   }
 
-  /**
-   * Notify the playback controller that the player was (re)created after an upgrade.
-   */
   private notifyPlayerReady(): void {
     if (this.data.image.id && this.player) {
       this.onPlayerReady?.(this.data.image.id);
     }
   }
 
-  /**
-   * Destroy current player
-   */
   private destroyCurrentPlayer(): void {
     if (this.player) {
       this.detachLoadErrorHandler();
@@ -184,9 +147,6 @@ export class ImageVideoPost extends VideoPostBase {
     this.isLoaded = false;
   }
 
-  /**
-   * Clean up player elements from container
-   */
   private cleanupPlayerElements(container: HTMLElement): void {
     const videoElements = container.querySelectorAll('video');
     for (const video of videoElements) {
@@ -194,9 +154,6 @@ export class ImageVideoPost extends VideoPostBase {
     }
   }
 
-  /**
-   * Load the video player
-   */
   loadPlayer(videoUrl: string): IVideoPlayer | undefined {
     if (this.isLoaded) {
       return this.player;
@@ -208,12 +165,8 @@ export class ImageVideoPost extends VideoPostBase {
     }
 
     try {
-      // For non-HD videos, don't pass startTime (allows browser to show first frame naturally)
       const finalStartTime = undefined;
 
-      // Respect global mute state when creating player
-      // For non-HD videos, always muted (preview videos don't have audio)
-      // For HD videos, respect global mute state
       const shouldBeMuted = this.isHQMode && this.getGlobalMuteState
         ? this.getGlobalMuteState()
         : true;
@@ -240,9 +193,6 @@ export class ImageVideoPost extends VideoPostBase {
     return this.player;
   }
 
-  /**
-   * Gray out mute button when not in HQ mode (image videos don't have audio in preview)
-   */
   protected applyMuteButtonHQState(btn: HTMLElement): void {
     if (this.isHQMode) {
       btn.style.opacity = '1';
@@ -253,9 +203,6 @@ export class ImageVideoPost extends VideoPostBase {
     }
   }
 
-  /**
-   * Get the player instance
-   */
   getPlayer(): IVideoPlayer | undefined {
     return this.player;
   }
@@ -264,16 +211,10 @@ export class ImageVideoPost extends VideoPostBase {
     return 'Load HD video';
   }
 
-  /**
-   * Return true if video source is available
-   */
   hasVideoSource(): boolean {
     return !!this.data.videoUrl;
   }
 
-  /**
-   * Preload player using video URL
-   */
   preload(): IVideoPlayer | undefined {
     const videoUrl = this.data.videoUrl;
     if (!videoUrl) {
@@ -288,33 +229,21 @@ export class ImageVideoPost extends VideoPostBase {
     return this.loadPlayer(videoUrl);
   }
 
-  /**
-   * Get the post ID
-   */
   getPostId(): string {
     return this.data.image.id;
   }
 
-  /**
-   * Get the container element
-   */
   getContainer(): HTMLElement {
     return this.container;
   }
 
-  /**
-   * Destroy the post
-   */
   destroy(): void {
     if (this.player) {
-      // Release decoder/buffers before disposing, like VideoPost does.
       if (!this.player.getIsUnloaded()) this.player.unload();
       this.player.destroy();
       this.player = undefined;
     }
     this.isLoaded = false;
-    // Base destroy() detaches the load-error handler, removes the placeholder,
-    // and removes the container from the DOM.
     super.destroy();
   }
 }

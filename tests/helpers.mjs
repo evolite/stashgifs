@@ -1,11 +1,8 @@
-// Shared test helpers: load TypeScript sources through esbuild, browser-global stubs, and a
-// stubbed GraphQL client so StashAPI can be exercised without a server.
 import { build } from 'esbuild';
 import { fileURLToPath } from 'node:url';
 
 const loaded = new Map();
 
-/** Bundle a TypeScript entry (relative to the repo root) and import it. Cached per entry. */
 export function loadTs(entry) {
   if (!loaded.has(entry)) {
     loaded.set(entry, (async () => {
@@ -23,7 +20,6 @@ export function loadTs(entry) {
   return loaded.get(entry);
 }
 
-/** Minimal in-memory localStorage plus the window/location globals the sources touch at load time. */
 export function installBrowserStubs() {
   const store = new Map();
   globalThis.localStorage = {
@@ -40,10 +36,6 @@ export function installBrowserStubs() {
 
 const operationName = (query) => query.replace(/\s+/g, ' ').match(/(?:query|mutation) (\w+)/)?.[1] ?? 'anonymous';
 
-/**
- * Replace a StashAPI's GraphQL client. `respond(op, variables, query)` returns the `data` payload
- * (or throws to simulate a failure). Every request is recorded in `api.calls`.
- */
 export function stubGraphQL(api, respond) {
   api.calls = [];
   api.gqlClient = {
@@ -68,5 +60,4 @@ export async function newStashApi(respond) {
   return stubGraphQL(new StashAPI('http://stash.test'), respond);
 }
 
-/** Let queued microtasks and 0ms timers run (e.g. the scene-tag batch window). */
 export const settle = (ms = 30) => new Promise((resolve) => setTimeout(resolve, ms));

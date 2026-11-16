@@ -1,8 +1,3 @@
-/**
- * Image Post Component
- * Individual image/GIF post card in the feed
- */
-
 import { ImagePostData } from './types.js';
 import { ImagePlayer } from './ImagePlayer.js';
 import { FavoritesManager } from './FavoritesManager.js';
@@ -10,7 +5,6 @@ import { StashAPI } from './StashAPI.js';
 import { getAspectRatioClass, detectVideoFromVisualFiles, getImageUrlForDisplay } from './utils.js';
 import { BasePost } from './BasePost.js';
 
-// Constants
 const OCOUNT_THREE_DIGIT_PADDING = 10;
 const OCOUNT_DEFAULT_PADDING = 8;
 
@@ -18,8 +12,6 @@ export class ImagePost extends BasePost {
   protected readonly data: ImagePostData;
   private player?: ImagePlayer;
   private isLoaded: boolean = false;
-
-  
 
   constructor(
     container: HTMLElement,
@@ -47,22 +39,15 @@ export class ImagePost extends BasePost {
     this.attachReelAutoAdvanceTimer();
   }
 
-  /**
-   * Render the complete image post structure
-   */
   private render(): void {
     this.renderImageBasedPost('image-post', this.data.image.id, () => this.createPlayerContainer(), () => this.createFooter());
   }
 
-  /**
-   * Create the player container
-   */
   private createPlayerContainer(): HTMLElement {
     const container = document.createElement('div');
     container.className = 'video-post__player';
     container.style.position = 'relative';
 
-    // Calculate aspect ratio
     const aspectRatio = this.getTargetAspectRatio();
     if (aspectRatio) {
       container.style.aspectRatio = `${aspectRatio}`;
@@ -89,9 +74,6 @@ export class ImagePost extends BasePost {
     return imageAspectRatio;
   }
 
-  /**
-   * Load the image player
-   */
   loadPlayer(imageUrl: string): ImagePlayer | undefined {
     if (this.isLoaded) {
       return this.player;
@@ -103,7 +85,6 @@ export class ImagePost extends BasePost {
     }
 
     try {
-      // Use centralized utility to detect if this is a video
       const { isVideo } = detectVideoFromVisualFiles(this.data.image.visualFiles);
       
       const isGif = !isVideo && (imageUrl.toLowerCase().endsWith('.gif') || 
@@ -130,25 +111,14 @@ export class ImagePost extends BasePost {
     }
   }
 
-  /**
-   * Get image URL from image data
-   * Primarily returns the URL already set in ImagePostData
-   * Falls back to centralized URL selection utility if not set
-   */
   getImageUrl(): string | undefined {
-    // If URL is already set in data, use it (set by FeedContainer with proper settings)
     if (this.data.imageUrl) {
       return this.data.imageUrl;
     }
 
-    // Fallback: use centralized utility (defaults to treatMp4AsVideo=false for fallback)
-    // In practice, this should rarely be needed since FeedContainer sets imageUrl
     return getImageUrlForDisplay(this.data.image, false);
   }
 
-  /**
-   * Create footer with action buttons
-   */
   private createFooter(): HTMLElement {
     const { footer, buttonGroup } = this.buildFooterContainer();
     this.buttonGroup = buttonGroup;
@@ -159,7 +129,6 @@ export class ImagePost extends BasePost {
     return footer;
   }
 
-
   protected override async incrementOCountAction(): Promise<void> {
     await super.incrementOCountAction();
     if (this.oCountButton) {
@@ -168,30 +137,18 @@ export class ImagePost extends BasePost {
     }
   }
 
-  /**
-   * Get the player instance
-   */
   getPlayer(): ImagePlayer | undefined {
     return this.player;
   }
 
-  /**
-   * Return true if player has been instantiated
-   */
   isPlayerLoaded(): boolean {
     return this.isLoaded && !!this.player;
   }
 
-  /**
-   * Return false (images don't have video source)
-   */
   hasVideoSource(): boolean {
     return false;
   }
 
-  /**
-   * Preload player using image URL
-   */
   preload(): ImagePlayer | undefined {
     const imageUrl = this.getImageUrl();
     if (!imageUrl) {
@@ -200,23 +157,14 @@ export class ImagePost extends BasePost {
     return this.loadPlayer(imageUrl);
   }
 
-  /**
-   * Get the post ID
-   */
   getPostId(): string {
     return this.data.image.id;
   }
 
-  /**
-   * Get the container element
-   */
   getContainer(): HTMLElement {
     return this.container;
   }
 
-  /**
-   * Destroy the post
-   */
   destroy(): void {
     if (this.player) {
       this.player.destroy();

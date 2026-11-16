@@ -1,9 +1,3 @@
-/**
- * Performer tier badge — laurel-wreath avatar embellishment derived from rating100.
- * Box math (viewBox 58x58, avatar face 40px, wreath overhang) and leaf tables are
- * fixed constants; do not "simplify" the per-tier angle/size arrays, they're tuned
- * so paired leaves read as a continuous wreath silhouette instead of a dotted arc.
- */
 import { normalizeMediaUrl } from '../utils.js';
 
 export type PerformerTier = 'bronze' | 'silver' | 'gold' | 'platinum' | 'diamond' | 'rainbow';
@@ -21,11 +15,9 @@ const TIER_TOKENS: Record<PerformerTier, TierTokens> = {
   gold: { ring: '#EF9F27', ringWidth: 2, leafA: '#FAC775', leafB: '#EF9F27' },
   platinum: { ring: '#5DCAA5', ringWidth: 2, leafA: '#9FE1CB', leafB: '#5DCAA5' },
   diamond: { ring: '#85B7EB', ringWidth: 2, leafA: '#B5D4F4', leafB: '#85B7EB' },
-  // ring/leafA/leafB unused: rainbow tier draws a segmented ring and per-slot rainbow leaves instead.
   rainbow: { ring: '#FF5252', ringWidth: 2, leafA: '#FF5252', leafB: '#FF5252' },
 };
 
-// [angleDegrees, rx, ry] — each entry mirrored at +angle and -angle
 const WREATH: Record<PerformerTier, Array<[number, number, number]>> = {
   bronze: [[36, 3.5, 6]],
   silver: [[34, 3.5, 6], [54, 3.2, 5.5]],
@@ -35,13 +27,11 @@ const WREATH: Record<PerformerTier, Array<[number, number, number]>> = {
   rainbow: [[26, 3.5, 6], [46, 3.2, 5.5], [66, 2.9, 5], [86, 2.6, 4.5], [106, 2.3, 4], [126, 2, 3.5]],
 };
 
-// Red -> violet. Assigned by position (innermost leaf / first ring segment = red), never by rating.
 const RAINBOW = ['#FF5252', '#FF9800', '#FFEB3B', '#4CAF50', '#2196F3', '#9C27B0'];
 
 const DISC_FILL = '#6b5a52';
 const SVG_NS = 'http://www.w3.org/2000/svg';
 
-// [floor, tier] — first match wins, checked high to low. rating100 <= 0 (or unrated) gets no badge.
 const TIER_THRESHOLDS: Array<[number, PerformerTier]> = [
   [100, 'rainbow'],
   [96, 'diamond'],
@@ -51,13 +41,11 @@ const TIER_THRESHOLDS: Array<[number, PerformerTier]> = [
   [1, 'bronze'],
 ];
 
-/** rating100 (0-100) -> tier. undefined = unrated, no badge. */
 export function performerTierFromRating100(rating100: number | undefined | null): PerformerTier | undefined {
   if (!rating100) return undefined;
   return TIER_THRESHOLDS.find(([floor]) => rating100 >= floor)?.[1];
 }
 
-/** Ring color/width for a tier — for framing a performer image elsewhere (e.g. the hover overlay portrait). */
 export function tierRingStyle(tier: PerformerTier): { color: string; width: number } {
   const tokens = TIER_TOKENS[tier];
   return { color: tokens.ring, width: tokens.ringWidth };
@@ -75,13 +63,6 @@ function leafGroup(angle: number, rx: number, ry: number, fill: string): SVGElem
   return g;
 }
 
-/**
- * A ring that happens to be six colours, built from six stacked circles each drawing two
- * opposite dash segments — NOT a <linearGradient> (that produces a two-tone smear on a
- * circle, not a spectrum, and flashes on DOM updates). 12 segments (6 colours x 2) must
- * abut with no gaps, so seg = circumference / 12 is recomputed from the actual radius
- * every call — never hardcode another radius's numbers here.
- */
 function buildRainbowRing(radius: number, strokeWidth: number): SVGElement {
   const group = svgEl('g', {});
   const seg = (2 * Math.PI * radius) / 12;
@@ -99,7 +80,6 @@ function buildRainbowRing(radius: number, strokeWidth: number): SVGElement {
   return group;
 }
 
-/** CSS gradient for a perfect (rating100 === 100) score's portrait border / top rule — both flat rectangles, not rings, so a CSS linear-gradient reads fine there (the dasharray rule only applies to circular strokes). */
 export const PERFECT_RATING_GRADIENT = 'linear-gradient(135deg, #FF5252, #FF9800, #FFEB3B, #4CAF50, #2196F3, #9C27B0)';
 
 export function formatRatingValue10(value10: number): string {
@@ -113,11 +93,9 @@ export interface PerformerTierBadgeOptions {
   imagePath?: string;
   initial: string;
   verified: boolean;
-  /** Knockout stroke color for the verified check — must match whatever surface the badge sits on. */
   knockoutColor: string;
 }
 
-/** Draw order: leaves -> ring -> disc/image -> initials -> check. */
 export function buildPerformerTierBadge(options: PerformerTierBadgeOptions): SVGSVGElement {
   const tokens = TIER_TOKENS[options.tier];
   const svg = svgEl('svg', { width: 58, height: 58, viewBox: '0 0 58 58' }) as SVGSVGElement;

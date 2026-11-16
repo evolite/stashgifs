@@ -1,14 +1,7 @@
-/**
- * Settings Page Component
- * Allows users to configure file types and image feed settings
- */
-
-
 import { FeedSettings, Tag } from './types.js';
 import * as version from './version.js';
 import { THEME, THEME_DEFAULTS, normalizeHexColor } from './utils.js';
 
-// Fixed widths for right-aligned settings fields, so every row's control lines up.
 const FIELD_WIDTH = '160px';
 const NUMBER_WIDTH = '80px';
 
@@ -20,9 +13,7 @@ export class SettingsPage {
   private readonly onClose?: () => void;
   private shortFormTags: Tag[];
   private modal!: HTMLElement;
-  /** Close functions of open sub-pages, top-most last. */
   private pageStack: Array<() => void> = [];
-  /** Re-render the "Options · …" summaries after any change. */
   private summaryRefreshers: Array<() => void> = [];
 
   constructor(
@@ -42,14 +33,10 @@ export class SettingsPage {
     this.render();
   }
 
-  /** Render the settings modal into `container`. It manages itself from there (save/close callbacks). */
   static mount(...args: ConstructorParameters<typeof SettingsPage>): SettingsPage {
     return new SettingsPage(...args);
   }
 
-  /**
-   * Create an info button with hover tooltip
-   */
   private attachTooltip(trigger: HTMLElement, tooltipText: string): void {
     const tooltip = document.createElement('div');
     tooltip.textContent = tooltipText;
@@ -88,15 +75,12 @@ export class SettingsPage {
     trigger.addEventListener('mouseleave', () => { tooltip.style.opacity = '0'; });
   }
 
-  /**
-   * Create a modern toggle switch
-   */
   private createToggleSwitch(checked: boolean, onChange?: (checked: boolean) => void): { container: HTMLElement; input: HTMLInputElement } {
     const container = document.createElement('label');
     container.style.position = 'relative';
     container.style.display = 'inline-block';
     container.style.width = '50px';
-    container.style.height = '44px'; // touch target; the visible track is 28px
+    container.style.height = '44px';
     container.style.flexShrink = '0';
     container.style.cursor = 'pointer';
 
@@ -137,7 +121,6 @@ export class SettingsPage {
       thumb.style.left = isChecked ? '26px' : '3px';
     };
 
-    // Add hover effect
     container.addEventListener('mouseenter', () => {
       if (!input.checked) {
         slider.style.backgroundColor = THEME.colors.surfaceHover;
@@ -154,7 +137,6 @@ export class SettingsPage {
       }
     });
 
-    // Also listen for programmatic changes
     const observer = new MutationObserver(() => {
       updateVisualState();
     });
@@ -186,7 +168,6 @@ export class SettingsPage {
     this.pageStack = [];
     this.summaryRefreshers = [];
 
-    // Inline styles can't hold media queries, so the mobile overrides live here (hence !important).
     const responsiveStyle = document.createElement('style');
     responsiveStyle.textContent = `
       @media (max-width: 600px) {
@@ -216,7 +197,6 @@ export class SettingsPage {
     modal.style.overflow = 'hidden';
     modal.style.boxShadow = '0 8px 32px rgba(0, 0, 0, 0.4)';
 
-    // Header
     const header = document.createElement('div');
     header.style.display = 'flex';
     header.style.justifyContent = 'space-between';
@@ -339,7 +319,6 @@ export class SettingsPage {
     contentWrapper.appendChild(postContent);
     modal.appendChild(contentWrapper);
 
-    // Theme Section
     const themeSection = document.createElement('div');
     themeSection.classList.add('sg-settings-section');
     themeSection.style.marginBottom = '24px';
@@ -417,7 +396,6 @@ export class SettingsPage {
       labelContainer.appendChild(label);
       this.attachTooltip(label, tooltipText);
       if (important) {
-        // Visible "read me" badge so it's obvious there's guidance behind the tooltip.
         const badge = document.createElement('span');
         badge.textContent = 'ⓘ Read';
         badge.setAttribute('aria-label', 'Important: read before enabling');
@@ -647,8 +625,6 @@ export class SettingsPage {
 
     contentTabContent.appendChild(themeSection);
 
-    // Layout Settings Section
-    // ── Post tab: each group is its own bordered box ───────────────────────
     const createPostBox = (title: string): HTMLElement => {
       const box = document.createElement('div');
       box.classList.add('sg-settings-section');
@@ -664,7 +640,7 @@ export class SettingsPage {
       heading.style.fontWeight = THEME.typography.weightTitle;
       box.appendChild(heading);
       const body = document.createElement('div');
-      body.style.marginBottom = '-16px'; // ponytail: cancels the last row's 16px gap so boxes end flush like the other sections
+      body.style.marginBottom = '-16px';
       box.appendChild(body);
       postContent.appendChild(box);
       return body;
@@ -673,7 +649,6 @@ export class SettingsPage {
     const buttonsGroup = createPostBox('Actions');
     const performersGroup = createPostBox('Performers');
 
-    // Indented sub-group (heading + indented rows, like Content Types nesting)
     const createSubGroup = (title: string, parent: HTMLElement): HTMLElement => {
       const group = document.createElement('div');
       group.style.marginBottom = '16px';
@@ -690,7 +665,6 @@ export class SettingsPage {
       parent.appendChild(group);
       return body;
     };
-
 
     const reelAutoScrollContainer = document.createElement('div');
     reelAutoScrollContainer.style.display = 'flex';
@@ -723,7 +697,6 @@ export class SettingsPage {
     autoHideSearchBarContainer.appendChild(autoHideSearchBarToggleContainer);
     (this as any).autoHideSearchBarToggle = autoHideSearchBarToggle;
 
-    // Marker title search toggle (search-bar feature — lives alongside Auto-Hide Search Bar)
     const { container: searchMarkersByNameToggleContainer, input: searchMarkersByNameToggle } = this.createToggleSwitch(
       this.settings.searchMarkersByName === true,
       () => this.saveSettings()
@@ -975,7 +948,6 @@ export class SettingsPage {
     buttonsGroup.appendChild(arrowSeekRow);
     (this as any).arrowSeekInput = arrowSeekInput;
 
-    // ── Content Types Section ──────────────────────────────────────────────
     const contentTypesSection = document.createElement('div');
     contentTypesSection.classList.add('sg-settings-section');
     contentTypesSection.style.marginBottom = '24px';
@@ -1006,7 +978,6 @@ export class SettingsPage {
     contentTypesTitleRow.appendChild(contentTypesTitle);
     contentTypesSection.appendChild(contentTypesTitleRow);
 
-    // Markers toggle
     const { container: markersToggleContainer, input: includeMarkersToggle } = this.createToggleSwitch(
       this.settings.includeMarkersInFeed !== false,
       () => this.saveSettings()
@@ -1022,9 +993,7 @@ export class SettingsPage {
     markersWrapper.appendChild(markersRow);
     contentTypesSection.appendChild(markersWrapper);
 
-    // Sub-options sit in a collapsible panel; rows inside share one right edge with the top-level toggles.
     const subRowStyle = 'padding: 4px 0; display: flex; justify-content: space-between; align-items: center; gap: 12px;';
-    // ponytail: breakpoint is read once per open; resizing across it needs a reopen of settings.
     const isMobile = window.matchMedia('(max-width: 600px)').matches;
     const buildOptionsGroup = (title: string, open: boolean, summarize: () => string, ...children: HTMLElement[]) => {
       const label = document.createElement('span');
@@ -1072,7 +1041,6 @@ export class SettingsPage {
       () => summaryOf(markerPlayback.input.checked && 'play to end'),
       markerPlayback.row));
 
-    // Short-Form toggle
     const { container: shortFormIncludeToggleContainer, input: shortFormIncludeToggle } = this.createToggleSwitch(
       this.settings.includeShortForm !== false,
       () => this.saveSettings()
@@ -1148,7 +1116,6 @@ export class SettingsPage {
       shortFormMaxDurationRow, shortFormScope));
     contentTypesSection.appendChild(shortFormWrapper);
 
-    // Images toggle
     const { container: includeImagesToggleContainer, input: includeImagesToggle } = this.createToggleSwitch(
       this.settings.includeImagesInFeed !== false,
       () => this.saveSettings()
@@ -1158,7 +1125,6 @@ export class SettingsPage {
     imagesRow.appendChild(buildInfoLabel('Images', 'Images and image-video files from your Stash library. Supports: jpg, png, gif, mp4, m4v, webm, etc.'));
     imagesRow.appendChild(includeImagesToggleContainer);
 
-    // Random toggle
     const { container: includeRandomToggleContainer, input: includeRandomToggle } = this.createToggleSwitch(
       this.settings.includeRandomInFeed === true,
       () => this.saveSettings()
@@ -1218,7 +1184,6 @@ export class SettingsPage {
       randomMarkersRow, randomLongScenes.row, randomSnippetDurationRow));
     contentTypesSection.appendChild(randomWrapper);
 
-    // Scene Previews toggle
     const { container: includeScenePreviewsToggleContainer, input: includeScenePreviewsToggle } = this.createToggleSwitch(
       this.settings.includeScenePreviews === true,
       () => this.saveSettings()
@@ -1264,8 +1229,6 @@ export class SettingsPage {
     layoutContent.appendChild(behaviorSection);
     layoutContent.appendChild(contentTypesSection);
 
-    // ── Images ──────────────────────────────────────────────────────
-    // File types sub-row (under Images toggle)
     const fileTypesSubRow = document.createElement('div');
     fileTypesSubRow.style.cssText = subRowStyle;
     const fileTypesLabel = document.createElement('span');
@@ -1285,7 +1248,6 @@ export class SettingsPage {
     });
     fileTypesSubRow.appendChild(fileTypesInput);
 
-    // Gallery only sub-row
     const galleryOnlySubRow = document.createElement('div');
     galleryOnlySubRow.style.cssText = subRowStyle;
     galleryOnlySubRow.appendChild(buildInfoLabel('Gallery only', 'Only show images that belong to a Stash gallery.'));
@@ -1298,7 +1260,6 @@ export class SettingsPage {
     );
     galleryOnlySubRow.appendChild(galleryOnlyToggleContainer);
 
-    // Gallery selector (shown when toggle is on)
     const gallerySelectorWrapper = document.createElement('div');
     gallerySelectorWrapper.style.cssText = 'padding: 4px 0;';
     gallerySelectorWrapper.style.display = this.settings.imagesInGalleryOnly ? 'block' : 'none';
@@ -1337,7 +1298,6 @@ export class SettingsPage {
       },
     }));
 
-    // Assemble images wrapper and insert before random in Content Types
     const imagesWrapper = document.createElement('div');
     imagesWrapper.style.marginBottom = '16px';
     imagesWrapper.appendChild(imagesRow);
@@ -1353,7 +1313,6 @@ export class SettingsPage {
     (this as any).galleryOnlyToggle = galleryOnlyToggle;
     (this as any).gallerySelectedIds = selectedGalleryIds;
 
-    // ── Filters Section ────────────────────────────────────────────────────
     const filtersSection = document.createElement('div');
     filtersSection.classList.add('sg-settings-section');
     filtersSection.style.marginBottom = '24px';
@@ -1361,7 +1320,6 @@ export class SettingsPage {
     filtersSection.style.borderRadius = THEME.radius.card;
     filtersSection.style.padding = '16px';
 
-    // Orientation toggles
     const orientationFilter = this.settings.orientationFilter ?? [];
     const hasOrientationFilter = orientationFilter.length > 0;
     const portraitEnabled = !hasOrientationFilter || orientationFilter.includes('portrait');
@@ -1391,7 +1349,6 @@ export class SettingsPage {
     landscapeContainer.appendChild(landscapeToggleContainer);
     filtersSection.appendChild(landscapeContainer);
 
-    // Excluded Tags
     const excludedTagsContainer = document.createElement('div');
     excludedTagsContainer.style.cssText = 'display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;';
     excludedTagsContainer.appendChild(buildInfoLabel('Excluded Tags', 'Hide any content that contains one of these tags.'));
@@ -1407,7 +1364,6 @@ export class SettingsPage {
     });
     filtersSection.appendChild(excludedTagsContainer);
 
-    // Include Subtags
     const includeSubtagsContainer = document.createElement('div');
     includeSubtagsContainer.style.display = 'flex';
     includeSubtagsContainer.style.justifyContent = 'space-between';
@@ -1420,7 +1376,6 @@ export class SettingsPage {
     includeSubtagsContainer.appendChild(includeSubtagsToggleContainer);
     filtersSection.appendChild(includeSubtagsContainer);
 
-    // Scene / Image tag matching (also shows the tags on posts)
     const showSceneTagsContainer = document.createElement('div');
     showSceneTagsContainer.style.cssText = 'display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;';
     showSceneTagsContainer.appendChild(buildInfoLabel('Scene / Image Tags', 'Also match a scene\'s tags when filtering, and show them on marker posts.\n\nEach tag matches one source only. Priority: marker → scene → performer (images: image → performer).', true));
@@ -1431,7 +1386,6 @@ export class SettingsPage {
     filtersSection.appendChild(showSceneTagsContainer);
     (this as any).showSceneTagsToggle = showSceneTagsToggle;
 
-    // Performer tag matching (also shows the tags on posts)
     const showPerformerTagsContainer = document.createElement('div');
     showPerformerTagsContainer.style.cssText = 'display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;';
     showPerformerTagsContainer.appendChild(buildInfoLabel('Performer Tags', 'Also match performers\' tags when filtering, and show them on posts.\n\nEach tag matches one source only. Priority: marker → scene → performer. Performer is lowest, so shared tags match elsewhere first.', true));
@@ -1442,7 +1396,6 @@ export class SettingsPage {
     filtersSection.appendChild(showPerformerTagsContainer);
     (this as any).showPerformerTagsToggle = showPerformerTagsToggle;
 
-    // Watch History
     const { container: trackWatchHistoryContainer, input: trackWatchHistoryToggle } = this.createToggleSwitch(
       this.settings.trackWatchHistory !== false,
       () => this.saveSettings()
@@ -1457,7 +1410,6 @@ export class SettingsPage {
     filtersSection.appendChild(trackWatchHistoryRow);
     (this as any).trackWatchHistoryToggle = trackWatchHistoryToggle;
 
-    // Recency Bias
     const seenHistoryContainer = document.createElement('div');
     seenHistoryContainer.style.cssText = 'display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;';
     seenHistoryContainer.appendChild(buildInfoLabel(
@@ -1478,7 +1430,6 @@ export class SettingsPage {
     filtersSection.appendChild(seenHistoryContainer);
     (this as any).seenHistorySizeInput = seenHistorySizeInput;
 
-    // Content Limit
     const contentLimitContainer = document.createElement('div');
     contentLimitContainer.style.cssText = 'display: flex; justify-content: space-between; align-items: center;';
     contentLimitContainer.appendChild(buildInfoLabel(
@@ -1510,7 +1461,6 @@ export class SettingsPage {
     searchMarkersByNameRow.style.marginBottom = '0';
     behaviorSection.appendChild(searchMarkersByNameRow);
 
-    // Version footer
     const versionFooter = document.createElement('div');
     versionFooter.style.marginTop = '32px';
     versionFooter.style.paddingTop = '24px';
@@ -1580,7 +1530,6 @@ export class SettingsPage {
 
     layoutContent.appendChild(versionFooter);
 
-    // Store references to inputs for saveSettings method
     (this as any).maxDurationInput = maxDurationInput;
     (this as any).includeMarkersToggle = includeMarkersToggle;
     (this as any).playMarkersToEndToggle = markerPlayback.input;
@@ -1594,19 +1543,16 @@ export class SettingsPage {
 
     this.container.appendChild(modal);
 
-    // Close on background click (but not when clicking inside modal)
     this.container.addEventListener('click', (e) => {
       if (e.target === this.container) {
         this.close();
       }
     });
     
-    // Prevent clicks inside modal from closing
     modal.addEventListener('click', (e) => {
       e.stopPropagation();
     });
 
-    // Close on Escape key
     const escapeHandler = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
         const closeTopPage = this.pageStack.at(-1);
@@ -1621,10 +1567,6 @@ export class SettingsPage {
     document.addEventListener('keydown', escapeHandler);
   }
 
-  /**
-   * One look for every settings field. 44px touch target; 16px text stops iOS zooming on focus.
-   * Widths: FIELD_WIDTH for text/selects, NUMBER_WIDTH for numbers, '100%' for stacked fields.
-   */
   private applyFieldStyle(field: HTMLInputElement | HTMLSelectElement, width: string): void {
     field.style.cssText = `width: ${width}; min-width: 0; min-height: 44px; box-sizing: border-box; padding: 6px 10px; border-radius: ${THEME.radius.button}; border: 1px solid ${THEME.colors.border}; background: ${THEME.colors.surface}; color: ${THEME.colors.textPrimary}; font-size: 16px;`;
     field.classList.toggle('sg-field-wide', width === FIELD_WIDTH);
@@ -1632,7 +1574,6 @@ export class SettingsPage {
     else if (field.type === 'number') field.style.textAlign = 'right';
   }
 
-  /** Full-modal sub-page (drill-down options, pickers). Back or Escape closes the top-most one. */
   private createPage(title: string, onClose?: () => void): { body: HTMLElement; open: () => void } {
     const page = document.createElement('div');
     page.setAttribute('role', 'dialog');
@@ -1673,7 +1614,6 @@ export class SettingsPage {
     };
   }
 
-  /** Full-width 44px row that opens a sub-page: "<content> ›". */
   private buildDrillButton(content: HTMLElement, onClick: () => void): HTMLButtonElement {
     const button = document.createElement('button');
     button.type = 'button';
@@ -1687,7 +1627,6 @@ export class SettingsPage {
     return button;
   }
 
-  /** Multi-select row ("Galleries  3 selected ›") that opens a searchable checkbox list. */
   private buildPicker(opts: {
     label: string;
     title: string;
@@ -1726,7 +1665,6 @@ export class SettingsPage {
     refreshRow();
 
     let results: Tag[] = [];
-    // Selected items first, then the search results; toggling doesn't re-sort so rows don't jump under the finger.
     const renderList = () => {
       const selected = opts.getSelected();
       const selectedIds = new Set(selected.map((item) => item.id));

@@ -1,16 +1,9 @@
-/**
- * Rating Control
- * Shared rating dialog and display logic for posts
- */
-
 import { STAR_SVG, STAR_SVG_OUTLINE } from './icons.js';
 import { THEME, throttle, initPopoverDialog, setIcon } from './utils.js';
 
 const RATING_MAX_STARS = 10;
 const RATING_MIN_STARS = 0;
 const RESIZE_THROTTLE_MS = 100;
-// ponytail: touch pointerup selects before the tap's synthesized click fires; the dialog must
-// outlive that click or it falls through to the footer button underneath (o-count on mobile).
 const TOUCH_CLICK_SETTLE_MS = 250;
 
 interface RatingSystemConfig {
@@ -113,7 +106,6 @@ export class RatingControl {
     this.ratingDisplayValue = valueSpan;
     wrapper.appendChild(button);
 
-    // The dialog (many star buttons + listeners) is built on first open — most posts never rate.
     this.updateRatingDisplay();
 
     return wrapper;
@@ -140,10 +132,6 @@ export class RatingControl {
     this.updateRatingStarButtons();
   }
 
-  /**
-   * Rate from a keyboard digit (0-9) or clear. 5-star systems take 1-5; 10-point systems take 1-9 and 0 = 10.
-   * Returns a message to toast, or null when the key does not apply to this scale (or a save is in flight).
-   */
   rateByHotkey(key: number | 'clear'): string | null {
     if (this.isSavingRating) return null;
     const maxStars = this.getMaxStars();

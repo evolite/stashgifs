@@ -1,4 +1,3 @@
-
 import type { IVideoPlayer } from './types.js';
 import type { ImagePlayer } from './ImagePlayer.js';
 import { VideoPost } from './VideoPost.js';
@@ -12,7 +11,6 @@ function isVideoPlayer(player: IVideoPlayer | ImagePlayer | undefined): player i
 }
 
 interface ReelPlaybackControllerOptions {
-  /** Post ids in feed order — used to find neighbours of the active card. */
   getOrderedPostIds: () => string[];
   getPost: (postId: string) => PostType | undefined;
 }
@@ -30,11 +28,6 @@ export class ReelPlaybackController {
     this.getPost = options.getPost;
   }
 
-
-  /**
-   * Make `postId` the single playing card: load + play it (audio per global
-   * mute), then pause/unload every other card.
-   */
   setActive(postId: string): void {
     const post = this.getPost(postId);
     if (!post) return;
@@ -48,19 +41,11 @@ export class ReelPlaybackController {
     this.preloadNext(postId);
   }
 
-  /**
-   * Warm the card immediately after the active one: create + buffer its player so
-   * scrolling to it plays instantly. All video posts create paused (see
-   * VideoPostBase.AUTOPLAY_ON_CREATE), so this only buffers — it never plays the
-   * neighbour offscreen. The next setActive() reuses the already-loaded player.
-   */
   private preloadNext(activePostId: string): void {
     const order = this.getOrderedPostIds();
     const idx = order.indexOf(activePostId);
     if (idx < 0) return;
     const nextId = order[idx + 1];
-    // Release the previously warmed card if the user moved off it (e.g. scrolled back up),
-    // otherwise it keeps its decoder + buffer for the rest of the session.
     const stale = this.preloadedPostId;
     if (stale && stale !== nextId && stale !== activePostId) this.deactivate(stale);
     this.preloadedPostId = nextId;
@@ -68,14 +53,9 @@ export class ReelPlaybackController {
     const post = this.getPost(nextId);
     if (!(post instanceof VideoPost || post instanceof ImageVideoPost)) return;
     if (!post.hasVideoSource()) return;
-    post.preload(); // creates + buffers (paused); playback waits for activation
+    post.preload();
   }
 
-  /**
-   * Re-wire playback after a card's player instance is *replaced* — i.e. an HQ
-   * upgrade swaps in a new VideoJsPlayer, or marker creation resumes the card.
-   * Cold loads go through activate() instead, so this is no longer double-fired.
-   */
   onPlayerReady(postId: string): void {
     const post = this.getPost(postId);
     const player = post?.getPlayer();
@@ -83,11 +63,10 @@ export class ReelPlaybackController {
     if (postId === this.activePostId) {
       this.enforceActive(player);
     } else if (player.isPlaying()) {
-      player.pause(); // stray non-active player — pause silences it
+      player.pause();
     }
   }
 
-  /** Global mute toggle: re-apply audio to the active card. */
   setGlobalMute(isMuted: boolean): void {
     this.globalMute = isMuted;
     if (!this.activePostId) return;
@@ -97,7 +76,6 @@ export class ReelPlaybackController {
     }
   }
 
-  /** Re-attempt playback of the active card (after a gesture lifts autoplay block). */
   retryActive(): void {
     if (!this.activePostId) return;
     const player = this.getPost(this.activePostId)?.getPlayer();
@@ -105,7 +83,6 @@ export class ReelPlaybackController {
     this.setActive(this.activePostId);
   }
 
-  /** Pause every tracked video (used before modal flows like marker creation). */
   pauseAll(): void {
     for (const postId of this.getOrderedPostIds()) {
       const player = this.getPost(postId)?.getPlayer();
@@ -116,21 +93,13 @@ export class ReelPlaybackController {
     }
   }
 
- 
-  // --- internals -----------------------------------------------------------
-
   private activate(postId: string, post: PostType): void {
-    if (!post.hasVideoSource()) return; // image post — nothing to play
-    const player = post.preload(); // creates + loads (or reloads) the player
+    if (!post.hasVideoSource()) return;
+    const player = post.preload();
     if (!isVideoPlayer(player)) return;
     this.enforceActive(player);
   }
 
-  /**
-   * Bring `player` to the desired active state: reload if unloaded, respect a
-   * user pause, apply audio strictly from the global mute setting, then play.
-   * Mute is never forced here — globalMute is the single source of truth.
-   */
   private enforceActive(player: IVideoPlayer): void {
     if (player.getIsUnloaded()) {
       player.reload();
@@ -147,7 +116,7 @@ export class ReelPlaybackController {
     if (!isVideoPlayer(player)) return;
     player.clearManualPause();
     if (player.isPlaying()) {
-      player.pause(); // pausing silences it — no need to touch mute state
+      player.pause();
     }
     if (!player.getIsUnloaded()) {
       player.unload();

@@ -1,9 +1,3 @@
-/**
- * VideoPostBase
- * Abstract base class for video-capable post components (VideoPost and ImageVideoPost).
- * Extracts shared video-player management logic to reduce code duplication.
- */
-
 import type { IVideoPlayer, VideoSource } from './types.js';
 import { VideoJsPlayer } from './VideoJsPlayer.js';
 import { isMobileDevice, THEME, showToast, createCoverDiv, setIcon } from './utils.js';
@@ -41,12 +35,10 @@ export abstract class VideoPostBase extends BasePost {
   protected abstract getPlayer(): IVideoPlayer | undefined;
   protected abstract getHQButtonOffLabel(): string;
 
-  /** Seek the video by `seconds` (negative = back); used by the arrow-key hotkey. */
   seekBy(seconds: number): void {
     this.getPlayer()?.seekBy(seconds);
   }
 
-  /** Deliberate play/pause, shared by tapping the video and the K hotkey. False when there is no player yet. */
   togglePlayback(): boolean {
     const player = this.getPlayer();
     if (!player) return false;
@@ -63,16 +55,6 @@ export abstract class VideoPostBase extends BasePost {
     return this.getPlayer();
   }
 
-  /**
-   * Single construction point for every video player across both post types and
-   * both quality tiers. The call sites only resolve what varies (url, muted,
-   * clip window, candidate sources); the shared config lives here.
-   *
-   * Players are always created paused: ReelPlaybackController is the sole driver
-   * of playback (it plays the active card and warms — but does not play — the
-   * preloaded next card). Autoplaying a neighbour offscreen would buffer-compete
-   * and trigger false view counts.
-   */
   protected createVideoPlayer(
     container: HTMLElement,
     videoUrl: string,
@@ -111,24 +93,16 @@ export abstract class VideoPostBase extends BasePost {
     }
     container.classList.add(aspectRatioClass);
 
-    // Toggle deliberate play/pause. Ignore events that land on a child control
-    // (buttons, the progress bar, etc.) — those own their own handling.
     const togglePlayback = (target: EventTarget | null): void => {
       if (target !== container && (target as HTMLElement | null)?.closest('button, [role="slider"]')) return;
       this.togglePlayback();
     };
 
     if (isMobileDevice()) {
-      // On touch, route through the tap arbiter: setupTouchHandlers only fires
-      // onTap when movement <15px and duration <250ms and the touch wasn't a
-      // scroll — so the tail of a reel swipe can never register as a tap-to-pause.
-      // A raw `click` here would be hit by the browser's synthetic ghost-click
-      // ~300ms after a swipe's touchend and pause the freshly-autoplayed card.
       this.touchCleanups.push(
         setupTouchHandlers(container, {
           onTap: (e) => togglePlayback(e.target),
         }),
-        // Belt-and-suspenders: swallow the ghost click after any touch on the player.
         preventClickAfterTouch(container)
       );
     } else {
@@ -147,14 +121,7 @@ export abstract class VideoPostBase extends BasePost {
     return player;
   }
 
-  /**
-   * Listen for media errors on the current player. VideoJsPlayer retries through
-   * its candidate sources (codec/transcode/HLS) on its own; this only surfaces a
-   * failure once every source is spent — see handlePlayerError().
-   */
   protected attachLoadErrorHandler(): void {
-    // Registered on the player, not its <video>: video.js replaces that element on reset/src,
-    // which silently dropped a DOM listener after an unload/reload cycle.
     this.getPlayer()?.onSourcesExhausted(() => this.handlePlayerError());
   }
 
@@ -162,11 +129,6 @@ export abstract class VideoPostBase extends BasePost {
     this.getPlayer()?.offSourcesExhausted();
   }
 
-  /**
-   * Show the failure placeholder once the player has exhausted all sources.
-   * Deferred so VideoJsPlayer's own 'error' handler can advance to the next
-   * candidate source first; intermediate source switches must not surface.
-   */
   protected handlePlayerError(): void {
     setTimeout(() => {
       const player = this.getPlayer();
@@ -176,7 +138,6 @@ export abstract class VideoPostBase extends BasePost {
     }, 50);
   }
 
-  /** Cover the player with a "Failed to load" placeholder. Shared by subclasses. */
   protected showErrorPlaceholder(): void {
     if (this.errorPlaceholder) return;
     const playerContainer = this.playerContainer
@@ -270,13 +231,11 @@ export abstract class VideoPostBase extends BasePost {
       btn.setAttribute('aria-label', 'Mute');
     }
 
-    // Always active by default; subclasses may override via applyMuteButtonHQState
     btn.style.opacity = '1';
     btn.style.pointerEvents = 'auto';
     this.applyMuteButtonHQState(btn);
   }
 
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   protected applyMuteButtonHQState(_btn: HTMLElement): void {
     // No-op by default (VideoPost always keeps mute button active)
   }
@@ -343,12 +302,6 @@ export abstract class VideoPostBase extends BasePost {
     return true;
   }
 
-  /**
-   * Mount a thin accent-coloured progress bar at the bottom of the player
-   * container and wire it to the current player for updates and drag-to-seek.
-   * Call after the player is created; call again after an HD upgrade replaces
-   * the player so the listeners rebind to the new video element.
-   */
   protected setupProgressBar(): void {
     this.destroyProgressBar();
 
@@ -359,7 +312,6 @@ export abstract class VideoPostBase extends BasePost {
     const player = this.getPlayer();
     if (!player) return;
 
-    // Build DOM.
     const track = document.createElement('div');
     track.className = 'vp-progress__track';
     track.setAttribute('role', 'slider');
@@ -373,30 +325,19 @@ export abstract class VideoPostBase extends BasePost {
     fill.className = 'vp-progress__fill';
     track.appendChild(fill);
 
-    // Anchor to the post container (a sibling of header/player/footer), not
-    // inside the player: header has an explicit z-index and its own stacking
-    // context, so a track nested in the player would always paint underneath
-    // the header's caption gradient no matter its own z-index. Appending to
-    // the shared ancestor lets the track's z-index (feed.css) actually compete
-    // with header/footer and win.
     this.container.appendChild(track);
 
-    // Update fill from player.
     const update = () => {
       const p = this.getPlayer();
       if (!p) return;
-      const pct = Math.round(p.getProgress() * 1000) / 10; // 1dp
+      const pct = Math.round(p.getProgress() * 1000) / 10;
       fill.style.width = `${pct}%`;
       track.setAttribute('aria-valuenow', String(Math.round(pct)));
     };
 
-    // Bind to the player abstraction, not the raw <video> element: video.js
-    // recreates the element on unload/reload, which would freeze an element-bound
-    // listener after scrolling away and back. The player instance persists.
     player.onTimeUpdate(update);
-    update(); // paint current progress immediately, don't wait for the first event
+    update();
 
-    // Drag-to-seek via pointer events (works for mouse and touch).
     let dragging = false;
 
     const ratioFromEvent = (e: PointerEvent): number => {

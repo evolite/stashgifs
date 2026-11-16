@@ -1,14 +1,5 @@
-/**
- * Saved-filter criteria -> GraphQL filter input.
- *
- * Stash stores saved filters in its UI shape (ranges as {modifier, value: {value, value2}}, booleans as
- * strings, ID lists as {items: [...]}); the API rejects those wholesale. These helpers convert what they
- * can and drop the rest. Pure functions, no network.
- */
-
 import type { SceneMarkerFilterInput } from '../graphql/types.js';
 
-/** Stash UI resolution labels -> ResolutionEnum (saved filters store the label). */
 const RESOLUTION_ENUMS: Record<string, string> = {
   '144p': 'VERY_LOW', '240p': 'LOW', '360p': 'R360P', '480p': 'STANDARD', '540p': 'WEB_HD',
   '720p': 'STANDARD_HD', '1080p': 'FULL_HD', '1440p': 'QUAD_HD', '4k': 'FOUR_K', '5k': 'FIVE_K',
@@ -17,7 +8,6 @@ const RESOLUTION_ENUMS: Record<string, string> = {
 
 const TEXT_CRITERIA = new Set(['title', 'details', 'path', 'url', 'code', 'photographer', 'checksum', 'name']);
 
-/** Range-style saved criterion ({value, value2} object) -> flat input. Undefined when it has no usable value. */
 function flattenSavedRange(key: string, modifier: string | undefined, range: { value?: unknown; value2?: unknown }): unknown {
   const isNullCheck = modifier === 'IS_NULL' || modifier === 'NOT_NULL';
   const hasValue = range.value !== null && range.value !== undefined;
@@ -31,11 +21,6 @@ function flattenSavedRange(key: string, modifier: string | undefined, range: { v
   };
 }
 
-/**
- * Convert one non-ID criterion from Stash's saved-filter shape to the GraphQL input shape.
- * Saved filters store ranges as {modifier, value: {value, value2}} and booleans as strings, which the API
- * rejects wholesale. Returns undefined for anything we cannot convert (the criterion is then dropped).
- */
 function normalizeSavedCriterion(key: string, raw: unknown): unknown {
   if (raw === null || raw === undefined) return undefined;
   if (raw === 'true' || raw === 'false') return raw === 'true';
@@ -54,11 +39,6 @@ function normalizeSavedCriterion(key: string, raw: unknown): unknown {
   return { ...(modifier ? { modifier } : {}), value: resolved };
 }
 
-/**
- * Normalize an object_filter coming from a saved filter (scene markers or images)
- * Stash stores criteria in its UI shape; this converts them to GraphQL input shapes (ID lists, ranges,
- * booleans, resolution) and drops criteria that can't be converted rather than sending a query Stash rejects.
- */
 export function normalizeSavedObjectFilter<T = SceneMarkerFilterInput>(input: unknown): T {
   if (!input || typeof input !== 'object') return {} as T;
   const out: Record<string, unknown> = { ...(input as Record<string, unknown>) };
@@ -87,9 +67,6 @@ export function normalizeSavedObjectFilter<T = SceneMarkerFilterInput>(input: un
   return out as T;
 }
 
-/**
- * Extract ID from various object formats
- */
 function extractId(x: unknown): unknown {
   if (typeof x === 'object' && x !== null) {
     const obj = x as { id?: unknown; value?: unknown };
@@ -98,9 +75,6 @@ function extractId(x: unknown): unknown {
   return x;
 }
 
-/**
- * Normalize an array or single value to an array of numeric IDs
- */
 function normalizeIdArray(val: unknown): number[] | undefined {
   if (!val) return undefined;
   const arr = Array.isArray(val) ? val : [val];
@@ -111,11 +85,6 @@ function normalizeIdArray(val: unknown): number[] | undefined {
   return ids.length > 0 ? ids : undefined;
 }
 
-/**
- * Normalize a tag field (tags, scene_tags, or scene_performers)
- * @param fieldValue The field value to normalize
- * @returns Normalized field value or undefined if invalid
- */
 function normalizeTagFieldAsStrings(fieldValue: unknown): unknown {
   return normalizeTagField(fieldValue, (values) => values.map(String));
 }

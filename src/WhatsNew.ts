@@ -1,7 +1,3 @@
-/**
- * "What's new" dialog: shown once after the plugin updates to a newer version.
- */
-
 import type { ChangelogEntry } from './changelog.js';
 import { VERSION } from './version.js';
 
@@ -45,15 +41,12 @@ export async function maybeShowWhatsNew(): Promise<void> {
   let lastSeen: string | null = null;
   try { lastSeen = localStorage.getItem(LAST_SEEN_KEY); } catch { /* ignore storage errors */ }
 
-  // Fresh install: nothing to announce, just start tracking.
   if (!lastSeen || compareVersions(lastSeen, VERSION) >= 0) {
     if (!lastSeen) remember();
     return;
   }
 
-  // Lazy: the changelog is only needed on the first run after an upgrade.
   const { CHANGELOG } = await import('./changelog.js');
-  // Only the newest release is announced; older ones live on the releases page.
   const latest = CHANGELOG[0];
   const entries = latest && compareVersions(latest.version, lastSeen) > 0 && compareVersions(latest.version, VERSION) <= 0
     ? [latest]

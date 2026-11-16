@@ -1,10 +1,3 @@
-/**
- * Coalesce individual lookups made within a short window into one batched call.
- *
- * `load(key)` calls made inside `delayMs` of the first one are sent together to `run`, which
- * returns results by key; keys it omits resolve to `missing(key)`. A rejected `run` rejects
- * every waiter of that batch.
- */
 export class Batcher<K, V> {
   private pending?: Map<K, Array<{ resolve: (value: V) => void; reject: (error: unknown) => void }>>;
 

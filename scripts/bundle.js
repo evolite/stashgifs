@@ -1,13 +1,5 @@
 #!/usr/bin/env node
 
-/**
- * Bundle + minify src/index.ts into stashgifs/app/assets/ (tsc only type-checks).
- *
- * One minified entry plus split chunks replaces ~30 unminified ESM files that the
- * browser used to discover as a depth-first request waterfall. Dynamic `import()`s
- * become separate lazy chunks.
- */
-
 const fs = require('fs');
 const path = require('path');
 const esbuild = require('esbuild');
@@ -15,7 +7,6 @@ const esbuild = require('esbuild');
 const root = path.join(__dirname, '..');
 const assetsDir = path.join(root, 'stashgifs', 'app', 'assets');
 
-/** Remove previously emitted JS/maps (tsc-era per-file output, old chunks); keep vendor + css. */
 function cleanEmitted(dir) {
   for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
     if (entry.name === 'vendor') continue;

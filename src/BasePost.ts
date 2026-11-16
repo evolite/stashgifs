@@ -1,8 +1,3 @@
-/**
- * Base Post Component
- * Shared functionality for VideoPost and ImagePost
- */
-
 import { FavoritesManager, FAVORITE_TAG_NAME } from './FavoritesManager.js';
 import { StashAPI } from './StashAPI.js';
 import { normalizeMediaUrl, showToast, isMobileDevice, THEME, applyMenuItemHover, extractValidPerformerIds, initPopoverDialog, formatViewCount, setIcon } from './utils.js';
@@ -20,8 +15,8 @@ import { Performer, Tag, VideoPostData, ImageBasedPostData, Image } from './type
 export interface BasePostOptions {
   favoritesManager?: FavoritesManager;
   api?: StashAPI;
-  onPlayerReady?: (postId: string) => void; // Notify controller a player was (re)created
-  onPauseAll?: () => void; // Pause every reel video (e.g. before a modal flow)
+  onPlayerReady?: (postId: string) => void;
+  onPauseAll?: () => void;
   onPerformerChipClick?: (performerId: number, performerName: string) => void | Promise<void>;
   onTagChipClick?: (tagId: number, tagName: string) => void | Promise<void>;
   onStudioChipClick?: (studioId: number, studioName: string) => void | Promise<void>;
@@ -39,12 +34,11 @@ export interface BasePostOptions {
   performerDisplayLimit?: number;
   showViewCountBadge?: boolean;
   reelAutoScroll?: boolean;
-  onReelAdvance?: () => void; // Reel mode: advance one card via the JS scroller
+  onReelAdvance?: () => void;
 }
 
 interface PerformerRatingInfo {
   value10: number;
-  /** Already resolved to the rainbow gradient for a perfect score — every consumer just assigns this straight to `background`. */
   background: string;
 }
 
@@ -64,30 +58,18 @@ interface AddTagDialogState {
   keydownHandler?: (event: KeyboardEvent) => void;
 }
 
-/**
- * Base class for post components (VideoPost and ImagePost)
- * Contains shared functionality to reduce code duplication
- */
 export abstract class BasePost {
 
-  /**
-   * Post data. Concrete subclasses narrow this to their specific type.
-   * BasePost's default implementations assume ImageBasedPostData; VideoPost overrides them all.
-   */
   protected abstract data: VideoPostData | ImageBasedPostData;
 
   getPerformers(): Performer[] {
     return (this.data as ImageBasedPostData).image?.performers ?? [];
   }
 
-  // Safe accessor for image-based posts. Only call from methods that VideoPost overrides.
   private getImageData(): ImageBasedPostData {
     return this.data as ImageBasedPostData;
   }
 
-  /**
-   * Default header for image-based posts. VideoPost overrides with scene-specific header.
-   */
   protected createHeader(): HTMLElement {
     return this.buildImageHeader({
       performers: this.getImageData().image.performers,
@@ -150,7 +132,6 @@ export abstract class BasePost {
   private readonly performerOverlayMgr: OverlayManager<PerformerExtended>;
   private readonly tagOverlayMgr: OverlayManager<Tag>;
   private readonly studioOverlayMgr: OverlayManager<StudioExtended>;
-  // Add performer dialog
   private addPerformerDialog: HTMLElement | null = null;
   private addPerformerDialogInput: HTMLInputElement | null = null;
   private addPerformerDialogSuggestions: HTMLElement | null = null;
@@ -165,7 +146,6 @@ export abstract class BasePost {
 
   private static readonly favoritePerformerCache: Map<string, boolean> = new Map();
   private static favoriteCacheLoaded: boolean = false;
-
 
   constructor(
     container: HTMLElement,
@@ -282,7 +262,6 @@ export abstract class BasePost {
     this.detachReelAutoAdvance();
     this.ratingControl?.destroy();
     this.ratingControl = undefined;
-    // All concrete posts remove their container last; do it once here.
     this.container?.remove();
   }
 
@@ -323,7 +302,6 @@ export abstract class BasePost {
   protected static setCachedPerformerFavorite(performerId: string, favorite: boolean): void {
     this.loadFavoritePerformerCache();
     this.favoritePerformerCache.set(performerId, favorite);
-    // Evict oldest entries to cap memory and localStorage size
     while (this.favoritePerformerCache.size > 500) {
       const oldest = this.favoritePerformerCache.keys().next().value;
       if (oldest === undefined) {
@@ -420,8 +398,6 @@ export abstract class BasePost {
       : 'landscape');
     const isPortrait = resolvedOrientation === 'portrait';
 
-    // Size the box to the media's own shape for every orientation so nothing can stretch;
-    // the card (black) shows around it as letter/pillar bars.
     if (Number.isFinite(aspectRatioValue) && aspectRatioValue > 0) {
       const viewportHeight = CSS.supports('height', '100svh') ? 'svh' : 'vh';
       playerContainer.style.aspectRatio = `${aspectRatioValue}`;
@@ -593,7 +569,6 @@ export abstract class BasePost {
     this.refreshHeader();
   }
 
-  /** Filter performer chips by the gender visibility settings. Unknown/unset gender is always shown. */
   protected filterPerformersByGender(performers: Performer[]): Performer[] {
     return performers.filter((p) => {
       const g = p.gender?.toUpperCase();
@@ -705,7 +680,6 @@ export abstract class BasePost {
       this.heartButton = this.createHeartButton();
       buttonGroup.appendChild(this.heartButton);
     }
-    // O-count and rating are always built; the feed root hides them (feed-container--hide-*), so toggling the setting needs no rebuild.
     if (this.api) {
       this.oCountButton = this.createOCountButton();
       buttonGroup.appendChild(this.oCountButton);
@@ -718,7 +692,6 @@ export abstract class BasePost {
     buttonGroup.appendChild(ratingControl);
   }
 
-  /** Trailing open-in-Stash footer button shared by image-type posts. */
   protected appendImageButtons(buttonGroup: HTMLElement, imageId: string): void {
     const imageBtn = this.createImageButton(imageId);
     buttonGroup.appendChild(imageBtn);
@@ -766,23 +739,14 @@ export abstract class BasePost {
     }
   }
 
-  /**
-   * Get link to performer page
-   */
   protected getPerformerLink(performerId: string): string {
     return `${getStashBaseUrl()}/performers/${performerId}`;
   }
 
-  /**
-   * Get link to tag page
-   */
   protected getTagLink(tagId: string): string {
     return `${getStashBaseUrl()}/tags/${tagId}`;
   }
 
-  /**
-   * Apply common icon button styles
-   */
   protected applyIconButtonStyles(button: HTMLElement): void {
     button.style.background = 'transparent';
     button.style.border = 'none';
@@ -798,9 +762,6 @@ export abstract class BasePost {
     button.style.minHeight = '44px';
   }
 
-  /**
-   * Create a performer chip element
-   */
   protected createPerformerChip(performer: { id: string; name: string; image_path?: string; favorite?: boolean; birthdate?: string; stash_ids?: Array<{ stash_id: string }>; rating100?: number }, compact: boolean = false): HTMLElement {
     const chip = this.buildPerformerChipBase(performer);
     chip.dataset.performerId = performer.id;
@@ -1032,7 +993,6 @@ export abstract class BasePost {
     return wrapper;
   }
 
-  /** 58px box: 40px face + 9px/side laurel overhang into the chip's flex gap — do not shrink to 40px, diamond's widest leaf sits 26px from center. */
   private buildPerformerTierAvatar(
     performer: { id?: string; name: string; image_path?: string },
     tier: PerformerTier,
@@ -1169,12 +1129,6 @@ export abstract class BasePost {
     );
   }
 
-  /**
-   * Create image section for performer overlay (compact headshot on left, 2:3 aspect ratio matching 1280x1920)
-   */
-  /**
-   * Create a styled overlay container with common layout and event handling
-   */
   private createOverlayContainer(
     className: string,
     maxWidth: string,
@@ -1218,9 +1172,6 @@ export abstract class BasePost {
     return overlay;
   }
 
-  /**
-   * Create a flex column content section for overlays
-   */
   private createOverlayContentSection(): HTMLElement {
     const contentSection = document.createElement('div');
     contentSection.style.display = 'flex';
@@ -1230,9 +1181,6 @@ export abstract class BasePost {
     return contentSection;
   }
 
-  /**
-   * Create a name link with hover effects for overlays
-   */
   private createOverlayNameLink(href: string, displayName: string): HTMLAnchorElement {
     const nameLink = document.createElement('a');
     nameLink.href = href;
@@ -1271,9 +1219,6 @@ export abstract class BasePost {
     return nameLink;
   }
 
-  /**
-   * Create a styled image section container for overlays
-   */
   private createOverlayImageSection(options: {
     width: string; height: string; fallbackFontSize: string;
     imagePath: string | undefined; name: string; logContext: string;
@@ -1317,17 +1262,14 @@ export abstract class BasePost {
     return imageSection;
   }
 
-  /** rating100 -> the shared value/color used by the sash, portrait border, and top rule. undefined when unrated. */
   private getPerformerRatingInfo(performerData: PerformerExtended): PerformerRatingInfo | undefined {
     const rating100 = performerData.rating100;
     if (rating100 === undefined || rating100 === null || rating100 <= 0) return undefined;
-    // rating100 >= 1 here, and TIER_THRESHOLDS' lowest floor is 1, so this always resolves.
     const tier = performerTierFromRating100(rating100)!;
     const background = rating100 >= 100 ? PERFECT_RATING_GRADIENT : tierRingStyle(tier).color;
     return { value10: rating100 / 10, background };
   }
 
-  /** ratingInfo: computed once by the caller (createPerformerOverlay also needs it for the top rule) and passed in rather than recomputed here. */
   private createPerformerOverlayImageSection(performerData: PerformerExtended, ratingInfo: PerformerRatingInfo | undefined): HTMLElement {
     const imageSection = this.createOverlayImageSection({
       width: '160px', height: '240px', fallbackFontSize: '64px',
@@ -1336,7 +1278,6 @@ export abstract class BasePost {
     });
     imageSection.style.position = 'relative';
 
-    // Add country flag overlay in bottom right corner
     if (performerData.country) {
       const flag = this.getCountryFlag(performerData.country);
       if (flag) {
@@ -1360,20 +1301,11 @@ export abstract class BasePost {
       }
     }
 
-    // Rating sash/border are always shown when the performer has a rating — unaffected by
-    // the "Performer Tier Badges" setting, which only gates the avatar chip wreath badge.
     if (!ratingInfo) return imageSection;
 
-    // Diagonal corner sash with the score, colored to the performer's rank — relies on
-    // imageSection's own overflow:hidden to crop it flush with the portrait's edges.
-    // Rotation pivots around the div's own center (default transform-origin), so for
-    // the band to clip symmetrically across the corner, that center must sit on the
-    // corner's 45deg bisector: left + width/2 === top + height/2. Keep top/left/width/
-    // height in that relationship if this is ever retuned — picking them independently
-    // (as before) reintroduces the off-center look.
     const sashWidth = 140;
     const sashHeight = 14;
-    const sashPivotOffset = 17; // distance from the corner, along the bisector, to the band's center
+    const sashPivotOffset = 17;
     const sash = document.createElement('div');
     sash.textContent = formatRatingValue10(ratingInfo.value10);
     sash.style.position = 'absolute';
@@ -1404,9 +1336,6 @@ export abstract class BasePost {
     return borderWrapper;
   }
 
-  /**
-   * Create name row for performer overlay (compact)
-   */
   private createPerformerOverlayNameRow(performerData: PerformerExtended, onRemove?: () => Promise<boolean>): HTMLElement {
     const nameRow = document.createElement('div');
     nameRow.style.display = 'flex';
@@ -1454,9 +1383,6 @@ export abstract class BasePost {
     return nameRow;
   }
 
-  /**
-   * Get gender icon for performer
-   */
   private getGenderIcon(gender: string): string {
     const genderMap: Record<string, string> = {
       'FEMALE': '♀',
@@ -1470,24 +1396,18 @@ export abstract class BasePost {
     return genderMap[genderUpper] ?? gender;
   }
 
-  /**
-   * Convert ISO 3166-1 alpha-2 country code to flag emoji
-   */
   private getCountryFlag(countryCode: string): string {
     if (!countryCode?.length || countryCode.length !== 2) {
       return '';
     }
     
     const code = countryCode.toUpperCase();
-    // Convert each letter to regional indicator symbol (U+1F1E6 to U+1F1FF)
-    // 'A' (0x41) maps to U+1F1E6, so we add 0x1F1E6 - 0x41 = 0x1F1A5
     const base = 0x1F1E6;
-    const offset = 0x41; // 'A'
+    const offset = 0x41;
     
     const firstChar = code.codePointAt(0);
     const secondChar = code.codePointAt(1);
     
-    // Validate that both characters are letters
     if (firstChar === undefined || secondChar === undefined || firstChar < 0x41 || firstChar > 0x5A || secondChar < 0x41 || secondChar > 0x5A) {
       return '';
     }
@@ -1498,9 +1418,6 @@ export abstract class BasePost {
     return firstFlag + secondFlag;
   }
 
-  /**
-   * Add basic info metadata (age, gender)
-   */
   private addBasicInfoMetadata(
     metadata: Array<{ label: string; value: string | undefined; isIcon?: boolean }>,
     performerData: PerformerExtended,
@@ -1522,9 +1439,6 @@ export abstract class BasePost {
     }
   }
 
-  /**
-   * Add physical attributes metadata
-   */
   private addPhysicalAttributesMetadata(
     metadata: Array<{ label: string; value: string | undefined; isIcon?: boolean }>,
     performerData: PerformerExtended
@@ -1552,9 +1466,6 @@ export abstract class BasePost {
     }
   }
 
-  /**
-   * Build metadata array for performer overlay
-   */
   private buildPerformerMetadata(performerData: PerformerExtended): Array<{ label: string; value: string | undefined; isIcon?: boolean }> {
     const metadata: Array<{ label: string; value: string | undefined; isIcon?: boolean }> = [];
 
@@ -1564,9 +1475,6 @@ export abstract class BasePost {
     return metadata;
   }
 
-  /**
-   * Create metadata section for performer overlay
-   */
   private createPerformerOverlayMetadata(metadata: Array<{ label: string; value: string | undefined; isIcon?: boolean }>): HTMLElement | null {
     if (metadata.length === 0) {
       return null;
@@ -1610,9 +1518,6 @@ export abstract class BasePost {
     return metadataSection;
   }
 
-  /**
-   * Create a styled remove button for overlay cards (performer or tag).
-   */
   private createOverlayRemoveButton(
     ariaLabel: string,
     onRemove: () => Promise<boolean>,
@@ -1674,9 +1579,6 @@ export abstract class BasePost {
     return removeButton;
   }
 
-  /**
-   * Create performer overlay card (compact horizontal layout)
-   */
   private createPerformerOverlay(performerData: PerformerExtended, onRemove?: () => Promise<boolean>): HTMLElement {
     const overlay = this.createOverlayContainer('performer-overlay', '480px', {
       onMouseEnter: () => this.performerOverlayMgr.cancelHide(),
@@ -1712,16 +1614,10 @@ export abstract class BasePost {
     return overlay;
   }
 
-  /**
-   * Show performer overlay on hover
-   */
   private hidePerformerOverlay(immediate = false): void {
     this.performerOverlayMgr.hide(immediate);
   }
 
-  /**
-   * Position overlay relative to chip element
-   */
   private positionOverlay(overlay: HTMLElement, chipElement: HTMLElement): void {
     const chipRect = chipElement.getBoundingClientRect();
     const overlayRect = overlay.getBoundingClientRect();
@@ -1732,21 +1628,17 @@ export abstract class BasePost {
     let top = chipRect.bottom;
     let left = chipRect.left;
 
-    // Adjust if would go off bottom of screen
     if (top + overlayRect.height > viewportHeight - padding) {
       top = chipRect.top - overlayRect.height;
-      // If still off screen, position at top
       if (top < padding) {
         top = padding;
       }
     }
 
-    // Adjust if would go off right of screen
     if (left + overlayRect.width > viewportWidth - padding) {
       left = viewportWidth - overlayRect.width - padding;
     }
 
-    // Adjust if would go off left of screen
     if (left < padding) {
       left = padding;
     }
@@ -1755,9 +1647,6 @@ export abstract class BasePost {
     overlay.style.left = `${left}px`;
   }
 
-  /**
-   * Create image section for tag overlay (compact square image on left)
-   */
   private createTagOverlayImageSection(tagData: { id: string; name: string; image_path?: string }): HTMLElement {
     return this.createOverlayImageSection({
       width: '64px', height: '64px', fallbackFontSize: '32px',
@@ -1765,9 +1654,6 @@ export abstract class BasePost {
     });
   }
 
-  /**
-   * Create name row for tag overlay
-   */
   private createTagOverlayNameRow(tagData: { id: string; name: string }): HTMLElement {
     const nameRow = document.createElement('div');
     nameRow.style.display = 'flex';
@@ -1780,9 +1666,6 @@ export abstract class BasePost {
     return nameRow;
   }
 
-  /**
-   * Create description section for tag overlay (optional)
-   */
   private createTagOverlayDescription(tagData: { description?: string }): HTMLElement | null {
     if (!tagData.description) {
       return null;
@@ -1797,9 +1680,6 @@ export abstract class BasePost {
     return descriptionSection;
   }
 
-  /**
-   * Create tag overlay card (compact horizontal layout)
-   */
   private createTagOverlay(
     tagData: { id: string; name: string; image_path?: string; description?: string },
     onRemove?: () => Promise<boolean>
@@ -1928,9 +1808,6 @@ export abstract class BasePost {
     this.studioOverlayMgr.bindHover(chip, studio.id, '.studio-chip');
   }
 
-  /**
-   * Create a tag chip element (displayed as hashtag with unique styling)
-   */
   protected createTagChip(tag: { id: string; name: string }): HTMLElement {
     const hashtag = document.createElement('a');
     hashtag.className = 'tag-chip';
@@ -1969,7 +1846,6 @@ export abstract class BasePost {
     };
     
     const isMobile = isMobileDevice();
-    // Add hover overlay handlers for tags (desktop only)
     if (this.api && this.canHoverDevice()) {
       this.tagOverlayMgr.bindHover(
         hashtag,
@@ -1980,7 +1856,6 @@ export abstract class BasePost {
     }
     
     if (isMobile) {
-      // Use unified touch handler utility
       setupTouchHandlers(hashtag, {
         onTap: (e) => {
           e.preventDefault();
@@ -1994,7 +1869,6 @@ export abstract class BasePost {
       this.touchCleanups.push(preventClickAfterTouch(hashtag));
     }
     
-    // Desktop click handler
     hashtag.addEventListener('click', (e) => {
       e.preventDefault();
       e.stopPropagation();
@@ -2046,7 +1920,6 @@ export abstract class BasePost {
   }): HTMLElement {
     const header = this.createHeaderContainer();
 
-    // Performer chips section — filter to valid entries (id + name required)
     const performers = this.filterPerformersByGender((options.performers ?? []).filter((p) => p?.id && p?.name));
     const performersSection = this.createPerformersContainer(performers.length);
     if (performers.length > 0) {
@@ -2060,7 +1933,6 @@ export abstract class BasePost {
       header.appendChild(this.buildTitleElement(options.title));
     }
 
-    // Tag chips section (includes studio chip at the start)
     const hasStudio = !!options.studio && this.showStudioChips;
     const mergedTags = this.showPerformerTags
       ? this.mergeWithPerformerTags(options.tags ?? [], performers)
@@ -2085,9 +1957,6 @@ export abstract class BasePost {
     return header;
   }
 
-  /**
-   * Default rating section for image-based posts. VideoPost overrides with scene-specific version.
-   */
   protected createRatingSection(): HTMLElement {
     return this.buildRatingSection(
       'image',
@@ -2097,7 +1966,6 @@ export abstract class BasePost {
     );
   }
 
-  /** Hotkey entry point for a footer button: clicks it exactly as the user would. False when it is absent or hidden. */
   pressButton(button: PostButton): boolean {
     const el = this.getButton(button);
     if (!el?.isConnected || getComputedStyle(el).display === 'none') return false;
@@ -2111,7 +1979,6 @@ export abstract class BasePost {
     return undefined;
   }
 
-  /** Keyboard rating entry point; null when this post has no rating control or the key does not apply. */
   rateByHotkey(key: number | 'clear'): string | null {
     return this.ratingControl?.rateByHotkey(key) ?? null;
   }
@@ -2153,7 +2020,6 @@ export abstract class BasePost {
     }
   }
 
-  /** Shared "• • •" overflow toggle pill used by both the performer-chip and tag-chip overflow rows. */
   private createMoreToggle(label: string, onClick: (more: HTMLElement) => void): HTMLElement {
     const more = document.createElement('span');
     more.className = 'tag-chip__more';
@@ -2234,11 +2100,6 @@ export abstract class BasePost {
     chips.appendChild(more);
   }
 
-  /**
-   * Optional inline "+ Add tag" chip that lives at the end of the tag list.
-   * Styled to read as optional (muted color, dashed underline) and hints that
-   * more tags can be added. No-op if no API is available.
-   */
   protected createAddTagChip(title: string = 'Add another tag'): HTMLElement | undefined {
     if (!this.api) return undefined;
 
@@ -2331,7 +2192,6 @@ export abstract class BasePost {
       options.onClick(event);
     });
 
-
     const iconSpan = document.createElement('span');
     iconSpan.className = 'rating-display__icon';
     setIcon(iconSpan, STAR_SVG_OUTLINE);
@@ -2389,14 +2249,6 @@ export abstract class BasePost {
     return wrapper;
   }
 
-  /**
-   * Lift this card above sibling posts while a popover dialog is open. The card is
-   * `position: relative` with no z-index, so it shares the feed's stacking context
-   * with the other posts; a dialog that overflows the card bounds would otherwise be
-   * painted over by a later post. Giving the open card a z-index turns it into its own
-   * stacking context that paints above siblings (still below the feed chrome at 900+).
-   * Cleared on close.
-   */
   protected setCardElevated(elevated: boolean): void {
     this.container.style.zIndex = elevated ? '60' : '';
   }
@@ -2433,8 +2285,6 @@ export abstract class BasePost {
 
     this.updateAddTagDialogState(state);
 
-    // Anchor below the add-tag chip (which now lives in the tag row).
-    // Fall back to the legacy button-group position if no chip exists.
     const anchor = this.addTagButton ?? options.buttonGroup;
     const anchorParent = anchor.parentElement ?? options.buttonGroup;
     anchorParent.style.position = 'relative';
@@ -2443,7 +2293,6 @@ export abstract class BasePost {
       anchorParent.appendChild(state.dialog);
     }
 
-    // Switch dialog from "open above" to "open below" the anchor.
     state.dialog.style.bottom = '';
     state.dialog.style.top = `${anchor.offsetTop + anchor.offsetHeight + 6}px`;
     const anchorCenterX = anchor.offsetLeft + anchor.offsetWidth / 2;
@@ -2455,13 +2304,11 @@ export abstract class BasePost {
     state.dialog.style.transform = 'translateX(-50%) translateY(0) scale(1)';
     state.dialog.style.pointerEvents = 'auto';
 
-    // Clamp dialog horizontally and vertically so it stays inside the viewport.
     requestAnimationFrame(() => {
       if (!state.dialog) return;
       const dialogRect = state.dialog.getBoundingClientRect();
       const cardRect = this.container.getBoundingClientRect();
 
-      // Flip above anchor if dialog extends below the viewport.
       if (dialogRect.bottom > globalThis.innerHeight - 8) {
         const anchorEl = this.addTagButton ?? options.buttonGroup;
         if (anchorEl) {
@@ -2831,10 +2678,6 @@ export abstract class BasePost {
     dialog.appendChild(buttonContainer);
   }
 
-  /**
-   * Open add tag dialog for image-based posts (ImagePost and ImageVideoPost).
-   * VideoPost overrides this with its own marker dialog.
-   */
   protected openAddTagDialog(): void {
     this.openAddTagDialogBase({
       state: this.addTagDialogState,
@@ -2854,10 +2697,6 @@ export abstract class BasePost {
     await this.addTagToImageShared(this.addTagDialogState, this.addTagButton);
   }
 
-  /**
-   * Default favorite toggle action - calls toggleFavorite and returns isFavorite.
-   * VideoPost overrides this with its own implementation.
-   */
   protected async toggleFavoriteAction(): Promise<boolean> {
     await this.toggleFavorite();
     return this.isFavorite;
@@ -2885,10 +2724,6 @@ export abstract class BasePost {
     return this.getImageData().image.date;
   }
 
-  /**
-   * Default tag removal action for image-based posts.
-   * VideoPost overrides this with its own implementation.
-   */
   protected async removeTagAction(tagId: string, tagName: string): Promise<boolean> {
     return this.removeTagShared(tagId, tagName, {
       getCurrentTags: () => this.getImageData().image.tags || [],
@@ -2899,9 +2734,6 @@ export abstract class BasePost {
     });
   }
 
-  /**
-   * Shared helper for removing a tag from an image
-   */
   protected async removeTagShared(
     tagId: string,
     tagName: string,
@@ -2936,23 +2768,18 @@ export abstract class BasePost {
     }
   }
 
-  /**
-   * Shared implementation for adding a tag to an image
-   */
   protected async addTagToImageShared(
     state: AddTagDialogState,
     focusAfterClose?: HTMLElement | null
   ): Promise<void> {
     if (!this.api || !state.selectedTagId || !state.selectedTagName || !state.createButton) return;
 
-    // Disable button during operation
     state.createButton.disabled = true;
     state.createButton.textContent = 'Adding...';
     state.createButton.style.opacity = '0.6';
 
     try {
       const imageData = this.getImageData();
-      // Check for duplicate tag
       const currentTagIds = (imageData.image.tags || []).map((tag: any) => tag.id).filter(Boolean);
       if (currentTagIds.includes(state.selectedTagId)) {
         showToast(`Tag "${state.selectedTagName}" is already added to this image.`);
@@ -2962,15 +2789,12 @@ export abstract class BasePost {
         return;
       }
 
-      // Update via API
       const nextTagIds = [...currentTagIds, state.selectedTagId];
       await this.api.updateImageTags(imageData.image.id, nextTagIds);
 
-      // Update local data
       imageData.image.tags ??= [];
       imageData.image.tags.push({ id: state.selectedTagId, name: state.selectedTagName });
 
-      // Success feedback and cleanup
       showToast(`Tag "${state.selectedTagName}" added to image`);
       this.refreshHeader();
       this.closeAddTagDialogBase({ state, focusAfterClose: focusAfterClose || this.addTagButton });
@@ -2982,8 +2806,6 @@ export abstract class BasePost {
       state.createButton.style.opacity = '1';
     }
   }
-
-  // ─── Add Performer dialog (shared by all post types) ──────────────────────
 
   protected createAddPerformerPlaceholder(): HTMLElement {
     const chip = document.createElement('div');
@@ -3103,7 +2925,6 @@ export abstract class BasePost {
         this.addPerformerDialog.style.transform = 'translateY(0) scale(1)';
         this.addPerformerDialog.style.opacity = '1';
 
-        // Flip above anchor if dialog extends below the viewport.
         const dlgRect = this.addPerformerDialog.getBoundingClientRect();
         if (dlgRect.bottom > globalThis.innerHeight - 8) {
           const aboveTop = anchorRect.top - cardRect.top - this.addPerformerDialog.offsetHeight - 6;
@@ -3252,9 +3073,6 @@ export abstract class BasePost {
     imageData.image.performers = [...(imageData.image.performers ?? []), { id: performerId, name: performerName, image_path: this.selectedPerformerImagePath }];
   }
 
-  /**
-   * Shared helper for removing a performer from an item
-   */
   protected async removePerformerShared(
     performerId: string,
     performerName: string,
@@ -3282,7 +3100,6 @@ export abstract class BasePost {
       const nextPerformerIds = currentPerformerIds.filter((id) => id !== performerId);
       await options.apiMethod(options.itemId, nextPerformerIds);
 
-      // Update local data - image branch runs for ImagePost/ImageVideoPost, scene branch for VideoPost
       if (options.itemType === 'image') {
         (this.getImageData().image.performers as any[]) = (options.performers || []).filter((performer) => performer.id !== performerId);
       } else if (options.itemType === 'scene') {
@@ -3299,10 +3116,6 @@ export abstract class BasePost {
     }
   }
 
-  /**
-   * Default performer removal action for image-based posts.
-   * VideoPost overrides this with its own implementation.
-   */
   protected async removePerformerAction(performerId: string, performerName: string): Promise<boolean> {
     return this.removePerformerShared(performerId, performerName, {
       performers: this.getImageData().image.performers,
@@ -3313,24 +3126,14 @@ export abstract class BasePost {
     });
   }
 
-  /**
-   * Default favorite tag source - returns image tags.
-   * VideoPost overrides this with its own implementation.
-   */
   protected getFavoriteTagSource(): Array<{ name: string }> | undefined {
     return this.getImageData().image.tags;
   }
 
-  /**
-   * Optional method to update local tags after favorite toggle - only VideoPost implements this
-   */
   protected async updateLocalTagsAfterFavoriteToggle(newFavoriteState: boolean): Promise<void> {
     // Default implementation does nothing - VideoPost overrides this
   }
 
-  /**
-   * Create add tag button - shared implementation
-   */
   protected createAddTagButton(title: string = 'Add tag'): HTMLElement {
     const addTagBtn = document.createElement('button');
     addTagBtn.className = 'icon-btn icon-btn--add-tag';
@@ -3352,15 +3155,10 @@ export abstract class BasePost {
     return addTagBtn;
   }
 
-  /** Override in video-capable subclasses to supply the active player. */
   protected getAutoAdvancePlayer(): import('./types.js').IVideoPlayer | undefined {
     return undefined;
   }
 
-  /**
-   * Auto-advance to the next post when the post's video loops back.
-   * Re-entrant: always resets the fired guard and re-registers on the current player.
-   */
   protected attachReelAutoAdvance(): void {
     if (!this.reelAutoScroll) return;
     const player = this.getAutoAdvancePlayer();
@@ -3397,11 +3195,6 @@ export abstract class BasePost {
     }
   }
 
-  /**
-   * Image-post variant: advance after a fixed dwell time (default 5s) while
-   * the post is intersecting the viewport. Cancels and resets if the user
-   * scrolls away before the timer fires.
-   */
   protected attachReelAutoAdvanceTimer(dwellMs: number = 5000): void {
     if (this.autoAdvanceAttached || !this.reelAutoScroll) return;
     this.autoAdvanceAttached = true;
@@ -3429,9 +3222,6 @@ export abstract class BasePost {
     this.onReelAdvance?.();
   }
 
-  /**
-   * Create heart button for favorites - shared implementation
-   */
   protected createHeartButton(): HTMLElement {
     const heartBtn = document.createElement('button');
     heartBtn.className = 'icon-btn icon-btn--heart';
@@ -3464,7 +3254,6 @@ export abstract class BasePost {
       } catch (error) {
         console.error('Failed to toggle favorite', error);
         showToast('Failed to update favorite. Please try again.');
-        // isFavorite only changes after a successful toggle, so the heart already shows the real state.
         this.updateHeartButton(heartBtn);
       } finally {
         this.isTogglingFavorite = false;
@@ -3478,9 +3267,6 @@ export abstract class BasePost {
     return heartBtn;
   }
 
-  /**
-   * Update heart button appearance based on favorite state - shared implementation
-   */
   protected updateHeartButton(button?: HTMLElement): void {
     const btn = button || this.heartButton;
     if (!btn) return;
@@ -3504,8 +3290,6 @@ export abstract class BasePost {
       console.error('BasePost: No API available for toggleFavorite');
       return;
     }
-    // Errors propagate to the heart button's click handler, which reports them; isFavorite is
-    // only assigned after the server accepted the change.
     const result = await toggleImageFavorite(
       this.getImageData().image.id,
       this.getImageData().image.tags,
@@ -3517,9 +3301,6 @@ export abstract class BasePost {
     this.isFavorite = result.newIsFavorite;
   }
 
-  /**
-   * Create O-count button - shared implementation
-   */
   protected createOCountButton(): HTMLElement {
     const oCountBtn = document.createElement('button');
     oCountBtn.className = 'icon-btn icon-btn--ocount';
@@ -3562,9 +3343,6 @@ export abstract class BasePost {
     return oCountBtn;
   }
 
-  /**
-   * Update O-count button display - shared implementation
-   */
   protected updateOCountButton(): void {
     if (!this.oCountButton) return;
 
@@ -3572,14 +3350,10 @@ export abstract class BasePost {
     this.oCountButton.innerHTML = `${OCOUNT_SVG}<span style="font-size:10px;line-height:1;font-family:${THEME.typography.fontFamily};font-weight:500;letter-spacing:0.03em;color:${THEME.colors.textMuted};pointer-events:none">${label}</span>`;
   }
 
-  /**
-   * Check favorite status - shared implementation
-   */
   protected checkFavoriteStatus(): void {
     const tags = this.getFavoriteTagSource();
     this.isFavorite = tags?.some((tag) => tag.name === FAVORITE_TAG_NAME) ?? false;
     
-    // Update heart button if it exists
     if (this.heartButton) {
       this.updateHeartButton(this.heartButton);
     }

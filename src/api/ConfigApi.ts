@@ -1,7 +1,3 @@
-/**
- * Server configuration and the things stored in it: UI/plugin settings and saved filters.
- */
-
 import * as queries from '../graphql/queries.js';
 import * as mutations from '../graphql/mutations.js';
 import type {
@@ -17,7 +13,6 @@ import { TtlCache } from './TtlCache.js';
 export class ConfigApi {
   constructor(private readonly io: ApiIO) {}
 
-  /** ui + plugin configuration share one request; callers within a few seconds reuse it. */
   private readonly _configuration = new TtlCache<ConfigurationResponse['configuration']>(5_000, 1);
 
   private getConfiguration(): Promise<ConfigurationResponse['configuration']> {
@@ -27,9 +22,6 @@ export class ConfigApi {
     });
   }
 
-  /**
-   * Get the rating system options from the UI configuration
-   */
   async getUIConfiguration(signal?: AbortSignal): Promise<{ type?: string; starPrecision?: string } | null> {
     if (this.io.isAborted(signal)) return null;
 
@@ -37,7 +29,6 @@ export class ConfigApi {
       const { ui } = await this.getConfiguration();
       if (this.io.isAborted(signal)) return null;
 
-      // UI is returned as a JSON string in some Stash versions
       if (typeof ui === 'string') {
         try {
           return (JSON.parse(ui) as { ratingSystemOptions?: { type?: string; starPrecision?: string } }).ratingSystemOptions || null;
@@ -51,10 +42,6 @@ export class ConfigApi {
     }
   }
 
-  /**
-   * Get plugin-specific settings from Stash server. Resolves null when the server has none;
-   * a failed request throws so callers don't mistake it for "no settings".
-   */
   async getPluginSettings(pluginId: string, signal?: AbortSignal): Promise<Record<string, unknown> | null> {
     if (this.io.isAborted(signal)) return null;
 
@@ -68,9 +55,6 @@ export class ConfigApi {
     }
   }
 
-  /**
-   * Save plugin-specific settings to Stash server
-   */
   async savePluginSettings(pluginId: string, input: Record<string, unknown>, signal?: AbortSignal): Promise<boolean> {
     if (this.io.isAborted(signal)) return false;
 
@@ -88,9 +72,6 @@ export class ConfigApi {
     }
   }
 
-  /**
-   * Fetch saved filters the feed can apply (scene markers and images) from Stash
-   */
   async fetchSavedFilters(signal?: AbortSignal): Promise<Array<{ id: string; name: string; mode: SavedFilterMode }>> {
     if (this.io.isAborted(signal)) return [];
     
@@ -109,18 +90,12 @@ export class ConfigApi {
     }
   }
 
-  /** Saved-filter criteria by id: re-read for every page of a saved-filter feed otherwise. */
   private readonly _savedFilters = new TtlCache<GetSavedFilterResponse['findSavedFilter']>(60_000, 50);
 
-  /**
-   * Get a saved filter's criteria. Resolves null when it doesn't exist; a failed request throws
-   * so the feed can't silently fall back to unfiltered results.
-   */
   async getSavedFilter(id: string, signal?: AbortSignal): Promise<GetSavedFilterResponse['findSavedFilter']> {
     if (this.io.isAborted(signal)) return null;
 
     try {
-      // Shared, signal-free load (see TtlCache): one caller aborting must not fail the others.
       const filter = await this._savedFilters.getOrLoad(id, async () => {
         const result = await this.io.gql.query<GetSavedFilterResponse>({ query: queries.GET_SAVED_FILTER, variables: { id } });
         return result.data?.findSavedFilter || null;

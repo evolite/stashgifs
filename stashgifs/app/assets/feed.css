@@ -1,10 +1,4 @@
-/**
- * Feed UI Styles
- * Apple HIG-inspired design system for Stashgifs
- */
-
 :root {
-  /* Spacing Scale (4px base unit) */
   --spacing-xs: 4px;
   --spacing-sm: 8px;
   --spacing-md: 12px;
@@ -15,18 +9,15 @@
   --spacing-3xl: 40px;
   --spacing-4xl: 48px;
 
-  /* Border-Radius Scale */
   --radius-xs: 6px;
   --radius-sm: 8px;
   --radius-md: 10px;
-  --radius-lg: 12px;   /* primary card/component radius */
+  --radius-lg: 12px;
   --radius-xl: 16px;
   --radius-pill: 999px;
 
-  /* Layout */
   --layout-max-width: 800px;
 
-  /* Typography Scale */
   --font-caption: 11px;
   --font-subtext: 12px;
   --font-footnote: 13px;
@@ -42,7 +33,6 @@
   --line-height-normal: 1.4;
   --line-height-relaxed: 1.5;
 
-  /* Color System - StashGifs Dark */
   --color-bg: #1F2A33;
   --color-surface: #2C3B46;
   --color-surface-secondary: #24323C;
@@ -51,10 +41,9 @@
   --color-text-tertiary: #8A99A6;
   --color-separator: #3A4A55;
   --color-bg-overlay: rgba(31, 42, 51, 0.96);
-  --color-on-accent: #111;       /* dark text on accent-colored backgrounds */
-  --color-star: #FFD700;         /* rating star gold */
+  --color-on-accent: #111;
+  --color-star: #FFD700;
 
-  /* Accent Colors */
   --color-accent: #4FA3D1;
   --color-accent-strong: #438BB2;
   --color-accent-weak: rgba(79, 163, 209, 0.18);
@@ -64,27 +53,23 @@
   --accent-weak: var(--color-accent-weak);
   --accent-weaker: var(--color-accent-weaker);
   
-  /* Opacity Variants for Subtle Backgrounds */
   --opacity-04: rgba(255, 255, 255, 0.04);
   --opacity-08: rgba(255, 255, 255, 0.08);
   --opacity-12: rgba(255, 255, 255, 0.12);
   --opacity-16: rgba(255, 255, 255, 0.16);
   --opacity-24: rgba(255, 255, 255, 0.24);
 
-  /* Elevation System - Shadows */
   --shadow-none: none;
   --shadow-subtle: 0 1px 2px rgba(0, 0, 0, 0.3);
   --shadow-medium: 0 4px 12px rgba(0, 0, 0, 0.4);
   --shadow-prominent: 0 8px 24px rgba(0, 0, 0, 0.5);
   --shadow-inset-border: inset 0 0 0 1px rgba(0,0,0,0.3);
 
-  /* Spring-like Easing Curves */
   --ease-spring: cubic-bezier(0.2, 0, 0, 1);
   --ease-spring-bounce: cubic-bezier(0.34, 1.56, 0.64, 1);
 
 }
 
-/* Feed Container */
 .feed-container {
   width: 100%;
   min-height: 100vh;
@@ -102,14 +87,12 @@
   gap: 0;
 }
 
-/* Posts container: stack cards with subtle separation */
 .feed-posts {
   display: flex;
   flex-direction: column;
   gap: var(--spacing-md);
 }
 
-/* Filters */
 .feed-filters {
   width: 100%;
   margin: 0 0 var(--spacing-base) 0;
@@ -171,7 +154,6 @@
   border: 1px solid var(--accent-weak);
 }
 
-/* Mobile stacking to keep same width */
 @media (max-width: 600px) {
   .feed-filters {
     grid-template-columns: 1fr;
@@ -181,7 +163,6 @@
   }
 }
 
-/* Loading and Error States */
 .feed-loading,
 .feed-error {
   text-align: center;
@@ -190,7 +171,6 @@
   font-size: var(--font-body);
   line-height: var(--line-height-relaxed);
 }
-
 
 @keyframes spin {
   0% {
@@ -219,12 +199,10 @@
   }
 }
 
-/* Video Post */
 .video-post-wrapper {
   width: 100%;
-  /* Performance optimization: enable content-visibility for off-screen posts */
   content-visibility: auto;
-  contain-intrinsic-size: auto 100svh; /* Reel cards are full-viewport; matches real height so snap geometry does not jump */
+  contain-intrinsic-size: auto 100svh;
 }
 
 .video-post,
@@ -239,28 +217,23 @@
   flex-direction: column;
   color: var(--color-text-primary);
   line-height: var(--line-height-relaxed);
-  /* Performance optimization: contain layout and paint */
   contain: layout style paint;
   will-change: scroll-position;
 }
 
-/* Video element touch handling */
 .video-post video {
   touch-action: manipulation;
   -webkit-tap-highlight-color: transparent;
 }
 
-/* Post Header */
 .video-post__header {
   padding: var(--spacing-md) var(--spacing-base);
-  /* No border - cleaner look */
   display: flex;
   flex-direction: column;
   gap: var(--spacing-sm);
-  max-width: 80%; /* Constrain to 80% of card width */
+  max-width: 80%;
 }
 
-/* Performer section - name and image */
 .video-post__performers {
   display: flex;
   flex-wrap: wrap;
@@ -268,7 +241,6 @@
   align-items: center;
 }
 
-/* Tag chips line - no box styling */
 .video-post__tags {
   display: flex;
   flex-wrap: wrap;
@@ -290,7 +262,6 @@
   color: var(--color-text-secondary);
 }
 
-/* Post Player */
 .video-post__player {
   position: relative;
   width: 100%;
@@ -298,13 +269,10 @@
   overflow: hidden;
   border-top-left-radius: var(--radius-lg);
   border-top-right-radius: var(--radius-lg);
-  /* Performance optimization: contain layout and paint for video player */
   contain: layout style paint;
-  /* Use transform for better GPU acceleration */
   transform: translateZ(0);
 }
 
-/* Aspect Ratio Classes */
 .video-post__player.aspect-16-9 {
   aspect-ratio: 16 / 9;
 }
@@ -323,7 +291,6 @@
   height: 100%;
   object-fit: cover;
   display: block;
-  /* Performance optimization: use transform for better rendering */
   transform: translateZ(0);
   will-change: opacity;
 }
@@ -338,7 +305,6 @@
   will-change: transform;
 }
 
-/* Error Placeholder */
 .video-post__error-placeholder {
   position: relative;
   width: 100%;
@@ -386,7 +352,6 @@
   }
 }
 
-/* Video Player */
 .video-player {
   position: relative;
   width: 100%;
@@ -396,26 +361,23 @@
 .video-player__element {
   width: 100%;
   height: 100%;
-  background: transparent; /* Prevent black flicker - let poster/thumbnail show through */
+  background: transparent;
   object-fit: contain;
   display: block;
-  /* Hardware acceleration for video playback */
   transform: translateZ(0);
   -webkit-transform: translateZ(0);
   backface-visibility: hidden;
   -webkit-backface-visibility: hidden;
   perspective: 1000px;
   -webkit-perspective: 1000px;
-  will-change: auto; /* Browser optimizes based on video playback */
+  will-change: auto;
 }
 
-/* snapToCards (non-reel) mode: align every post card for native CSS snap */
 .feed-posts[data-snap-to-cards] .video-post,
 .feed-posts[data-snap-to-cards] .image-post {
   scroll-snap-align: start;
 }
 
-/* ---- Progress bar ---- */
 .vp-progress__track {
   position: absolute;
   bottom: 0;
@@ -424,9 +386,9 @@
   height: 12px;
   background: rgba(255, 255, 255, 0.18);
   cursor: pointer;
-  z-index: 12; /* above video chrome, below header/footer */
+  z-index: 12;
   transition: height 0.15s ease;
-  touch-action: none; /* let pointer events own the drag */
+  touch-action: none;
 }
 
 .vp-progress__track:hover,
@@ -442,15 +404,9 @@
   background: var(--color-accent, #e05c6e);
   border-radius: 0 2px 2px 0;
   pointer-events: none;
-  /* Hardware-accelerate the width animation during playback */
   will-change: width;
 }
 
-/* ---- video.js embedding ----
-   video.js wraps our <video> in a `.video-js` box that defaults to inline-block
-   ~300x150 with no object-fit, and injects its own chrome (poster, spinner,
-   control bar). Pin it to fill the post player box, set object-fit, and hide all
-   built-in UI so our own overlays/controls are the only ones shown. */
 .video-post__player .video-js {
   position: absolute;
   inset: 0;
@@ -464,8 +420,6 @@
   inset: 0;
   width: 100%;
   height: 100%;
-  /* object-fit is also set inline per-player; this is the fallback when the
-     inline style hasn't applied yet. Never crop or stretch the media. */
   object-fit: contain;
 }
 .video-post__player .vjs-control-bar,
@@ -478,7 +432,6 @@
   display: none !important;
 }
 
-/* Video Player Loading Indicator */
 .video-player__loading {
   position: absolute;
   top: 0;
@@ -489,11 +442,10 @@
   align-items: center;
   justify-content: center;
   background: rgba(0, 0, 0, 0.3);
-  z-index: 2; /* Above video (z-index: 1) but below controls (z-index: 10) */
+  z-index: 2;
   will-change: opacity;
 }
 
-/* Video Controls */
 .video-player__controls {
   position: absolute;
   bottom: 0;
@@ -581,10 +533,8 @@
   text-align: right;
 }
 
-/* Post Footer */
 .video-post__footer {
   padding: var(--spacing-md) var(--spacing-base);
-  /* No border - cleaner look */
   min-height: var(--spacing-2xl);
   display: flex;
   align-items: center;
@@ -655,7 +605,6 @@
   height: 18px;
 }
 
-/* Container for the overall rating display */
 .rating-display__value {
   display: inline-block;
   min-width: 14px;
@@ -666,21 +615,18 @@
   letter-spacing: -0.01em;
 }
 
-/* The Popup Box */
 .rating-dialog {
   position: absolute;
-  bottom: calc(100% + 10px); /* Lifted slightly higher */
+  bottom: calc(100% + 10px);
   left: var(--rating-dialog-left, auto);
   right: var(--rating-dialog-right, auto);
   width: var(--rating-dialog-width, auto);
   min-width: 200px;
   
-  /* Modern Glassmorphism */
   background: var(--opacity-08);
   backdrop-filter: blur(16px) saturate(120%);
   -webkit-backdrop-filter: blur(16px) saturate(120%);
   
-  /* Soft Border & Shadow */
   border: 1px solid rgba(255, 255, 255, 0.1);
   border-radius: var(--radius-xl);
   box-shadow: 0 12px 40px rgba(0, 0, 0, 0.3);
@@ -688,7 +634,6 @@
   padding: var(--spacing-sm);
   z-index: 200;
   
-  /* Smoother Animation */
   opacity: 0;
   transform: translateX(12px) scale(0.96);
   pointer-events: none;
@@ -701,10 +646,9 @@
   pointer-events: auto;
 }
 
-/* Star Layout */
 .rating-dialog__stars {
   display: flex;
-  gap: var(--spacing-xs); /* Space between stars */
+  gap: var(--spacing-xs);
   align-items: center;
   background: transparent;
 }
@@ -715,26 +659,23 @@
   border: none;
   cursor: pointer;
   padding: var(--spacing-xs);
-  font-size: 22px; /* Larger icons are easier to click */
-  color: rgba(255, 255, 255, 0.3); /* Dimmed when inactive */
+  font-size: 22px;
+  color: rgba(255, 255, 255, 0.3);
   transition: all 0.2s ease;
   display: flex;
   align-items: center;
   justify-content: center;
 }
 
-/* Hover effects */
 .rating-dialog__star:hover {
-  color: var(--color-star); /* Classic Gold */
+  color: var(--color-star);
   transform: scale(1.2) translateY(-2px);
 }
 
-/* Active/Selected State */
 .rating-dialog__star--active {
   color: var(--color-star);
 }
 
-/* Tooltip arrow (Optional addition) */
 .rating-dialog::after {
   content: '';
   position: absolute;
@@ -758,7 +699,6 @@
   }
 }
 
-/* Inline row for performers + icon button */
 .video-post__row {
   display: flex;
   align-items: center;
@@ -775,7 +715,6 @@
   margin-right: 0.5rem;
 }
 
-/* Sleek CTA + Chips */
 .video-post__cta {
   display: flex;
   align-items: center;
@@ -815,7 +754,6 @@
   align-items: center;
 }
 
-/* Chip - clean line styling without box background */
 .chip {
   display: inline-flex;
   touch-action: manipulation;
@@ -851,7 +789,6 @@
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
 }
 
-/* Performer chip - text-based with verified checkmark */
 .performer-chip {
   display: inline-flex;
   align-items: center;
@@ -865,7 +802,6 @@
   flex-shrink: 0;
 }
 
-/* Tag chip - clean line styling without box */
 .tag-chip {
   display: inline-flex;
   align-items: center;
@@ -879,7 +815,6 @@
   transition: color 0.2s ease;
 }
 
-/* Icon button */
 .icon-btn {
   width: 44px;
   height: 44px;
@@ -895,13 +830,11 @@
   border: none;
   cursor: pointer;
   filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.3));
-  /* Hover effects will be applied to icons only, not container */
   transition: none;
   touch-action: manipulation;
   -webkit-tap-highlight-color: rgba(255, 255, 255, 0.1);
 }
 
-/* Icon-only hover effects - affects SVG/icon content only */
 .icon-btn svg,
 .icon-btn > * {
   transition: transform 0.2s var(--ease-spring),
@@ -909,13 +842,11 @@
               opacity 0.2s ease;
 }
 
-/* Icon SVG sizing - make icons 24px */
 .icon-svg {
   width: 24px;
   height: 24px;
 }
 
-/* Logo SVG sizing - maintain original size */
 .logo-svg {
   width: 84px;
   height: 24px;
@@ -937,9 +868,6 @@
   color: var(--color-on-accent);
 }
 
-/* Icon-only hover - no container transform for .icon-btn--primary:hover */
-
-/* Safe Area Support for Mobile */
 @supports (padding: max(0px)) {
   .feed-container {
     padding-left: max(var(--spacing-base), env(safe-area-inset-left));
@@ -953,7 +881,6 @@
   }
 }
 
-/* Responsive Design */
 @media (max-width: 768px) {
   .feed-container {
     padding: var(--spacing-sm);
@@ -970,12 +897,10 @@
   .video-player__controls {
     padding: var(--spacing-md);
     padding-bottom: max(var(--spacing-md), env(safe-area-inset-bottom, 0px));
-    /* Show controls on mobile when video is playing (auto-hide after 3s) */
     opacity: 1;
     transition: opacity 0.3s var(--ease-spring);
   }
 
-  /* Hide controls after 3 seconds on mobile when not interacting */
   .video-post__player:not(:active) .video-player__controls {
     opacity: 0;
   }
@@ -990,12 +915,10 @@
     min-width: 60px;
   }
 
-  /* Enhanced touch targets for mobile - ensure all buttons are at least 44x44px */
   .video-player__controls button {
     min-width: 44px;
     min-height: 44px;
     padding: var(--spacing-sm);
-    /* Larger touch area */
     touch-action: manipulation;
     -webkit-tap-highlight-color: rgba(255, 255, 255, 0.1);
   }
@@ -1005,26 +928,22 @@
     height: 24px;
   }
 
-  /* Larger progress bar thumb for mobile */
   .video-player__progress {
-    height: 6px; /* Increased from 4px for better touch target */
+    height: 6px;
   }
 
   .video-player__progress::-webkit-slider-thumb {
-    width: 16px; /* Increased from 12px */
-    height: 16px; /* Increased from 12px */
-    /* Larger touch target */
+    width: 16px;
+    height: 16px;
     touch-action: manipulation;
   }
 
   .video-player__progress::-moz-range-thumb {
-    width: 16px; /* Increased from 12px */
-    height: 16px; /* Increased from 12px */
-    /* Larger touch target */
+    width: 16px;
+    height: 16px;
     touch-action: manipulation;
   }
   
-  /* Ensure chips wrap properly on mobile */
   .chips {
     gap: var(--spacing-xs);
   }
@@ -1032,12 +951,10 @@
   .chip {
     font-size: var(--font-caption);
     padding: var(--spacing-xs) var(--spacing-sm);
-    /* Ensure chips have minimum touch target */
     min-height: 32px;
     touch-action: manipulation;
   }
   
-  /* Rating dialog mobile optimizations */
   .rating-dialog {
     padding: 3px 6px;
     max-width: calc(100vw - 24px);
@@ -1048,7 +965,6 @@
     height: 20px;
     font-size: 0.85rem;
     padding: 0 1px;
-    /* Ensure touch target is adequate */
     min-height: 44px;
     min-width: 44px;
     width: 44px;
@@ -1056,7 +972,6 @@
     -webkit-tap-highlight-color: rgba(255, 255, 255, 0.1);
   }
 
-  /* Footer buttons - ensure adequate touch targets */
   .video-post__footer button,
   .video-post__footer .icon-btn {
     min-width: 44px;
@@ -1071,13 +986,11 @@
     justify-content: center;
   }
 
-  /* Ensure icons in video footer buttons are properly sized and centered */
   .video-post__footer .icon-btn .icon-svg {
     width: 24px;
     height: 24px;
   }
 
-  /* Mute overlay button - ensure it's easily tappable */
   .video-post__mute-overlay {
     min-width: 44px !important;
     min-height: 44px !important;
@@ -1085,18 +998,15 @@
     -webkit-tap-highlight-color: rgba(255, 255, 255, 0.1);
   }
 
-  /* Fullscreen optimizations for mobile */
   .video-post:fullscreen,
   .video-post:-webkit-full-screen,
   .video-post:-moz-full-screen,
   .video-post:-ms-fullscreen {
     width: 100vw;
     height: 100vh;
-    /* Ensure safe areas are respected in fullscreen */
     padding: env(safe-area-inset-top, 0px) env(safe-area-inset-right, 0px) env(safe-area-inset-bottom, 0px) env(safe-area-inset-left, 0px);
   }
 
-  /* Video player overlay - larger on mobile for better visibility */
   .video-player__overlay {
     width: 100px !important;
     height: 100px !important;
@@ -1107,19 +1017,17 @@
     height: 56px !important;
   }
 
-  /* Loading indicator - more visible on mobile */
   .video-player__loading {
-    background: rgba(0, 0, 0, 0.5); /* More opaque on mobile */
+    background: rgba(0, 0, 0, 0.5);
   }
 
   .spinner {
-    width: 32px; /* Larger spinner on mobile */
+    width: 32px;
     height: 32px;
-    border-width: 3px; /* Thicker border */
+    border-width: 3px;
   }
 }
 
-/* Header bar - constrained to card width */
 .feed-header-bar {
   position: sticky;
   width: 100%;
@@ -1133,7 +1041,6 @@
   justify-content: center;
   transition: transform 0.24s var(--ease-spring, ease), opacity 0.24s var(--ease-spring, ease);
   will-change: transform, opacity;
-  /* Safe area support */
   padding-left: max(12px, env(safe-area-inset-left, 0px));
   padding-right: max(12px, env(safe-area-inset-right, 0px));
   padding-top: 8px;
@@ -1141,15 +1048,12 @@
   min-height: 72px;
 }
 
-/* iOS standalone mode adjustments */
 @supports (padding: env(safe-area-inset-top)) {
   .feed-header-bar {
     padding-top: max(8px, calc(env(safe-area-inset-top, 0px) * 0.7));
   }
 }
 
-
-/* Accessibility - Respect reduced motion */
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
@@ -1161,7 +1065,6 @@
   }
 }
 
-/* Focus styles */
 .video-player__controls button:focus-visible {
   outline: 2px solid var(--color-accent);
   outline-offset: 2px;
@@ -1172,7 +1075,6 @@
   outline-offset: 2px;
 }
 
-/* Suggestions Dropdown - Full Screen Overlay */
 .feed-filters__suggestions {
   position: fixed !important;
   top: 0 !important;
@@ -1184,14 +1086,12 @@
   backdrop-filter: blur(18px) saturate(160%) !important;
   -webkit-backdrop-filter: blur(18px) saturate(160%) !important;
   overflow-y: auto !important;
-  /* padding-top set dynamically by JS to match actual header height */
   padding-bottom: 20px !important;
   padding-left: 0 !important;
   padding-right: 0 !important;
   box-sizing: border-box !important;
 }
 
-/* Desktop: Constrain content width and add padding */
 @media (min-width: 768px) {
   .feed-filters__suggestions {
     padding-left: 16px !important;
@@ -1205,10 +1105,8 @@
   }
 }
 
-/* Mobile: Full width with safe area support */
 @media (max-width: 767px) {
   .feed-filters__suggestions {
-    /* padding-top set dynamically by JS */
     padding-left: max(16px, env(safe-area-inset-left, 0px)) !important;
     padding-right: max(16px, env(safe-area-inset-right, 0px)) !important;
     padding-bottom: max(20px, calc(20px + env(safe-area-inset-bottom, 0px))) !important;
@@ -1219,7 +1117,6 @@
   }
 }
 
-/* Common UI Component Classes - Replacing inline styles */
 .feed-section-label {
   width: 100%;
   font-size: var(--font-body);
@@ -1514,7 +1411,6 @@
   margin: 6px 0;
 }
 
-/* Chip styling - remove box/border effects */
 .performer-chip,
 .tag-chip {
   background: transparent !important;
@@ -1524,7 +1420,6 @@
   -webkit-backdrop-filter: none !important;
 }
 
-/* Hide scrollbars while keeping scroll */
 html,
 body {
   height: 100%;
@@ -1556,15 +1451,11 @@ body::-webkit-scrollbar,
   box-shadow: none !important;
 }
 
-/* Ensure header and footer are above player */
 .video-post__header,
 .video-post__footer {
   z-index: 6;
 }
 
-
-
-/* What's new card (shown once after an update): centred, light, non-blocking */
 .whats-new {
   position: fixed;
   top: 50%;
@@ -1665,7 +1556,6 @@ body::-webkit-scrollbar,
 }
 .hotkey-help__label { margin: 0; text-align: right; color: var(--color-text-secondary, #B4C0C9); }
 
-/* Footer buttons hidden via settings (toggled on the feed root; no per-card work) */
 .feed-container--hide-ocount .icon-btn--ocount,
 .feed-container--hide-rating .rating-control,
 .feed-container--hide-views .icon-btn--views {

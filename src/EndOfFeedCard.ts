@@ -1,20 +1,7 @@
-/**
- * Synthetic card shown when the feed ends or a short-form search is paused.
- * The reel scroller snaps onto it like a real post (it carries
- * data-post-id), so reaching the bottom gives feedback instead of silently
- * clamping on the last card.
- *
- * At the end, the card points to the header search bar and focuses it on tap.
- * A paused search can continue from the last scanned page. The footer mirrors
- * the Settings feedback/support links.
- */
-
 import { THEME, toRgba } from './utils.js';
 
-/** Sentinel post id so the reel treats the end card as a snap target. */
 export const END_CARD_POST_ID = '__end__';
 
-/** Prompts above the feedback links — one picked at random per build. */
 export const FOOTER_PROMPTS: string[] = [
   'Enjoying StashGifs? Say hi or send ideas:',
   'Got a feature in mind? Let me know:',
@@ -38,7 +25,6 @@ export const FOOTER_PROMPTS: string[] = [
   'This is built on your feedback:',
 ];
 
-/** Feedback/support links — same destinations as the Settings footer. */
 const FEEDBACK_LINKS: ReadonlyArray<readonly [string, string]> = [
   ['💬 Discourse', 'https://discourse.stashapp.cc/t/stashgifs-social-media-style-browsing-experience'],
   ['💻 GitHub', 'https://github.com/evolite/stashgifs'],
@@ -47,7 +33,6 @@ const FEEDBACK_LINKS: ReadonlyArray<readonly [string, string]> = [
 
 const STYLE_ID = 'stashgifs-endcard-style';
 
-/** Inject the arrow-bounce keyframe once. */
 function ensureKeyframes(): void {
   if (document.getElementById(STYLE_ID)) return;
   const style = document.createElement('style');
@@ -74,10 +59,6 @@ function createFooterLink(label: string, href: string): HTMLAnchorElement {
   return link;
 }
 
-/**
- * Build a full-viewport end-of-feed card. `onSearch` runs when the user taps the
- * arrow/hint pointing at the search bar.
- */
 export function buildEndOfFeedCard(onSearch: () => void, onContinue?: () => Promise<void>): HTMLElement {
   ensureKeyframes();
 
@@ -101,7 +82,6 @@ export function buildEndOfFeedCard(onSearch: () => void, onContinue?: () => Prom
     fontFamily: THEME.typography.fontFamily,
   });
 
-  // Top — continue a paused search or point up at the header search bar.
   const hint = document.createElement('button');
   hint.type = 'button';
   const actionLabel = onContinue ? 'Continue searching' : 'Search for more content';
@@ -112,7 +92,6 @@ export function buildEndOfFeedCard(onSearch: () => void, onContinue?: () => Prom
     flexDirection: 'column',
     alignItems: 'center',
     gap: '8px',
-    // Push clear of the header search bar + its selected-tag chip row.
     marginTop: 'calc(140px + env(safe-area-inset-top, 0px))',
     minHeight: '44px',
     padding: '12px 24px',
@@ -148,7 +127,6 @@ export function buildEndOfFeedCard(onSearch: () => void, onContinue?: () => Prom
     hint.addEventListener('click', onSearch);
   }
 
-  // Center — feedback/support links, front and centre in the body.
   const footer = document.createElement('div');
   Object.assign(footer.style, {
     flex: '1',

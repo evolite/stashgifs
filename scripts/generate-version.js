@@ -1,10 +1,5 @@
 #!/usr/bin/env node
 
-/**
- * Generate version.ts from package.json
- * This script is run automatically during the build process
- */
-
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
@@ -17,8 +12,6 @@ const pkg = require(packageJsonPath);
 let buildHash = process.env.BUILD_HASH;
 
 if (!buildHash) {
-  // Reuse the existing hash when the version hasn't changed, so local builds
-  // don't dirty version.ts on every `pnpm run build`.
   try {
     const existing = fs.readFileSync(versionTsPath, 'utf8');
     const versionMatch = existing.match(/VERSION = '([^']+)'/);
@@ -43,7 +36,6 @@ export const BUILD_HASH = '${buildHash}';
 fs.writeFileSync(versionTsPath, versionTsContent);
 console.log(`Version file updated with: ${pkg.version} (hash: ${buildHash})`);
 
-// Bundle RELEASE_NOTES.md (hand-written, user-facing) for the "What's new" dialog.
 const changelogPath = path.join(__dirname, '..', 'RELEASE_NOTES.md');
 const changelogTsPath = path.join(__dirname, '..', 'src', 'changelog.ts');
 const entries = [];
