@@ -28,7 +28,7 @@ import type { SettingsPage } from './SettingsPage.js';
 import { debounce, showToast, normalizeMediaUrl, isStandaloneNavigator, isMobileDevice, detectVideoFromVisualFiles, isMp4File, getImageUrlForDisplay, THEME, THEME_DEFAULTS, normalizeHexColor, toRgba, buildFullUrl, applyThemeColors, setIcon } from './utils.js';
 import { GQLImage } from './graphql/types.js';
 import { getStashBaseUrl } from './utils/baseUrl.js';
-import { SETTINGS_SVG, STASHGIFS_LOGO_SVG, IMAGE_SVG, MARKER_SVG, HEART_SVG_OUTLINE } from './icons.js';
+import { SETTINGS_SVG, KEYBOARD_SVG, STASHGIFS_LOGO_SVG, IMAGE_SVG, MARKER_SVG, HEART_SVG_OUTLINE } from './icons.js';
 import { buildEndOfFeedCard, END_CARD_POST_ID } from './EndOfFeedCard.js';
 import { handleHotkey, toggleHotkeyHelp, type HotkeyActions } from './Hotkeys.js';
 
@@ -386,7 +386,7 @@ export class FeedContainer {
     const inputWrapper = header.querySelector<HTMLElement>('.feed-input-wrapper');
     const queryInput = header.querySelector<HTMLInputElement>('.feed-filters__input');
     const brandContainer = header.querySelector<HTMLElement>('.feed-brand-container');
-    const settingsButton = header.querySelector<HTMLElement>('[aria-label="Open settings"]');
+    const iconButtons = header.querySelectorAll<HTMLElement>('.feed-header-icon-btn');
 
     header.style.position = 'fixed';
     header.style.left = '0';
@@ -424,10 +424,10 @@ export class FeedContainer {
       brandContainer.style.background = 'rgba(0, 0, 0, 0.35)';
       brandContainer.style.border = '1px solid rgba(255, 255, 255, 0.2)';
     }
-    if (settingsButton) {
-      settingsButton.style.background = 'rgba(0, 0, 0, 0.35)';
-      settingsButton.style.border = '1px solid rgba(255, 255, 255, 0.2)';
-      settingsButton.style.color = THEME.colors.textPrimary;
+    for (const button of iconButtons) {
+      button.style.background = 'rgba(0, 0, 0, 0.35)';
+      button.style.border = '1px solid rgba(255, 255, 255, 0.2)';
+      button.style.color = THEME.colors.textPrimary;
     }
   }
 
@@ -1928,50 +1928,37 @@ export class FeedContainer {
     return loadingSpinner;
   }
 
-  /**
-   * Create shuffle indicator element
-   */
-  /**
-   * Setup header buttons (HD toggle)
-   */
-  /**
-   * Create settings button
-   */
-  private createSettingsButton(): HTMLButtonElement {
-    const settingsButton = document.createElement('button');
-    settingsButton.type = 'button';
-    settingsButton.title = 'Settings';
-    settingsButton.setAttribute('aria-label', 'Open settings');
-    settingsButton.style.padding = '10px 12px';
-    settingsButton.style.borderRadius = THEME.radius.button;
-    settingsButton.style.border = `1px solid ${THEME.colors.border}`;
-    settingsButton.style.background = THEME.colors.backgroundSecondary;
-    settingsButton.style.color = THEME.colors.iconInactive;
-    settingsButton.style.cursor = 'pointer';
-    settingsButton.style.display = 'inline-flex';
-    settingsButton.style.alignItems = 'center';
-    settingsButton.style.justifyContent = 'center';
-    settingsButton.style.transition = 'background 0.2s ease, border-color 0.2s ease, color 0.2s ease';
-    // Standard settings/gear icon
-    setIcon(settingsButton, SETTINGS_SVG);
+  private createHeaderIconButton(icon: string, title: string, ariaLabel: string, onClick: () => void): HTMLButtonElement {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'feed-header-icon-btn';
+    button.title = title;
+    button.setAttribute('aria-label', ariaLabel);
+    button.style.padding = '10px 12px';
+    button.style.borderRadius = THEME.radius.button;
+    button.style.border = `1px solid ${THEME.colors.border}`;
+    button.style.background = THEME.colors.backgroundSecondary;
+    button.style.color = THEME.colors.iconInactive;
+    button.style.cursor = 'pointer';
+    button.style.display = 'inline-flex';
+    button.style.alignItems = 'center';
+    button.style.justifyContent = 'center';
+    button.style.flexShrink = '0';
+    button.style.transition = 'background 0.2s ease, border-color 0.2s ease, color 0.2s ease';
+    setIcon(button, icon);
 
-    settingsButton.addEventListener('mouseenter', () => {
-      settingsButton.style.color = THEME.colors.textPrimary;
-      settingsButton.style.background = THEME.colors.surfaceHover;
-      settingsButton.style.borderColor = THEME.colors.border;
+    button.addEventListener('mouseenter', () => {
+      button.style.color = THEME.colors.textPrimary;
+      button.style.background = THEME.colors.surfaceHover;
+      button.style.borderColor = THEME.colors.border;
     });
-
-    settingsButton.addEventListener('mouseleave', () => {
-      settingsButton.style.color = THEME.colors.iconInactive;
-      settingsButton.style.background = THEME.colors.backgroundSecondary;
-      settingsButton.style.borderColor = THEME.colors.border;
+    button.addEventListener('mouseleave', () => {
+      button.style.color = THEME.colors.iconInactive;
+      button.style.background = THEME.colors.backgroundSecondary;
+      button.style.borderColor = THEME.colors.border;
     });
-
-    settingsButton.addEventListener('click', () => {
-      void this.openSettings();
-    });
-
-    return settingsButton;
+    button.addEventListener('click', onClick);
+    return button;
   }
 
   /**
@@ -2033,9 +2020,15 @@ export class FeedContainer {
     // Add search area to container
     searchAndSettingsContainer.appendChild(searchArea);
     
-    // Create and add settings button to the right of search bar
-    const settingsButton = this.createSettingsButton();
-    searchAndSettingsContainer.appendChild(settingsButton);
+    // Touch devices have no keyboard, so the shortcuts button would only be clutter there.
+    if (!isMobileDevice()) {
+      searchAndSettingsContainer.appendChild(
+        this.createHeaderIconButton(KEYBOARD_SVG, 'Keyboard shortcuts (?)', 'Show keyboard shortcuts', () => toggleHotkeyHelp())
+      );
+    }
+    searchAndSettingsContainer.appendChild(
+      this.createHeaderIconButton(SETTINGS_SVG, 'Settings', 'Open settings', () => void this.openSettings())
+    );
     
     // Add the container to header inner (middle grid column)
     headerInner.appendChild(searchAndSettingsContainer);
