@@ -46,6 +46,19 @@ export abstract class VideoPostBase extends BasePost {
     this.getPlayer()?.seekBy(seconds);
   }
 
+  /** Deliberate play/pause, shared by tapping the video and the K hotkey. False when there is no player yet. */
+  togglePlayback(): boolean {
+    const player = this.getPlayer();
+    if (!player) return false;
+    if (player.isPlaying()) {
+      player.pauseManually();
+    } else {
+      player.clearManualPause();
+      player.play()?.catch(() => {});
+    }
+    return true;
+  }
+
   protected getAutoAdvancePlayer(): IVideoPlayer | undefined {
     return this.getPlayer();
   }
@@ -102,14 +115,7 @@ export abstract class VideoPostBase extends BasePost {
     // (buttons, the progress bar, etc.) — those own their own handling.
     const togglePlayback = (target: EventTarget | null): void => {
       if (target !== container && (target as HTMLElement | null)?.closest('button, [role="slider"]')) return;
-      const player = this.getPlayer();
-      if (!player) return;
-      if (player.isPlaying()) {
-        player.pauseManually();
-      } else {
-        player.clearManualPause();
-        player.play()?.catch(() => {});
-      }
+      this.togglePlayback();
     };
 
     if (isMobileDevice()) {

@@ -13,6 +13,7 @@ import { setupTouchHandlers, preventClickAfterTouch } from './utils/touchHandler
 import { adjustImageDialogPosition, toggleImageFavorite } from './utils/imagePostUtils.js';
 import { buildPerformerTierBadge, formatRatingValue10, performerTierFromRating100, tierRingStyle, PERFECT_RATING_GRADIENT, type PerformerTier } from './utils/performerBadge.js';
 import { OverlayManager } from './utils/OverlayManager.js';
+import type { PostButton } from './Hotkeys.js';
 import { PerformerExtended, StudioExtended } from './graphql/types.js';
 import { Performer, Tag, VideoPostData, ImageBasedPostData, Image } from './types.js';
 
@@ -2094,6 +2095,20 @@ export abstract class BasePost {
       (value) => { this.getImageData().image.rating100 = value; },
       this.api ? (rating10) => this.api!.updateImageRating(this.getImageData().image.id, rating10) : undefined
     );
+  }
+
+  /** Hotkey entry point for a footer button: clicks it exactly as the user would. False when it is absent or hidden. */
+  pressButton(button: PostButton): boolean {
+    const el = this.getButton(button);
+    if (!el?.isConnected || getComputedStyle(el).display === 'none') return false;
+    el.click();
+    return true;
+  }
+
+  protected getButton(button: PostButton): HTMLElement | undefined {
+    if (button === 'favorite') return this.heartButton;
+    if (button === 'ocount') return this.oCountButton;
+    return undefined;
   }
 
   /** Keyboard rating entry point; null when this post has no rating control or the key does not apply. */

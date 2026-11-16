@@ -11,7 +11,6 @@
  * `getCards` callback, so dynamically appended posts (infinite scroll) just work.
  */
 
-import { isTypingTarget } from './utils.js';
 
 interface ReelScrollerOptions {
   /** The element that actually scrolls (overflow-y:auto, fixed viewport height). */
@@ -69,7 +68,6 @@ export class ReelScroller {
   private touchVelocity = 0;
 
   private readonly onWheel = (e: WheelEvent) => this.handleWheel(e);
-  private readonly onKeyDown = (e: KeyboardEvent) => this.handleKeyDown(e);
   private readonly onTouchStart = (e: TouchEvent) => this.handleTouchStart(e);
   private readonly onTouchMove = (e: TouchEvent) => this.handleTouchMove(e);
   private readonly onTouchEnd = () => this.handleTouchEnd();
@@ -108,7 +106,6 @@ export class ReelScroller {
     this.scrollContainer.addEventListener('touchmove', this.onTouchMove, { passive: false });
     this.scrollContainer.addEventListener('touchend', this.onTouchEnd, { passive: true });
     this.scrollContainer.addEventListener('touchcancel', this.onTouchEnd, { passive: true });
-    document.addEventListener('keydown', this.onKeyDown);
   }
 
   disable(): void {
@@ -121,7 +118,6 @@ export class ReelScroller {
     this.scrollContainer.removeEventListener('touchmove', this.onTouchMove);
     this.scrollContainer.removeEventListener('touchend', this.onTouchEnd);
     this.scrollContainer.removeEventListener('touchcancel', this.onTouchEnd);
-    document.removeEventListener('keydown', this.onKeyDown);
   }
 
   destroy(): void {
@@ -291,25 +287,6 @@ export class ReelScroller {
       this.next();
     } else {
       this.prev();
-    }
-  }
-
-  private handleKeyDown(e: KeyboardEvent): void {
-    if (isTypingTarget(e.target)) return;
-    switch (e.key) {
-      case 'ArrowDown':
-      case 'PageDown':
-      case ' ':
-        e.preventDefault();
-        this.next();
-        break;
-      case 'ArrowUp':
-      case 'PageUp':
-        e.preventDefault();
-        this.prev();
-        break;
-      default:
-        break;
     }
   }
 

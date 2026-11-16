@@ -11,6 +11,7 @@ import { MARKER_SVG, BOOKMARK_SVG_OUTLINE, BOOKMARK_SVG_FILLED } from './icons.j
 import { VideoPostBase, BaseVideoPostOptions } from './VideoPostBase.js';
 import { BookmarkManager } from './BookmarkManager.js';
 import { FAVORITE_TAG_NAME } from './FavoritesManager.js';
+import type { PostButton } from './Hotkeys.js';
 
 // Constants for magic numbers and strings
 const MARKER_TAG_NAME = 'StashGifs Marker';
@@ -350,6 +351,10 @@ export class VideoPost extends VideoPostBase {
     } else if (this.api) {
       buttonGroup.appendChild(this.createMarkerButton());
     }
+  }
+
+  protected override getButton(button: PostButton): HTMLElement | undefined {
+    return button === 'bookmark' ? this.bookmarkButton : super.getButton(button);
   }
 
   private addStandardButtons(buttonGroup: HTMLElement): void {

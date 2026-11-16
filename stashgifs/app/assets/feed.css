@@ -1647,6 +1647,23 @@ body::-webkit-scrollbar,
   cursor: pointer;
 }
 .whats-new__close:hover { background: color-mix(in srgb, var(--color-accent) 10%, transparent); }
+.hotkey-help__list { margin: 0; padding: 8px 16px 12px; }
+.hotkey-help__row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 5px 0; }
+.hotkey-help__keys { margin: 0; flex-shrink: 0; }
+.hotkey-help__kbd {
+  display: inline-block;
+  min-width: 22px;
+  padding: 2px 7px;
+  border-radius: 6px;
+  font: inherit;
+  font-size: 0.8rem;
+  font-weight: 600;
+  text-align: center;
+  color: var(--color-text-primary, #E6EEF4);
+  background: color-mix(in srgb, var(--color-accent) 14%, transparent);
+  border: 1px solid var(--color-separator, rgba(255, 255, 255, 0.12));
+}
+.hotkey-help__label { margin: 0; text-align: right; color: var(--color-text-secondary, #B4C0C9); }
 
 /* Footer buttons hidden via settings (toggled on the feed root; no per-card work) */
 .feed-container--hide-ocount .icon-btn--ocount,

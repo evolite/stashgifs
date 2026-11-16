@@ -25,11 +25,12 @@ import { ReelScroller } from './ReelScroller.js';
 import { FavoritesManager } from './FavoritesManager.js';
 import { BookmarkManager } from './BookmarkManager.js';
 import type { SettingsPage } from './SettingsPage.js';
-import { debounce, isTypingTarget, showToast, normalizeMediaUrl, isStandaloneNavigator, isMobileDevice, detectVideoFromVisualFiles, isMp4File, getImageUrlForDisplay, THEME, THEME_DEFAULTS, normalizeHexColor, toRgba, buildFullUrl, applyThemeColors, setIcon } from './utils.js';
+import { debounce, showToast, normalizeMediaUrl, isStandaloneNavigator, isMobileDevice, detectVideoFromVisualFiles, isMp4File, getImageUrlForDisplay, THEME, THEME_DEFAULTS, normalizeHexColor, toRgba, buildFullUrl, applyThemeColors, setIcon } from './utils.js';
 import { GQLImage } from './graphql/types.js';
 import { getStashBaseUrl } from './utils/baseUrl.js';
 import { SETTINGS_SVG, STASHGIFS_LOGO_SVG, IMAGE_SVG, MARKER_SVG, HEART_SVG_OUTLINE } from './icons.js';
 import { buildEndOfFeedCard, END_CARD_POST_ID } from './EndOfFeedCard.js';
+import { handleHotkey, toggleHotkeyHelp, type HotkeyActions } from './Hotkeys.js';
 
 const DEFAULT_SETTINGS: FeedSettings = {
   cardMaxWidth: 800,
@@ -201,8 +202,7 @@ export class FeedContainer {
     this.setupReelScroller();
     
     this.autoplayUnlock.start();
-    document.addEventListener('keydown', this.onRatingHotkey);
-    document.addEventListener('keydown', this.onSeekHotkey);
+    document.addEventListener('keydown', this.onHotkey);
 
     // Defer suggestion preload until after initial videos load to avoid competing for bandwidth
     // Will be triggered lazily when user opens filter dropdown or after initial load completes
@@ -4933,36 +4933,50 @@ export class FeedContainer {
     this.reelScroller = undefined;
   }
 
-  /** Digit keys rate the current card (0 = 10), Backspace/Delete clears. */
-  private readonly onRatingHotkey = (event: KeyboardEvent): void => {
-    if (this.settings.enableRatingHotkeys === false) return;
-    if (event.defaultPrevented || event.repeat || event.ctrlKey || event.metaKey || event.altKey) return;
-    if (isTypingTarget(event.target)) return;
-    let key: number | 'clear';
-    if (/^\d$/.test(event.key)) key = Number(event.key);
-    else if (event.key === 'Backspace' || event.key === 'Delete') key = 'clear';
-    else return;
+  private getCurrentPost(): PostType | undefined {
     const postId = this.reelScroller?.getCurrentPostId() ?? this.getTopMostCardPostId();
-    const message = postId ? this.posts.get(postId)?.rateByHotkey(key) : null;
-    if (message) showToast(message);
+    return postId ? this.posts.get(postId) : undefined;
+  }
+
+  private readonly hotkeyActions: HotkeyActions = {
+    step: (direction) => {
+      if (!this.reelScroller) return false;
+      if (direction > 0) this.reelScroller.next();
+      else this.reelScroller.prev();
+      return true;
+    },
+    seek: (direction) => {
+      const post = this.getCurrentPost();
+      if (!(post instanceof VideoPostBase)) return false;
+      post.seekBy(direction * (this.settings.arrowSeekSeconds ?? 5));
+      return true;
+    },
+    togglePlay: () => {
+      const post = this.getCurrentPost();
+      return post instanceof VideoPostBase && post.togglePlayback();
+    },
+    toggleMute: () => {
+      this.setGlobalMuteState(!this.globalMuteState);
+      showToast(this.globalMuteState ? 'Muted' : 'Unmuted');
+      return true;
+    },
+    press: (button) => this.getCurrentPost()?.pressButton(button) ?? false,
+    rate: (key) => {
+      if (this.settings.enableRatingHotkeys === false) return false;
+      const message = this.getCurrentPost()?.rateByHotkey(key);
+      if (message) showToast(message);
+      return !!message;
+    },
+    toggleHelp: () => {
+      toggleHotkeyHelp();
+      return true;
+    },
   };
 
-  /** Left/right arrows seek the current video by the configured number of seconds. */
-  private readonly onSeekHotkey = (event: KeyboardEvent): void => {
-    if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return;
-    if (event.defaultPrevented || event.ctrlKey || event.metaKey || event.altKey) return;
-    if (isTypingTarget(event.target)) return;
-    const postId = this.reelScroller?.getCurrentPostId() ?? this.getTopMostCardPostId();
-    const post = postId ? this.posts.get(postId) : undefined;
-    if (!(post instanceof VideoPostBase)) return;
-    event.preventDefault();
-    const seconds = this.settings.arrowSeekSeconds ?? 5;
-    post.seekBy(event.key === 'ArrowRight' ? seconds : -seconds);
-  };
+  private readonly onHotkey = (event: KeyboardEvent): void => handleHotkey(event, this.hotkeyActions);
 
   private teardownListeners(): void {
-    document.removeEventListener('keydown', this.onRatingHotkey);
-    document.removeEventListener('keydown', this.onSeekHotkey);
+    document.removeEventListener('keydown', this.onHotkey);
     this.filterHistory.stop();
     this.autoplayUnlock.stop();
 
