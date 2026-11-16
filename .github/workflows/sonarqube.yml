@@ -27,6 +27,21 @@ jobs:
         id: ver
         run: echo "version=$(git describe --tags --abbrev=0 2>/dev/null | sed 's/^v//')" >> "$GITHUB_OUTPUT"
 
+      - name: Read SonarQube server version
+        id: server
+        if: ${{ env.SONAR_TOKEN != '' && env.SONAR_HOST_URL != '' }}
+        run: echo "version=$(curl -fsS --retry 3 "$SONAR_HOST_URL/api/server/version" || echo unknown)" >> "$GITHUB_OUTPUT"
+
+      - name: Cache scanner and plugins
+        if: ${{ env.SONAR_TOKEN != '' && env.SONAR_HOST_URL != '' }}
+        uses: actions/cache@v6.1.0
+        with:
+          path: |
+            ~/.sonar/cache
+            ${{ runner.tool_cache }}/sonar-scanner-cli
+          key: sonar-${{ runner.os }}-${{ steps.server.outputs.version }}
+          restore-keys: sonar-${{ runner.os }}-
+
       - name: Analyze with SonarQube
         if: ${{ env.SONAR_TOKEN != '' && env.SONAR_HOST_URL != '' }}
         uses: SonarSource/sonarqube-scan-action@v8.3.0
